@@ -64,6 +64,13 @@ const INHOUSE_STAGES = ["Idea", "Planning", "Building", "Testing", "Launched", "
 const INHOUSE_CATEGORIES = ["Product", "Internal tool", "Marketing", "R&D", "Automation", "Other"];
 const ONLINE_MS = 2 * 60 * 1000; // a member is "online" if active within 2 minutes
 const isOnline = (p) => !!(p && p.last_active) && (Date.now() - new Date(p.last_active).getTime()) < ONLINE_MS;
+// "Inactive" = no activity for over a week. Uses last seen, falling back to the
+// join date so brand-new accounts get a grace period before they're flagged.
+const INACTIVE_WEEK_MS = 7 * 86400000;
+const lastSeenMs = (p) => { const t = p && (p.last_active || p.created_at); const ms = t ? new Date(t).getTime() : 0; return isNaN(ms) ? 0 : ms; };
+const isInactiveWeek = (p) => !!p && (Date.now() - lastSeenMs(p)) > INACTIVE_WEEK_MS;
+const isInternalMember = (p) => !!p && p.role !== "client" && p.role !== "partner" && p.role !== "district_head";
+const inactiveMembers = (team) => (team || []).filter((p) => isInternalMember(p) && isInactiveWeek(p));
 function notifVisibleTo(n, profile) {
   const aud = (n && n.audience) || "all";
   if (aud === "all") return true;
@@ -1621,11 +1628,12 @@ function ExpenseSharePanel({ db }) {
   );
 }
 
-function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true, team = [] }) {
+function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true, team = [], isSuper = false }) {
   const m = monthStats(db);
   const pending = db.tasks.filter((t) => t.status !== "Completed").length;
   const active = db.projects.filter((p) => p.stage !== "Completed").length;
   const recent = [...db.audit].slice(-8).reverse();
+  const awayList = isSuper ? inactiveMembers(team) : [];
   const stats = [];
   if (showMoney) {
     stats.push(<div key="rev" className="card stat"><div className="lbl"><TrendingUp size={14} /> Monthly revenue</div><div className="num mono pos-txt">{money(m.rev)}</div></div>);
@@ -1638,6 +1646,13 @@ function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true,
   return (
     <div className="content">
       <div className="page-head"><h3>Dashboard</h3></div>
+
+      {awayList.length > 0 && (
+        <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14, borderColor: "var(--neg)", background: "var(--neg-soft)", cursor: "pointer" }} onClick={() => go("activity")}>
+          <AlertTriangle size={15} color="var(--neg)" />
+          <span><b>{awayList.length} {awayList.length === 1 ? "person hasn't" : "people haven't"} signed in for over a week</b> — {awayList.slice().sort((a, b) => lastSeenMs(a) - lastSeenMs(b)).slice(0, 4).map((p) => p.name).join(", ")}{awayList.length > 4 ? ` +${awayList.length - 4} more` : ""}. Tap to review activity.</span>
+        </div>
+      )}
 
       <Birthdays team={team} />
 
@@ -3506,6 +3521,7 @@ function LastSeen({ team }) {
   const [act, setAct] = useState({});
   const [colsMissing, setColsMissing] = useState(false);
   const [q, setQ] = useState("");
+  const [view, setView] = useState("all"); // all | inactive
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -3518,36 +3534,59 @@ function LastSeen({ team }) {
     })();
     return () => { alive = false; };
   }, []);
-  const people = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head");
-  const filtered = q.trim() ? people.filter((p) => (p.name || "").toLowerCase().includes(q.trim().toLowerCase())) : people;
-  const rows = filtered.slice().sort((a, b) => (new Date(b.last_active || 0) - new Date(a.last_active || 0)));
+  const people = team.filter(isInternalMember);
+  const inactive = people.filter(isInactiveWeek);
+  const inactiveSet = new Set(inactive.map((p) => p.id));
+  const base = view === "inactive" ? inactive : people;
+  const filtered = q.trim() ? base.filter((p) => (p.name || "").toLowerCase().includes(q.trim().toLowerCase())) : base;
+  const rows = filtered.slice().sort((a, b) => lastSeenMs(a) - lastSeenMs(b)); // least-recent first, so inactive float to the top
   const onlineCount = people.filter(isOnline).length;
   return (
     <div className="content">
       <div className="page-head"><h3>Activity &amp; last seen</h3></div>
-      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Eye size={15} /> See who's online now, when each person was last active, and their most recent sign-in and sign-out.</div>
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Eye size={15} /> See who's online now, when each person was last active, and who hasn't signed in for over a week.</div>
       <div className="sumrow">
         <div className="card"><div className="k"><Users size={14} /> People</div><div className="v">{people.length}</div></div>
         <div className="card"><div className="k"><UserCheck size={14} color="var(--pos)" /> Online now</div><div className="v mono">{onlineCount}</div></div>
+        <div className="card" style={inactive.length ? { cursor: "pointer", borderColor: "var(--neg)" } : undefined} onClick={() => inactive.length && setView(view === "inactive" ? "all" : "inactive")}>
+          <div className="k"><AlertTriangle size={14} color={inactive.length ? "var(--neg)" : "var(--muted)"} /> Inactive 1+ week</div>
+          <div className="v mono" style={inactive.length ? { color: "var(--neg)" } : undefined}>{inactive.length}</div>
+        </div>
       </div>
+
+      {inactive.length > 0 && (
+        <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14, borderColor: "var(--neg)", background: "var(--neg-soft)" }}>
+          <AlertTriangle size={15} color="var(--neg)" />
+          <span><b>{inactive.length} {inactive.length === 1 ? "person hasn't" : "people haven't"} signed in for over a week:</b>{" "}
+            {inactive.slice().sort((a, b) => lastSeenMs(a) - lastSeenMs(b)).map((p, i) => (
+              <span key={p.id}>{i > 0 ? ", " : ""}{p.name} ({p.last_active ? relTime(p.last_active) : "never seen"})</span>
+            ))}.
+          </span>
+        </div>
+      )}
+
       {colsMissing && <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14, borderColor: "var(--accent)" }}><AlertTriangle size={15} color="var(--accent)" /> Sign-in / sign-out times need two columns added to your database (run the one-line snippet in setup). Last seen and online status work already.</div>}
+
       <div className="filterbar" style={{ marginBottom: 12 }}>
+        <Field label="Show"><select className="select" value={view} onChange={(e) => setView(e.target.value)}><option value="all">Everyone</option><option value="inactive">Inactive 1+ week{inactive.length ? ` (${inactive.length})` : ""}</option></select></Field>
         <Field label="Search"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a person…" /></Field>
       </div>
       <div className="card">
-        {rows.length === 0 ? <Empty icon={<Users size={22} color="var(--muted)" />} title="No one to show" text="Team members appear here with their activity." />
+        {rows.length === 0 ? <Empty icon={<Users size={22} color="var(--muted)" />} title={view === "inactive" ? "Everyone's active" : "No one to show"} text={view === "inactive" ? "No one has been away for more than a week." : "Team members appear here with their activity."} />
           : <div style={{ overflowX: "auto" }}>
             <table className="tbl">
               <thead><tr><th>Person</th><th>Status</th><th>Last seen</th><th>Last sign-in</th><th>Last sign-out</th></tr></thead>
               <tbody>
                 {rows.map((p) => {
                   const online = isOnline(p);
+                  const away = inactiveSet.has(p.id);
                   const a = act[p.id] || {};
+                  const awayDays = Math.floor((Date.now() - lastSeenMs(p)) / 86400000);
                   return (
-                    <tr key={p.id}>
+                    <tr key={p.id} style={away ? { background: "var(--neg-soft)" } : undefined}>
                       <td><div style={{ display: "flex", alignItems: "center", gap: 9 }}><Avatar name={p.name} url={p.photo_url} size={26} /><div><div style={{ fontWeight: 600 }}>{p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></div></div></td>
-                      <td>{online ? <span className="badge pos"><span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "currentColor", marginRight: 5, verticalAlign: "middle" }} />Online</span> : <span className="hint-line">Offline</span>}</td>
-                      <td><span className="hint-line">{p.last_active ? relTime(p.last_active) : "—"}</span></td>
+                      <td>{online ? <span className="badge pos"><span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "currentColor", marginRight: 5, verticalAlign: "middle" }} />Online</span> : away ? <span className="badge neg"><AlertTriangle size={10} style={{ marginRight: 4, verticalAlign: "middle" }} />Away {awayDays}d</span> : <span className="hint-line">Offline</span>}</td>
+                      <td><span className="hint-line" style={away ? { color: "var(--neg)", fontWeight: 600 } : undefined}>{p.last_active ? relTime(p.last_active) : "never seen"}</span></td>
                       <td><span className="hint-line" style={{ fontSize: 12 }}>{a.last_login ? fmtDateTime(new Date(a.last_login).getTime()) : "—"}</span></td>
                       <td><span className="hint-line" style={{ fontSize: 12 }}>{a.last_logout ? fmtDateTime(new Date(a.last_logout).getTime()) : "—"}</span></td>
                     </tr>
@@ -3557,7 +3596,7 @@ function LastSeen({ team }) {
             </table>
           </div>}
       </div>
-      <p className="hint-line" style={{ marginTop: 12, lineHeight: 1.5 }}>“Last seen” is the person's last activity in the app. “Last sign-out” is recorded when someone uses the Sign out button — closing the tab won't record one, but their last-seen time still reflects when they were really here.</p>
+      <p className="hint-line" style={{ marginTop: 12, lineHeight: 1.5 }}>Someone is flagged <b>inactive</b> once they haven't been active for more than a week (new joiners get a week's grace). “Last seen” is their last activity in the app; “last sign-out” is only recorded when they use the Sign out button.</p>
     </div>
   );
 }
@@ -7891,6 +7930,7 @@ export default function App() {
   const role = profile?.role;
   const isSuper = isSuperRole(role);
   const isAdmin = isAdminRole(role);        // management level (superadmin OR admin)
+  const inactiveCount = useMemo(() => (isSuper ? inactiveMembers(team).length : 0), [isSuper, team]);
   const canFinance = canFinanceRole(role);  // the money (superadmin OR accountant)
   const me = { id: session?.user?.id, name: currentUser, role };
 
@@ -8365,7 +8405,7 @@ export default function App() {
       case "dashboard":
         return (role === "staff" || role === "intern")
           ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
-          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} />;
+          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
       case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} removeItem={removeItem} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
@@ -8439,6 +8479,7 @@ export default function App() {
       {key === "leave" && pendingLeave > 0 && <span className="badge pri">{pendingLeave}</span>}
       {key === "notifications" && unreadNotifs > 0 && <span className="badge pri">{unreadNotifs}</span>}
       {key === "chat" && unreadChat > 0 && <span className="badge pri">{unreadChat}</span>}
+      {key === "activity" && isSuper && inactiveCount > 0 && <span className="badge neg">{inactiveCount}</span>}
     </>
   );
   const renderNav = ([key, label, Icon], drag = false) => (
