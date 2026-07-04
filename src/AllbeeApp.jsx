@@ -8,7 +8,7 @@ import {
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck,
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins,
-  Bug, ClipboardCheck, Image as ImageIcon,
+  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -113,7 +113,7 @@ const LOGO_ICON = "/allbee-icon.png";   // square monogram
    superadmin (Haji & Alim) · admin · accountant · staff · intern.
    The money (Share & accounts, Withdrawals) is superadmin + accountant only;
    a plain admin runs the team and business but never sees the partner split. */
-const ROLE_LABEL = { superadmin: "Super admin", admin: "Admin", accountant: "Accountant", staff: "Staff", intern: "Intern" };
+const ROLE_LABEL = { superadmin: "Super admin", admin: "Admin", accountant: "Accountant", staff: "Staff", intern: "Intern", partner: "APN Partner", district_head: "District Head" };
 const ROLE_OPTIONS = ["admin", "accountant", "staff", "intern"]; // an admin may assign these — never superadmin
 const STATUS_LABEL = { active: "Active", on_leave: "On leave", suspended: "Suspended", resigned: "Resigned", terminated: "Terminated" };
 const STATUS_OPTIONS = ["active", "on_leave", "suspended", "resigned", "terminated"];
@@ -226,7 +226,9 @@ const startOfWeek = (ref = new Date()) => { const d = new Date(ref); const day =
    only the rows that actually changed (insert / update / delete).
 ─────────────────────────────────────────────────────────────────────────── */
 const TABLES = ["transactions", "withdrawals", "tasks", "projects", "students", "marketing", "concepts", "audit", "attendance", "leave", "updates", "recycle",
-  "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat", "testing"];
+  "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat", "testing",
+  // APN — ALLBEE Partner Network (logically separate from employee operations)
+  "apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_achievements", "apn_notifications", "apn_documents"];
 
 async function fetchAll() {
   const db = emptyDB();
@@ -336,6 +338,14 @@ async function nextTaskNumber() {
   if (error) return null;
   return typeof data === "number" ? data : Number(data);
 }
+// Global, never-reused APN partner number (atomic on the server). Falls back to
+// null so the caller can derive the next id from the loaded rows if the RPC
+// hasn't been installed yet.
+async function nextApnNumber() {
+  const { data, error } = await supabase.rpc("next_apn_number");
+  if (error) return null;
+  return typeof data === "number" ? data : Number(data);
+}
 // Financial period locks ('YYYY-MM'). Partners lock/unlock; the DB blocks writes
 // to a locked month for everyone else.
 async function fetchLocks() {
@@ -404,6 +414,8 @@ const emptyDB = () => ({
   rewards: [], vault: [], portal_posts: [],
   notifications: [], invoices: [], resignations: [], prompts: [], sheets: [],
   inhouse: [], payroll: [], teams: [], team_chat: [], testing: [],
+  apn_users: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
+  apn_leads: [], apn_quotations: [], apn_commissions: [], apn_achievements: [], apn_notifications: [], apn_documents: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -1010,6 +1022,58 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
   display:grid; place-items:center; cursor:pointer; color:var(--muted); }
 .thumb-add:hover { border-color:var(--primary); color:var(--primary); }
 .bug-card { border:1px solid var(--border); border-radius:12px; padding:13px 15px; background:var(--surface-2); display:flex; flex-direction:column; gap:10px; }
+
+/* ── APN — ALLBEE Partner Network (mobile-first portal) ─────────────────── */
+.apn { min-height:100vh; background:var(--bg); display:flex; flex-direction:column; }
+.apn-top { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:10px; padding:11px 16px;
+  background:color-mix(in srgb,var(--surface) 88%,transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--border); }
+.apn-top .brand-logo { height:26px; }
+.apn-top h1 { font-size:15px; font-weight:800; margin:0; letter-spacing:.3px; }
+.apn-top .apn-id { font-size:11px; color:var(--muted); font-weight:600; }
+.apn-body { flex:1; padding:16px 16px 88px; max-width:720px; width:100%; margin:0 auto; }
+.apn-bottomnav { position:fixed; left:0; right:0; bottom:0; z-index:40; display:flex; background:var(--surface);
+  border-top:1px solid var(--border); padding:6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow:0 -2px 16px rgba(0,0,0,.06); }
+.apn-tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; border:none; background:none;
+  color:var(--muted); font-size:10.5px; font-weight:600; cursor:pointer; border-radius:10px; position:relative; }
+.apn-tab.on { color:var(--primary); }
+.apn-tab .tb { position:absolute; top:-6px; right:calc(50% - 22px); background:var(--neg); color:#fff; font-size:9px; font-weight:800;
+  min-width:15px; height:15px; border-radius:8px; padding:0 4px; display:grid; place-items:center; }
+.apn-more { position:fixed; inset:0; z-index:60; background:rgba(10,14,20,.5); backdrop-filter:blur(2px); display:flex; align-items:flex-end; }
+.apn-more-sheet { background:var(--surface); width:100%; border-radius:18px 18px 0 0; padding:16px 16px calc(20px + env(safe-area-inset-bottom)); box-shadow:0 -12px 40px rgba(0,0,0,.35); animation:sheet .2s ease; }
+@keyframes sheet { from { transform:translateY(20px); opacity:.6; } to { transform:none; opacity:1; } }
+.apn-more-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.apn-more-item { display:flex; flex-direction:column; align-items:center; gap:7px; padding:15px 8px; border:1px solid var(--border);
+  border-radius:14px; background:var(--surface-2); cursor:pointer; font-size:12px; font-weight:600; color:var(--ink); text-align:center; }
+.apn-more-item:hover { border-color:var(--primary); }
+.apn-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.apn-metric { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 14px; box-shadow:var(--shadow); }
+.apn-metric .k { font-size:11px; color:var(--muted); font-weight:600; display:flex; align-items:center; gap:6px; }
+.apn-metric .v { font-size:20px; font-weight:800; margin-top:6px; letter-spacing:-.4px; }
+.apn-lvl { background:linear-gradient(135deg,var(--primary),#4453c7); color:#fff; border-radius:16px; padding:16px 18px; box-shadow:var(--shadow); }
+.apn-lvl .nm { font-size:18px; font-weight:800; }
+.apn-lvl .rate { font-size:13px; opacity:.9; }
+.apn-lvl .bar { height:8px; border-radius:6px; background:rgba(255,255,255,.28); overflow:hidden; margin-top:12px; }
+.apn-lvl .bar > i { display:block; height:100%; background:#fff; border-radius:6px; }
+.apn-hero { display:flex; align-items:center; gap:12px; }
+.apn-hero .av { width:46px; height:46px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:19px; flex:none; }
+.apn-section-h { font-size:17px; font-weight:800; margin:2px 0 12px; }
+.apn-list { display:flex; flex-direction:column; gap:10px; }
+.apn-rowcard { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 15px; box-shadow:var(--shadow); }
+.apn-fab { position:fixed; right:16px; bottom:92px; z-index:45; width:52px; height:52px; border-radius:50%; border:none;
+  background:var(--primary); color:#fff; display:grid; place-items:center; box-shadow:0 8px 24px rgba(46,59,143,.4); cursor:pointer; }
+.apn-rank { display:flex; align-items:center; gap:12px; padding:11px 6px; border-bottom:1px solid var(--border); }
+.apn-rank:last-child { border-bottom:none; }
+.apn-rank .pos { width:26px; height:26px; border-radius:50%; background:var(--surface-2); display:grid; place-items:center; font-weight:800; font-size:12px; flex:none; }
+.apn-rank .pos.g1 { background:#F7C948; color:#5a3d00; } .apn-rank .pos.g2 { background:#CBD2D9; color:#1f2933; } .apn-rank .pos.g3 { background:#E8B27A; color:#5a3d00; }
+.apn-ach { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
+.apn-ach.lock { opacity:.5; }
+.apn-ach .em { font-size:24px; }
+.apn-quiz-opt { display:flex; align-items:center; gap:10px; padding:11px 13px; border:1.5px solid var(--border); border-radius:11px; cursor:pointer; margin-top:8px; font-size:14px; }
+.apn-quiz-opt.sel { border-color:var(--primary); background:var(--primary-soft); }
+.apn-seg-scroll { display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-bottom:12px; -webkit-overflow-scrolling:touch; }
+.apn-seg-scroll button { white-space:nowrap; border:1px solid var(--border); background:var(--surface); border-radius:999px; padding:7px 13px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer; flex:none; }
+.apn-seg-scroll button.on { background:var(--primary); color:#fff; border-color:var(--primary); }
+@media (min-width:720px){ .apn-metrics { grid-template-columns:repeat(4,1fr); } }
 `;
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -3193,7 +3257,7 @@ function Team({ team, me, changeProfile, db, resolveResign }) {
   };
   const isSuper = me.role === "superadmin";
   const pending = team.filter((p) => (p.role === "staff" || p.role === "client") && p.approved === false);
-  const roster = team.filter((p) => p.role !== "client");          // clients live in the portal, not the internal roster
+  const roster = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head");          // clients & APN partners live in their own portals, not the internal roster
   const approve = (p) => { haptic(10); changeProfile(p.id, { approved: true }, `approved ${p.name}'s account`); };
   const reject = (p) => changeProfile(p.id, { approved: false, status: "terminated", active: false }, `rejected ${p.name}'s account`);
   return (
@@ -3603,6 +3667,7 @@ const NAV = [
   ["earnings", "My earnings", Coins, "everyone"],
   ["team", "Team", Users, "admin"],
   ["team-leads", "Team leads", ShieldCheck, "super"],
+  ["apn", "APN network", GaugeCircle, "admin"],
   ["myteam", "My team", Users, "everyone"],
   ["staff-salary", "Staff salary", Banknote, "admin"],
   ["progress", "Progress", Activity, "work"],
@@ -3640,6 +3705,8 @@ function Lock({ isDark, setDark }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
+  const [apn, setApn] = useState({ mobile: "", dob: "", district: "", taluk: "", city: "", occupation: "", college: "", reason: "", username: "" });
+  const upApn = (k, v) => setApn((s) => ({ ...s, [k]: v }));
 
   const submit = async () => {
     setErr(""); setNotice("");
@@ -3647,6 +3714,15 @@ function Lock({ isDark, setDark }) {
     if (mode === "signup") {
       if ((acctType === "staff" || acctType === "client") && !name.trim()) { setErr("Enter your name so we know who you are."); return; }
       if (acctType === "owner" && !code.trim()) { setErr("Enter the admin access code, or sign up as a team member instead."); return; }
+      if (acctType === "partner") {
+        if (!name.trim()) { setErr("Enter your full name."); return; }
+        if (!apn.mobile.trim()) { setErr("Enter your mobile number."); return; }
+        if (!apn.district) { setErr("Select your district."); return; }
+        if (!apn.dob) { setErr("Enter your date of birth."); return; }
+        const bd = new Date(apn.dob); const now = new Date();
+        const age = now.getFullYear() - bd.getFullYear() - (now < new Date(now.getFullYear(), bd.getMonth(), bd.getDate()) ? 1 : 0);
+        if (isNaN(age) || age < 18) { setErr("You must be at least 18 years old to join APN."); return; }
+      }
     }
     setBusy(true);
     try {
@@ -3677,6 +3753,7 @@ function Lock({ isDark, setDark }) {
       } else {
         const meta = acctType === "owner" ? { name: who, admin_code: code.trim() }
           : acctType === "client" ? { name: name.trim(), role_intent: "client" }
+          : acctType === "partner" ? { name: name.trim(), role_intent: "partner", apn: { name: name.trim(), mobile: apn.mobile.trim(), dob: apn.dob, district: apn.district, taluk: apn.taluk.trim(), city: apn.city.trim(), occupation: apn.occupation.trim(), college: apn.college.trim(), reason: apn.reason.trim(), username: apn.username.trim().toLowerCase() } }
           : { name: name.trim() };
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { data: meta } });
         if (error) throw error;
@@ -3693,28 +3770,52 @@ function Lock({ isDark, setDark }) {
       <style>{CSS}</style>
       <div className="lock-card">
         <img className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
-        <p>{mode === "signin" ? (entry === "choose" ? "How would you like to sign in?" : (loginAs === "client" ? "Client sign in" : "Employee sign in")) : "Create your account"}</p>
+        <p>{mode === "signin" ? (entry === "choose" ? "How would you like to sign in?" : (loginAs === "client" ? "Client sign in" : loginAs === "partner" ? "APN partner sign in" : "Employee sign in")) : "Create your account"}</p>
 
         {mode === "signin" && entry === "choose" ? (
           <>
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6, width: "100%" }}>
               <button className="btn primary" style={{ width: "100%", justifyContent: "center", padding: "13px 14px" }} onClick={() => { setLoginAs("employee"); setEntry("form"); setErr(""); }}><Users size={18} />Employee Login</button>
               <button className="btn" style={{ width: "100%", justifyContent: "center", padding: "13px 14px" }} onClick={() => { setLoginAs("client"); setEntry("form"); setErr(""); }}><Building2 size={18} />Client Login</button>
+              <button className="btn" style={{ width: "100%", justifyContent: "center", padding: "13px 14px" }} onClick={() => { setLoginAs("partner"); setEntry("form"); setErr(""); }}><GaugeCircle size={18} />APN Partner Login</button>
             </div>
-            <button className="linkbtn" onClick={() => { setMode("signup"); setEntry("form"); setAcctType(loginAs === "client" ? "client" : "staff"); setErr(""); setNotice(""); }}>New here? Create an account</button>
+            <button className="linkbtn" onClick={() => { setMode("signup"); setEntry("form"); setAcctType(loginAs === "client" ? "client" : loginAs === "partner" ? "partner" : "staff"); setErr(""); setNotice(""); }}>New here? Create an account</button>
           </>
         ) : (<>
         {mode === "signin" && <button className="linkbtn" style={{ marginBottom: 2, alignSelf: "flex-start" }} onClick={() => { setEntry("choose"); setErr(""); }}><ArrowLeft size={14} />Back</button>}
 
         {mode === "signup" && (
           <>
-            <div className="seg" style={{ width: "100%", marginBottom: 16 }}>
+            <div className="seg" style={{ width: "100%", marginBottom: 16, flexWrap: "wrap" }}>
               <button type="button" className={acctType === "staff" ? "on" : ""} onClick={() => setAcctType("staff")}>Team member</button>
               <button type="button" className={acctType === "client" ? "on" : ""} onClick={() => setAcctType("client")}>Client</button>
+              <button type="button" className={acctType === "partner" ? "on" : ""} onClick={() => setAcctType("partner")}>APN partner</button>
               <button type="button" className={acctType === "owner" ? "on" : ""} onClick={() => setAcctType("owner")}>Owner / admin</button>
             </div>
 
-            {acctType === "staff" || acctType === "client" ? (
+            {acctType === "partner" ? (
+              <div style={{ textAlign: "left" }}>
+                <div className="field"><label>Full name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder="Your full name" /></div>
+                <div className="grid2">
+                  <div className="field"><label>Mobile number</label><input className="input" value={apn.mobile} onChange={(e) => upApn("mobile", e.target.value)} placeholder="10-digit mobile" /></div>
+                  <div className="field"><label>Date of birth</label><input className="input" type="date" value={apn.dob} onChange={(e) => upApn("dob", e.target.value)} /></div>
+                </div>
+                <div className="grid2">
+                  <div className="field"><label>District</label><select className="select" value={apn.district} onChange={(e) => upApn("district", e.target.value)}><option value="">Select district…</option>{TN_DISTRICTS.map((d) => <option key={d}>{d}</option>)}</select></div>
+                  <div className="field"><label>Taluk</label><input className="input" value={apn.taluk} onChange={(e) => upApn("taluk", e.target.value)} placeholder="Taluk" /></div>
+                </div>
+                <div className="grid2">
+                  <div className="field"><label>City / town</label><input className="input" value={apn.city} onChange={(e) => upApn("city", e.target.value)} placeholder="City" /></div>
+                  <div className="field"><label>Occupation</label><input className="input" value={apn.occupation} onChange={(e) => upApn("occupation", e.target.value)} placeholder="Student, freelancer…" /></div>
+                </div>
+                <div className="grid2">
+                  <div className="field"><label>College (optional)</label><input className="input" value={apn.college} onChange={(e) => upApn("college", e.target.value)} placeholder="College" /></div>
+                  <div className="field"><label>Username</label><input className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" /></div>
+                </div>
+                <div className="field"><label>Why do you want to join APN?</label><textarea className="textarea" value={apn.reason} onChange={(e) => upApn("reason", e.target.value)} placeholder="Tell us briefly why you'd like to become a partner…" /></div>
+                <p className="hint-line" style={{ fontSize: 12 }}>APN partners are independent and commission-based — no salary and no joining fee. You must be 18 or older. Applications are approved by Haji or Alim.</p>
+              </div>
+            ) : acctType === "staff" || acctType === "client" ? (
               <div className="field" style={{ textAlign: "left" }}>
                 <label>Your name</label>
                 <input className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder={acctType === "client" ? "Your name or business" : "e.g. Priya"} />
@@ -3760,7 +3861,7 @@ function Lock({ isDark, setDark }) {
           {mode === "signin" ? "Sign in" : "Create account"}
         </button>
 
-        <button className="linkbtn" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setEntry("form"); setErr(""); setNotice(""); }}>
+        <button className="linkbtn" onClick={() => { const goSignup = mode === "signin"; setMode(goSignup ? "signup" : "signin"); if (goSignup && loginAs === "partner") setAcctType("partner"); else if (goSignup && loginAs === "client") setAcctType("client"); setEntry("form"); setErr(""); setNotice(""); }}>
           {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
         </button>
         </>)}
@@ -5293,4 +5394,2939 @@ function InHouse({ db, mutate, openModal, removeItem, isAdmin, me, team = [] }) 
       <div className="page-head"><h3>In-house projects</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "inhouse" })}><Plus size={16} />New project</button></div>
       <div className="sumrow">
         <div className="card"><div className="k"><Home size={14} /> Total</div><div className="v">{list.length}</div></div>
-        <div className="card"><di
+        <div className="card"><div className="k"><Activity size={14} /> In progress</div><div className="v">{active}</div></div>
+        <div className="card"><div className="k"><CheckCircle2 size={14} /> Launched</div><div className="v">{launched}</div></div>
+        {budget > 0 && <div className="card"><div className="k"><Wallet size={14} /> Budget</div><div className="v mono">{money(budget)}</div></div>}
+      </div>
+      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+        {list.length === 0 ? <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<Home size={22} color="var(--muted)" />} title="No in-house projects yet" text="Track the company's own products, internal tools and R&D from Idea to Launched." action={<button className="btn primary" onClick={() => openModal({ type: "inhouse" })}><Plus size={16} />New project</button>} /></div>
+          : list.map((p) => {
+            const pct = Math.max(0, Math.min(100, Number(p.progress) || 0));
+            return (
+              <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div><div className="sub">{p.category}{p.lead ? ` · ${p.lead}` : ""}</div></div>
+                  {p.priority && <span className={"badge " + priorityTone(p.priority)}>{p.priority}</span>}
+                </div>
+                <select className="select" value={p.stage} onChange={(e) => setStage(p, e.target.value)}>{INHOUSE_STAGES.map((s) => <option key={s}>{s}</option>)}</select>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)", marginBottom: 4 }}><span className={"badge " + stageTone(p.stage)}>{p.stage}</span><span className="mono">{pct}%</span></div>
+                  <div style={{ height: 6, borderRadius: 6, background: "var(--surface-2)", overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: pct === 100 ? "var(--pos)" : "var(--primary)", transition: ".2s" }} /></div>
+                </div>
+                <div className="item-meta">{p.start && <span>Start {fmtDate(p.start)}</span>}{p.target && <span>Target {fmtDate(p.target)}</span>}{Number(p.budget) > 0 && <span className="mono">{money(p.budget)}</span>}</div>
+                {p.link && <a href={p.link} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--primary)", textDecoration: "none", fontWeight: 600, wordBreak: "break-all" }}><ExternalLink size={13} style={{ flex: "none" }} />{p.link.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>}
+                {p.notes && <div className="hint-line" style={{ lineHeight: 1.5 }}>{p.notes.length > 120 ? p.notes.slice(0, 120) + "…" : p.notes}</div>}
+                <div style={{ display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+                  {canEdit(p) && <button className="btn sm" onClick={() => openModal({ type: "inhouse", initial: p })}><Pencil size={13} />Edit</button>}
+                  {canEdit(p) && <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
+                  {!canEdit(p) && <span className="hint-line" style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}><LockIcon size={11} />{p.owner ? `Added by ${p.owner}` : "Admin-only"}</span>}
+                </div>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Staff salary (admin) ──────────────────────────────────────────────── */
+function SalaryRow({ person, db, payroll, onSave }) {
+  const cfg = payrollFor(payroll, person.id);
+  const [fixed, setFixed] = useState(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : "");
+  const [pct, setPct] = useState(cfg?.commissionPct != null ? String(cfg.commissionPct) : "");
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setFixed(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : ""); setPct(cfg?.commissionPct != null ? String(cfg.commissionPct) : ""); }, [cfg?.fixedMonthly, cfg?.commissionPct]);
+  const E = staffEarnings(db, payroll, { id: person.id, name: person.name }, person.created_at);
+  const dirty = String(Number(fixed) || 0) !== String(E.fixedMonthly) || String(Number(pct) || 0) !== String(E.pct);
+  const save = () => { onSave(person, { fixedMonthly: Number(fixed) || 0, commissionPct: Number(pct) || 0 }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
+  return (
+    <div className="card stat" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="who-cell">
+        <Avatar name={person.name} url={person.photo_url} size={30} />
+        <span><div style={{ fontWeight: 700 }}>{person.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[person.role] || person.role}{person.designation ? ` · ${person.designation}` : ""}</div></span>
+      </div>
+      <div className="grid2">
+        <Field label="Fixed salary / month"><input className="input mono" type="number" min="0" value={fixed} onChange={(e) => setFixed(e.target.value)} placeholder="0" /></Field>
+        <Field label="Commission %"><input className="input mono" type="number" min="0" max="100" value={pct} onChange={(e) => setPct(e.target.value)} placeholder="0" /></Field>
+      </div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5 }}>
+        <span className="hint-line">Commission earned <b className="pos-txt mono" style={{ marginLeft: 4 }}>{money(E.realisedComm)}</b></span>
+        <span className="hint-line">Pipeline <b className="mono" style={{ marginLeft: 4 }}>{money(E.pipelineComm)}</b></span>
+        {E.fixedMonthly > 0 && <span className="hint-line">Salary to date <b className="mono" style={{ marginLeft: 4 }}>{money(E.salaryToDate)}</b></span>}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button className="btn sm primary" onClick={save} disabled={!dirty}><Check size={14} />Save</button>
+        {saved && <span className="hint-line" style={{ color: "var(--pos)" }}><Check size={13} style={{ verticalAlign: -2 }} /> Saved</span>}
+        {!E.configured && !dirty && <span className="hint-line">No pay set yet</span>}
+      </div>
+    </div>
+  );
+}
+
+function StaffSalary({ db, team, mutate, me }) {
+  const roster = team.filter((p) => p.role !== "client" && p.role !== "superadmin");
+  const setPay = (person, patch) => mutate((d) => {
+    const exists = (d.payroll || []).some((r) => r.userId === person.id);
+    const payroll = exists
+      ? d.payroll.map((r) => r.userId === person.id ? { ...r, ...patch, updatedAt: Date.now() } : r)
+      : [...(d.payroll || []), { id: uid(), userId: person.id, userName: person.name, fixedMonthly: 0, commissionPct: 0, createdAt: Date.now(), ...patch }];
+    return { ...d, payroll };
+  }, { action: `updated ${person.name}'s pay settings`, module: "Staff salary" });
+  const totalCommission = roster.reduce((s, p) => s + staffEarnings(db, db.payroll, { id: p.id, name: p.name }, p.created_at).realisedComm, 0);
+  const totalMonthly = (db.payroll || []).reduce((s, r) => s + (Number(r.fixedMonthly) || 0), 0);
+  return (
+    <div className="content">
+      <div className="page-head"><h3>Staff salary</h3></div>
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Coins size={15} /> Set each person's fixed monthly salary, a commission rate, or both. Commission is a share of the value of every student, project or client they bring in.</div>
+      <div className="sumrow">
+        <div className="card"><div className="k"><Users size={14} /> People</div><div className="v">{roster.length}</div></div>
+        <div className="card"><div className="k"><Banknote size={14} /> Monthly salaries</div><div className="v mono">{money(totalMonthly)}</div></div>
+        <div className="card"><div className="k"><Coins size={14} /> Commission earned</div><div className="v mono">{money(totalCommission)}</div></div>
+      </div>
+      {roster.length === 0 ? <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="No team members yet" text="Add staff on the Team screen, then set their pay here." /></div>
+        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
+          {roster.map((p) => <SalaryRow key={p.id} person={p} db={db} payroll={db.payroll} onSave={setPay} />)}
+        </div>}
+      <div className="hint-line" style={{ marginTop: 14, lineHeight: 1.5 }}>
+        Commission is "earned" once an item is actually paying — a student fee marked Paid, a project marked Completed, or a client set to Active. Until then it sits in the pipeline. Everyone can see their own breakdown on the My earnings screen.
+      </div>
+    </div>
+  );
+}
+
+/* ── My earnings (every member sees their own) ─────────────────────────── */
+function MyEarnings({ db, me, role, payroll, profile, go }) {
+  if (role === "superadmin") {
+    return (
+      <div className="content">
+        <div className="page-head"><h3>My earnings</h3></div>
+        <div className="card"><Empty icon={<Wallet size={22} color="var(--muted)" />} title="Partners draw from the profit share" text="As a partner you don't take a fixed salary or commission — your earnings come from the Haji & Alim split tracked in Share & accounts." action={<button className="btn primary" onClick={() => go("accounts")}><Wallet size={16} />Open Share & accounts</button>} /></div>
+      </div>
+    );
+  }
+  const E = staffEarnings(db, payroll, { id: me.id, name: me.name }, profile?.created_at);
+  const realised = E.items.filter((i) => i.realized);
+  const pipeline = E.items.filter((i) => !i.realized);
+  const kindTone = (k) => k === "Student" ? "pri" : k === "Project" ? "accent" : "pos";
+  const Row = ({ i }) => (
+    <tr>
+      <td><div style={{ fontWeight: 600 }}>{i.name}</div>{i.date && <div className="hint-line" style={{ fontSize: 11 }}>{fmtDate(i.date)}</div>}</td>
+      <td><span className={"badge " + kindTone(i.kind)}>{i.kind}</span></td>
+      <td className="num-cell mono">{money(i.base)}</td>
+      <td><span className="hint-line">{i.status}</span></td>
+      <td className="num-cell mono" style={{ fontWeight: 700, color: i.realized ? "var(--pos)" : "var(--muted)" }}>{money(i.commission)}</td>
+    </tr>
+  );
+  return (
+    <div className="content">
+      <div className="page-head"><h3>My earnings</h3></div>
+      {!E.configured && E.items.length === 0 ? (
+        <div className="card"><Empty icon={<Coins size={22} color="var(--muted)" />} title="No earnings set up yet" text="Once an admin sets your salary or commission rate, what you earn from ALLBEE shows up here — including a share of every student, project and client you bring in." /></div>
+      ) : (
+        <>
+          <div className="sumrow">
+            <div className="card"><div className="k"><Wallet size={14} /> Earned to date</div><div className="v mono pos-txt">{money(E.totalToDate)}</div></div>
+            <div className="card"><div className="k"><Coins size={14} /> Commission earned</div><div className="v mono">{money(E.realisedComm)}</div></div>
+            <div className="card"><div className="k"><Hourglass size={14} /> In pipeline</div><div className="v mono">{money(E.pipelineComm)}</div></div>
+            {E.fixedMonthly > 0 && <div className="card"><div className="k"><Banknote size={14} /> Salary / month</div><div className="v mono">{money(E.fixedMonthly)}</div></div>}
+          </div>
+
+          {E.fixedMonthly > 0 && (
+            <div className="card stat" style={{ marginBottom: 16 }}>
+              <div className="lbl"><Banknote size={14} /> Fixed salary</div>
+              <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 10 }}>
+                <div><div className="hint-line">Per month</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{money(E.fixedMonthly)}</div></div>
+                <div><div className="hint-line">Months on the team</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{E.months}</div></div>
+                <div><div className="hint-line">Salary to date (estimate)</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{money(E.salaryToDate)}</div></div>
+              </div>
+              <div className="hint-line" style={{ marginTop: 8 }}>Estimated from your joining date — your actual payslip is settled by the finance team.</div>
+            </div>
+          )}
+
+          <div className="card">
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Coins size={15} /><span style={{ fontWeight: 700 }}>Commission</span>
+              {E.pct > 0 ? <span className="badge pri">{E.pct}% of each deal</span> : <span className="hint-line">No commission rate set — you're on a fixed salary.</span>}
+            </div>
+            {E.items.length === 0 ? (
+              <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="Nothing to show yet" text="Register a student, add a project, or bring in a client with a deal value and your commission appears here." />
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="tbl">
+                  <thead><tr><th>Item</th><th>Type</th><th className="num-cell">Value</th><th>Status</th><th className="num-cell">Your commission</th></tr></thead>
+                  <tbody>
+                    {realised.length > 0 && <tr><td colSpan={5} style={{ background: "var(--surface-2)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--muted)", fontWeight: 700 }}>Earned</td></tr>}
+                    {realised.map((i) => <Row key={i.id} i={i} />)}
+                    {pipeline.length > 0 && <tr><td colSpan={5} style={{ background: "var(--surface-2)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--muted)", fontWeight: 700 }}>Pipeline — not earned yet</td></tr>}
+                    {pipeline.map((i) => <Row key={i.id} i={i} />)}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── Team leads: superadmin sets a lead + their members ─────────────────── */
+function TeamConfigForm({ initial, roster, onSave, onClose }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [leadId, setLeadId] = useState(initial?.leadId || "");
+  const [memberIds, setMemberIds] = useState(initial?.memberIds || []);
+  const [err, setErr] = useState("");
+  const toggle = (id) => setMemberIds((m) => m.includes(id) ? m.filter((x) => x !== id) : [...m, id]);
+  const candidates = roster.filter((p) => p.id !== leadId);
+  const save = () => {
+    if (!name.trim()) { setErr("Give the team a name."); return; }
+    if (!leadId) { setErr("Choose a team lead."); return; }
+    const lead = roster.find((p) => p.id === leadId);
+    onSave({ id: initial?.id || uid(), name: name.trim(), leadId, leadName: lead?.name || "", memberIds: memberIds.filter((id) => id !== leadId), createdAt: initial?.createdAt || Date.now(), updatedAt: Date.now() });
+  };
+  return (
+    <Modal title={initial?.id ? "Edit team" : "New team"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={16} />Save team</button></>}>
+      {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} /> {err}</div>}
+      <div className="grid2">
+        <Field label="Team name" required><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Development squad" /></Field>
+        <Field label="Team lead" required><select className="select" value={leadId} onChange={(e) => setLeadId(e.target.value)}><option value="">Choose…</option>{roster.map((p) => <option key={p.id} value={p.id}>{p.name} · {ROLE_LABEL[p.role] || p.role}</option>)}</select></Field>
+      </div>
+      <Field label={`Members${memberIds.length ? ` · ${memberIds.length} selected` : ""}`} hint="Tick everyone who reports to this lead. The lead is included automatically.">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8, maxHeight: 280, overflowY: "auto" }}>
+          {candidates.length === 0 ? <div className="hint-line">No other members available.</div> : candidates.map((p) => {
+            const on = memberIds.includes(p.id);
+            return (
+              <button key={p.id} type="button" onClick={() => toggle(p.id)} className="card" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", cursor: "pointer", textAlign: "left", border: on ? "1px solid var(--primary)" : "1px solid var(--border)", background: on ? "var(--primary-soft)" : "var(--surface)" }}>
+                <Avatar name={p.name} url={p.photo_url} size={26} />
+                <span style={{ minWidth: 0, flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></span>
+                {on && <Check size={15} color="var(--primary)" />}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+    </Modal>
+  );
+}
+
+function TeamLeads({ team, db, openModal, removeItem, me }) {
+  const teams = [...(db.teams || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const roster = team.filter((p) => p.role !== "client" && p.active !== false);
+  const byId = (id) => team.find((p) => p.id === id);
+  const del = (t) => removeItem("teams", t, { name: t.name, audit: `deleted team "${t.name}"` });
+  const assigned = new Set(teams.flatMap((t) => teamRosterIds(t)));
+  const unassigned = roster.filter((p) => !assigned.has(p.id) && p.role !== "superadmin");
+  return (
+    <div className="content">
+      <div className="page-head"><h3>Team leads</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "teamcfg" })}><Plus size={16} />New team</button></div>
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><ShieldCheck size={15} /> Group people under a team lead. Leads (and their members) get a My team screen with the team's attendance, tasks, performance and a private team chat.</div>
+      {teams.length === 0 ? <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="No teams yet" text="Create a team, pick a lead, and assign the members who report to them." action={<button className="btn primary" onClick={() => openModal({ type: "teamcfg" })}><Plus size={16} />New team</button>} /></div>
+        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
+          {teams.map((t) => {
+            const members = (t.memberIds || []).map(byId).filter(Boolean);
+            const lead = byId(t.leadId);
+            return (
+              <div key={t.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{t.name}</div><div className="sub">{members.length + 1} member{members.length ? "s" : ""}</div></div>
+                  <div className="row-actions">
+                    <button className="iconbtn" style={{ width: 30, height: 30 }} title="Edit" onClick={() => openModal({ type: "teamcfg", initial: t })}><Pencil size={14} /></button>
+                    <button className="iconbtn" style={{ width: 30, height: 30 }} title="Delete" onClick={() => openModal({ type: "deleteConfirm", title: "Delete team?", body: `Delete "${t.name}"?`, note: "Members keep their accounts — only the grouping is removed.", onConfirm: () => del(t) })}><Trash2 size={14} /></button>
+                  </div>
+                </div>
+                <div>
+                  <div className="hint-line" style={{ marginBottom: 6 }}>Team lead</div>
+                  <span className="who-cell"><Avatar name={lead?.name || "?"} url={lead?.photo_url} size={28} /><span><div style={{ fontWeight: 600 }}>{lead?.name || "—"} <span className="badge accent" style={{ marginLeft: 4 }}>Lead</span></div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[lead?.role] || ""}</div></span></span>
+                </div>
+                <div>
+                  <div className="hint-line" style={{ marginBottom: 6 }}>Members</div>
+                  {members.length === 0 ? <div className="hint-line">No members yet.</div>
+                    : <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{members.map((m) => <span key={m.id} className="who-cell" style={{ background: "var(--surface-2)", borderRadius: 999, padding: "3px 10px 3px 3px" }}><Avatar name={m.name} url={m.photo_url} size={22} /><span style={{ fontSize: 12.5, fontWeight: 600 }}>{m.name}</span></span>)}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>}
+      {unassigned.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: 13 }}>Not on a team yet ({unassigned.length})</div>
+          <div style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", gap: 8 }}>{unassigned.map((p) => <span key={p.id} className="who-cell"><Avatar name={p.name} url={p.photo_url} size={22} /><span style={{ fontSize: 12.5 }}>{p.name}</span></span>)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Team-scoped chat (private to one team) ────────────────────────────── */
+function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
+  const [text, setText] = useState("");
+  const endRef = useRef(null);
+  const list = [...(db.team_chat || [])].filter((m) => m.teamId === teamId && !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
+  useEffect(() => {
+    if (!onRefresh) return;
+    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") onRefresh(); }, 12000);
+    return () => clearInterval(t);
+  }, [onRefresh]);
+  useEffect(() => {
+    const unseen = (db.team_chat || []).filter((m) => m.teamId === teamId && m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id));
+    if (!unseen.length) return;
+    const ids = new Set(unseen.map((m) => m.id));
+    mutate((d) => ({ ...d, team_chat: d.team_chat.map((m) => ids.has(m.id) ? { ...m, seenBy: Array.from(new Set([...(m.seenBy || []), me.id])) } : m) }), null);
+  }, [db.team_chat, me.id, teamId, mutate]);
+  const send = () => {
+    const t = text.trim(); if (!t) return;
+    setText("");
+    mutate((d) => ({ ...d, team_chat: [...(d.team_chat || []), { id: uid(), teamId, userId: me.id, userName: me.name, text: t, createdAt: Date.now() }] }), null);
+  };
+  const del = (m) => { if (!window.confirm("Delete your message for the team?")) return; mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === m.id ? { ...x, deleted: true, text: "", deletedBy: me.name } : x) }), null); };
+  const photo = (id) => members.find((p) => p.id === id)?.photo_url;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 360 }}>
+      <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        {list.length === 0 ? <Empty icon={<Send size={22} color="var(--muted)" />} title="No messages yet" text="This chat is private to your team." />
+          : list.map((m) => {
+            const mine = m.userId === me.id;
+            return (
+              <div key={m.id} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row" }}>
+                <div style={{ flex: "none" }}><Avatar name={m.userName} url={photo(m.userId)} size={30} /></div>
+                <div style={{ maxWidth: "72%" }}>
+                  <div style={{ background: mine ? "var(--primary)" : "var(--surface-2)", color: mine ? "#fff" : "var(--ink)", padding: "9px 13px", borderRadius: 12, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{m.text}</div>
+                  <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : m.userName} · {fmtDateTime(m.createdAt)}{mine && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}</div>
+                </div>
+              </div>
+            );
+          })}
+        <div ref={endRef} />
+      </div>
+      <div className="composer" style={{ marginTop: 12 }}>
+        <textarea className="textarea" style={{ minHeight: 44 }} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Message your team… (Enter to send)" />
+        <button className="btn primary" onClick={send} disabled={!text.trim()}><Send size={16} />Send</button>
+      </div>
+    </div>
+  );
+}
+
+function MyTeam({ db, team, me, mutate, onRefresh }) {
+  const [tab, setTab] = useState("overview");
+  const [date, setDate] = useState(todayISO());
+  const myTeam = teamOfUser(db.teams, me.id);
+  if (!myTeam) {
+    return (
+      <div className="content">
+        <div className="page-head"><h3>My team</h3></div>
+        <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="You're not on a team yet" text="Once a super admin adds you to a team, you'll see your teammates' attendance, tasks and a private team chat here." /></div>
+      </div>
+    );
+  }
+  const amLead = myTeam.leadId === me.id;
+  const members = teamRosterIds(myTeam).map((id) => team.find((p) => p.id === id)).filter(Boolean);
+  const month = new Date();
+  const memberStats = (p) => {
+    const open = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status !== "Completed").length;
+    const done = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status === "Completed").length;
+    const presentDays = new Set(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month)).map((a) => a.date)).size;
+    const hours = round2(sumHours(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month))));
+    return { open, done, presentDays, hours };
+  };
+  const teamTasks = db.tasks
+    .filter((t) => members.some((p) => taskAssignees(t).includes(p.name)))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["tasks", "Tasks"], ["chat", "Team chat"]];
+  return (
+    <div className="content">
+      <div className="page-head">
+        <h3>{myTeam.name}</h3>
+        <span className="badge accent">{amLead ? "You lead this team" : "Member"}</span>
+        <span className="spacer" />
+        <span className="hint-line">{members.length} member{members.length !== 1 ? "s" : ""}</span>
+      </div>
+      <div className="toolbar"><div className="seg">{TABS.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</div></div>
+
+      {tab === "overview" && (
+        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
+          {members.map((p) => {
+            const s = memberStats(p);
+            const att = attStatus(db, p.id, todayISO());
+            return (
+              <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className="who-cell">
+                  <Avatar name={p.name} url={p.photo_url} size={32} />
+                  <span style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{p.name}{p.id === myTeam.leadId ? <span className="badge accent" style={{ marginLeft: 6 }}>Lead</span> : ""}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></span>
+                  <span className={"badge " + att.tone}>{att.label}</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
+                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Open tasks</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.open}</div></div>
+                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Completed</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.done}</div></div>
+                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Days present</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.presentDays}</div></div>
+                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Hours (mo)</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.hours}</div></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab === "attendance" && (
+        <div className="card">
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>Attendance</span>
+            <input className="input" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} style={{ width: "auto" }} />
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead><tr><th>Member</th><th>{fmtDate(date)}</th><th>Check in</th><th>Check out</th><th className="num-cell">Days this month</th></tr></thead>
+              <tbody>{members.map((p) => {
+                const st = attStatus(db, p.id, date);
+                const a = attendanceFor(db, p.id, date);
+                const presentDays = new Set(db.attendance.filter((x) => x.userId === p.id && sameMonth(x.date, month)).map((x) => x.date)).size;
+                return (
+                  <tr key={p.id}>
+                    <td><span className="who-cell"><Avatar name={p.name} url={p.photo_url} size={26} /><span style={{ fontWeight: 600 }}>{p.name}</span></span></td>
+                    <td><span className={"badge " + st.tone}>{st.label}</span></td>
+                    <td className="mono">{a ? clockTime(a.checkIn) : "—"}</td>
+                    <td className="mono">{a && a.checkOut ? clockTime(a.checkOut) : "—"}</td>
+                    <td className="num-cell mono">{presentDays}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "tasks" && (
+        <div className="card">
+          {teamTasks.length === 0 ? <Empty icon={<ListTodo size={22} color="var(--muted)" />} title="No tasks for the team yet" text="Tasks assigned to anyone on the team show up here." />
+            : teamTasks.map((t) => (
+              <div key={t.id} className="item-row">
+                <div className="item-main">
+                  <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                    {t.num != null && <span className="badge mono" style={{ fontWeight: 700 }}>#{t.num}</span>}
+                    <span className="item-title">{t.title}</span>
+                    <span className={"badge " + (t.status === "Completed" ? "pos" : t.status === "In Progress" ? "accent" : "pri")}>{t.status}</span>
+                    {t.priority && <span className={"badge " + priorityTone(t.priority)}>{t.priority}</span>}
+                  </div>
+                  <div className="item-meta" style={{ marginTop: 6 }}>
+                    <span>{t.assignedBy} → <b>{assigneeText(t)}</b></span>
+                    {t.due && <span><CalendarClock size={12} style={{ verticalAlign: -2 }} /> {fmtDate(t.due)}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {tab === "chat" && <TeamChat db={db} mutate={mutate} me={me} members={members} teamId={myTeam.id} onRefresh={onRefresh} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TESTING MODULE (website / app / software QA)
+══════════════════════════════════════════════════════════════════════ */
+const testProgress = (s) => {
+  const list = Array.isArray(s.checklist) ? s.checklist : [];
+  return { done: list.filter((i) => i.done).length, total: list.length };
+};
+const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" : "pri");
+
+// Create / edit a test session (admin). Seeds a checklist from one-item-per-line
+// text and links the session to a project so its history belongs to that project.
+function TestSessionForm({ initial, projects = [], team = [], onSave, onClose }) {
+  const [f, setF] = useState(() => ({
+    title: "", projectId: "", projectName: "", assignedTo: "", assignedToId: "", notes: "",
+    checklistText: (Array.isArray(initial?.checklist) ? initial.checklist.map((i) => i.text).join("\n") : ""),
+    ...initial,
+  }));
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const [err, setErr] = useState("");
+  const roster = (team || []).filter((p) => p.role !== "client" && p.active !== false);
+  const save = () => {
+    if (!f.title.trim()) { setErr("Give the test session a title."); return; }
+    const proj = projects.find((p) => p.id === f.projectId);
+    const tester = roster.find((p) => p.id === f.assignedToId);
+    // preserve existing checklist state; only add/rename from the text box
+    const prev = Array.isArray(initial?.checklist) ? initial.checklist : [];
+    const lines = f.checklistText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const checklist = lines.map((text, i) => {
+      const match = prev[i] && prev[i].text === text ? prev[i] : prev.find((p) => p.text === text);
+      return match || { id: uid(), text, done: false, note: "", by: "", at: 0 };
+    });
+    onSave({
+      ...initial, id: initial?.id || uid(),
+      title: f.title.trim(),
+      projectId: proj ? proj.id : (f.projectId || ""),
+      projectName: proj ? proj.name : (f.projectName || ""),
+      assignedTo: tester ? tester.name : (f.assignedTo || ""),
+      assignedToId: tester ? tester.id : (f.assignedToId || ""),
+      checklist,
+      bugs: Array.isArray(initial?.bugs) ? initial.bugs : [],
+      result: initial?.result || "Pending",
+      notes: f.notes.trim(),
+      createdAt: initial?.createdAt || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <Modal title={initial?.id ? "Edit test session" : "New test session"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={16} />Save session</button></>}>
+      <Field label="Title" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. AllBee App — release check" /></Field>
+      <div className="grid2">
+        <Field label="Project" hint="Testing history belongs to this project.">
+          {projects.length ? (
+            <select className="select" value={f.projectId} onChange={(e) => set("projectId", e.target.value)}>
+              <option value="">— General / no project —</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          ) : (
+            <input className="input" value={f.projectName} onChange={(e) => set("projectName", e.target.value)} placeholder="Project name" />
+          )}
+        </Field>
+        <Field label="Assign tester">
+          <select className="select" value={f.assignedToId} onChange={(e) => set("assignedToId", e.target.value)}>
+            <option value="">— Unassigned —</option>
+            {roster.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Checklist" hint="One item per line — add as many as you like.">
+        <textarea className="textarea" style={{ minHeight: 130 }} value={f.checklistText} onChange={(e) => set("checklistText", e.target.value)}
+          placeholder={"Login works\nDashboard works\nTasks working\nNotifications working\nMobile responsive\nSearch working\nDark mode working\nAttendance working"} />
+      </Field>
+      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything the tester should know…" /></Field>
+    </Modal>
+  );
+}
+
+// Full session view: checklist, bug reports with screenshots, result. Looks up
+// the live session from db by id so edits from either partner stay in sync.
+function TestDetail({ sessionId, db, mutate, isAdmin, me, currentUser, team, openModal, onBack, onDelete }) {
+  const s = (db.testing || []).find((x) => x.id === sessionId);
+  const [newItem, setNewItem] = useState("");
+  const [bugText, setBugText] = useState("");
+  const [bugImgs, setBugImgs] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [imgErr, setImgErr] = useState("");
+  const [notes, setNotes] = useState(s?.notes || "");
+  const fileRef = useRef(null);
+
+  if (!s) {
+    return (
+      <div className="content">
+        <button className="backlink" onClick={onBack}><ArrowLeft size={15} />Back to testing</button>
+        <div className="card"><Empty icon={<ClipboardCheck size={22} color="var(--muted)" />} title="Session not found" text="It may have been deleted. Check Recently deleted to restore it." /></div>
+      </div>
+    );
+  }
+
+  const isTester = s.assignedToId === me.id || (!!currentUser && s.assignedTo === currentUser);
+  const canAct = isAdmin || isTester;   // tick items, add notes/bugs, set result
+  const checklist = Array.isArray(s.checklist) ? s.checklist : [];
+  const bugs = Array.isArray(s.bugs) ? s.bugs : [];
+  const prog = testProgress(s);
+  const patch = (fn, audit) => mutate((d) => ({ ...d, testing: (d.testing || []).map((x) => x.id === s.id ? fn(x) : x) }), audit || null);
+  const A = (action) => ({ action, module: "Testing" });
+
+  const toggle = (id) => {
+    if (!canAct) return;
+    patch((x) => ({ ...x, checklist: (x.checklist || []).map((i) => i.id === id ? { ...i, done: !i.done, by: currentUser, at: Date.now() } : i) }), A(`updated the checklist on "${s.title}"`));
+  };
+  const setItemNote = (id, note) => patch((x) => ({ ...x, checklist: (x.checklist || []).map((i) => i.id === id ? { ...i, note } : i) }));
+  const addItem = () => { const t = newItem.trim(); if (!t || !isAdmin) return; patch((x) => ({ ...x, checklist: [...(x.checklist || []), { id: uid(), text: t, done: false, note: "", by: "", at: 0 }] }), A(`added a checklist item to "${s.title}"`)); setNewItem(""); };
+  const removeItemRow = (id) => { if (!isAdmin) return; patch((x) => ({ ...x, checklist: (x.checklist || []).filter((i) => i.id !== id) }), A(`updated the checklist on "${s.title}"`)); };
+  const setResult = (r) => { if (!canAct) return; haptic(r === "Passed" ? [10, 40, 10] : 12); patch((x) => ({ ...x, result: r }), A(r === "Pending" ? `reset test "${s.title}" to Pending` : `marked test "${s.title}" as ${r}`)); };
+
+  const pickImages = async (e) => {
+    const files = Array.from(e.target.files || []); if (!files.length) return;
+    setImgErr("");
+    const room = TEST_MAX_IMAGES - bugImgs.length;
+    if (room <= 0) { setImgErr(`Up to ${TEST_MAX_IMAGES} screenshots per report.`); if (e.target) e.target.value = ""; return; }
+    setBusy(true);
+    try {
+      for (const file of files.slice(0, room)) {
+        if (fileKind(file) !== "image") { setImgErr("Only image files can be attached here."); continue; }
+        const up = await uploadAttachment(file);
+        setBugImgs((prev) => prev.length >= TEST_MAX_IMAGES ? prev : [...prev, { url: up.url, name: up.name, path: up.path || storagePathFromUrl(up.url), at: Date.now() }]);
+      }
+    } catch (er) { setImgErr(er.message || "Upload failed."); }
+    finally { setBusy(false); if (e.target) e.target.value = ""; }
+  };
+  const addBug = () => {
+    const t = bugText.trim(); if ((!t && !bugImgs.length) || !canAct) return;
+    const bug = { id: uid(), text: t, images: bugImgs, by: currentUser, byId: me.id, at: Date.now() };
+    patch((x) => ({ ...x, bugs: [...(x.bugs || []), bug] }), A(`reported an issue on "${s.title}"`));
+    setBugText(""); setBugImgs([]); setImgErr("");
+  };
+  const removeBug = (bug) => {
+    if (!(isAdmin || bug.byId === me.id)) return;
+    // best-effort remove the stored screenshots so they don't linger
+    const paths = (bug.images || []).map((im) => im.path || storagePathFromUrl(im.url)).filter(Boolean);
+    if (paths.length) { try { supabase.storage.from("attachments").remove(paths); } catch { /* ignore */ } }
+    patch((x) => ({ ...x, bugs: (x.bugs || []).filter((b) => b.id !== bug.id) }), A(`removed an issue from "${s.title}"`));
+  };
+  const saveNotes = () => { if (notes !== (s.notes || "")) patch((x) => ({ ...x, notes })); };
+
+  return (
+    <div className="content">
+      <button className="backlink" onClick={onBack}><ArrowLeft size={15} />Back to testing</button>
+      <div className="detail-head">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3>{s.title}</h3>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+            {s.projectName ? <span className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><FolderKanban size={12} />{s.projectName}</span> : <span className="tag">General</span>}
+            <span className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><User size={12} />{s.assignedTo || "Unassigned"}</span>
+            <span className={"badge " + testResultTone(s.result)}>{s.result || "Pending"}</span>
+          </div>
+        </div>
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="btn sm" onClick={() => openModal({ type: "testSession", initial: s })}><Pencil size={13} />Edit</button>
+            <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete test session?", body: `Delete "${s.title}"? Its checklist and reports will be removed.`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => { onDelete(s); onBack(); } })}><Trash2 size={13} />Delete</button>
+          </div>
+        )}
+      </div>
+
+      {/* result controls */}
+      <div className="card stat" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div className="lbl"><ClipboardCheck size={14} /> Checklist progress</div>
+          <div className="num mono" style={{ fontSize: 22 }}>{prog.done}/{prog.total}</div>
+        </div>
+        <div style={{ minWidth: 180, flex: 1 }}>
+          <div className="progress-track"><div className="progress-fill" style={{ width: (prog.total ? Math.round((prog.done / prog.total) * 100) : 0) + "%", background: s.result === "Failed" ? "var(--neg)" : s.result === "Passed" ? "var(--pos)" : "var(--primary)" }} /></div>
+        </div>
+        {canAct && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button className={"btn sm " + (s.result === "Passed" ? "primary" : "")} onClick={() => setResult("Passed")}><CheckCircle2 size={14} />Pass</button>
+            <button className={"btn sm " + (s.result === "Failed" ? "danger" : "")} onClick={() => setResult("Failed")}><XCircle size={14} />Fail</button>
+            {s.result !== "Pending" && <button className="btn sm" onClick={() => setResult("Pending")}><RotateCcw size={13} />Reset</button>}
+          </div>
+        )}
+      </div>
+
+      {/* checklist */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><ListTodo size={16} />Checklist</div>
+        <div style={{ padding: "6px 16px 12px" }}>
+          {checklist.length === 0 ? <div className="hint-line" style={{ padding: "14px 0" }}>No checklist items yet.{isAdmin ? " Add the first below." : ""}</div>
+            : checklist.map((i) => (
+              <div key={i.id} className="check-item">
+                <div className={"check-box" + (i.done ? " done" : "")} onClick={() => toggle(i.id)} title={canAct ? "Toggle" : "Read-only"} style={{ cursor: canAct ? "pointer" : "default" }}>{i.done && <Check size={14} />}</div>
+                <div className="check-main" style={{ flex: 1, minWidth: 0 }}>
+                  <div className={"check-txt" + (i.done ? " done" : "")}>{i.text}</div>
+                  {canAct
+                    ? <input className="input" style={{ marginTop: 6, fontSize: 13, padding: "6px 10px" }} value={i.note || ""} onChange={(e) => setItemNote(i.id, e.target.value)} placeholder="Add a note (e.g. crashes on Samsung A34)…" />
+                    : (i.note ? <div className="hint-line" style={{ marginTop: 4 }}>{i.note}</div> : null)}
+                  {i.done && i.by && <div className="hint-line" style={{ marginTop: 4, fontSize: 11 }}>Tested by {i.by} · {fmtTime(i.at)}</div>}
+                </div>
+                {isAdmin && <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => removeItemRow(i.id)} title="Remove item"><X size={13} /></button>}
+              </div>
+            ))}
+          {isAdmin && (
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <input className="input" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addItem(); }} placeholder="Add a checklist item…" />
+              <button className="btn" onClick={addItem}><Plus size={15} />Add</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* bug reports */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Bug size={16} />Issues & bug reports <span className="hint-line" style={{ fontWeight: 500, marginLeft: "auto" }}>Screenshots auto-delete after {TEST_IMAGE_TTL_DAYS} days</span></div>
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {bugs.length === 0 && <div className="hint-line">No issues reported yet.</div>}
+          {bugs.map((b) => (
+            <div key={b.id} className="bug-card">
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {b.text && <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{b.text}</div>}
+                  <div className="hint-line" style={{ marginTop: 4, fontSize: 11 }}>{b.by || "—"} · {fmtTime(b.at)}</div>
+                </div>
+                {(isAdmin || b.byId === me.id) && <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => removeBug(b)} title="Delete report"><Trash2 size={13} /></button>}
+              </div>
+              {(b.images || []).length > 0 && (
+                <div className="thumb-row">
+                  {(b.images || []).map((im, idx) => <img key={idx} className="thumb" src={im.url} alt={im.name || "screenshot"} onClick={() => window.open(im.url, "_blank", "noreferrer")} />)}
+                </div>
+              )}
+            </div>
+          ))}
+          {canAct && (
+            <div style={{ borderTop: bugs.length ? "1px solid var(--border)" : "none", paddingTop: bugs.length ? 12 : 0 }}>
+              <textarea className="textarea" style={{ minHeight: 64 }} value={bugText} onChange={(e) => setBugText(e.target.value)} placeholder="Describe the issue…" />
+              {imgErr && <div className="field-err" style={{ marginTop: 6 }}><AlertTriangle size={13} />{imgErr}</div>}
+              <div className="thumb-row" style={{ marginTop: 10 }}>
+                {bugImgs.map((im, idx) => (
+                  <div key={idx} style={{ position: "relative" }}>
+                    <img className="thumb" src={im.url} alt={im.name} />
+                    <button className="iconbtn" style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%" }} onClick={() => setBugImgs((p) => p.filter((_, i) => i !== idx))}><X size={12} /></button>
+                  </div>
+                ))}
+                {bugImgs.length < TEST_MAX_IMAGES && (
+                  <div className="thumb-add" onClick={() => !busy && fileRef.current?.click()} title="Add screenshot">{busy ? <RefreshCw size={18} className="spin" /> : <ImageIcon size={18} />}</div>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" multiple onChange={pickImages} style={{ display: "none" }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                <button className="btn primary" onClick={addBug} disabled={busy || (!bugText.trim() && !bugImgs.length)}><Send size={14} />Add report</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* session notes */}
+      <div className="card stat">
+        <div className="lbl" style={{ marginBottom: 8 }}><FileText size={14} /> Session notes</div>
+        {canAct
+          ? <textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={saveNotes} placeholder="Overall notes for this test session…" />
+          : <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5, color: s.notes ? "var(--ink)" : "var(--muted)" }}>{s.notes || "No notes."}</div>}
+      </div>
+    </div>
+  );
+}
+
+// Master list + dashboard. Admins see and create every session; a tester sees
+// the sessions assigned to them.
+function Testing({ db, mutate, openModal, removeItem, isAdmin, me, currentUser, team }) {
+  const [openId, setOpenId] = useState(null);
+  const all = [...(db.testing || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = isAdmin ? all : all.filter((s) => s.assignedToId === me.id || (!!currentUser && s.assignedTo === currentUser));
+  const del = (s) => removeItem("testing", s, { name: s.title, audit: `deleted test session "${s.title}"` });
+
+  if (openId) return <TestDetail key={openId} sessionId={openId} db={db} mutate={mutate} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} openModal={openModal} onBack={() => setOpenId(null)} onDelete={del} />;
+
+  const passed = list.filter((s) => s.result === "Passed").length;
+  const failed = list.filter((s) => s.result === "Failed").length;
+  const pending = list.filter((s) => (s.result || "Pending") === "Pending").length;
+
+  return (
+    <div className="content">
+      <div className="page-head"><h3>Testing</h3><span className="spacer" />{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "testSession" })}><Plus size={16} />New test session</button>}</div>
+
+      <div className="sumrow">
+        <div className="card"><div className="k"><ClipboardCheck size={14} /> Total tests</div><div className="v mono">{list.length}</div></div>
+        <div className="card"><div className="k"><CheckCircle2 size={14} color="var(--pos)" /> Passed</div><div className="v mono pos-txt">{passed}</div></div>
+        <div className="card"><div className="k"><XCircle size={14} color="var(--neg)" /> Failed</div><div className="v mono neg-txt">{failed}</div></div>
+        <div className="card"><div className="k"><Hourglass size={14} /> Pending</div><div className="v mono">{pending}</div></div>
+      </div>
+
+      <div className="card">
+        {list.length === 0 ? (
+          <Empty icon={<ClipboardCheck size={22} color="var(--muted)" />} title={isAdmin ? "No test sessions yet" : "Nothing assigned to you"} text={isAdmin ? "Create a session, add a checklist, and assign a tester to start QA on a project." : "Test sessions assigned to you will show up here."} action={isAdmin ? <button className="btn primary" onClick={() => openModal({ type: "testSession" })}><Plus size={16} />New test session</button> : null} />
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead><tr><th>Session</th><th>Project</th><th>Tester</th><th>Checklist</th><th>Result</th><th></th></tr></thead>
+              <tbody>
+                {list.map((s) => {
+                  const p = testProgress(s);
+                  const nBugs = (Array.isArray(s.bugs) ? s.bugs : []).length;
+                  return (
+                    <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => setOpenId(s.id)}>
+                      <td><div style={{ fontWeight: 600 }}>{s.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{fmtDate(new Date(s.createdAt || Date.now()).toISOString().slice(0, 10))}{nBugs ? ` · ${nBugs} issue${nBugs > 1 ? "s" : ""}` : ""}</div></td>
+                      <td>{s.projectName ? <span className="tag">{s.projectName}</span> : <span className="hint-line">—</span>}</td>
+                      <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(s.assignedTo || "?"), width: 24, height: 24, fontSize: 10 }}>{(s.assignedTo || "?")[0]}</span>{s.assignedTo || "Unassigned"}</span></td>
+                      <td className="mono">{p.done}/{p.total}</td>
+                      <td><span className={"badge " + testResultTone(s.result)}>{s.result || "Pending"}</span></td>
+                      <td onClick={(e) => e.stopPropagation()}><div className="row-actions">
+                        <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => setOpenId(s.id)} title="Open"><ChevronRight size={15} /></button>
+                        {isAdmin && <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete test session?", body: `Delete "${s.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>}
+                      </div></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   UNIVERSAL GLOBAL SEARCH (Ctrl / ⌘ + K)
+══════════════════════════════════════════════════════════════════════ */
+// Deep-collect every string value in a record (skipping passwords) so search
+// scans titles, names, notes, descriptions, comments, checklist items, etc.
+function collectText(v, out) {
+  out = out || [];
+  if (v == null) return out;
+  if (typeof v === "string") { out.push(v); return out; }
+  if (Array.isArray(v)) { for (const x of v) collectText(x, out); return out; }
+  if (typeof v === "object") { for (const k of Object.keys(v)) { if (k === "password") continue; collectText(v[k], out); } return out; }
+  return out;
+}
+const searchHay = (obj) => collectText(obj).join(" ").toLowerCase();
+const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
+const searchEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function SearchHighlight({ text, q }) {
+  const toks = (q || "").trim().split(/\s+/).filter(Boolean).map(searchEscape);
+  if (!toks.length || !text) return <>{text}</>;
+  const re = new RegExp(`(${toks.join("|")})`, "ig");
+  const parts = String(text).split(re);
+  const test = new RegExp(`^(${toks.join("|")})$`, "i");
+  return <>{parts.map((p, i) => (test.test(p) ? <mark key={i} className="hl">{p}</mark> : <span key={i}>{p}</span>))}</>;
+}
+
+// Each source maps a collection to a route (gated by the user's permissions),
+// a display title, and where relevant an item-level visibility filter.
+const SEARCH_SOURCES = [
+  { coll: "projects", route: "projects", label: "Projects", title: (x) => x.name, sub: (x) => x.stage, user: (x) => x.ownerName || x.owner, date: (x) => x.start },
+  { coll: "inhouse", route: "inhouse", label: "In-house projects", title: (x) => x.name, sub: (x) => x.stage, user: (x) => x.owner, date: (x) => x.start },
+  { coll: "leads", route: "leads", label: "Leads", title: (x) => x.name, sub: (x) => x.stage, user: (x) => x.owner, date: (x) => x.date },
+  { coll: "clients", route: "clients", label: "Clients", title: (x) => x.name, sub: (x) => x.status, user: (x) => x.owner, date: (x) => msToISO(x.createdAt) },
+  { coll: "quotations", route: "quotations", label: "Quotations", title: (x) => x.title || x.client, sub: (x) => x.status, user: (x) => x.owner, date: (x) => x.date },
+  { coll: "invoices", route: "invoices", label: "Invoices", title: (x) => (x.number || "Invoice") + " · " + (x.client || ""), sub: (x) => x.status, date: (x) => x.date },
+  { coll: "tasks", route: "tasks", label: "Tasks", title: (x) => x.title, sub: (x) => x.status, user: (x) => assigneeText(x), date: (x) => x.due || "", nav: (x) => x.id },
+  { coll: "updates", route: "updates", label: "Daily updates", title: (x) => (x.userName || "Update") + " — daily update", user: (x) => x.userName, date: (x) => x.date || msToISO(x.createdAt) },
+  { coll: "concepts", route: "concepts", label: "Concepts", title: (x) => x.title, date: (x) => x.date },
+  { coll: "knowledge", route: "knowledge", label: "Knowledge base", title: (x) => x.title, sub: (x) => x.category, date: (x) => x.date },
+  { coll: "documents", route: "documents", label: "Documents", title: (x) => x.title, sub: (x) => x.category, user: (x) => x.owner, filter: (x, c) => c.isAdmin || x.audience === "internal" || (x.audience === "members" && (x.userIds || []).includes(c.me.id)) || x.ownerId === c.me.id },
+  { coll: "testing", route: "testing", label: "Testing", title: (x) => x.title, sub: (x) => x.projectName, user: (x) => x.assignedTo, date: (x) => msToISO(x.createdAt), filter: (x, c) => c.isAdmin || x.assignedToId === c.me.id || x.assignedTo === c.me.name },
+  { coll: "announcements", route: "announcements", label: "Announcements", title: (x) => x.title, date: (x) => msToISO(x.createdAt) },
+  { coll: "chat", route: "chat", label: "Team chat", title: (x) => (x.userName || "Message") + ": " + String(x.text || "").slice(0, 60), user: (x) => x.userName, date: (x) => msToISO(x.at), filter: (x) => !x.deleted },
+  { coll: "transactions", route: "accounts", label: "Accounts", title: (x) => (x.project || x.client || x.category || "Entry") + " · " + money(x.amount), sub: (x) => (x.kind === "income" ? "Income" : "Expense"), date: (x) => x.date },
+  { coll: "withdrawals", route: "withdrawals", label: "Withdrawals", title: (x) => "Withdrawal " + money(x.amount) + " · " + (x.user || ""), sub: (x) => x.status, date: (x) => x.date },
+  { coll: "planned", route: "planned", label: "Planned expenses", title: (x) => x.title, sub: (x) => x.category, date: (x) => x.nextDue },
+  { coll: "rewards", route: "rewards", label: "Rewards", title: (x) => (x.userName || "") + " · " + (x.kind || ""), date: (x) => x.date },
+  { coll: "sheets", route: "sheets", label: "Sheets", title: (x) => x.title, sub: (x) => x.category },
+  { coll: "prompts", route: "prompts", label: "Prompts", title: (x) => x.title, sub: (x) => x.category },
+  { coll: "vault", route: "vault", label: "Passwords", title: (x) => x.service, sub: (x) => x.category },
+  { coll: "students", route: "courses", label: "Courses", title: (x) => x.name, sub: (x) => x.course, date: (x) => x.joinDate },
+  { coll: "marketing", route: "marketing", label: "Marketing", title: (x) => x.client, sub: (x) => x.plan, date: (x) => x.startDate },
+  { coll: "portal_posts", route: "portal-posts", label: "Client updates", title: (x) => x.title, date: (x) => msToISO(x.createdAt) },
+  { coll: "notifications", route: "notifications", label: "Notifications", title: (x) => x.title, date: (x) => msToISO(x.createdAt), filter: (x, c) => notifVisibleTo(x, c.profile) },
+];
+
+function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask, onClose }) {
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const inputRef = useRef(null);
+  const isAdmin = isAdminRole(role);
+  const allowKey = (allowedRoutes || []).join(",");
+
+  useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 30); return () => clearTimeout(t); }, []);
+
+  const index = useMemo(() => {
+    const allow = new Set(allowedRoutes || []);
+    const ctx = { isAdmin, me, profile };
+    const out = [];
+    // modules (navigation)
+    for (const [key, label, , tag] of NAV) {
+      if (!allow.has(key)) continue;
+      out.push({ id: "nav:" + key, module: "Navigation", route: key, title: label, sub: "", user: "", dateISO: "", path: `Home > ${label}`, text: (label + " " + key).toLowerCase(), navTask: null });
+    }
+    // people
+    if (allow.has("team")) {
+      for (const p of team) {
+        if (p.role === "client") continue;
+        out.push({ id: "user:" + p.id, module: "Team", route: "team", title: p.name, sub: ROLE_LABEL[p.role] || "", user: p.name, dateISO: "", path: `${ROLE_LABEL[p.role] || "Team"} > ${p.name}`, text: [p.name, p.email, p.designation, p.username, ROLE_LABEL[p.role]].filter(Boolean).join(" ").toLowerCase(), navTask: null });
+      }
+    }
+    // data collections
+    for (const s of SEARCH_SOURCES) {
+      if (!allow.has(s.route)) continue;
+      for (const x of (db[s.coll] || [])) {
+        if (s.filter && !s.filter(x, ctx)) continue;
+        const title = (s.title ? s.title(x) : "") || "—";
+        out.push({ id: s.coll + ":" + (x.id || Math.random()), module: s.label, route: s.route, title, sub: s.sub ? (s.sub(x) || "") : "", user: s.user ? (s.user(x) || "") : "", dateISO: s.date ? (s.date(x) || "") : "", path: `${s.label} > ${title}`, text: searchHay(x), navTask: s.nav ? s.nav(x) : null });
+      }
+    }
+    return out;
+  }, [db, team, allowKey, isAdmin, me.id, profile]);
+
+  const results = useMemo(() => {
+    const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!toks.length) {
+      // no query → show the modules as quick navigation
+      return index.filter((r) => r.module === "Navigation").slice(0, 12);
+    }
+    const scored = [];
+    for (const r of index) {
+      if (!toks.every((t) => r.text.includes(t))) continue;
+      const tl = r.title.toLowerCase();
+      let score = 0;
+      if (tl === toks.join(" ")) score += 100;
+      if (toks.every((t) => tl.includes(t))) score += 40;         // all terms in the title
+      if (tl.startsWith(toks[0])) score += 12;
+      if (r.module === "Navigation") score += 6;
+      scored.push({ r, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 40).map((x) => x.r);
+  }, [q, index]);
+
+  useEffect(() => { setSel(0); }, [q]);
+  const curSel = Math.min(sel, Math.max(0, results.length - 1));
+
+  const openRec = (r) => { if (!r) return; onClose(); if (r.navTask) openTask(r.navTask); else go(r.route); };
+  const onKey = (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); openRec(results[curSel]); }
+    else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+  };
+
+  // group results by module, preserving overall (scored) order and a flat index
+  // for keyboard selection.
+  const groups = [];
+  const seen = new Map();
+  let flat = 0;
+  const flatOf = new Map();
+  for (const r of results) {
+    let g = seen.get(r.module);
+    if (!g) { g = { module: r.module, items: [] }; seen.set(r.module, g); groups.push(g); }
+    g.items.push(r); flatOf.set(r.id, flat++);
+  }
+  const routeIcon = (r) => (NAV.find((n) => n[0] === r)?.[2]) || FileText;
+
+  return (
+    <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="cmdk" onKeyDown={onKey}>
+        <div className="cmdk-input">
+          <Search size={20} color="var(--muted)" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search modules, people, projects, tasks, notes…" />
+          <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} title="Close"><X size={16} /></button>
+        </div>
+        <div className="cmdk-results">
+          {results.length === 0 ? (
+            <div className="cmdk-empty">No matches for “{q}”.</div>
+          ) : groups.map((g) => (
+            <div key={g.module}>
+              <div className="cmdk-group">{g.module}</div>
+              {g.items.map((r) => {
+                const Icon = routeIcon(r.route);
+                const fi = flatOf.get(r.id);
+                return (
+                  <div key={r.id} className={"cmdk-item" + (fi === curSel ? " on" : "")} onMouseEnter={() => setSel(fi)} onMouseDown={(e) => { e.preventDefault(); openRec(r); }}>
+                    <div className="cmdk-ic"><Icon size={16} /></div>
+                    <div className="cmdk-main">
+                      <div className="cmdk-title"><SearchHighlight text={r.title} q={q} /></div>
+                      <div className="cmdk-path">{r.path}{r.user ? ` · ${r.user}` : ""}</div>
+                    </div>
+                    <div className="cmdk-meta">
+                      {r.dateISO && <span className="hint-line" style={{ fontSize: 11 }}>{fmtDate(r.dateISO)}</span>}
+                      <span className="tag">{r.module}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="cmdk-foot">
+          <span><span className="k">↑</span> <span className="k">↓</span> Navigate</span>
+          <span><span className="k">↵</span> Open</span>
+          <span><span className="k">Esc</span> Close</span>
+          <span style={{ marginLeft: "auto" }}>Results respect your access</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   APN — ALLBEE PARTNER NETWORK  (statewide commission-based partner portal)
+   A logically separate subsystem: its own tables (apn_*), its own portal
+   surface, its own permissions. Partners are independent, commission-only —
+   never employees — and never touch internal accounts, balances, or the vault.
+══════════════════════════════════════════════════════════════════════ */
+
+const APN_ID_PREFIX = "APN-TN-";
+const apnPadId = (n) => APN_ID_PREFIX + String(n).padStart(4, "0");
+const apnLeadId = (n) => "APN-L-" + String(n).padStart(4, "0");
+
+const TN_DISTRICTS = ["Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri", "Dindigul", "Erode", "Kallakurichi", "Kancheepuram", "Kanniyakumari", "Karur", "Krishnagiri", "Madurai", "Mayiladuthurai", "Nagapattinam", "Namakkal", "Nilgiris", "Perambalur", "Pudukkottai", "Ramanathapuram", "Ranipet", "Salem", "Sivaganga", "Tenkasi", "Thanjavur", "Theni", "Thoothukudi", "Tiruchirappalli", "Tirunelveli", "Tirupathur", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore", "Viluppuram", "Virudhunagar"];
+
+const APN_SERVICES = [["website", "Website Development"], ["marketing", "Digital Marketing"], ["course", "Course Admission"]];
+const APN_SERVICE_LABEL = { website: "Website", marketing: "Digital marketing", course: "Course" };
+
+// Partner levels — commission rate is a function of completed projects.
+const APN_LEVELS = [
+  { key: 0, name: "Trainee Partner", rate: 10, min: 0 },
+  { key: 1, name: "Active Partner", rate: 15, min: 1 },
+  { key: 2, name: "Growth Partner", rate: 20, min: 50 },
+  { key: 3, name: "Elite Partner", rate: 25, min: 100 },
+];
+const apnLevelForCompleted = (n) => {
+  const c = Number(n) || 0;
+  if (c >= 100) return APN_LEVELS[3];
+  if (c >= 50) return APN_LEVELS[2];
+  if (c >= 1) return APN_LEVELS[1];
+  return APN_LEVELS[0];
+};
+// Rate for the NEXT project a partner completes (prior completions decide level),
+// so the first paid project earns Trainee 10%, the 2nd–49th earn Active 15%, etc.
+const apnRateForPrior = (prior) => apnLevelForCompleted(Number(prior) || 0).rate;
+const apnNextLevel = (n) => {
+  const c = Number(n) || 0;
+  if (c >= 100) return null;
+  const next = c >= 50 ? APN_LEVELS[3] : c >= 1 ? APN_LEVELS[2] : APN_LEVELS[1];
+  return { next, remaining: Math.max(0, next.min - c), pct: Math.min(100, Math.round((c / next.min) * 100)) };
+};
+
+const APN_LEAD_STATUS = ["Submitted", "Approved", "Duplicate", "Invalid", "Fake", "Quotation Sent", "Converted", "Lost"];
+const APN_LEAD_REJECTED = new Set(["Duplicate", "Invalid", "Fake", "Lost"]);
+const apnLeadTone = (s) => (s === "Converted" ? "pos" : APN_LEAD_REJECTED.has(s) ? "neg" : s === "Approved" || s === "Quotation Sent" ? "pri" : "");
+
+const APN_COMM_STATUS = ["Pending", "Approved", "Payable", "Paid"];
+const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : s === "Approved" ? "pri" : "");
+// Commissions are paid on the 5th of the following month — never immediately.
+function apnPayoutDate(fromISO) {
+  const d = fromISO ? new Date(fromISO) : new Date();
+  return new Date(d.getFullYear(), d.getMonth() + 1, 5).toISOString().slice(0, 10);
+}
+
+const APN_TARGET_METRICS = [["leads", "Leads"], ["conversions", "Conversions"], ["website", "Website projects"], ["course", "Course admissions"], ["marketing", "Marketing projects"]];
+const apnMetricLabel = (m) => (APN_TARGET_METRICS.find((x) => x[0] === m)?.[1]) || "Leads";
+
+// Approximate quotation pricing — a starting point the partner can edit.
+const APN_PRICE = {
+  website: { base: 15000, baseLabel: "Website (starter)", options: [["ecommerce", "E-commerce store", 12000], ["seo", "SEO setup", 5000], ["extra", "Extra pages / sections", 4000], ["maintenance", "Annual maintenance", 6000]] },
+  marketing: { base: 8000, baseLabel: "Digital marketing (monthly)", options: [["ads", "Paid ad management", 5000], ["content", "Content creation", 4000], ["social", "Social media handling", 3000]] },
+  course: { base: 5000, baseLabel: "Course admission", options: [["advanced", "Advanced module", 3000], ["certification", "Certification", 1500]] },
+};
+
+/* ── partner lookups ─────────────────────────────────────────────────── */
+const apnMe = (db, pid) => (db.apn_users || []).find((u) => u.id === pid) || null;
+const apnUnlocked = (u) => (u && u.unlocked && typeof u.unlocked === "object" ? u.unlocked : {});
+
+/* ── attendance & activity ───────────────────────────────────────────── */
+const APN_INACTIVE_DAYS = 7;
+const apnCheckedInToday = (db, pid) => (db.apn_attendance || []).some((a) => a.partnerId === pid && a.date === todayISO());
+const apnAttendanceBase = (u) => Math.max(u?.lastCheckIn || 0, u?.reactivatedAt || 0, u?.approvedAt || 0, u?.createdAt || 0);
+function apnAutoInactive(u) {
+  if (!u || u.status !== "active") return false;
+  const base = apnAttendanceBase(u);
+  return !!base && (Date.now() - base) > APN_INACTIVE_DAYS * 86400000;
+}
+// pending / active / inactive / rejected — auto-inactive after 7 days with no check-in.
+const apnEffectiveStatus = (u) => {
+  if (!u) return "pending";
+  if (u.status === "active" && apnAutoInactive(u)) return "inactive";
+  return u.status || "pending";
+};
+function apnAttendanceStreak(db, pid) {
+  const days = new Set((db.apn_attendance || []).filter((a) => a.partnerId === pid).map((a) => a.date));
+  let streak = 0;
+  const d = new Date();
+  for (let i = 0; i < 400; i++) {
+    const iso = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i).toISOString().slice(0, 10);
+    if (days.has(iso)) streak++;
+    else if (i === 0) continue; // today not yet checked in — don't break the run
+    else break;
+  }
+  return streak;
+}
+
+/* ── derived stats, ranks, leaderboards, achievements ────────────────── */
+const apnLeadsOf = (db, pid) => (db.apn_leads || []).filter((l) => l.partnerId === pid);
+const apnCommsOf = (db, pid) => (db.apn_commissions || []).filter((c) => c.partnerId === pid);
+function apnPartnerStats(db, pid) {
+  const leads = apnLeadsOf(db, pid);
+  const submitted = leads.length;
+  const converted = leads.filter((l) => l.status === "Converted").length;
+  const completed = leads.filter((l) => l.projectCompleted).length;
+  const revenue = round2(leads.filter((l) => l.status === "Converted").reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const conv = submitted ? Math.round((converted / submitted) * 100) : 0;
+  const own = apnCommsOf(db, pid).filter((c) => c.kind !== "district");
+  const sumBy = (st) => round2(own.filter((c) => c.status === st).reduce((s, c) => s + (Number(c.amount) || 0), 0));
+  const earned = round2(own.reduce((s, c) => s + (Number(c.amount) || 0), 0));
+  return {
+    submitted, converted, completed, revenue, conv, level: apnLevelForCompleted(completed),
+    commission: { earned, pending: sumBy("Pending"), approved: sumBy("Approved"), payable: sumBy("Payable"), paid: sumBy("Paid") },
+    districtEarned: round2(apnCommsOf(db, pid).filter((c) => c.kind === "district").reduce((s, c) => s + (Number(c.amount) || 0), 0)),
+  };
+}
+const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
+function apnRankBy(db, pid, scope, metric) {
+  let pool = apnLivePartners(db);
+  const meRow = apnMe(db, pid);
+  if (scope === "district" && meRow) pool = pool.filter((u) => u.district === meRow.district);
+  const val = (u) => { const s = apnPartnerStats(db, u.id); return metric === "revenue" ? s.revenue : metric === "commission" ? s.commission.earned : s.completed; };
+  const arr = pool.map((u) => ({ id: u.id, v: val(u) })).sort((a, b) => b.v - a.v);
+  const idx = arr.findIndex((x) => x.id === pid);
+  return { rank: idx < 0 ? null : idx + 1, total: arr.length };
+}
+function apnLeaderboard(db, scope, district, metric) {
+  let pool = apnLivePartners(db);
+  if (scope === "district" && district) pool = pool.filter((u) => u.district === district);
+  const val = (u) => { const s = apnPartnerStats(db, u.id); return metric === "revenue" ? s.revenue : metric === "commission" ? s.commission.earned : s.completed; };
+  return pool.map((u) => ({ u, v: val(u) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 20);
+}
+const APN_ACHIEVEMENTS = [
+  { id: "first_deal", em: "🏆", label: "First Deal Closed", test: (s) => s.converted >= 1 },
+  { id: "first_lakh", em: "💰", label: "First ₹1 Lakh Revenue", test: (s) => s.revenue >= 100000 },
+  { id: "ten_clients", em: "🤝", label: "First 10 Clients", test: (s) => s.converted >= 10 },
+  { id: "fifty_club", em: "⭐", label: "50 Projects Club", test: (s) => s.completed >= 50 },
+  { id: "hundred_club", em: "👑", label: "100 Projects Club", test: (s) => s.completed >= 100 },
+];
+function apnAchievementsFor(db, pid) {
+  const s = apnPartnerStats(db, pid);
+  const got = APN_ACHIEVEMENTS.map((a) => ({ ...a, done: a.test(s) }));
+  const r = apnRankBy(db, pid, "district", "revenue");
+  got.push({ id: "district_top", em: "🥇", label: "District Top Performer", done: r.rank === 1 && s.revenue > 0 });
+  return got;
+}
+
+/* ── targets ─────────────────────────────────────────────────────────── */
+function apnTargetProgress(db, t) {
+  const leads = apnLeadsOf(db, t.partnerId).filter((l) => (l.createdAt || 0) >= (t.createdAt || 0));
+  const metric = t.metric || "leads";
+  let raw;
+  if (metric === "leads") raw = leads.length;
+  else if (metric === "conversions") raw = leads.filter((l) => l.status === "Converted").length;
+  else raw = leads.filter((l) => l.status === "Converted" && l.service === metric).length;
+  const goal = Number(t.goal) || 0;
+  return { raw, count: goal ? Math.min(raw, goal) : raw, goal, pct: goal ? Math.min(100, Math.round((raw / goal) * 100)) : 0 };
+}
+
+/* ── notifications visibility ────────────────────────────────────────── */
+function apnNotifVisible(n, meRow) {
+  const a = n.audience || "all";
+  if (a === "all") return true;
+  if (a.startsWith("partner:")) return a.slice(8) === meRow?.id;
+  if (a.startsWith("district:")) return a.slice(9) === meRow?.district;
+  return true;
+}
+
+/* ── commission generation (partner rate + 1% district-head override) ─── */
+function apnBuildCommissions(d, lead) {
+  const rows = [];
+  const pid = lead.partnerId;
+  const prior = (d.apn_leads || []).filter((l) => l.partnerId === pid && l.projectCompleted && l.id !== lead.id).length;
+  const rate = apnRateForPrior(prior);
+  const revenue = Number(lead.revenue) || 0;
+  const project = lead.business || lead.clientName || "Project";
+  rows.push({ id: uid(), partnerId: pid, kind: "partner", leadId: lead.id, project, clientName: lead.clientName, service: lead.service, revenue, rate, amount: round2((revenue * rate) / 100), status: "Pending", createdAt: Date.now(), payoutDate: apnPayoutDate() });
+  const partner = (d.apn_users || []).find((u) => u.id === pid);
+  const head = partner && (d.apn_users || []).find((u) => u.role === "district_head" && u.status === "active" && u.district === partner.district && u.id !== pid);
+  if (head) rows.push({ id: uid(), partnerId: head.id, kind: "district", leadId: lead.id, project, clientName: lead.clientName, service: lead.service, revenue, rate: 1, amount: round2(revenue * 0.01), status: "Pending", createdAt: Date.now(), payoutDate: apnPayoutDate(), fromPartnerId: pid });
+  return rows;
+}
+
+// Create the partner's APN row on first login from the details captured at
+// sign-up (mirrors ensureProfile). Assigns the next APN-TN id.
+async function ensureApnProfile(user, existingRows) {
+  if ((existingRows || []).some((u) => u.id === user.id)) return false;
+  const meta = user.user_metadata?.apn || {};
+  let n = await nextApnNumber();
+  if (n == null) {
+    const nums = (existingRows || []).map((u) => Number(String(u.apnId || "").replace(/\D/g, "")) || 0);
+    n = (nums.length ? Math.max(...nums) : 0) + 1;
+  }
+  const row = {
+    id: user.id, apnId: apnPadId(n),
+    name: meta.name || user.user_metadata?.name || (user.email ? user.email.split("@")[0] : "Partner"),
+    mobile: meta.mobile || "", email: user.email || meta.email || "", dob: meta.dob || "",
+    district: meta.district || "", taluk: meta.taluk || "", city: meta.city || "",
+    occupation: meta.occupation || "", college: meta.college || "", reason: meta.reason || "",
+    username: (meta.username || "").toLowerCase(),
+    status: "pending", role: "partner", unlocked: {}, quizPasses: {}, createdAt: Date.now(),
+  };
+  const { error } = await supabase.from("apn_users").upsert({ id: user.id, data: row, updated_at: new Date().toISOString() }, { onConflict: "id", ignoreDuplicates: true });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
+/* ── APN shared UI + gates ───────────────────────────────────────────── */
+function APNGate({ isDark, icon, title, body, name, tone, onSignOut }) {
+  return (
+    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+      <style>{CSS}</style>
+      <div className="lock-card gate-card">
+        <div className="lock-badge" style={tone === "neg" ? { background: "linear-gradient(135deg,var(--neg),#a92a2a)" } : undefined}>{icon}</div>
+        <h1>{title}</h1>
+        <p>{body}</p>
+        <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
+      </div>
+    </div>
+  );
+}
+function APNMetric({ k, v, icon, tone }) {
+  return <div className="apn-metric"><div className="k">{icon}{k}</div><div className="v" style={tone ? { color: `var(--${tone})` } : undefined}>{v}</div></div>;
+}
+
+/* ── attendance check-in (Check in → type OK → confirm) ──────────────── */
+function APNCheckIn({ db, pid, mutate }) {
+  const [step, setStep] = useState("idle");
+  const [word, setWord] = useState("");
+  const done = apnCheckedInToday(db, pid);
+  const streak = apnAttendanceStreak(db, pid);
+  const check = () => {
+    if (word.trim().toUpperCase() !== "OK") return;
+    haptic([10, 30, 10]);
+    mutate((d) => ({
+      ...d,
+      apn_attendance: [...(d.apn_attendance || []), { id: uid(), partnerId: pid, date: todayISO(), at: Date.now() }],
+      apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, lastCheckIn: Date.now() } : u),
+    }), null);
+    setStep("idle"); setWord("");
+  };
+  return (
+    <div className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 160 }}>
+        <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 7 }}><UserCheck size={16} color={done ? "var(--pos)" : "var(--muted)"} />Daily attendance</div>
+        <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{done ? `Checked in today · ${streak}-day streak` : "Check in daily to stay active. 7 days missed = inactive."}</div>
+      </div>
+      {done ? <span className="badge pos">Present</span>
+        : step === "idle" ? <button className="btn primary" onClick={() => setStep("typing")}><UserCheck size={15} />Check in</button>
+          : (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
+              <input className="input" autoFocus value={word} onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") check(); }} placeholder='Type "OK" to confirm' style={{ flex: 1 }} />
+              <button className="btn primary" onClick={check} disabled={word.trim().toUpperCase() !== "OK"}><Check size={15} />Confirm</button>
+            </div>
+          )}
+    </div>
+  );
+}
+
+/* ── inactive gate (needs Haji/Alim reactivation) ────────────────────── */
+function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
+  const recommend = () => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, reactivationRequested: Date.now() } : u) }), null);
+  return (
+    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+      <style>{CSS}</style>
+      <div className="lock-card gate-card">
+        <div className="lock-badge" style={{ background: "linear-gradient(135deg,var(--accent),#d98c00)" }}><Hourglass size={26} /></div>
+        <h1>Account inactive</h1>
+        <p>You've been marked inactive due to 7 days without attendance. Only Haji or Alim can reactivate your account — your district head can recommend it.</p>
+        {meRow.reactivationRequested ? <div className="auth-msg ok"><Check size={14} />Reactivation requested — waiting on approval.</div>
+          : <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} onClick={recommend}><RefreshCw size={15} />Request reactivation</button>}
+        <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 10 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── dashboard ───────────────────────────────────────────────────────── */
+function APNHome({ db, meRow, stats, pid, go, openModal, mutate }) {
+  const next = apnNextLevel(stats.completed);
+  const cRank = apnRankBy(db, pid, "company", "revenue");
+  const dRank = apnRankBy(db, pid, "district", "revenue");
+  const targets = (db.apn_targets || []).filter((t) => t.partnerId === pid);
+  const activeTarget = targets.find((t) => apnTargetProgress(db, t).pct < 100) || targets[0];
+  return (
+    <div>
+      <div className="apn-lvl" style={{ marginBottom: 14 }}>
+        <div className="apn-hero">
+          <span className="av" style={{ background: "rgba(255,255,255,.22)" }}>{(meRow.name || "P")[0]}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="nm">{meRow.name}</div>
+            <div className="rate">{meRow.apnId} · {stats.level.name} · {stats.level.rate}% commission</div>
+          </div>
+          {meRow.role === "district_head" && <span className="badge" style={{ background: "rgba(255,255,255,.9)", color: "var(--primary)" }}>District Head</span>}
+        </div>
+        {next ? (
+          <>
+            <div className="bar"><i style={{ width: next.pct + "%" }} /></div>
+            <div style={{ fontSize: 12, opacity: .9, marginTop: 7 }}>{next.remaining} more completed project{next.remaining === 1 ? "" : "s"} to reach {next.next.name} ({next.next.rate}%)</div>
+          </>
+        ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Top level reached — Elite Partner 👑</div>}
+      </div>
+
+      <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} /></div>
+
+      <div className="apn-metrics" style={{ marginBottom: 14 }}>
+        <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
+        <APNMetric k="Commission earned" v={money(stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Payable" v={money(stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
+        <APNMetric k="Paid" v={money(stats.commission.paid)} icon={<Check size={13} />} />
+        <APNMetric k="Leads submitted" v={stats.submitted} icon={<UserPlus size={13} />} />
+        <APNMetric k="Leads converted" v={stats.converted} icon={<BadgeCheck size={13} />} />
+        <APNMetric k="Conversion rate" v={stats.conv + "%"} icon={<GaugeCircle size={13} />} />
+        <APNMetric k="Completed projects" v={stats.completed} icon={<Trophy size={13} />} />
+      </div>
+
+      <div className="apn-metrics" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
+        <div className="apn-metric"><div className="k"><Trophy size={13} />Company rank</div><div className="v">{cRank.rank ? `#${cRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> / {cRank.total}</span></div></div>
+        <div className="apn-metric"><div className="k"><MapPin size={13} />District rank</div><div className="v">{dRank.rank ? `#${dRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> · {meRow.district || "—"}</span></div></div>
+      </div>
+
+      {activeTarget && (() => { const p = apnTargetProgress(db, activeTarget); return (
+        <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Target size={15} color="var(--primary)" /><div style={{ fontWeight: 700, flex: 1 }}>{activeTarget.title}</div><span className="badge pri">{p.raw}/{p.goal}</span></div>
+          <div className="progress-track" style={{ marginTop: 10 }}><div className="progress-fill" style={{ width: p.pct + "%" }} /></div>
+          {!activeTarget.acknowledged && <button className="btn sm primary" style={{ marginTop: 10 }} onClick={() => go("targets")}>Acknowledge target</button>}
+        </div>
+      ); })()}
+
+      <div className="apn-metrics" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <button className="apn-more-item" onClick={() => openModal({ type: "apnLead" })}><UserPlus size={20} color="var(--primary)" />Submit a lead</button>
+        <button className="apn-more-item" onClick={() => go("learn")}><GraduationCap size={20} color="var(--primary)" />Training & quiz</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── leads ───────────────────────────────────────────────────────────── */
+function APNLeadForm({ meRow, db, initial, onSave, onClose }) {
+  const unlocked = apnUnlocked(meRow);
+  const enabled = APN_SERVICES.filter(([k]) => unlocked[k]);
+  const [f, setF] = useState(() => ({ clientName: "", mobile: "", business: "", service: enabled[0]?.[0] || "", notes: "", ...initial }));
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const [err, setErr] = useState("");
+  const save = () => {
+    if (!enabled.length) { setErr("Pass a sales quiz first to unlock lead submission."); return; }
+    if (!f.clientName.trim()) { setErr("Client name is required."); return; }
+    if (!f.mobile.trim()) { setErr("Client mobile number is required."); return; }
+    if (!f.service) { setErr("Choose the service required."); return; }
+    const nums = (db.apn_leads || []).map((l) => Number(String(l.leadId || "").replace(/\D/g, "")) || 0);
+    const n = (nums.length ? Math.max(...nums) : 0) + 1;
+    onSave({ id: uid(), leadId: apnLeadId(n), partnerId: meRow.id, partnerName: meRow.name, clientName: f.clientName.trim(), mobile: f.mobile.trim(), business: f.business.trim(), service: f.service, notes: f.notes.trim(), status: "Submitted", createdAt: Date.now() });
+    onClose();
+  };
+  return (
+    <Modal title="Submit a lead" onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!enabled.length}><Send size={15} />Submit lead</button></>}>
+      {!enabled.length && <div className="banner" style={{ margin: "0 0 12px" }}><AlertTriangle size={15} />Complete a training quiz to unlock lead submission.</div>}
+      <Field label="Client name" required error={err}><input className="input" value={f.clientName} onChange={(e) => set("clientName", e.target.value)} placeholder="Client's name" /></Field>
+      <div className="grid2">
+        <Field label="Mobile number" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
+        <Field label="Business name"><input className="input" value={f.business} onChange={(e) => set("business", e.target.value)} placeholder="Business / shop" /></Field>
+      </div>
+      <Field label="Service required" required>
+        <select className="select" value={f.service} onChange={(e) => set("service", e.target.value)}>
+          {enabled.length ? enabled.map(([k, l]) => <option key={k} value={k}>{l}</option>) : <option value="">No services unlocked yet</option>}
+        </select>
+      </Field>
+      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything useful about the lead…" /></Field>
+    </Modal>
+  );
+}
+function APNLeads({ db, meRow, pid, openModal, mutate }) {
+  const [view, setView] = useState("all");
+  const all = apnLeadsOf(db, pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = view === "all" ? all : view === "open" ? all.filter((l) => !["Converted", "Lost", "Invalid", "Fake", "Duplicate"].includes(l.status)) : all.filter((l) => l.status === "Converted");
+  return (
+    <div>
+      <div className="apn-section-h">My leads</div>
+      <div className="apn-seg-scroll">{[["all", "All"], ["open", "Active"], ["converted", "Converted"]].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
+      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No leads yet" text="Submit your first lead to start earning commission." action={<button className="btn primary" onClick={() => openModal({ type: "apnLead" })}><Plus size={16} />Submit a lead</button>} /></div>
+        : <div className="apn-list">{list.map((l) => (
+          <div key={l.id} className="apn-rowcard">
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700 }}>{l.clientName}</div>
+                <div className="hint-line" style={{ fontSize: 12, marginTop: 2 }}>{l.business ? l.business + " · " : ""}{APN_SERVICE_LABEL[l.service]} · {l.leadId}</div>
+              </div>
+              <span className={"badge " + apnLeadTone(l.status)}>{l.status}</span>
+            </div>
+            {l.status === "Converted" && l.revenue != null && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Revenue {money(l.revenue)}{l.projectCompleted ? " · project completed" : ""}</div>}
+            {APN_LEAD_REJECTED.has(l.status) && l.rejectReason && <div className="field-err" style={{ marginTop: 6 }}><AlertTriangle size={13} />{l.status}: {l.rejectReason}</div>}
+            <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>Submitted {fmtDate(new Date(l.createdAt).toISOString().slice(0, 10))}{l.ownershipLocked ? " · ownership locked to you" : ""}</div>
+          </div>
+        ))}</div>}
+    </div>
+  );
+}
+
+/* ── quotations ──────────────────────────────────────────────────────── */
+function apnPrintQuote(q, meRow) {
+  const rows = (q.items || []).map((it) => `<tr><td>${it.label}</td><td style="text-align:right">₹${(Number(it.amount) || 0).toLocaleString("en-IN")}</td></tr>`).join("");
+  const w = window.open("", "_blank");
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><title>Quotation ${q.clientName || ""}</title>
+    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#161A20;padding:36px;max-width:720px;margin:auto}
+    h1{color:#2E3B8F;margin:0 0 2px} .muted{color:#626C7A;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:18px}
+    td,th{padding:10px 12px;border-bottom:1px solid #E4E8EF;font-size:14px} th{text-align:left;color:#626C7A;font-size:11px;text-transform:uppercase}
+    .tot{font-weight:800;font-size:18px} .box{border:1px solid #E4E8EF;border-radius:12px;padding:16px 18px;margin-top:18px}</style></head>
+    <body><h1>ALLBEE</h1><div class="muted">Quotation · ${APN_SERVICE_LABEL[q.service] || ""}</div>
+    <div class="box"><b>To:</b> ${q.clientName || "—"}<br/><span class="muted">Prepared by ${meRow?.name || "APN Partner"} (${meRow?.apnId || ""})</span><br/>
+    ${q.requirements ? `<div class="muted" style="margin-top:8px">${q.requirements}</div>` : ""}</div>
+    <table><thead><tr><th>Item</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}
+    <tr><td class="tot">Total</td><td class="tot" style="text-align:right">₹${(Number(q.total) || 0).toLocaleString("en-IN")}</td></tr></tbody></table>
+    <p class="muted" style="margin-top:24px">This is an approximate quotation and is subject to final confirmation by the ALLBEE sales team.</p>
+    <script>window.onload=function(){window.print()}</script></body></html>`);
+  w.document.close();
+}
+function APNQuoteForm({ meRow, initial, onSave, onClose }) {
+  const [service, setService] = useState(initial?.service || "website");
+  const price = APN_PRICE[service];
+  const [clientName, setClientName] = useState(initial?.clientName || "");
+  const [requirements, setRequirements] = useState(initial?.requirements || "");
+  const [items, setItems] = useState(initial?.items || null);
+  // reset line items when the service changes (unless editing an existing quote)
+  const base = items || [{ id: uid(), label: price.baseLabel, amount: price.base }];
+  const setBase = items ? setItems : (v) => setItems(v);
+  React.useEffect(() => { if (!initial) setItems([{ id: uid(), label: APN_PRICE[service].baseLabel, amount: APN_PRICE[service].base }]); }, [service]); // eslint-disable-line
+  const list = items || base;
+  const total = list.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+  const addOpt = (label, amount) => setItems((prev) => [...(prev || base), { id: uid(), label, amount }]);
+  const upItem = (id, k, v) => setItems((prev) => (prev || base).map((it) => it.id === id ? { ...it, [k]: k === "amount" ? Number(v) || 0 : v } : it));
+  const rmItem = (id) => setItems((prev) => (prev || base).filter((it) => it.id !== id));
+  const save = (status) => {
+    if (!clientName.trim()) return;
+    onSave({ id: initial?.id || uid(), partnerId: meRow.id, partnerName: meRow.name, clientName: clientName.trim(), service, requirements: requirements.trim(), items: list, total: round2(total), status, createdAt: initial?.createdAt || Date.now() });
+    onClose();
+  };
+  return (
+    <Modal title={initial?.id ? "Edit quotation" : "Generate quotation"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn" onClick={() => save("Draft")} disabled={!clientName.trim()}>Save draft</button><button className="btn primary" onClick={() => save("Sent for approval")} disabled={!clientName.trim()}><Send size={15} />Send for approval</button></>}>
+      <div className="grid2">
+        <Field label="Client name" required><input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client / business" /></Field>
+        <Field label="Service"><select className="select" value={service} onChange={(e) => setService(e.target.value)} disabled={!!initial?.id}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+      </div>
+      <Field label="Requirements"><textarea className="textarea" value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="What does the client need?" /></Field>
+      <Field label="Add-ons" hint="Tap to add — you can edit every line below.">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{price.options.map(([k, label, amt]) => <button key={k} type="button" className="preset" onClick={() => addOpt(label, amt)}>+ {label} (₹{amt.toLocaleString("en-IN")})</button>)}</div>
+      </Field>
+      <Field label="Quotation lines">
+        <div className="apn-list">{list.map((it) => (
+          <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input className="input" value={it.label} onChange={(e) => upItem(it.id, "label", e.target.value)} style={{ flex: 1 }} />
+            <input className="input mono" type="number" value={it.amount} onChange={(e) => upItem(it.id, "amount", e.target.value)} style={{ width: 110 }} />
+            <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmItem(it.id)}><X size={14} /></button>
+          </div>
+        ))}</div>
+        <div className="calc-box" style={{ marginTop: 10 }}><div className="calc-row"><b>Total</b><b className="mono">{money(total)}</b></div></div>
+      </Field>
+    </Modal>
+  );
+}
+function APNQuotations({ db, meRow, pid, openModal }) {
+  const list = (db.apn_quotations || []).filter((q) => q.partnerId === pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const tone = (s) => s === "Approved" ? "pos" : s === "Rejected" ? "neg" : s === "Sent for approval" ? "accent" : "";
+  return (
+    <div>
+      <div className="apn-section-h">Quotations</div>
+      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<FileText size={22} color="var(--muted)" />} title="No quotations yet" text="Generate an approximate quotation for a client in seconds." action={<button className="btn primary" onClick={() => openModal({ type: "apnQuote" })}><Plus size={16} />New quotation</button>} /></div>
+        : <div className="apn-list">{list.map((q) => (
+          <div key={q.id} className="apn-rowcard">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{q.clientName}</div><div className="hint-line" style={{ fontSize: 12 }}>{APN_SERVICE_LABEL[q.service]} · {money(q.total)}</div></div>
+              <span className={"badge " + tone(q.status)}>{q.status}</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+              <button className="btn sm" onClick={() => apnPrintQuote(q, meRow)}><Download size={13} />PDF</button>
+              {q.status !== "Approved" && <button className="btn sm" onClick={() => openModal({ type: "apnQuote", initial: q })}><Pencil size={13} />Edit</button>}
+            </div>
+          </div>
+        ))}</div>}
+    </div>
+  );
+}
+
+/* ── wallet ──────────────────────────────────────────────────────────── */
+function APNWallet({ db, pid, stats }) {
+  const rows = apnCommsOf(db, pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return (
+    <div>
+      <div className="apn-section-h">Wallet</div>
+      <div className="apn-metrics" style={{ marginBottom: 14 }}>
+        <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
+        <APNMetric k="Commission earned" v={money(stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Pending" v={money(stats.commission.pending)} icon={<Hourglass size={13} />} />
+        <APNMetric k="Approved" v={money(stats.commission.approved)} icon={<Check size={13} />} tone="pri" />
+        <APNMetric k="Payable" v={money(stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
+        <APNMetric k="Paid" v={money(stats.commission.paid)} icon={<BadgeCheck size={13} />} tone="pos" />
+      </div>
+      <div className="apn-rowcard" style={{ padding: 0 }}>
+        <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Commission history</div>
+        {rows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No commission yet" text="Commission appears once a converted project is paid and completed. Payouts land on the 5th of the next month." /></div>
+          : rows.map((c) => (
+            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>{c.project}{c.kind === "district" ? " (district 1%)" : ""}</div>
+                <div className="hint-line" style={{ fontSize: 12 }}>Revenue {money(c.revenue)} · {c.rate}% · pay {fmtDate(c.payoutDate)}</div>
+              </div>
+              <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(c.amount)}</div><span className={"badge " + apnCommTone(c.status)} style={{ marginTop: 4 }}>{c.status}</span></div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── training + quiz ─────────────────────────────────────────────────── */
+function APNQuizTaker({ quiz, onPass, onClose }) {
+  const [ans, setAns] = useState({});
+  const [result, setResult] = useState(null);
+  const qs = quiz.questions || [];
+  const submit = () => {
+    const correct = qs.filter((q, i) => ans[i] === q.answer).length;
+    const pct = qs.length ? Math.round((correct / qs.length) * 100) : 0;
+    setResult({ pct, correct, pass: pct >= (quiz.passPct || 60) });
+    if (pct >= (quiz.passPct || 60)) onPass(pct);
+  };
+  return (
+    <Modal title={quiz.title || "Quiz"} onClose={onClose}
+      footer={result ? <button className="btn primary" onClick={onClose}>Done</button> : <><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={submit} disabled={Object.keys(ans).length < qs.length}><Check size={15} />Submit quiz</button></>}>
+      {result ? (
+        <div style={{ textAlign: "center", padding: "10px 0" }}>
+          <div style={{ fontSize: 40 }}>{result.pass ? "🎉" : "😕"}</div>
+          <h3 style={{ margin: "8px 0" }}>{result.pct}% — {result.pass ? "Passed!" : "Not passed"}</h3>
+          <p className="hint-line">{result.pass ? `${APN_SERVICE_LABEL[quiz.category]} leads are now unlocked.` : `You need ${quiz.passPct || 60}% to pass. Review the training and try again.`}</p>
+        </div>
+      ) : qs.map((q, i) => (
+        <div key={i} style={{ marginBottom: 8 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{i + 1}. {q.q}</div>
+          {(q.options || []).map((opt, oi) => (
+            <div key={oi} className={"apn-quiz-opt" + (ans[i] === oi ? " sel" : "")} onClick={() => setAns((s) => ({ ...s, [i]: oi }))}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (ans[i] === oi ? "var(--primary)" : "var(--border)"), background: ans[i] === oi ? "var(--primary)" : "transparent", flex: "none" }} />
+              <span>{opt}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </Modal>
+  );
+}
+function APNTraining({ db, meRow, pid, mutate }) {
+  const [cat, setCat] = useState("website");
+  const [quiz, setQuiz] = useState(null);
+  const unlocked = apnUnlocked(meRow);
+  const articles = (db.apn_training || []).filter((t) => t.category === cat).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const catQuiz = (db.apn_quizzes || []).find((q) => q.category === cat);
+  const passQuiz = (score) => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, unlocked: { ...(u.unlocked || {}), [cat]: true }, quizPasses: { ...(u.quizPasses || {}), [cat]: score } } : u) }), null);
+  return (
+    <div>
+      <div className="apn-section-h">Training</div>
+      <div className="apn-seg-scroll">{APN_SERVICES.map(([k, l]) => <button key={k} className={cat === k ? "on" : ""} onClick={() => setCat(k)}>{l}{unlocked[k] ? " ✓" : ""}</button>)}</div>
+      <div className="apn-list">
+        {articles.length === 0 && <div className="apn-rowcard"><Empty icon={<GraduationCap size={22} color="var(--muted)" />} title="No lessons yet" text="Training material for this category will appear here." /></div>}
+        {articles.map((a) => (
+          <div key={a.id} className="apn-rowcard">
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>{a.title}</div>
+            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 14, color: "var(--ink)" }}>{a.body}</div>
+          </div>
+        ))}
+        <div className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontWeight: 700 }}>{APN_SERVICE_LABEL[cat]} sales quiz</div>
+            <div className="hint-line" style={{ fontSize: 12 }}>{unlocked[cat] ? `Passed (${meRow.quizPasses?.[cat] ?? "✓"}%) — leads unlocked.` : catQuiz ? "Pass 60% to unlock lead submission." : "Quiz coming soon."}</div>
+          </div>
+          {unlocked[cat] ? <span className="badge pos">Unlocked</span>
+            : catQuiz ? <button className="btn primary" onClick={() => setQuiz(catQuiz)}><ClipboardCheck size={15} />Take quiz</button>
+              : <span className="badge">No quiz</span>}
+        </div>
+      </div>
+      {quiz && <APNQuizTaker quiz={quiz} onPass={passQuiz} onClose={() => setQuiz(null)} />}
+    </div>
+  );
+}
+
+/* ── targets ─────────────────────────────────────────────────────────── */
+function APNTargets({ db, pid, mutate }) {
+  const list = (db.apn_targets || []).filter((t) => t.partnerId === pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const ack = (t) => mutate((d) => ({ ...d, apn_targets: (d.apn_targets || []).map((x) => x.id === t.id ? { ...x, acknowledged: true, acknowledgedAt: Date.now() } : x) }), null);
+  return (
+    <div>
+      <div className="apn-section-h">My targets</div>
+      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<Target size={22} color="var(--muted)" />} title="No targets assigned" text="Targets from your admin or district head will show up here." /></div>
+        : <div className="apn-list">{list.map((t) => { const p = apnTargetProgress(db, t); return (
+          <div key={t.id} className="apn-rowcard">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{t.title}</div><div className="hint-line" style={{ fontSize: 12 }}>{t.goal} {apnMetricLabel(t.metric).toLowerCase()} · by {t.assignedByName || "Admin"}</div></div>
+              <span className={"badge " + (p.pct >= 100 ? "pos" : "pri")}>{p.raw}/{p.goal}</span>
+            </div>
+            <div className="progress-track" style={{ marginTop: 10 }}><div className="progress-fill" style={{ width: p.pct + "%", background: p.pct >= 100 ? "var(--pos)" : "var(--primary)" }} /></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+              {t.acknowledged ? <span className="badge pos"><Check size={11} style={{ marginRight: 3 }} />Acknowledged</span> : <button className="btn sm primary" onClick={() => ack(t)}><Check size={13} />Acknowledge target</button>}
+            </div>
+          </div>
+        ); })}</div>}
+    </div>
+  );
+}
+
+/* ── documents ───────────────────────────────────────────────────────── */
+function APNDocuments({ db }) {
+  const list = (db.apn_documents || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return (
+    <div>
+      <div className="apn-section-h">Sales materials</div>
+      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<FileText size={22} color="var(--muted)" />} title="No materials yet" text="Scripts, price lists, brochures and posters uploaded by admin appear here." /></div>
+        : <div className="apn-list">{list.map((d) => (
+          <div key={d.id} className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="cmdk-ic"><FileText size={16} /></div>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{d.title}</div><div className="hint-line" style={{ fontSize: 12 }}>{d.category || "Material"}{d.notes ? " · " + d.notes : ""}</div></div>
+            <a className="btn sm" href={d.url} target="_blank" rel="noreferrer"><Download size={13} />Open</a>
+          </div>
+        ))}</div>}
+    </div>
+  );
+}
+
+/* ── notifications ───────────────────────────────────────────────────── */
+function APNNotifications({ db, meRow, pid, mutate }) {
+  const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  React.useEffect(() => {
+    const unread = list.filter((n) => !(meRow.notifReads || []).includes(n.id)).map((n) => n.id);
+    if (unread.length) mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, notifReads: [...(u.notifReads || []), ...unread] } : u) }), null);
+  }, []); // eslint-disable-line
+  return (
+    <div>
+      <div className="apn-section-h">Notifications</div>
+      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text="Training, commission and target updates will appear here." /></div>
+        : <div className="apn-list">{list.map((n) => (
+          <div key={n.id} className="apn-rowcard">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ fontWeight: 700, flex: 1 }}>{n.title}</div>{n.level && n.level !== "General" && <span className={"badge " + (n.level === "Urgent" ? "neg" : "accent")}>{n.level}</span>}</div>
+            {n.body && <div style={{ marginTop: 5, fontSize: 14, lineHeight: 1.5, color: "var(--ink)" }}>{n.body}</div>}
+            <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>{fmtDateTime(n.createdAt)}</div>
+          </div>
+        ))}</div>}
+    </div>
+  );
+}
+
+/* ── achievements ────────────────────────────────────────────────────── */
+function APNAchievements({ db, pid }) {
+  const list = apnAchievementsFor(db, pid);
+  return (
+    <div>
+      <div className="apn-section-h">Achievements</div>
+      <div className="apn-list">{list.map((a) => (
+        <div key={a.id} className={"apn-ach" + (a.done ? "" : " lock")}>
+          <span className="em">{a.em}</span>
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{a.label}</div><div className="hint-line" style={{ fontSize: 12 }}>{a.done ? "Unlocked" : "Locked"}</div></div>
+          {a.done && <BadgeCheck size={18} color="var(--pos)" />}
+        </div>
+      ))}</div>
+    </div>
+  );
+}
+
+/* ── leaderboard ─────────────────────────────────────────────────────── */
+function APNLeaderboard({ db, meRow, pid }) {
+  const [scope, setScope] = useState("company");
+  const [metric, setMetric] = useState("revenue");
+  const rows = apnLeaderboard(db, scope, meRow?.district, metric);
+  const fmtVal = (v) => (metric === "projects" ? String(v) : money(v));
+  return (
+    <div>
+      <div className="apn-section-h">Leaderboard</div>
+      <div className="apn-seg-scroll">
+        <button className={scope === "company" ? "on" : ""} onClick={() => setScope("company")}>Company</button>
+        <button className={scope === "district" ? "on" : ""} onClick={() => setScope("district")}>My district</button>
+      </div>
+      <div className="apn-seg-scroll">
+        {[["revenue", "Top revenue"], ["commission", "Top commission"], ["projects", "Top projects"]].map(([k, l]) => <button key={k} className={metric === k ? "on" : ""} onClick={() => setMetric(k)}>{l}</button>)}
+      </div>
+      <div className="apn-rowcard">
+        {rows.length === 0 ? <Empty icon={<Trophy size={22} color="var(--muted)" />} title="No ranking yet" text="Close deals to climb the leaderboard." />
+          : rows.map((r, i) => (
+            <div key={r.u.id} className="apn-rank" style={r.u.id === pid ? { background: "var(--primary-soft)", borderRadius: 10 } : undefined}>
+              <div className={"pos" + (i === 0 ? " g1" : i === 1 ? " g2" : i === 2 ? " g3" : "")}>{i + 1}</div>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{r.u.name}{r.u.id === pid ? " (you)" : ""}</div><div className="hint-line" style={{ fontSize: 11 }}>{r.u.district || "—"}</div></div>
+              <div className="mono" style={{ fontWeight: 700 }}>{fmtVal(r.v)}</div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── district head dashboard ─────────────────────────────────────────── */
+function APNDistrict({ db, meRow, mutate }) {
+  const district = meRow.district;
+  const partners = (db.apn_users || []).filter((u) => u.district === district && u.role !== "district_head" && u.status !== "rejected");
+  const leads = (db.apn_leads || []).filter((l) => partners.some((p) => p.id === l.partnerId));
+  const converted = leads.filter((l) => l.status === "Converted");
+  const revenue = round2(converted.reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const recommend = (p) => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === p.id ? { ...u, reactivationRecommended: Date.now(), reactivationRecommendedBy: meRow.name } : u) }), null);
+  return (
+    <div>
+      <div className="apn-section-h">District — {district}</div>
+      <div className="apn-metrics" style={{ marginBottom: 14 }}>
+        <APNMetric k="Partners" v={partners.length} icon={<UserPlus size={13} />} />
+        <APNMetric k="District revenue" v={money(revenue)} icon={<TrendingUp size={13} />} />
+        <APNMetric k="Leads" v={leads.length} icon={<UserPlus size={13} />} />
+        <APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} />
+      </div>
+      <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />You can recommend reactivation and monitor partners. Only Haji or Alim reactivate accounts or change commissions.</div>
+      <div className="apn-list">{partners.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); return (
+        <div key={p.id} className="apn-rowcard">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{p.name}</div><div className="hint-line" style={{ fontSize: 12 }}>{p.apnId} · {s.level.name} · {money(s.revenue)}</div></div>
+            <span className={"badge " + (eff === "active" ? "pos" : eff === "inactive" ? "neg" : "")}>{eff}</span>
+          </div>
+          {eff === "inactive" && (p.reactivationRecommended ? <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Reactivation recommended</div> : <button className="btn sm" style={{ marginTop: 8 }} onClick={() => recommend(p)}><RefreshCw size={13} />Recommend reactivation</button>)}
+        </div>
+      ); })}</div>
+    </div>
+  );
+}
+
+/* ── profile ─────────────────────────────────────────────────────────── */
+function APNProfile({ meRow, stats, sessionEmail, onSignOut }) {
+  const row = (k, v) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}><span className="hint-line">{k}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{v || "—"}</span></div>;
+  return (
+    <div>
+      <div className="apn-section-h">My profile</div>
+      <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+        <div className="apn-hero">
+          <span className="av" style={{ background: avatarColor(meRow.name) }}>{(meRow.name || "P")[0]}</span>
+          <div><div style={{ fontWeight: 800, fontSize: 17 }}>{meRow.name}</div><div className="hint-line">{meRow.apnId} · {stats.level.name}</div></div>
+        </div>
+      </div>
+      <div className="apn-rowcard">
+        {row("APN ID", meRow.apnId)}
+        {row("Mobile", meRow.mobile)}
+        {row("Email", sessionEmail || meRow.email)}
+        {row("Date of birth", meRow.dob ? fmtDate(meRow.dob) : "—")}
+        {row("District", meRow.district)}
+        {row("Taluk", meRow.taluk)}
+        {row("City", meRow.city)}
+        {row("Occupation", meRow.occupation)}
+        {row("College", meRow.college)}
+        {row("Level", `${stats.level.name} (Level ${stats.level.key})`)}
+        {row("Commission rate", stats.level.rate + "%")}
+      </div>
+      <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
+    </div>
+  );
+}
+
+/* ── APN global search ───────────────────────────────────────────────── */
+function APNSearch({ db, meRow, pid, go, onClose }) {
+  const [q, setQ] = useState("");
+  const inputRef = useRef(null);
+  useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 30); return () => clearTimeout(t); }, []);
+  const index = useMemo(() => {
+    const out = [];
+    for (const l of apnLeadsOf(db, pid)) out.push({ id: "l" + l.id, tab: "leads", module: "Lead", title: l.clientName, sub: `${APN_SERVICE_LABEL[l.service]} · ${l.status}`, text: searchHay(l) });
+    for (const qt of (db.apn_quotations || []).filter((x) => x.partnerId === pid)) out.push({ id: "q" + qt.id, tab: "quotations", module: "Quotation", title: qt.clientName, sub: money(qt.total), text: searchHay(qt) });
+    for (const d of (db.apn_documents || [])) out.push({ id: "d" + d.id, tab: "documents", module: "Material", title: d.title, sub: d.category || "", text: searchHay(d) });
+    for (const t of (db.apn_training || [])) out.push({ id: "t" + t.id, tab: "learn", module: "Training", title: t.title, sub: APN_SERVICE_LABEL[t.category] || "", text: searchHay(t) });
+    for (const t of (db.apn_targets || []).filter((x) => x.partnerId === pid)) out.push({ id: "tg" + t.id, tab: "targets", module: "Target", title: t.title, sub: apnMetricLabel(t.metric), text: searchHay(t) });
+    for (const n of (db.apn_notifications || []).filter((x) => apnNotifVisible(x, meRow))) out.push({ id: "n" + n.id, tab: "notifications", module: "Notification", title: n.title, sub: "", text: searchHay(n) });
+    return out;
+  }, [db, pid, meRow]);
+  const results = useMemo(() => {
+    const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!toks.length) return [];
+    return index.filter((r) => toks.every((t) => r.text.includes(t))).slice(0, 40);
+  }, [q, index]);
+  return (
+    <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="cmdk">
+        <div className="cmdk-input"><Search size={20} color="var(--muted)" /><input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads, quotations, materials…" /><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose}><X size={16} /></button></div>
+        <div className="cmdk-results">
+          {!q.trim() ? <div className="cmdk-empty">Search your leads, quotations, targets, training and materials.</div>
+            : results.length === 0 ? <div className="cmdk-empty">No matches for “{q}”.</div>
+              : results.map((r) => (
+                <div key={r.id} className="cmdk-item" onMouseDown={(e) => { e.preventDefault(); go(r.tab); onClose(); }}>
+                  <div className="cmdk-ic"><Search size={15} /></div>
+                  <div className="cmdk-main"><div className="cmdk-title"><SearchHighlight text={r.title} q={q} /></div><div className="cmdk-path">{r.sub}</div></div>
+                  <span className="tag">{r.module}</span>
+                </div>
+              ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── portal shell ────────────────────────────────────────────────────── */
+function APNPortal({ db, profile, session, signOut, isDark, mutate }) {
+  const pid = profile.id;
+  const meRow = apnMe(db, pid);
+  const [tab, setTab] = useState("home");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [modal, setModal] = useState(null);
+
+  useEffect(() => {
+    const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setSearchOpen((v) => !v); } };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  if (!meRow) return (
+    <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+      <style>{CSS}</style><div style={{ color: "var(--muted)", display: "flex", gap: 10, alignItems: "center" }}><Hexagon size={20} className="spin" />Setting up your APN account…</div>
+    </div>
+  );
+
+  const eff = apnEffectiveStatus(meRow);
+  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Application received" body={`Thanks ${meRow.name}. Your APN partner application (${meRow.apnId}) is pending approval from Haji or Alim. You'll get full access as soon as it's approved.`} onSignOut={signOut} />;
+  if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
+  if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
+
+  const stats = apnPartnerStats(db, pid);
+  const isHead = meRow.role === "district_head";
+  const go = (t) => { setTab(t); setMoreOpen(false); };
+  const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id)).length;
+  const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
+
+  const section = () => {
+    switch (tab) {
+      case "home": return <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} />;
+      case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
+      case "wallet": return <APNWallet db={db} pid={pid} stats={stats} />;
+      case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
+      case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} />;
+      case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
+      case "documents": return <APNDocuments db={db} />;
+      case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
+      case "achievements": return <APNAchievements db={db} pid={pid} />;
+      case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
+      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} />;
+      case "profile": return <APNProfile meRow={meRow} stats={stats} sessionEmail={session?.user?.email} onSignOut={signOut} />;
+      default: return null;
+    }
+  };
+
+  const moreItems = [
+    ["targets", "Targets", <Target size={20} color="var(--primary)" />, unackTargets],
+    ["quotations", "Quotations", <FileText size={20} color="var(--primary)" />, 0],
+    ["documents", "Materials", <BookOpen size={20} color="var(--primary)" />, 0],
+    ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
+    ["achievements", "Achievements", <Award size={20} color="var(--primary)" />, 0],
+    ["leaderboard", "Leaderboard", <Trophy size={20} color="var(--primary)" />, 0],
+    ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
+    ["profile", "Profile", <User size={20} color="var(--primary)" />, 0],
+  ];
+  const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["learn", "Learn", GraduationCap]];
+  const showFab = tab === "leads" || tab === "quotations";
+
+  return (
+    <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
+      <style>{CSS}</style>
+      <header className="apn-top">
+        <img className="brand-logo" src={LOGO_ICON} alt="APN" />
+        <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{meRow.apnId} · {meRow.district || "Tamil Nadu"}</div></div>
+        <button className="iconbtn" style={{ width: 34, height: 34 }} onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
+        <button className="iconbtn" style={{ width: 34, height: 34, position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unreadNotif}</span>}</button>
+      </header>
+
+      <div className="apn-body">{section()}</div>
+
+      {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
+
+      <nav className="apn-bottomnav">
+        {primary.map(([k, l, Icon]) => (
+          <button key={k} className={"apn-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
+        ))}
+        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
+          <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div className="apn-more" onMouseDown={(e) => { if (e.target === e.currentTarget) setMoreOpen(false); }}>
+          <div className="apn-more-sheet">
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}><div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>More</div><button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => setMoreOpen(false)}><X size={16} /></button></div>
+            <div className="apn-more-grid">
+              {moreItems.map(([k, l, ic, badge]) => (
+                <button key={k} className="apn-more-item" style={{ position: "relative" }} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge pri" style={{ position: "absolute", top: 8, right: 8, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{badge}</span>}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
+      {modal?.type === "apnLead" && <APNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), null)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnQuote" && <APNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), null)} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   APN ADMIN (internal) — run by Haji / Alim / admins. Approvals, District Head
+   appointment and reactivation are partner-only (superadmin) actions.
+══════════════════════════════════════════════════════════════════════ */
+const apnNotify = (n) => ({ id: uid(), title: n.title || "", body: n.body || "", audience: n.audience || "all", level: n.level || "General", reads: [], createdAt: Date.now() });
+
+/* ── admin forms ─────────────────────────────────────────────────────── */
+function APNRejectForm({ partner, onSave, onClose }) {
+  const [reason, setReason] = useState("");
+  return (
+    <Modal title={`Reject ${partner.name}?`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn danger" onClick={() => { onSave(reason.trim()); onClose(); }}><X size={15} />Reject application</button></>}>
+      <Field label="Reason (shown to the applicant)"><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Incomplete details" /></Field>
+    </Modal>
+  );
+}
+function APNLeadManage({ lead, onSave, onClose }) {
+  const [f, setF] = useState({ status: lead.status, rejectReason: lead.rejectReason || "", revenue: lead.revenue || "", paymentReceived: !!lead.paymentReceived, projectCompleted: !!lead.projectCompleted });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const isConv = f.status === "Converted";
+  const isRej = APN_LEAD_REJECTED.has(f.status);
+  const locked = ["Approved", "Quotation Sent", "Converted"].includes(f.status);
+  const save = () => {
+    onSave({
+      ...lead, status: f.status, rejectReason: isRej ? f.rejectReason.trim() : "",
+      ownershipLocked: lead.ownershipLocked || locked, reviewedAt: lead.reviewedAt || Date.now(),
+      revenue: isConv ? (Number(f.revenue) || 0) : lead.revenue,
+      paymentReceived: isConv ? f.paymentReceived : false,
+      projectCompleted: isConv ? f.projectCompleted : false,
+      convertedAt: isConv ? (lead.convertedAt || Date.now()) : lead.convertedAt,
+    });
+    onClose();
+  };
+  return (
+    <Modal title={`Lead — ${lead.clientName}`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
+      <div className="hint-line" style={{ marginBottom: 10 }}>{lead.leadId} · {APN_SERVICE_LABEL[lead.service]} · by {lead.partnerName}{lead.mobile ? ` · ${lead.mobile}` : ""}</div>
+      <Field label="Status"><select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>{APN_LEAD_STATUS.map((s) => <option key={s}>{s}</option>)}</select></Field>
+      {isRej && <Field label="Rejection reason" hint="Partners can see this."><input className="input" value={f.rejectReason} onChange={(e) => set("rejectReason", e.target.value)} placeholder="Why is it rejected?" /></Field>}
+      {isConv && (
+        <>
+          <Field label="Project revenue" required><input className="input mono" type="number" value={f.revenue} onChange={(e) => set("revenue", e.target.value)} placeholder="20000" /></Field>
+          <div className="perm-list">
+            <label className="perm-item"><input type="checkbox" checked={f.paymentReceived} onChange={(e) => set("paymentReceived", e.target.checked)} />Full payment received</label>
+            <label className="perm-item"><input type="checkbox" checked={f.projectCompleted} onChange={(e) => set("projectCompleted", e.target.checked)} />Project completed</label>
+          </div>
+          <div className="hint-line" style={{ fontSize: 12, marginTop: 8 }}>Commission is generated automatically once payment is received and the project is completed.</div>
+        </>
+      )}
+    </Modal>
+  );
+}
+function APNTargetForm({ partners, onSave, onClose }) {
+  const [f, setF] = useState({ partnerId: partners[0]?.id || "", title: "", metric: "leads", goal: 5 });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const save = () => {
+    if (!f.partnerId || !f.title.trim()) return;
+    const p = partners.find((x) => x.id === f.partnerId);
+    onSave({ id: uid(), partnerId: f.partnerId, partnerName: p?.name || "", title: f.title.trim(), metric: f.metric, goal: Number(f.goal) || 0, acknowledged: false, createdAt: Date.now() });
+    onClose();
+  };
+  return (
+    <Modal title="Assign target" onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Assign</button></>}>
+      <Field label="Partner"><select className="select" value={f.partnerId} onChange={(e) => set("partnerId", e.target.value)}>{partners.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.apnId})</option>)}</select></Field>
+      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. 5 leads this month" /></Field>
+      <div className="grid2">
+        <Field label="Measure"><select className="select" value={f.metric} onChange={(e) => set("metric", e.target.value)}>{APN_TARGET_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+        <Field label="Goal"><input className="input mono" type="number" min="1" value={f.goal} onChange={(e) => set("goal", e.target.value)} /></Field>
+      </div>
+    </Modal>
+  );
+}
+function APNTrainingForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || { category: "website", title: "", body: "" });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const save = () => { if (!f.title.trim()) return; onSave({ ...initial, id: initial?.id || uid(), category: f.category, title: f.title.trim(), body: f.body, createdAt: initial?.createdAt || Date.now() }); onClose(); };
+  return (
+    <Modal title={initial?.id ? "Edit lesson" : "Add training lesson"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
+      <Field label="Category"><select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. How to pitch a website" /></Field>
+      <Field label="Content"><textarea className="textarea" style={{ minHeight: 160 }} value={f.body} onChange={(e) => set("body", e.target.value)} placeholder="Write the training material…" /></Field>
+    </Modal>
+  );
+}
+function APNQuizForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || { category: "website", title: "", passPct: 60, questions: [{ id: uid(), q: "", options: ["", "", "", ""], answer: 0 }] });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const setQ = (qi, patch) => setF((s) => ({ ...s, questions: s.questions.map((q, i) => i === qi ? { ...q, ...patch } : q) }));
+  const setOpt = (qi, oi, v) => setF((s) => ({ ...s, questions: s.questions.map((q, i) => i === qi ? { ...q, options: q.options.map((o, j) => j === oi ? v : o) } : q) }));
+  const addQ = () => setF((s) => ({ ...s, questions: [...s.questions, { id: uid(), q: "", options: ["", "", "", ""], answer: 0 }] }));
+  const rmQ = (qi) => setF((s) => ({ ...s, questions: s.questions.filter((_, i) => i !== qi) }));
+  const save = () => {
+    const questions = f.questions.filter((q) => q.q.trim() && q.options.filter((o) => o.trim()).length >= 2);
+    if (!f.title.trim() || !questions.length) return;
+    onSave({ ...initial, id: initial?.id || uid(), category: f.category, title: f.title.trim(), passPct: Number(f.passPct) || 60, questions, createdAt: initial?.createdAt || Date.now() });
+    onClose();
+  };
+  return (
+    <Modal title={initial?.id ? "Edit quiz" : "Create quiz"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save quiz</button></>}>
+      <div className="grid2">
+        <Field label="Category" hint="Passing unlocks this category's leads."><select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+        <Field label="Pass %"><input className="input mono" type="number" min="1" max="100" value={f.passPct} onChange={(e) => set("passPct", e.target.value)} /></Field>
+      </div>
+      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Website sales quiz" /></Field>
+      {f.questions.map((q, qi) => (
+        <div key={q.id} className="bug-card">
+          <div style={{ display: "flex", gap: 8 }}>
+            <input className="input" value={q.q} onChange={(e) => setQ(qi, { q: e.target.value })} placeholder={`Question ${qi + 1}`} style={{ flex: 1 }} />
+            {f.questions.length > 1 && <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmQ(qi)}><X size={14} /></button>}
+          </div>
+          {q.options.map((o, oi) => (
+            <div key={oi} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="radio" checked={q.answer === oi} onChange={() => setQ(qi, { answer: oi })} title="Correct answer" />
+              <input className="input" value={o} onChange={(e) => setOpt(qi, oi, e.target.value)} placeholder={`Option ${oi + 1}`} style={{ flex: 1 }} />
+            </div>
+          ))}
+          <div className="hint-line" style={{ fontSize: 11 }}>Select the radio next to the correct answer.</div>
+        </div>
+      ))}
+      <button className="btn" onClick={addQ}><Plus size={15} />Add question</button>
+    </Modal>
+  );
+}
+function APNDocForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || { title: "", category: "Sales script", url: "", notes: "" });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const fileRef = useRef(null);
+  const pick = async (e) => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); setErr(""); try { const up = await uploadAttachment(file); setF((s) => ({ ...s, url: up.url, title: s.title || up.name })); } catch (er) { setErr(er.message || "Upload failed."); } finally { setBusy(false); if (e.target) e.target.value = ""; } };
+  const save = () => { if (!f.title.trim() || !f.url.trim()) { setErr("Add a title and a file or link."); return; } onSave({ ...initial, id: initial?.id || uid(), title: f.title.trim(), category: f.category, url: f.url.trim(), notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now() }); onClose(); };
+  return (
+    <Modal title={initial?.id ? "Edit material" : "Upload material"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
+      <div className="grid2">
+        <Field label="Title" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Website price list" /></Field>
+        <Field label="Category"><SelectOther value={f.category} onChange={(v) => set("category", v)} options={["Sales script", "Price list", "Brochure", "Poster", "Flyer", "Brand guideline"]} placeholder="Custom…" /></Field>
+      </div>
+      <Field label="File or link" required hint="Upload a file or paste a link.">
+        <div style={{ display: "flex", gap: 8 }}>
+          <input className="input" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://… or upload →" />
+          <button className="btn" type="button" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Upload size={15} />}Upload</button>
+          <input ref={fileRef} type="file" onChange={pick} style={{ display: "none" }} />
+        </div>
+      </Field>
+      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+    </Modal>
+  );
+}
+function APNNotifForm({ partners, onSave, onClose }) {
+  const [f, setF] = useState({ title: "", body: "", level: "General", audience: "all", partnerId: "", district: TN_DISTRICTS[0] });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const save = () => {
+    if (!f.title.trim()) return;
+    const audience = f.audience === "partner" ? "partner:" + f.partnerId : f.audience === "district" ? "district:" + f.district : "all";
+    if (f.audience === "partner" && !f.partnerId) return;
+    onSave(apnNotify({ title: f.title.trim(), body: f.body.trim(), level: f.level, audience }));
+    onClose();
+  };
+  return (
+    <Modal title="Send APN notification" onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Send size={15} />Send</button></>}>
+      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. New training available" /></Field>
+      <Field label="Message"><textarea className="textarea" value={f.body} onChange={(e) => set("body", e.target.value)} /></Field>
+      <div className="grid2">
+        <Field label="Priority"><select className="select" value={f.level} onChange={(e) => set("level", e.target.value)}>{["General", "Important", "Urgent"].map((l) => <option key={l}>{l}</option>)}</select></Field>
+        <Field label="Audience"><select className="select" value={f.audience} onChange={(e) => set("audience", e.target.value)}><option value="all">All partners</option><option value="district">A district</option><option value="partner">One partner</option></select></Field>
+      </div>
+      {f.audience === "district" && <Field label="District"><select className="select" value={f.district} onChange={(e) => set("district", e.target.value)}>{TN_DISTRICTS.map((d) => <option key={d}>{d}</option>)}</select></Field>}
+      {f.audience === "partner" && <Field label="Partner"><select className="select" value={f.partnerId} onChange={(e) => set("partnerId", e.target.value)}><option value="">Select…</option>{partners.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.apnId})</option>)}</select></Field>}
+    </Modal>
+  );
+}
+
+/* ── admin sub-views ─────────────────────────────────────────────────── */
+function APNAdminPartners({ db, isSuper, act, openModal }) {
+  const [view, setView] = useState("pending");
+  const users = db.apn_users || [];
+  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => apnEffectiveStatus(u) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head").length };
+  const list = users.filter((u) => view === "all" ? true : view === "pending" ? u.status === "pending" : view === "heads" ? u.role === "district_head" : apnEffectiveStatus(u) === view).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return (
+    <div>
+      <div className="sumrow">
+        <div className="card"><div className="k"><Hourglass size={14} /> Pending</div><div className="v mono">{counts.pending}</div></div>
+        <div className="card"><div className="k"><Check size={14} color="var(--pos)" /> Active</div><div className="v mono">{counts.active}</div></div>
+        <div className="card"><div className="k"><XCircle size={14} /> Inactive</div><div className="v mono">{counts.inactive}</div></div>
+        <div className="card"><div className="k"><ShieldCheck size={14} /> District heads</div><div className="v mono">{counts.heads}</div></div>
+      </div>
+      <div className="apn-seg-scroll">{[["pending", "Pending"], ["active", "Active"], ["inactive", "Inactive"], ["heads", "District heads"], ["all", "All"]].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
+      <div className="card">
+        {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No partners here" text="Applications and partners show up in these tabs." />
+          : <div style={{ overflowX: "auto" }}><table className="tbl">
+            <thead><tr><th>Partner</th><th>District</th><th>Level</th><th>Status</th><th></th></tr></thead>
+            <tbody>{list.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); return (
+              <tr key={p.id}>
+                <td><div style={{ fontWeight: 600 }}>{p.name}{p.role === "district_head" && <span className="badge pri" style={{ marginLeft: 6 }}>Head</span>}</div><div className="hint-line" style={{ fontSize: 11 }}>{p.apnId} · {p.mobile || "—"}{p.reactivationRequested || p.reactivationRecommended ? " · ⟳ reactivation requested" : ""}</div></td>
+                <td>{p.district || "—"}<div className="hint-line" style={{ fontSize: 11 }}>{p.taluk || ""}</div></td>
+                <td><span className="tag">{s.level.name}</span><div className="hint-line" style={{ fontSize: 11 }}>{money(s.revenue)} · {s.completed} done</div></td>
+                <td><span className={"status-pill " + (eff === "active" ? "status-active" : eff === "inactive" ? "status-suspended" : eff === "rejected" ? "status-terminated" : "status-on_leave")}>{eff}</span></td>
+                <td><div className="row-actions" style={{ flexWrap: "wrap", gap: 4 }}>
+                  {p.status === "pending" && <><button className="btn sm primary" onClick={() => act.approve(p)}><Check size={13} />Approve</button><button className="btn sm danger" onClick={() => openModal({ type: "apnReject", partner: p })}>Reject</button></>}
+                  {eff === "active" && isSuper && <button className="btn sm" onClick={() => act.deactivate(p)}>Deactivate</button>}
+                  {eff === "inactive" && isSuper && <button className="btn sm primary" onClick={() => act.reactivate(p)}><RefreshCw size={13} />Reactivate</button>}
+                  {isSuper && eff === "active" && (p.role === "district_head" ? <button className="btn sm" onClick={() => act.setHead(p, false)}>Remove head</button> : <button className="btn sm" onClick={() => act.setHead(p, true)}><ShieldCheck size={13} />Make head</button>)}
+                </div></td>
+              </tr>
+            ); })}</tbody>
+          </table></div>}
+      </div>
+    </div>
+  );
+}
+function APNAdminLeads({ db, openModal }) {
+  const [view, setView] = useState("Submitted");
+  const list = (db.apn_leads || []).filter((l) => view === "all" ? true : l.status === view).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return (
+    <div>
+      <div className="apn-seg-scroll">{["Submitted", "Approved", "Quotation Sent", "Converted", "all"].map((k) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{k === "all" ? "All" : k}</button>)}</div>
+      <div className="card">
+        {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No leads" text="Partner-submitted leads appear here for review." />
+          : <div style={{ overflowX: "auto" }}><table className="tbl">
+            <thead><tr><th>Lead</th><th>Partner</th><th>Service</th><th>Status</th><th></th></tr></thead>
+            <tbody>{list.map((l) => (
+              <tr key={l.id}>
+                <td><div style={{ fontWeight: 600 }}>{l.clientName}</div><div className="hint-line" style={{ fontSize: 11 }}>{l.business || "—"} · {l.mobile} · {l.leadId}</div></td>
+                <td>{l.partnerName}</td>
+                <td><span className="tag">{APN_SERVICE_LABEL[l.service]}</span>{l.status === "Converted" && <div className="hint-line" style={{ fontSize: 11 }}>{money(l.revenue)}{l.projectCompleted ? " · done" : ""}</div>}</td>
+                <td><span className={"badge " + apnLeadTone(l.status)}>{l.status}</span></td>
+                <td><button className="btn sm" onClick={() => openModal({ type: "apnLeadManage", lead: l })}><Pencil size={13} />Manage</button></td>
+              </tr>
+            ))}</tbody>
+          </table></div>}
+      </div>
+    </div>
+  );
+}
+function APNAdminCommissions({ db, setCommStatus }) {
+  const [view, setView] = useState("Pending");
+  const list = (db.apn_commissions || []).filter((c) => view === "all" ? true : c.status === view).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const partnerName = (id) => (db.apn_users || []).find((u) => u.id === id)?.name || "—";
+  const totals = APN_COMM_STATUS.map((s) => [s, round2((db.apn_commissions || []).filter((c) => c.status === s).reduce((a, c) => a + (Number(c.amount) || 0), 0))]);
+  return (
+    <div>
+      <div className="sumrow">{totals.map(([s, v]) => <div key={s} className="card"><div className="k">{s}</div><div className="v mono">{money(v)}</div></div>)}</div>
+      <div className="apn-seg-scroll">{[...APN_COMM_STATUS, "all"].map((k) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{k === "all" ? "All" : k}</button>)}</div>
+      <div className="card">
+        {list.length === 0 ? <Empty icon={<Coins size={22} color="var(--muted)" />} title="No commissions" text="Commissions are generated when a converted project is paid and completed." />
+          : <div style={{ overflowX: "auto" }}><table className="tbl">
+            <thead><tr><th>Partner</th><th>Project</th><th className="num-cell">Amount</th><th>Payout</th><th>Status</th></tr></thead>
+            <tbody>{list.map((c) => (
+              <tr key={c.id}>
+                <td>{partnerName(c.partnerId)}{c.kind === "district" && <span className="badge" style={{ marginLeft: 5 }}>District 1%</span>}</td>
+                <td>{c.project}<div className="hint-line" style={{ fontSize: 11 }}>{money(c.revenue)} · {c.rate}%</div></td>
+                <td className="num-cell mono" style={{ fontWeight: 700 }}>{money(c.amount)}</td>
+                <td className="mono" style={{ fontSize: 12 }}>{fmtDate(c.payoutDate)}</td>
+                <td><select className="select" style={{ width: "auto", padding: "4px 6px" }} value={c.status} onChange={(e) => setCommStatus(c, e.target.value)}>{APN_COMM_STATUS.map((s) => <option key={s}>{s}</option>)}</select></td>
+              </tr>
+            ))}</tbody>
+          </table></div>}
+      </div>
+    </div>
+  );
+}
+function APNAdminContent({ db, openModal, removeRow }) {
+  const training = (db.apn_training || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const quizzes = (db.apn_quizzes || []);
+  return (
+    <div>
+      <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Training</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnTraining" })}><Plus size={15} />Lesson</button></div>
+      <div className="apn-list" style={{ marginBottom: 18 }}>
+        {training.length === 0 ? <div className="card stat"><Empty icon={<GraduationCap size={20} color="var(--muted)" />} title="No lessons yet" text="Add sales training for each category." /></div>
+          : training.map((t) => (
+            <div key={t.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="tag">{APN_SERVICE_LABEL[t.category]}</span>
+              <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{t.title}</div>
+              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnTraining", initial: t })}><Pencil size={14} /></button>
+              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_training", t.id, `deleted APN lesson "${t.title}"`)}><Trash2 size={14} /></button>
+            </div>
+          ))}
+      </div>
+      <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Quizzes</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnQuiz" })}><Plus size={15} />Quiz</button></div>
+      <div className="apn-list">
+        {quizzes.length === 0 ? <div className="card stat"><Empty icon={<ClipboardCheck size={20} color="var(--muted)" />} title="No quizzes yet" text="A passed quiz unlocks that category's lead submission for partners." /></div>
+          : quizzes.map((qz) => (
+            <div key={qz.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="tag">{APN_SERVICE_LABEL[qz.category]}</span>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{qz.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{(qz.questions || []).length} questions · pass {qz.passPct || 60}%</div></div>
+              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnQuiz", initial: qz })}><Pencil size={14} /></button>
+              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_quizzes", qz.id, `deleted APN quiz "${qz.title}"`)}><Trash2 size={14} /></button>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+function APNAdminDocs({ db, openModal, removeRow }) {
+  const list = (db.apn_documents || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return (
+    <div>
+      <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Sales materials</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnDoc" })}><Plus size={15} />Upload</button></div>
+      <div className="apn-list">
+        {list.length === 0 ? <div className="card stat"><Empty icon={<FileText size={20} color="var(--muted)" />} title="No materials" text="Upload scripts, price lists, brochures and posters for partners." /></div>
+          : list.map((d) => (
+            <div key={d.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="tag">{d.category}</span>
+              <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{d.title}</div>
+              <a className="iconbtn" style={{ width: 30, height: 30 }} href={d.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a>
+              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnDoc", initial: d })}><Pencil size={14} /></button>
+              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_documents", d.id, `deleted APN material "${d.title}"`)}><Trash2 size={14} /></button>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+function APNAdminLeaderboard({ db }) {
+  const [scope, setScope] = useState("company");
+  const [district, setDistrict] = useState(TN_DISTRICTS[0]);
+  const [metric, setMetric] = useState("revenue");
+  const rows = apnLeaderboard(db, scope, district, metric);
+  const fmtVal = (v) => (metric === "projects" ? String(v) : money(v));
+  return (
+    <div>
+      <div className="filterbar">
+        <Field label="Scope"><select className="select" value={scope} onChange={(e) => setScope(e.target.value)}><option value="company">Company-wide</option><option value="district">District</option></select></Field>
+        {scope === "district" && <Field label="District"><select className="select" value={district} onChange={(e) => setDistrict(e.target.value)}>{TN_DISTRICTS.map((d) => <option key={d}>{d}</option>)}</select></Field>}
+        <Field label="Rank by"><select className="select" value={metric} onChange={(e) => setMetric(e.target.value)}><option value="revenue">Top revenue</option><option value="commission">Top commission</option><option value="projects">Top projects</option></select></Field>
+      </div>
+      <div className="card">
+        {rows.length === 0 ? <Empty icon={<Trophy size={22} color="var(--muted)" />} title="No ranking yet" text="Rankings appear as partners close deals." />
+          : rows.map((r, i) => (
+            <div key={r.u.id} className="apn-rank">
+              <div className={"pos" + (i === 0 ? " g1" : i === 1 ? " g2" : i === 2 ? " g3" : "")}>{i + 1}</div>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{r.u.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{r.u.apnId} · {r.u.district || "—"}</div></div>
+              <div className="mono" style={{ fontWeight: 700 }}>{fmtVal(r.v)}</div>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── admin shell ─────────────────────────────────────────────────────── */
+function APNAdmin({ db, mutate, isSuper, currentUser }) {
+  const [tab, setTab] = useState("partners");
+  const [modal, setModal] = useState(null);
+  const partners = (db.apn_users || []).filter((u) => u.status !== "rejected");
+  const M = (action) => ({ action, module: "APN" });
+  const removeRow = (table, id, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).filter((x) => x.id !== id) }), M(action));
+
+  const act = {
+    approve: (p) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "active", approvedAt: Date.now(), approvedBy: currentUser } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "Welcome to APN 🎉", body: "Your partner account is approved. Complete training, pass a quiz, and start submitting leads.", audience: "partner:" + p.id })] }), M(`approved APN partner "${p.name}"`)),
+    reject: (p, reason) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "rejected", rejectReason: reason } : u) }), M(`rejected APN application "${p.name}"`)),
+    deactivate: (p) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "inactive" } : u) }), M(`deactivated APN partner "${p.name}"`)),
+    reactivate: (p) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "active", reactivatedAt: Date.now(), reactivationRequested: null, reactivationRecommended: null } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "Account reactivated", body: "Your APN account is active again. Remember to check in daily.", audience: "partner:" + p.id })] }), M(`reactivated APN partner "${p.name}"`)),
+    setHead: (p, on) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, role: on ? "district_head" : "partner" } : u) }), M(`${on ? "appointed" : "removed"} district head "${p.name}"`)),
+  };
+  const saveLead = (lead) => mutate((d) => {
+    let next = { ...d, apn_leads: (d.apn_leads || []).map((x) => x.id === lead.id ? lead : x) };
+    const hasComm = (d.apn_commissions || []).some((c) => c.leadId === lead.id);
+    if (lead.status === "Converted" && lead.paymentReceived && lead.projectCompleted && !hasComm) next.apn_commissions = [...(d.apn_commissions || []), ...apnBuildCommissions(next, lead)];
+    return next;
+  }, M(`updated APN lead "${lead.clientName}" → ${lead.status}`));
+  const setCommStatus = (c, status) => mutate((d) => {
+    let next = { ...d, apn_commissions: d.apn_commissions.map((x) => x.id === c.id ? { ...x, status, ...(status === "Approved" ? { approvedAt: Date.now() } : {}), ...(status === "Paid" ? { paidAt: Date.now() } : {}) } : x) };
+    if (status === "Approved" && c.kind !== "district") next.apn_notifications = [...(d.apn_notifications || []), apnNotify({ title: "Commission approved ✅", body: `${money(c.amount)} for ${c.project} is approved and added to your wallet.`, audience: "partner:" + c.partnerId, level: "Important" })];
+    return next;
+  }, M(`set APN commission for ${c.project} → ${status}`));
+  const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" })] }), M(`assigned APN target "${t.title}"`));
+  const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));
+  const sendNotif = (n) => mutate((d) => ({ ...d, apn_notifications: [...(d.apn_notifications || []), n] }), M(`sent APN notification "${n.title}"`));
+
+  const tabs = [["partners", "Partners"], ["leads", "Leads"], ["commissions", "Commissions"], ["targets", "Targets"], ["content", "Training"], ["docs", "Materials"], ["notify", "Notify"], ["board", "Leaderboard"]];
+
+  return (
+    <div className="content">
+      <div className="page-head"><h3>APN — Partner Network</h3><span className="spacer" />
+        {tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
+        {tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
+      </div>
+      <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</div>
+
+      {tab === "partners" && <APNAdminPartners db={db} isSuper={isSuper} act={act} openModal={setModal} />}
+      {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} />}
+      {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
+        <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
+          : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Target</th><th>Progress</th><th>Acknowledged</th></tr></thead>
+            <tbody>{list.map((t) => { const p = apnTargetProgress(db, t); return <tr key={t.id}><td>{t.partnerName}</td><td>{t.title}<div className="hint-line" style={{ fontSize: 11 }}>{t.goal} {apnMetricLabel(t.metric)}</div></td><td className="mono">{p.raw}/{p.goal} ({p.pct}%)</td><td>{t.acknowledged ? <span className="badge pos">Yes</span> : <span className="badge">No</span>}</td></tr>; })}</tbody>
+          </table></div>}</div>
+      ); })()}
+      {tab === "content" && <APNAdminContent db={db} openModal={setModal} removeRow={removeRow} />}
+      {tab === "docs" && <APNAdminDocs db={db} openModal={setModal} removeRow={removeRow} />}
+      {tab === "notify" && (() => { const list = (db.apn_notifications || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
+        <div className="card">{list.length === 0 ? <Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications sent" text="Send updates to all partners, a district, or one partner." action={<button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>} />
+          : list.map((n) => <div key={n.id} className="card stat" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 10 }}><div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{n.audience === "all" ? "All partners" : n.audience.startsWith("district:") ? n.audience.slice(9) : "One partner"} · {fmtDateTime(n.createdAt)}</div></div><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_notifications", n.id, `deleted APN notification "${n.title}"`)}><Trash2 size={14} /></button></div>)}</div>
+      ); })()}
+      {tab === "board" && <APNAdminLeaderboard db={db} />}
+
+      {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={(reason) => act.reject(modal.partner, reason)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnLeadManage" && <APNLeadManage lead={modal.lead} onSave={saveLead} onClose={() => setModal(null)} />}
+      {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} onSave={saveTarget} onClose={() => setModal(null)} />}
+      {modal?.type === "apnTraining" && <APNTrainingForm initial={modal.initial} onSave={(r) => saveRow("apn_training", r, `${modal.initial ? "updated" : "added"} APN lesson "${r.title}"`)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnQuiz" && <APNQuizForm initial={modal.initial} onSave={(r) => saveRow("apn_quizzes", r, `${modal.initial ? "updated" : "created"} APN quiz "${r.title}"`)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnDoc" && <APNDocForm initial={modal.initial} onSave={(r) => saveRow("apn_documents", r, `${modal.initial ? "updated" : "uploaded"} APN material "${r.title}"`)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnNotif" && <APNNotifForm partners={partners} onSave={sendNotif} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+
+export default function App() {
+  const [db, setDb] = useState(null);
+  const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
+  const [profile, setProfile] = useState(undefined);  // undefined = loading, null = none
+  const [team, setTeam] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState(null);
+  const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
+  const [route, setRoute] = useState("dashboard");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);   // universal search (Ctrl/⌘+K)
+  const [topBusy, setTopBusy] = useState(false);
+  const [userMenu, setUserMenu] = useState(false);
+  const [modal, setModal] = useState(null); // {type, ...}
+  const [balanceUser, setBalanceUser] = useState(null);
+  const [accountUser, setAccountUser] = useState(null);   // full-page partner statement (Haji/Alim)
+  const [taskDetailId, setTaskDetailId] = useState(null); // full-page task detail
+  const [config, setConfig] = useState(null);             // app_config (T&C body + version)
+  const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
+  const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
+  const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
+  const dragNavRef = useRef(null);
+
+  const currentUser = profile?.name || null;
+  const role = profile?.role;
+  const isSuper = isSuperRole(role);
+  const isAdmin = isAdminRole(role);        // management level (superadmin OR admin)
+  const canFinance = canFinanceRole(role);  // the money (superadmin OR accountant)
+  const me = { id: session?.user?.id, name: currentUser, role };
+
+  // ── tap feedback ──────────────────────────────────────────────────────
+  // Subtle tap feedback on interactive elements, app-wide. Very light, and only
+  // on real taps of buttons/nav (not typing or scrolling). Works where the device
+  // supports the web vibration API (Android); iOS Safari has no equivalent.
+  useEffect(() => {
+    const onTap = (e) => {
+      const t = e.target;
+      const el = t && t.closest ? t.closest("button, .btn, .navitem, .iconbtn, .userchip, .seg button, [role='button']") : null;
+      if (el && !el.disabled) haptic(6);
+    };
+    document.addEventListener("pointerdown", onTap, { passive: true });
+    return () => document.removeEventListener("pointerdown", onTap);
+  }, []);
+
+  // ── universal search shortcut (Ctrl / ⌘ + K) ───────────────────────────
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ── auth session ──────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
+      // Supabase auto-refreshes the JWT whenever the tab/app regains focus and
+      // fires TOKEN_REFRESHED with a brand-new session object. That object change
+      // used to re-run the data-load effect, flip `loading`, and remount the whole
+      // page — wiping anything you were typing. Only update when the actual signed-in
+      // user changes (sign in / sign out / switch account); ignore pure token
+      // refreshes by returning the previous reference so React skips the update.
+      setSession((prev) => {
+        const prevId = prev && prev.user ? prev.user.id : null;
+        const nextId = s && s.user ? s.user.id : null;
+        if (prevId === nextId) return prev;   // same user → no churn, no reload
+        return s ?? null;
+      });
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // ── load my profile + the team + config, with live updates ────────────
+  const loadPeople = useCallback(async (user) => {
+    try {
+      await ensureProfile(user);
+      const [list, cfg, lk] = await Promise.all([fetchTeam(), fetchConfig(), fetchLocks()]);
+      setTeam(list);
+      setConfig(cfg);
+      setLocks(lk);
+      setProfile(list.find((p) => p.id === user.id) || null);
+    } catch (e) { setSyncError(e.message || String(e)); setProfile(null); }
+  }, []);
+
+  useEffect(() => {
+    if (!session) { setProfile(undefined); setTeam([]); setConfig(null); setLocks([]); return; }
+    loadPeople(session.user);
+    const ch = supabase.channel("allbee-people")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadPeople(session.user))
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_config" }, () => loadPeople(session.user))
+      .on("postgres_changes", { event: "*", schema: "public", table: "fin_locks" }, async () => setLocks(await fetchLocks()));
+    ch.subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [session, loadPeople]);
+
+  const reload = useCallback(async () => {
+    try { setDb(await fetchAll()); setSyncError(null); }
+    catch (e) { setSyncError(e.message || String(e)); }
+    finally { setLoading(false); }
+  }, []);
+
+  // ── load data + live sync while signed in ─────────────────────────────
+  useEffect(() => {
+    if (!session) { setDb(null); setLoading(false); return; }
+    setLoading(true);
+    reload();
+    const ch = supabase.channel("allbee-db-sync");
+    TABLES.forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    ch.subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [session, reload]);
+
+  // If an admin changes my role or the modules I'm granted while I'm signed in,
+  // my row-level access changes — so refetch everything under the new permissions
+  // (otherwise a freshly-granted module would show up empty until a refresh).
+  const accessKey = `${profile?.role || ""}|${JSON.stringify(profile?.perms?.modules || [])}`;
+  const accessKeyRef = useRef(accessKey);
+  useEffect(() => {
+    if (accessKeyRef.current !== accessKey) {
+      accessKeyRef.current = accessKey;
+      if (session && db) reload();
+    }
+  }, [accessKey, session, db, reload]);
+
+  // mutate(updater, auditEntryOrNull) — updates the screen instantly, then
+  // saves only the rows that changed. The other staff member's screen updates live.
+  // Audit entries are written for admin actions only (staff can't access the log).
+  const mutate = useCallback((updater, audit) => {
+    setDb((prev) => {
+      if (!prev) return prev;
+      let next = updater(prev);
+      if (audit) next = { ...next, audit: [...next.audit, { id: uid(), ts: Date.now(), user: currentUser || "—", ...audit }] };
+      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
+      return next;
+    });
+  }, [currentUser]);
+
+  // ── soft delete (recycle bin) ─────────────────────────────────────────
+  // Move a row out of its table and into `recycle` instead of destroying it.
+  // Original screens need no change — the row simply disappears from their list.
+  // Audit is written for admins only (staff have no access to the audit table),
+  // but a staff member's deleted item is still recoverable by an admin.
+  const removeItem = useCallback((table, item, opts = {}) => {
+    const name = opts.name || item.name || item.title || item.client || "item";
+    const module = MODULE_LABEL[table] || table;
+    const rec = {
+      id: uid(), table, module, name, item,
+      deletedBy: currentUser || "—", deletedById: me.id || null, deletedAt: Date.now(),
+    };
+    mutate(
+      (d) => ({ ...d, [table]: d[table].filter((x) => x.id !== item.id), recycle: [...d.recycle, rec] }),
+      { action: opts.audit || `deleted ${module.toLowerCase()} "${name}"`, module }
+    );
+  }, [mutate, currentUser, isAdmin, me.id]);
+
+  // Restore a recycled row back into its original table.
+  const restoreItem = useCallback((rec) => {
+    mutate((d) => {
+      const exists = (d[rec.table] || []).some((x) => x.id === rec.item.id);
+      return {
+        ...d,
+        [rec.table]: exists ? d[rec.table] : [...(d[rec.table] || []), rec.item],
+        recycle: d.recycle.filter((r) => r.id !== rec.id),
+      };
+    }, { action: `restored ${rec.module.toLowerCase()} "${rec.name}"`, module: rec.module });
+  }, [mutate, isAdmin]);
+
+  // Auto-cleanup: permanently drop recycle rows older than 60 days. Runs once
+  // per load for admins (their RLS lets them delete any recycle row). This is a
+  // client-side sweep — see README for the optional server-side cron upgrade.
+  const purgedRef = useRef(false);
+  const purgeExpired = useCallback(() => {
+    const cutoff = Date.now() - RECYCLE_TTL_DAYS * 86400000;
+    setDb((prev) => {
+      if (!prev || !prev.recycle?.length) return prev;
+      const keep = prev.recycle.filter((r) => (r.deletedAt || 0) >= cutoff);
+      if (keep.length === prev.recycle.length) return prev;
+      const next = { ...prev, recycle: keep };
+      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
+      return next;
+    });
+  }, []);
+
+  // Retention: drop testing screenshots older than 30 days (references + the
+  // underlying storage objects) so QA images don't grow storage forever. Runs
+  // once per load for admins, mirroring the recycle-bin sweep above.
+  const purgeTestImages = useCallback(() => {
+    const cutoff = Date.now() - TEST_IMAGE_TTL_DAYS * 86400000;
+    setDb((prev) => {
+      if (!prev || !(prev.testing || []).length) return prev;
+      const toRemove = [];
+      let changed = false;
+      const testing = prev.testing.map((s) => {
+        if (!Array.isArray(s.bugs) || !s.bugs.length) return s;
+        let bugChanged = false;
+        const bugs = s.bugs.map((b) => {
+          if (!Array.isArray(b.images) || !b.images.length) return b;
+          const keep = b.images.filter((im) => (im.at || 0) >= cutoff);
+          if (keep.length === b.images.length) return b;
+          bugChanged = true;
+          for (const im of b.images) if ((im.at || 0) < cutoff) { const p = im.path || storagePathFromUrl(im.url); if (p) toRemove.push(p); }
+          return { ...b, images: keep };
+        });
+        if (!bugChanged) return s;
+        changed = true;
+        return { ...s, bugs };
+      });
+      if (!changed) return prev;
+      if (toRemove.length) { try { supabase.storage.from("attachments").remove(toRemove); } catch { /* best effort */ } }
+      const next = { ...prev, testing };
+      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin && !loading && db && !purgedRef.current) { purgedRef.current = true; purgeExpired(); purgeTestImages(); }
+  }, [isAdmin, loading, db, purgeExpired, purgeTestImages]);
+
+  // Create an APN partner's profile row on first login from the details they
+  // gave at sign-up (assigns their APN-TN id), then refresh so it appears.
+  const apnEnsuredRef = useRef(false);
+  useEffect(() => {
+    if (role === "partner" && session && db && !apnEnsuredRef.current && !apnMe(db, session.user.id)) {
+      apnEnsuredRef.current = true;
+      ensureApnProfile(session.user, db.apn_users).then((created) => { if (created) reload(); }).catch((e) => setSyncError(e.message || String(e)));
+    }
+  }, [role, session, db, reload]);
+
+  const replaceDB = useCallback(async (d) => {
+    const clean = { ...emptyDB(), ...d };
+    try { await replaceAll(clean); setDb(clean); setSyncError(null); }
+    catch (e) { setSyncError(e.message || String(e)); }
+  }, []);
+
+  const changeProfile = useCallback(async (id, patch, auditAction) => {
+    try {
+      await updateProfile(id, patch);
+      // Profile updates write straight to Postgres (not through `mutate`), so on
+      // their own they never reach the audit log. When the caller supplies a
+      // description (role/status/approval changes), record it so the Audit log
+      // shows team-management actions too.
+      if (auditAction) mutate((d) => d, { action: auditAction, module: "Team" });
+      if (session) await loadPeople(session.user);
+    }
+    catch (e) { setSyncError(e.message || String(e)); }
+  }, [session, loadPeople, mutate]);
+
+  // Permanently remove a registered client (a self-signed-up portal account).
+  // Same approach as Manage user: delete the profile row (frees the email), then
+  // best-effort delete their login via the admin-users edge function if deployed.
+  const deleteClientAccount = useCallback(async (person) => {
+    if (!person || person.role !== "client") return;
+    try {
+      const { error } = await supabase.from("profiles").delete().eq("id", person.id);
+      if (error) throw error;
+    } catch (e) {
+      setSyncError(/(permission|denied|policy|row-level)/i.test((e && e.message) || "")
+        ? "The database is blocking the delete. Run allbee-delete-user.sql once, then try again."
+        : ("Couldn't remove the client: " + ((e && e.message) || "unknown error")));
+      return;
+    }
+    try { await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } }); } catch { /* edge function optional — profile already removed */ }
+    mutate((d) => d, { action: `deleted client account "${person.name}"`, module: "Clients" });
+    if (session) await loadPeople(session.user);
+  }, [session, loadPeople, mutate]);
+
+  // first-login profile completion + T&C acceptance (both write to my own row)
+  const saveMyProfile = useCallback((patch) => changeProfile(me.id, patch), [changeProfile, me.id]);
+  const acceptTnc = useCallback((agreements) => {
+    const patch = {};
+    let roleAccepts = null;
+    for (const a of (agreements || [])) {
+      if (a.key === "all") patch.tnc_version = a.version;
+      else { roleAccepts = roleAccepts || { ...acceptedRoleTnc(profile) }; roleAccepts[a.key] = a.version; }
+    }
+    if (roleAccepts) patch.tnc_roles_accepted = roleAccepts;
+    return changeProfile(me.id, patch);
+  }, [changeProfile, me.id, profile]);
+  // publish/edit the Terms (admins): bump the version so everyone re-accepts
+  const saveTnc = useCallback(async (body) => {
+    const next = Number(config?.tnc_version || 0) + 1;
+    await saveConfig({ tnc_body: body, tnc_version: next });
+    if (session) setConfig(await fetchConfig());
+  }, [config, session]);
+  // publish/edit a ROLE-SPECIFIC agreement; bumps just that role's version
+  const saveRoleTnc = useCallback(async (roleKey, body) => {
+    const map = roleTncOf(config);
+    const cur = map[roleKey] || {};
+    map[roleKey] = { body, version: Number(cur.version || 0) + 1 };
+    await saveConfig({ tnc_roles: JSON.stringify(map) });
+    if (session) setConfig(await fetchConfig());
+  }, [config, session]);
+  const saveCompany = useCallback(async (obj) => {
+    await saveConfig({ company: JSON.stringify(obj || {}) });
+    if (session) setConfig(await fetchConfig());
+  }, [session]);
+  const resolveResign = (r, decision) => {
+    mutate((d) => ({ ...d, resignations: (d.resignations || []).map((x) => x.id === r.id ? { ...x, status: decision, resolvedAt: Date.now() } : x) }), { action: `${decision === "Approved" ? "approved" : "declined"} ${r.userName}'s resignation request`, module: "Team" });
+    if (decision === "Approved") changeProfile(r.userId, { status: "resigned", active: false });
+  };
+
+  const signOut = async () => { setUserMenu(false); await supabase.auth.signOut(); };
+
+  const bal = useMemo(() => (db ? balances(db) : { Haji: 0, Alim: 0, company: 0 }), [db]);
+
+  const openModal = (m) => setModal(m);
+  const openBalance = (u) => setBalanceUser(u);
+  const setHash = (h) => { if (window.location.hash !== h) window.location.hash = h; };
+  const go = (r) => {
+    setRoute(r); setAccountUser(null); setTaskDetailId(null); setMenuOpen(false);
+    setHash(r === "dashboard" ? "#/" : `#/${r}`);
+  };
+  const openAccount = (u) => { setAccountUser(u); setTaskDetailId(null); setRoute("accounts"); setMenuOpen(false); setHash(`#/accounts/${String(u).toLowerCase()}`); };
+  const openTask = (id) => { setTaskDetailId(id); setAccountUser(null); setRoute("tasks"); setMenuOpen(false); setHash(`#/tasks/${encodeURIComponent(id)}`); };
+  const goBackDetail = () => {
+    const target = taskDetailId ? "tasks" : "accounts";
+    setAccountUser(null); setTaskDetailId(null); setRoute(target);
+    setHash(`#/${target}`);
+  };
+
+  // keep the URL hash and the in-app view in sync (reload-safe deep links)
+  useEffect(() => {
+    const apply = () => {
+      const p = parseHash(window.location.hash);
+      setAccountUser(p.account); setTaskDetailId(p.task);
+      if (p.route) setRoute(p.route);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, []);
+
+  // Presence heartbeat: mark me active so teammates see an "online" dot.
+  useEffect(() => {
+    if (!session || !me.id) return;
+    const beat = () => { if (typeof document !== "undefined" && document.visibilityState === "hidden") return; supabase.from("profiles").update({ last_active: new Date().toISOString() }).eq("id", me.id).then(() => {}, () => {}); };
+    beat();
+    const t = setInterval(beat, 60000);
+    return () => clearInterval(t);
+  }, [session, me.id]);
+
+  // open income form prefilled (used by projects / courses / marketing)
+  const openIncome = (prefill) => setModal({ type: prefill?.kind === "expense" ? "expense" : "income", initial: prefill, source: prefill?.source });
+
+  const saveShare = (entry, source) => {
+    const prev = entry.id ? db.transactions.find((t) => t.id === entry.id) : null;
+    const shareChanged = prev && (prev.hajiPct !== entry.hajiPct || prev.alimPct !== entry.alimPct);
+    const shareNote = shareChanged ? ` · share ${prev.hajiPct}/${prev.alimPct} → ${entry.hajiPct}/${entry.alimPct}` : "";
+    // Company expenses are split from the previous valid revenue month — record
+    // which month's share was applied so the audit log has a clear trail.
+    const companyNote = (entry.kind === "expense" && entry.scope === "company")
+      ? ` · company split ${entry.hajiPct}/${entry.alimPct}${entry.shareSource ? ` (from ${fmtPeriod(entry.shareSource)} revenue)` : " — even split, no revenue yet"}`
+      : "";
+    mutate((d) => {
+      let next = { ...d };
+      if (entry.id && d.transactions.some((t) => t.id === entry.id)) next.transactions = d.transactions.map((t) => t.id === entry.id ? entry : t);
+      else next.transactions = [...d.transactions, entry];
+      // update linked source status
+      if (source?.kind === "student") next.students = next.students.map((s) => s.id === source.id ? { ...s, paymentStatus: "Paid" } : s);
+      if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: entry.date } : m);
+      return next;
+    }, { action: `${entry.id ? "updated" : "added"} ${entry.kind} ${money(entry.amount)}${entry.client ? " · " + entry.client : ""}${shareNote}${companyNote}`, module: "Accounts" });
+  };
+
+  const saveTask = async (task, fromConcept) => {
+    const isUpdate = task.id && db.tasks.some((t) => t.id === task.id);
+    let t = task;
+    if (!isUpdate && t.num == null) {
+      const n = await nextTaskNumber();        // global counter — numbers are never reused
+      if (n != null) t = { ...t, num: n };
+    }
+    mutate((d) => {
+      let next = { ...d };
+      if (isUpdate) next.tasks = d.tasks.map((x) => x.id === t.id ? t : x);
+      else next.tasks = [...d.tasks, t];
+      if (fromConcept) next.concepts = d.concepts.filter((c) => c.id !== fromConcept);
+      return next;
+    }, { action: `${isUpdate ? "updated" : "created"} task "${t.title}"${!isUpdate && t.num ? ` (#${t.num})` : ""}`, module: "Tasks" });
+  };
+
+  const saveGeneric = (coll, item, label) => {
+    let toSave = item;
+    // staff-created projects need an admin's approval before they count as active
+    if (coll === "projects" && !db.projects.some((x) => x.id === item.id)) {
+      toSave = { ...item, approvalStatus: isAdmin ? "approved" : "pending", createdById: me.id, ownerName: currentUser };
+    }
+    // stamp the registrar on new students so commission credits the right person
+    if (coll === "students" && !db.students.some((x) => x.id === item.id)) {
+      toSave = { ...item, createdById: me.id, ownerName: currentUser };
+    }
+    mutate((d) => ({ ...d, [coll]: d[coll].some((x) => x.id === toSave.id) ? d[coll].map((x) => x.id === toSave.id ? toSave : x) : [...d[coll], toSave] }),
+      { action: `${db[coll].some((x) => x.id === item.id) ? "updated" : "added"} ${label}${coll === "projects" && !isAdmin && !db.projects.some((x) => x.id === item.id) ? " (awaiting approval)" : ""}`, module: label === "project" ? "Projects" : label === "student" ? "Courses" : label === "marketing client" ? "Marketing" : "Concepts" });
+  };
+
+  // CRM / collaboration / finance rows: stamp the owner + author on first save.
+  const saveOwned = (coll, item) => {
+    const isUpdate = db[coll].some((x) => x.id === item.id);
+    const row = isUpdate ? item : { ...item, ownerId: me.id, owner: currentUser, by: currentUser };
+    mutate((d) => ({ ...d, [coll]: isUpdate ? d[coll].map((x) => x.id === item.id ? row : x) : [...d[coll], row] }),
+      { action: `${isUpdate ? "updated" : "added"} ${MODULE_LABEL[coll] || coll}`, module: MODULE_LABEL[coll] || coll });
+    setModal(null);
+  };
+
+  // Create / update a team (super admin). Stored in the `teams` table.
+  const saveTeamCfg = (t) => {
+    const isUpdate = (db.teams || []).some((x) => x.id === t.id);
+    mutate((d) => ({ ...d, teams: isUpdate ? d.teams.map((x) => x.id === t.id ? t : x) : [...(d.teams || []), t] }),
+      { action: `${isUpdate ? "updated" : "created"} team "${t.name}"`, module: "Team leads" });
+    setModal(null);
+  };
+
+  // Create / update a test session. Stamps the creator on first save and logs a
+  // clear "created / assigned" line for the audit trail.
+  const saveTesting = (t) => {
+    const isUpdate = (db.testing || []).some((x) => x.id === t.id);
+    const prev = isUpdate ? db.testing.find((x) => x.id === t.id) : null;
+    const row = isUpdate ? t : { ...t, createdBy: currentUser, createdById: me.id };
+    const assignNote = t.assignedTo && (!prev || prev.assignedToId !== t.assignedToId) ? ` · assigned to ${t.assignedTo}` : "";
+    mutate((d) => ({ ...d, testing: isUpdate ? d.testing.map((x) => x.id === t.id ? row : x) : [...(d.testing || []), row] }),
+      { action: `${isUpdate ? "updated" : "created"} test session "${t.title}"${t.projectName ? ` for ${t.projectName}` : ""}${assignNote}`, module: "Testing" });
+    setModal(null);
+  };
+
+  const Loading = ({ note }) => (
+    <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+      <style>{CSS}</style>
+      <div style={{ color: "var(--muted)", display: "flex", alignItems: "center", gap: 10 }}>
+        <Hexagon size={20} className="spin" /> {note || "Loading ALLBEE…"}
+      </div>
+    </div>
+  );
+
+  if (session === undefined) return <Loading />;
+  if (!session) return <Lock isDark={isDark} setDark={setIsDark} />;
+  if (profile === undefined) return <Loading note="Signing you in…" />;
+  if (profile && profile.active === false)
+    return <Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />;
+  // new staff & client sign-ups wait for a partner to approve them
+  if (profile && (role === "staff" || role === "client") && profile.approved === false)
+    return <ApprovalPending isDark={isDark} name={currentUser} onSignOut={signOut} />;
+  // portal clients get their own surface and skip the internal profile/T&C gates
+  if (role === "client") {
+    if (loading || !db) return <Loading note="Loading your portal…" />;
+    return <ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} />;
+  }
+  // APN partners get their own mobile-first portal — fully separate from the
+  // internal app, so they never reach accounts, balances, the vault or the team.
+  if (role === "partner") {
+    if (loading || !db) return <Loading note="Loading APN…" />;
+    return <APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} />;
+  }
+  // first login: require the core profile details before anything else
+  if (profile && (!profile.mobile || !profile.dob))
+    return <ProfileSetup profile={profile} onSave={saveMyProfile} onSignOut={signOut} isDark={isDark} />;
+  // then the Terms gate — show every agreement (general + role-specific) this
+  // user still needs to accept; they accept all before gaining access
+  const tncPending = pendingTnc(config, profile, role);
+  if (profile && tncPending.length)
+    return <TermsGate agreements={tncPending} onAccept={acceptTnc} onSignOut={signOut} isDark={isDark} />;
+  if (loading || !db) return <Loading />;
+
+  const teamNames = team.length ? team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head" && p.active !== false).map((p) => p.name) : USERS;
+  const myTeam = teamOfUser(db?.teams, me.id);
+  const visibleNav = NAV.filter((n) => navAllowed(n[3], role, profile?.perms || {}))
+    .filter((n) => n[0] !== "myteam" || !!myTeam);
+  const allowedRoutes = new Set(visibleNav.map((n) => n[0]));
+  const safeRoute = allowedRoutes.has(route) ? route : "dashboard";
+  const detailTask = taskDetailId ? db.tasks.find((t) => t.id === taskDetailId) : null;
+  const routeTitle =
+    accountUser && canFinance ? `${accountUser} — account` :
+    taskDetailId ? (detailTask ? detailTask.title : "Task") :
+    NAV.find((n) => n[0] === safeRoute)?.[1] || "";
+  const myPending = db.tasks.filter((t) => t.status !== "Completed" && (isAdmin || taskAssignees(t).includes(currentUser))).length;
+  const pendingLeave = isAdmin ? db.leave.filter((l) => l.status === "Pending").length : 0;
+  const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
+  const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
+  const portalClients = team.filter((p) => p.role === "client");
+  const unseenAnn = db.announcements.filter((a) => !profile?.notif_seen_at || (a.createdAt || 0) > new Date(profile.notif_seen_at).getTime()).length;
+
+  const renderPage = () => {
+    // full-page detail views take precedence over the tab routes
+    if (taskDetailId) return <TaskDetail db={db} taskId={taskDetailId} me={me} isAdmin={isAdmin} currentUser={currentUser} mutate={mutate} openModal={openModal} removeItem={removeItem} goBack={goBackDetail} />;
+    if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} goBack={goBackDetail} />;
+
+    switch (safeRoute) {
+      case "dashboard":
+        return (role === "staff" || role === "intern")
+          ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
+          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} />;
+      case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} removeItem={removeItem} />;
+      case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
+      case "leave": return <Leave db={db} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
+      case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
+      case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} />;
+      case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
+      case "apn": return <APNAdmin db={db} mutate={mutate} isSuper={isSuper} currentUser={currentUser} />;
+      case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
+      case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
+      case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
+      case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
+      case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} />;
+      case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
+      case "courses": return <Courses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
+      case "marketing": return <Marketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
+      case "projects": return <Projects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} />;
+      case "inhouse": return <InHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} />;
+      case "testing": return <Testing db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} />;
+      case "leads": return <Leads db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} />;
+      case "clients": return <Clients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} />;
+      case "quotations": return <Quotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} />;
+      case "invoices": return <Invoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
+      case "portal-posts": return <PortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
+      case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
+      case "vault": return <Vault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
+      case "notifications": return <Notifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} />;
+      case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
+      case "documents": return <Documents db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
+      case "knowledge": return <Knowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} />;
+      case "prompts": return <Prompts db={db} openModal={openModal} removeItem={removeItem} />;
+      case "sheets": return <Sheets db={db} openModal={openModal} removeItem={removeItem} />;
+      case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
+      case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
+      case "chat": return <Chat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} />;
+      case "performance": return <Performance db={db} team={team} />;
+      case "rewards": return <Rewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} />;
+      case "earnings": return <MyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} />;
+      case "recently-deleted": return <RecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} />;
+      case "audit": return <AuditLog db={db} />;
+      case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} />;
+      default: return null;
+    }
+  };
+
+  // Sidebar: favorites pinned on top + drag-to-reorder, persisted locally.
+  const persistNav = (o) => { try { localStorage.setItem("allbee_navorder", JSON.stringify(o)); } catch { /* ignore */ } };
+  const persistFavs = (o) => { try { localStorage.setItem("allbee_favs", JSON.stringify(o)); } catch { /* ignore */ } };
+  const toggleFav = (k) => setFavorites((prev) => { const nx = prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]; persistFavs(nx); return nx; });
+  const moveNav = (dragK, dropK) => {
+    if (dragK === dropK) return;
+    setNavOrder((prev) => {
+      const base = (prev && prev.length) ? prev.slice() : NAV.map((n) => n[0]);
+      if (!base.includes(dragK)) base.push(dragK);
+      if (!base.includes(dropK)) base.push(dropK);
+      base.splice(base.indexOf(dragK), 1);
+      base.splice(base.indexOf(dropK), 0, dragK);
+      persistNav(base);
+      return base;
+    });
+  };
+  const favSet = new Set(favorites);
+  const navRank = (k) => { const i = (navOrder || []).indexOf(k); return i === -1 ? 1000 + NAV.findIndex((n) => n[0] === k) : i; };
+  const sortedNav = visibleNav.slice().sort((a, b) => navRank(a[0]) - navRank(b[0]));
+  const favNav = sortedNav.filter((n) => favSet.has(n[0]));
+  const restNav = sortedNav.filter((n) => !favSet.has(n[0]));
+  const navBadge = (key) => (
+    <>
+      {key === "tasks" && myPending > 0 && <span className="badge pri">{myPending}</span>}
+      {key === "leave" && pendingLeave > 0 && <span className="badge pri">{pendingLeave}</span>}
+      {key === "notifications" && unreadNotifs > 0 && <span className="badge pri">{unreadNotifs}</span>}
+      {key === "chat" && unreadChat > 0 && <span className="badge pri">{unreadChat}</span>}
+    </>
+  );
+  const renderNav = ([key, label, Icon]) => (
+    <div key={key} draggable
+      onDragStart={(e) => { dragNavRef.current = key; try { e.dataTransfer.effectAllowed = "move"; } catch { /* ignore */ } }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); if (dragNavRef.current) moveNav(dragNavRef.current, key); dragNavRef.current = null; }}
+      className={"navitem" + (safeRoute === key ? " active" : "")} onClick={() => go(key)} title="Drag to reorder">
+      <Icon size={18} />
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      {navBadge(key)}
+      <button onClick={(e) => { e.stopPropagation(); toggleFav(key); }} title={favSet.has(key) ? "Unpin from favorites" : "Pin to favorites"} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 2, opacity: favSet.has(key) ? 0.95 : 0.3, flex: "none", display: "flex" }}><Star size={13} fill={favSet.has(key) ? "currentColor" : "none"} /></button>
+    </div>
+  );
+
+  return (
+    <ErrorBoundary>
+      <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"}>
+        <style>{CSS}</style>
+
+        {syncError && (
+          <div className="banner"><CloudOff size={15} /> Couldn't sync with the server: {syncError}</div>
+        )}
+
+        <div className="layout">
+          {menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />}
+          <aside className="sidebar">
+            <div className="brand">
+              <img className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
+              <div><h1>ALLBEE</h1><p>Solutions</p></div>
+            </div>
+            {favNav.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 11px 2px" }}>Favorites</div>}
+            {favNav.map(renderNav)}
+            {favNav.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "12px 11px 2px" }}>All modules</div>}
+            {restNav.map(renderNav)}
+            <div className="sidebar-foot">
+              <div className="navitem" onClick={() => { const nd = !isDark; setIsDark(nd); try { localStorage.setItem("allbee_theme", nd ? "dark" : "light"); } catch { /* ignore */ } }}>{isDark ? <Sun size={18} /> : <Moon size={18} />} {isDark ? "Light mode" : "Dark mode"}</div>
+            </div>
+          </aside>
+
+          <div className="main">
+            <header className="topbar">
+              <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu"><Menu size={18} /></button>
+              <div className="topbar-title"><h2>{routeTitle}</h2><div className="topbar-sub">ALLBEE Solutions · internal</div></div>
+              {canFinance && (
+                <div className="company-pill" title="Company balance">
+                  <Wallet size={14} color="var(--muted)" />
+                  <span className="lbl">Balance</span>
+                  <span className="val mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</span>
+                </div>
+              )}
+              <div className="usermenu">
+                <button className="search-trigger" onClick={() => setSearchOpen(true)} title="Search (Ctrl K)">
+                  <Search size={16} /><span className="st-lbl" style={{ flex: 1, textAlign: "left" }}>Search…</span><span className="st-kbd">Ctrl K</span>
+                </button>
+                <button className="iconbtn" title="Refresh" disabled={topBusy}
+                  onClick={async () => { setTopBusy(true); try { await reload(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
+                  <RefreshCw size={18} className={topBusy ? "spin" : ""} />
+                </button>
+                <button className="iconbtn" title="Announcements" style={{ position: "relative" }}
+                  onClick={() => { go("announcements"); if (me.id) changeProfile(me.id, { notif_seen_at: new Date().toISOString() }); }}>
+                  <Bell size={18} />
+                  {unseenAnn > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unseenAnn}</span>}
+                </button>
+                <div className="userchip" onClick={() => setUserMenu((v) => !v)}>
+                  <Avatar name={currentUser} url={profile?.photo_url} size={26} />
+                  <span className="userchip-name">{currentUser}</span>
+                  <span className={"role-badge " + (role || "staff")}>{ROLE_LABEL[role] || "Staff"}</span>
+                </div>
+                {userMenu && (
+                  <div className="dropdown" onMouseLeave={() => setUserMenu(false)}>
+                    <div className="drop-id">
+                      <Avatar name={currentUser} url={profile?.photo_url} size={22} fontSize={10} />
+                      <div><div style={{ fontWeight: 700, fontSize: 13 }}>{currentUser}</div><div className="hint-line" style={{ fontSize: 11 }}>{session?.user?.email}</div></div>
+                    </div>
+                    {role !== "superadmin" && <button onClick={() => { setUserMenu(false); openModal({ type: "resign" }); }}><XCircle size={15} />Request resignation</button>}
+                    <button onClick={signOut}><LogOut size={15} />Sign out</button>
+                  </div>
+                )}
+              </div>
+            </header>
+            {renderPage()}
+          </div>
+        </div>
+
+        {/* MODALS */}
+        {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
+        {modal?.type === "expense" && <ShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
+        {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
+        {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}
+        {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
+        {modal?.type === "project" && <ProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} />}
+        {modal?.type === "inhouse" && <InHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "testSession" && <TestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} />}
+        {modal?.type === "teamcfg" && <TeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} />}
+        {modal?.type === "student" && <StudentForm initial={modal.initial} onSave={(s) => saveGeneric("students", s, "student")} onClose={() => setModal(null)} />}
+        {modal?.type === "marketing" && <MarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} />}
+        {modal?.type === "concept" && <ConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} />}
+        {modal?.type === "lead" && <LeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "client" && <ClientForm initial={modal.initial} existing={db.clients} onSave={(x) => { saveOwned("clients", x); }} onClose={() => setModal(null)} />}
+        {modal?.type === "quotation" && <QuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "invoice" && <InvoiceForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("invoices", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "planned" && <PlannedForm initial={modal.initial} onSave={(x) => saveOwned("planned", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "vault" && <VaultForm initial={modal.initial} onSave={(x) => saveOwned("vault", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "document" && <DocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "prompt" && <PromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "reward" && <RewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "notification" && <NotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "announcement" && <AnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "portalPost" && <PortalPostForm initial={modal.initial} portalClients={portalClients} onSave={(x) => saveOwned("portal_posts", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "resign" && <ResignForm existing={(db.resignations || []).filter((r) => r.userId === me.id)} onSave={(r) => { mutate((d) => ({ ...d, resignations: [...(d.resignations || []), { ...r, id: uid(), userId: me.id, userName: currentUser, status: "Pending", createdAt: Date.now() }] }), { action: "submitted a resignation request", module: "Team" }); setModal(null); }} onClose={() => setModal(null)} />}
+        {modal?.type === "confirm" && <Confirm title={modal.title} body={modal.body} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
+        {modal?.type === "deleteConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Delete"} icon={<Trash2 size={15} />} danger onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
+        {modal?.type === "restoreConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Restore"} icon={<RotateCcw size={15} />} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
+        {modal?.type === "okConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} word="OK" actionLabel={modal.actionLabel || "Confirm"} icon={modal.icon} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
+
+        {balanceUser && <BalanceDetail db={db} user={balanceUser} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
+
+        {searchOpen && <GlobalSearch db={db} team={team} profile={profile} role={role} me={me} allowedRoutes={[...allowedRoutes]} go={go} openTask={openTask} onClose={() => setSearchOpen(false)} />}
+      </div>
+    </ErrorBoundary>
+  );
+}
