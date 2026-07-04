@@ -3760,7 +3760,16 @@ function Lock({ isDark, setDark }) {
         if (!data.session) setNotice("Account created. Check your email to confirm it, then sign in.");
       }
     } catch (e) {
-      setErr(e.message || "Couldn't complete that. Try again.");
+      console.error("Auth error:", e);
+      const raw = (e && (e.message || e.error_description || e.msg || e.hint || e.details)) || (typeof e === "string" ? e : "");
+      const clean = typeof raw === "string" ? raw.trim() : "";
+      let msg = clean && clean !== "{}" ? clean : "";
+      if (!msg || /database error saving new user/i.test(msg)) {
+        msg = acctType === "partner"
+          ? "We couldn't create the partner account. Your database may not allow the 'partner' role yet — see the APN setup (profiles.role must permit 'partner'). If it does, this email may already be registered; try another."
+          : "We couldn't create the account. Please try again, or use a different email.";
+      }
+      setErr(msg);
     } finally { setBusy(false); }
   };
   const onKey = (e) => { if (e.key === "Enter") submit(); };
