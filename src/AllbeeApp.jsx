@@ -8,7 +8,7 @@ import {
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck,
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins,
-  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle,
+  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -364,6 +364,18 @@ async function unlockPeriod(period) {
 const periodOf = (iso) => (iso ? String(iso).slice(0, 7) : todayISO().slice(0, 7)); // 'YYYY-MM'
 const fmtPeriod = (p) => { const [y, m] = (p || "").split("-"); const d = new Date(Number(y), Number(m) - 1, 1); return isNaN(d) ? p : d.toLocaleDateString("en-IN", { month: "long", year: "numeric" }); };
 const fmtDateTime = (ts) => { const d = new Date(ts); return isNaN(d) ? "—" : d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true }); };
+// "5m ago" / "2h ago" / "3d ago" style relative time, for last-seen displays.
+function relTime(iso) {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (isNaN(diff)) return "—";
+  const s = Math.floor(diff / 1000);
+  if (s < 45) return "just now";
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 30) return `${d}d ago`;
+  return fmtDate(new Date(iso).toISOString().slice(0, 10));
+}
 // Make sure the signed-in user has a profile row (covers accounts made before
 // the database trigger existed). Defaults to a staff member; an admin can change
 // the role later from the Team screen.
@@ -650,10 +662,12 @@ function staffEarnings(db, payroll, person, joinedISO) {
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const realisedComm = round2(items.filter((i) => i.realized).reduce((s, i) => s + i.commission, 0));
   const pipelineComm = round2(items.filter((i) => !i.realized).reduce((s, i) => s + i.commission, 0));
+  const incentives = Array.isArray(cfg?.incentives) ? cfg.incentives : [];
+  const incentivesTotal = round2(incentives.reduce((s, x) => s + (Number(x.amount) || 0), 0));
   const months = monthsSince(joinedISO);
   const salaryToDate = round2(fixedMonthly * months);
-  const configured = !!cfg && (fixedMonthly > 0 || pct > 0);
-  return { cfg, pct, fixedMonthly, items, realisedComm, pipelineComm, months, salaryToDate, configured, totalToDate: round2(realisedComm + salaryToDate) };
+  const configured = !!cfg && (fixedMonthly > 0 || pct > 0 || incentivesTotal > 0);
+  return { cfg, pct, fixedMonthly, items, realisedComm, pipelineComm, incentives, incentivesTotal, months, salaryToDate, configured, totalToDate: round2(realisedComm + salaryToDate + incentivesTotal) };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -693,6 +707,12 @@ const CSS = `
 .navitem.active { background:var(--primary-soft); color:var(--primary); font-weight:600; }
 .navitem .badge { margin-left:auto; }
 .sidebar-foot { margin-top:auto; padding-top:12px; border-top:1px solid var(--border); }
+.nav-sec { font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; padding:6px 11px 2px; }
+.nav-sec-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:14px 11px 4px; }
+.nav-sec-row .nav-sec { padding:0; }
+.nav-sort { background:none; border:1px solid var(--border); border-radius:6px; color:var(--muted); font-size:10px; font-weight:700; padding:2px 8px; cursor:pointer; text-transform:uppercase; letter-spacing:.04em; display:flex; align-items:center; gap:4px; }
+.nav-sort:hover { background:var(--surface-2); color:var(--ink); }
+.nav-cat { font-size:10px; font-weight:700; color:var(--muted); opacity:.72; text-transform:uppercase; letter-spacing:.05em; padding:10px 11px 3px; }
 
 .main { display:flex; flex-direction:column; min-width:0; }
 .topbar { display:flex; align-items:center; gap:12px; padding:8px 18px; border-bottom:1px solid var(--border);
@@ -3437,6 +3457,111 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
 // alike). Same required basics as the first-login gate (full name, mobile, DOB);
 // photo + username optional. Role/designation stay admin-controlled, email is the
 // sign-in identity, so both are shown read-only here.
+function ChangePasswordCard({ email }) {
+  const [cur, setCur] = useState("");
+  const [nw, setNw] = useState("");
+  const [cf, setCf] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const change = async () => {
+    setMsg(""); setErr("");
+    if (nw.length < 6) { setErr("New password must be at least 6 characters."); return; }
+    if (nw !== cf) { setErr("The new passwords don't match."); return; }
+    if (!email) { setErr("We couldn't find your account email — reload and try again."); return; }
+    setBusy(true);
+    try {
+      const { error: reauth } = await supabase.auth.signInWithPassword({ email, password: cur });
+      if (reauth) { setErr("Your current password is incorrect."); setBusy(false); return; }
+      const { error } = await supabase.auth.updateUser({ password: nw });
+      if (error) throw error;
+      setMsg("Password changed. Use your new password the next time you sign in.");
+      setCur(""); setNw(""); setCf("");
+    } catch (e) { setErr((e && e.message) || "Couldn't change the password. Try again."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="card stat" style={{ marginTop: 14 }}>
+      <div className="lbl" style={{ fontWeight: 700, color: "var(--ink)" }}><KeyRound size={14} /> Sign-in &amp; security</div>
+      <p className="hint-line" style={{ marginTop: 6, marginBottom: 12 }}>Change the password you use to sign in. You'll enter your current password to confirm it's you.</p>
+      <div className="grid2">
+        <Field label="Current password"><input className="input" type={show ? "text" : "password"} value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" placeholder="••••••••" /></Field>
+        <div />
+      </div>
+      <div className="grid2">
+        <Field label="New password" hint="At least 6 characters."><input className="input" type={show ? "text" : "password"} value={nw} onChange={(e) => setNw(e.target.value)} autoComplete="new-password" placeholder="••••••••" /></Field>
+        <Field label="Confirm new password"><input className="input" type={show ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} autoComplete="new-password" placeholder="••••••••" /></Field>
+      </div>
+      <label className="hint-line" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 2 }}><input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show passwords</label>
+      {err && <div className="auth-msg err" style={{ marginTop: 8 }}><AlertTriangle size={14} /> {err}</div>}
+      {msg && <div className="auth-msg ok" style={{ marginTop: 8 }}><Check size={14} /> {msg}</div>}
+      <div style={{ marginTop: 12 }}><button className="btn primary" onClick={change} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <KeyRound size={16} />}Change password</button></div>
+    </div>
+  );
+}
+
+/* ── Activity & last seen (admin): who's online + login/logout times ──────── */
+function LastSeen({ team }) {
+  const [act, setAct] = useState({});
+  const [colsMissing, setColsMissing] = useState(false);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("profiles").select("id,last_login,last_logout");
+        if (error) throw error;
+        if (!alive) return;
+        const m = {}; for (const r of data || []) m[r.id] = r; setAct(m);
+      } catch { if (alive) { setColsMissing(true); setAct({}); } }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const people = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head");
+  const filtered = q.trim() ? people.filter((p) => (p.name || "").toLowerCase().includes(q.trim().toLowerCase())) : people;
+  const rows = filtered.slice().sort((a, b) => (new Date(b.last_active || 0) - new Date(a.last_active || 0)));
+  const onlineCount = people.filter(isOnline).length;
+  return (
+    <div className="content">
+      <div className="page-head"><h3>Activity &amp; last seen</h3></div>
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Eye size={15} /> See who's online now, when each person was last active, and their most recent sign-in and sign-out.</div>
+      <div className="sumrow">
+        <div className="card"><div className="k"><Users size={14} /> People</div><div className="v">{people.length}</div></div>
+        <div className="card"><div className="k"><UserCheck size={14} color="var(--pos)" /> Online now</div><div className="v mono">{onlineCount}</div></div>
+      </div>
+      {colsMissing && <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14, borderColor: "var(--accent)" }}><AlertTriangle size={15} color="var(--accent)" /> Sign-in / sign-out times need two columns added to your database (run the one-line snippet in setup). Last seen and online status work already.</div>}
+      <div className="filterbar" style={{ marginBottom: 12 }}>
+        <Field label="Search"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a person…" /></Field>
+      </div>
+      <div className="card">
+        {rows.length === 0 ? <Empty icon={<Users size={22} color="var(--muted)" />} title="No one to show" text="Team members appear here with their activity." />
+          : <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead><tr><th>Person</th><th>Status</th><th>Last seen</th><th>Last sign-in</th><th>Last sign-out</th></tr></thead>
+              <tbody>
+                {rows.map((p) => {
+                  const online = isOnline(p);
+                  const a = act[p.id] || {};
+                  return (
+                    <tr key={p.id}>
+                      <td><div style={{ display: "flex", alignItems: "center", gap: 9 }}><Avatar name={p.name} url={p.photo_url} size={26} /><div><div style={{ fontWeight: 600 }}>{p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></div></div></td>
+                      <td>{online ? <span className="badge pos"><span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "currentColor", marginRight: 5, verticalAlign: "middle" }} />Online</span> : <span className="hint-line">Offline</span>}</td>
+                      <td><span className="hint-line">{p.last_active ? relTime(p.last_active) : "—"}</span></td>
+                      <td><span className="hint-line" style={{ fontSize: 12 }}>{a.last_login ? fmtDateTime(new Date(a.last_login).getTime()) : "—"}</span></td>
+                      <td><span className="hint-line" style={{ fontSize: 12 }}>{a.last_logout ? fmtDateTime(new Date(a.last_logout).getTime()) : "—"}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>}
+      </div>
+      <p className="hint-line" style={{ marginTop: 12, lineHeight: 1.5 }}>“Last seen” is the person's last activity in the app. “Last sign-out” is recorded when someone uses the Sign out button — closing the tab won't record one, but their last-seen time still reflects when they were really here.</p>
+    </div>
+  );
+}
+
 function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
   const [name, setName] = useState(profile?.name || "");
   const [mobile, setMobile] = useState(profile?.mobile || "");
@@ -3515,6 +3640,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
           <button className="btn primary" onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}Save profile</button>
         </div>
       </div>
+      <ChangePasswordCard email={email} />
       <p className="hint-line" style={{ marginTop: 12 }}>Your role{profile?.designation ? " and job title are" : " is"} set by an admin. You can update the details above any time.</p>
     </div>
   );
@@ -3673,9 +3799,32 @@ const NAV = [
   ["progress", "Progress", Activity, "work"],
   ["recently-deleted", "Recently deleted", Trash2, "admin"],
   ["audit", "Audit log", ScrollText, "admin"],
+  ["activity", "Activity", Eye, "admin"],
   ["profile", "My profile", User, "everyone"],
   ["settings", "Settings", SettingsIcon, "admin"],
 ];
+
+// Sidebar grouping: which category each module belongs to when "Grouped" sort is on.
+const NAV_CATEGORIES = [
+  ["overview", "Overview"],
+  ["work", "Work"],
+  ["sales", "Sales & delivery"],
+  ["finance", "Finance"],
+  ["content", "Content & team"],
+  ["admin", "Admin"],
+  ["personal", "Personal"],
+];
+const NAV_CATEGORY = {
+  dashboard: "overview", notifications: "overview", myteam: "overview",
+  tasks: "work", attendance: "work", leave: "work", updates: "work", progress: "work", chat: "work",
+  leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", marketing: "sales", concepts: "sales", testing: "sales",
+  accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
+  announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
+  team: "admin", "team-leads": "admin", apn: "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
+  profile: "personal", terms: "personal",
+};
+const navCategoryOf = (k) => NAV_CATEGORY[k] || "personal";
+const NAV_SORT_LABEL = { category: "Grouped", az: "A–Z", custom: "Custom" };
 
 // Parse the URL hash into a view. Supports deep links like #/accounts/haji,
 // #/tasks/<id> and #/recently-deleted, plus #/<navkey> for ordinary pages.
@@ -5439,15 +5588,42 @@ function InHouse({ db, mutate, openModal, removeItem, isAdmin, me, team = [] }) 
 }
 
 /* ── Staff salary (admin) ──────────────────────────────────────────────── */
+function IncentiveForm({ person, onAdd, onClose }) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [date, setDate] = useState(todayISO());
+  const [err, setErr] = useState("");
+  const save = () => {
+    const amt = Number(amount) || 0;
+    if (amt <= 0) { setErr("Enter an amount greater than zero."); return; }
+    onAdd({ id: uid(), amount: round2(amt), note: note.trim(), date, createdAt: Date.now() });
+  };
+  return (
+    <Modal title={`Add incentive — ${person.name}`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Plus size={15} />Add incentive</button></>}>
+      <div className="banner" style={{ margin: "0 0 12px" }}><Gift size={15} /> A one-off bonus — a festival bonus, a spot reward, a performance incentive. It's added to what this person has earned to date.</div>
+      <div className="grid2">
+        <Field label="Amount" required error={err}><input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 5000" autoFocus /></Field>
+        <Field label="Date"><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      </div>
+      <Field label="Reason (optional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Diwali bonus, top performer" /></Field>
+    </Modal>
+  );
+}
+
 function SalaryRow({ person, db, payroll, onSave }) {
   const cfg = payrollFor(payroll, person.id);
   const [fixed, setFixed] = useState(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : "");
   const [pct, setPct] = useState(cfg?.commissionPct != null ? String(cfg.commissionPct) : "");
   const [saved, setSaved] = useState(false);
+  const [adding, setAdding] = useState(false);
   useEffect(() => { setFixed(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : ""); setPct(cfg?.commissionPct != null ? String(cfg.commissionPct) : ""); }, [cfg?.fixedMonthly, cfg?.commissionPct]);
   const E = staffEarnings(db, payroll, { id: person.id, name: person.name }, person.created_at);
   const dirty = String(Number(fixed) || 0) !== String(E.fixedMonthly) || String(Number(pct) || 0) !== String(E.pct);
   const save = () => { onSave(person, { fixedMonthly: Number(fixed) || 0, commissionPct: Number(pct) || 0 }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
+  const incentives = E.incentives;
+  const addIncentive = (entry) => { onSave(person, { incentives: [...incentives, entry] }, `added a ${money(entry.amount)} incentive for ${person.name}${entry.note ? ` (${entry.note})` : ""}`); setAdding(false); };
+  const removeIncentive = (id) => { const it = incentives.find((x) => x.id === id); onSave(person, { incentives: incentives.filter((x) => x.id !== id) }, `removed a ${money(it?.amount || 0)} incentive for ${person.name}`); };
   return (
     <div className="card stat" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="who-cell">
@@ -5463,34 +5639,56 @@ function SalaryRow({ person, db, payroll, onSave }) {
         <span className="hint-line">Pipeline <b className="mono" style={{ marginLeft: 4 }}>{money(E.pipelineComm)}</b></span>
         {E.fixedMonthly > 0 && <span className="hint-line">Salary to date <b className="mono" style={{ marginLeft: 4 }}>{money(E.salaryToDate)}</b></span>}
       </div>
+
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Gift size={14} color="var(--accent)" /><span style={{ fontWeight: 600, fontSize: 12.5 }}>Incentives</span>
+          <b className="mono" style={{ marginLeft: "auto" }}>{money(E.incentivesTotal)}</b>
+        </div>
+        {incentives.length > 0 && (
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+            {incentives.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).map((x) => (
+              <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface-2)", borderRadius: 8, padding: "6px 10px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}><div className="mono" style={{ fontWeight: 700, fontSize: 12.5 }}>{money(x.amount)}</div><div className="hint-line" style={{ fontSize: 11 }}>{x.note || "Incentive"}{x.date ? ` · ${fmtDate(x.date)}` : ""}</div></div>
+                <button className="iconbtn" style={{ width: 26, height: 26 }} onClick={() => removeIncentive(x.id)} title="Remove"><X size={12} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><Plus size={13} />Add incentive</button>
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button className="btn sm primary" onClick={save} disabled={!dirty}><Check size={14} />Save</button>
         {saved && <span className="hint-line" style={{ color: "var(--pos)" }}><Check size={13} style={{ verticalAlign: -2 }} /> Saved</span>}
         {!E.configured && !dirty && <span className="hint-line">No pay set yet</span>}
       </div>
+      {adding && <IncentiveForm person={person} onAdd={addIncentive} onClose={() => setAdding(false)} />}
     </div>
   );
 }
 
 function StaffSalary({ db, team, mutate, me }) {
   const roster = team.filter((p) => p.role !== "client" && p.role !== "superadmin");
-  const setPay = (person, patch) => mutate((d) => {
+  const setPay = (person, patch, action) => mutate((d) => {
     const exists = (d.payroll || []).some((r) => r.userId === person.id);
     const payroll = exists
       ? d.payroll.map((r) => r.userId === person.id ? { ...r, ...patch, updatedAt: Date.now() } : r)
       : [...(d.payroll || []), { id: uid(), userId: person.id, userName: person.name, fixedMonthly: 0, commissionPct: 0, createdAt: Date.now(), ...patch }];
     return { ...d, payroll };
-  }, { action: `updated ${person.name}'s pay settings`, module: "Staff salary" });
+  }, { action: action || `updated ${person.name}'s pay settings`, module: "Staff salary" });
   const totalCommission = roster.reduce((s, p) => s + staffEarnings(db, db.payroll, { id: p.id, name: p.name }, p.created_at).realisedComm, 0);
   const totalMonthly = (db.payroll || []).reduce((s, r) => s + (Number(r.fixedMonthly) || 0), 0);
+  const totalIncentives = (db.payroll || []).reduce((s, r) => s + (Array.isArray(r.incentives) ? r.incentives.reduce((a, x) => a + (Number(x.amount) || 0), 0) : 0), 0);
   return (
     <div className="content">
       <div className="page-head"><h3>Staff salary</h3></div>
-      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Coins size={15} /> Set each person's fixed monthly salary, a commission rate, or both. Commission is a share of the value of every student, project or client they bring in.</div>
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Coins size={15} /> Set each person's fixed monthly salary, a commission rate, or both — and add one-off incentives (bonuses) any time. Commission is a share of the value of every student, project or client they bring in.</div>
       <div className="sumrow">
         <div className="card"><div className="k"><Users size={14} /> People</div><div className="v">{roster.length}</div></div>
         <div className="card"><div className="k"><Banknote size={14} /> Monthly salaries</div><div className="v mono">{money(totalMonthly)}</div></div>
         <div className="card"><div className="k"><Coins size={14} /> Commission earned</div><div className="v mono">{money(totalCommission)}</div></div>
+        <div className="card"><div className="k"><Gift size={14} /> Incentives paid</div><div className="v mono">{money(totalIncentives)}</div></div>
       </div>
       {roster.length === 0 ? <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="No team members yet" text="Add staff on the Team screen, then set their pay here." /></div>
         : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
@@ -5538,6 +5736,7 @@ function MyEarnings({ db, me, role, payroll, profile, go }) {
             <div className="card"><div className="k"><Coins size={14} /> Commission earned</div><div className="v mono">{money(E.realisedComm)}</div></div>
             <div className="card"><div className="k"><Hourglass size={14} /> In pipeline</div><div className="v mono">{money(E.pipelineComm)}</div></div>
             {E.fixedMonthly > 0 && <div className="card"><div className="k"><Banknote size={14} /> Salary / month</div><div className="v mono">{money(E.fixedMonthly)}</div></div>}
+            {E.incentivesTotal > 0 && <div className="card"><div className="k"><Gift size={14} /> Incentives</div><div className="v mono">{money(E.incentivesTotal)}</div></div>}
           </div>
 
           {E.fixedMonthly > 0 && (
@@ -5549,6 +5748,21 @@ function MyEarnings({ db, me, role, payroll, profile, go }) {
                 <div><div className="hint-line">Salary to date (estimate)</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{money(E.salaryToDate)}</div></div>
               </div>
               <div className="hint-line" style={{ marginTop: 8 }}>Estimated from your joining date — your actual payslip is settled by the finance team.</div>
+            </div>
+          )}
+
+          {E.incentives.length > 0 && (
+            <div className="card stat" style={{ marginBottom: 16 }}>
+              <div className="lbl"><Gift size={14} /> Incentives</div>
+              <div style={{ marginTop: 10 }}>
+                {E.incentives.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).map((x) => (
+                  <div key={x.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: "1px solid var(--border)" }}>
+                    <div><div style={{ fontWeight: 600 }}>{x.note || "Incentive"}</div>{x.date && <div className="hint-line" style={{ fontSize: 11 }}>{fmtDate(x.date)}</div>}</div>
+                    <div className="mono" style={{ fontWeight: 700, color: "var(--pos)" }}>{money(x.amount)}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="hint-line" style={{ marginTop: 8 }}>One-off incentives added by your admin — included in your earned-to-date total.</div>
             </div>
           )}
 
@@ -7670,6 +7884,7 @@ export default function App() {
   const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
   const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
   const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
+  const [navSort, setNavSort] = useState(() => { try { return localStorage.getItem("allbee_navsort") || "category"; } catch { return "category"; } });
   const dragNavRef = useRef(null);
 
   const currentUser = profile?.name || null;
@@ -7709,6 +7924,10 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
+      // Record a fresh sign-in time (best-effort; the column may not exist yet).
+      if (_evt === "SIGNED_IN" && s && s.user) {
+        supabase.from("profiles").update({ last_login: new Date().toISOString() }).eq("id", s.user.id).then(() => {}, () => {});
+      }
       // Supabase auto-refreshes the JWT whenever the tab/app regains focus and
       // fires TOKEN_REFRESHED with a brand-new session object. That object change
       // used to re-run the data-load effect, flip `loading`, and remount the whole
@@ -7955,7 +8174,11 @@ export default function App() {
     if (decision === "Approved") changeProfile(r.userId, { status: "resigned", active: false });
   };
 
-  const signOut = async () => { setUserMenu(false); await supabase.auth.signOut(); };
+  const signOut = async () => {
+    setUserMenu(false);
+    try { if (me.id) await supabase.from("profiles").update({ last_logout: new Date().toISOString() }).eq("id", me.id); } catch { /* column may not exist yet */ }
+    await supabase.auth.signOut();
+  };
 
   const bal = useMemo(() => (db ? balances(db) : { Haji: 0, Alim: 0, company: 0 }), [db]);
 
@@ -8150,6 +8373,7 @@ export default function App() {
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} />;
       case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
       case "apn": return <APNAdmin db={db} mutate={mutate} isSuper={isSuper} currentUser={currentUser} />;
+      case "activity": return <LastSeen team={team} />;
       case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
       case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
       case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
@@ -8191,6 +8415,7 @@ export default function App() {
   const persistNav = (o) => { try { localStorage.setItem("allbee_navorder", JSON.stringify(o)); } catch { /* ignore */ } };
   const persistFavs = (o) => { try { localStorage.setItem("allbee_favs", JSON.stringify(o)); } catch { /* ignore */ } };
   const toggleFav = (k) => setFavorites((prev) => { const nx = prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]; persistFavs(nx); return nx; });
+  const cycleSort = () => setNavSort((s) => { const order = ["category", "az", "custom"]; const nx = order[(order.indexOf(s) + 1) % order.length]; try { localStorage.setItem("allbee_navsort", nx); } catch { /* ignore */ } return nx; });
   const moveNav = (dragK, dropK) => {
     if (dragK === dropK) return;
     setNavOrder((prev) => {
@@ -8216,12 +8441,12 @@ export default function App() {
       {key === "chat" && unreadChat > 0 && <span className="badge pri">{unreadChat}</span>}
     </>
   );
-  const renderNav = ([key, label, Icon]) => (
-    <div key={key} draggable
-      onDragStart={(e) => { dragNavRef.current = key; try { e.dataTransfer.effectAllowed = "move"; } catch { /* ignore */ } }}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); if (dragNavRef.current) moveNav(dragNavRef.current, key); dragNavRef.current = null; }}
-      className={"navitem" + (safeRoute === key ? " active" : "")} onClick={() => go(key)} title="Drag to reorder">
+  const renderNav = ([key, label, Icon], drag = false) => (
+    <div key={key} draggable={drag}
+      onDragStart={drag ? (e) => { dragNavRef.current = key; try { e.dataTransfer.effectAllowed = "move"; } catch { /* ignore */ } } : undefined}
+      onDragOver={drag ? (e) => e.preventDefault() : undefined}
+      onDrop={drag ? (e) => { e.preventDefault(); if (dragNavRef.current) moveNav(dragNavRef.current, key); dragNavRef.current = null; } : undefined}
+      className={"navitem" + (safeRoute === key ? " active" : "")} onClick={() => go(key)} title={drag ? "Drag to reorder" : undefined}>
       <Icon size={18} />
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       {navBadge(key)}
@@ -8245,10 +8470,19 @@ export default function App() {
               <img className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
               <div><h1>ALLBEE</h1><p>Solutions</p></div>
             </div>
-            {favNav.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 11px 2px" }}>Favorites</div>}
-            {favNav.map(renderNav)}
-            {favNav.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "12px 11px 2px" }}>All modules</div>}
-            {restNav.map(renderNav)}
+            {favNav.length > 0 && <div className="nav-sec">Favorites</div>}
+            {favNav.map((n) => renderNav(n, navSort === "custom"))}
+            <div className="nav-sec-row">
+              <span className="nav-sec">{favNav.length > 0 ? "All modules" : "Modules"}</span>
+              <button className="nav-sort" onClick={cycleSort} title="Change how modules are ordered: Grouped, A–Z, or your Custom order (drag to reorder in Custom)"><ArrowDownUp size={11} />{NAV_SORT_LABEL[navSort]}</button>
+            </div>
+            {navSort === "category"
+              ? NAV_CATEGORIES.map(([ck, clabel]) => {
+                const items = restNav.filter((n) => navCategoryOf(n[0]) === ck);
+                if (!items.length) return null;
+                return <React.Fragment key={ck}><div className="nav-cat">{clabel}</div>{items.map((n) => renderNav(n, false))}</React.Fragment>;
+              })
+              : (navSort === "az" ? restNav.slice().sort((a, b) => a[1].localeCompare(b[1])) : restNav).map((n) => renderNav(n, navSort === "custom"))}
             <div className="sidebar-foot">
               <div className="navitem" onClick={() => { const nd = !isDark; setIsDark(nd); try { localStorage.setItem("allbee_theme", nd ? "dark" : "light"); } catch { /* ignore */ } }}>{isDark ? <Sun size={18} /> : <Moon size={18} />} {isDark ? "Light mode" : "Dark mode"}</div>
             </div>
