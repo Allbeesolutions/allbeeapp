@@ -8,7 +8,7 @@ import {
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck,
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins,
-  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp,
+  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -382,6 +382,33 @@ function relTime(iso) {
   const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24); if (d < 30) return `${d}d ago`;
   return fmtDate(new Date(iso).toISOString().slice(0, 10));
+}
+
+// Turn a stored mobile into a WhatsApp-ready number (digits only, India default).
+function waNumber(mobile) {
+  let d = String(mobile || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "91" + d;            // bare 10-digit → assume India
+  return d;
+}
+// Reusable one-tap WhatsApp + Email buttons for a person (uses their mobile/email).
+// `message` optionally pre-fills the text; `compact` shows icon-only buttons.
+function ContactButtons({ person, message, compact = false, size = "sm", stop = true }) {
+  if (!person) return null;
+  const num = waNumber(person.mobile);
+  const email = (person.email || "").trim();
+  const wa = num ? `https://wa.me/${num}${message ? `?text=${encodeURIComponent(message)}` : ""}` : null;
+  const mail = email ? `mailto:${email}${message ? `?body=${encodeURIComponent(message)}` : ""}` : null;
+  if (!wa && !mail) return null;
+  const cls = "btn" + (size === "sm" ? " sm" : "") + (compact ? " icon" : "");
+  const halt = stop ? (e) => e.stopPropagation() : undefined;
+  return (
+    <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+      {wa && <a className={cls + " wa-btn"} href={wa} target="_blank" rel="noreferrer" title={`WhatsApp ${person.name || ""}`.trim()} onClick={halt}><MessageCircle size={14} />{compact ? "" : "WhatsApp"}</a>}
+      {mail && <a className={cls} href={mail} title={`Email ${person.name || ""}`.trim()} onClick={halt}><Mail size={14} />{compact ? "" : "Email"}</a>}
+    </span>
+  );
 }
 // Make sure the signed-in user has a profile row (covers accounts made before
 // the database trigger existed). Defaults to a staff member; an admin can change
@@ -791,6 +818,12 @@ const CSS = `
 .btn.danger:hover { background:var(--neg-soft); }
 .btn.ghost { border-color:transparent; background:transparent; }
 .btn.sm { padding:6px 10px; font-size:12.5px; }
+.btn.icon { padding:6px; gap:0; }
+.btn.icon.sm { padding:5px; }
+.wa-btn { border-color:#25D366; color:#128C7E; background:var(--surface); }
+.wa-btn:hover { background:#25D366; color:#fff; border-color:#25D366; }
+.allbee[data-theme="dark"] .wa-btn { color:#3FBF73; }
+.allbee[data-theme="dark"] .wa-btn:hover { color:#052; }
 .btn:disabled { opacity:.5; cursor:not-allowed; }
 
 .badge { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--surface-2); color:var(--muted); white-space:nowrap; }
@@ -903,15 +936,20 @@ table.tbl tr:hover td { background:var(--surface-2); }
   .company-pill { padding:5px 9px; }
   .company-pill .val { font-size:14px; }
 }
-@media (max-width:560px) {
+@media (max-width:768px) {
   .topbar { gap:8px; padding:9px 12px; }
   .topbar-sub { display:none; }
   .userchip-name { display:none; }
   .userchip .role-badge { display:none; }
   .userchip { padding:4px; gap:0; }
-  .cards-grid { grid-template-columns:1fr !important; }
-  .search-trigger { min-width:0; padding:8px; }
+  .search-trigger { min-width:0; padding:8px; flex:none; }
   .search-trigger .st-lbl, .search-trigger .st-kbd { display:none; }
+  .topbar .company-pill { padding:5px 8px; gap:5px; }
+  .topbar .company-pill .val { font-size:13px; }
+}
+@media (max-width:560px) {
+  .cards-grid { grid-template-columns:1fr !important; }
+  .topbar-title h2 { font-size:14px; }
 }
 
 /* ── Phase 2 additions ─────────────────────────────────────────────────── */
@@ -3143,7 +3181,7 @@ function LeaveForm({ initial, me, onSave, onClose }) {
 
 function leaveTone(s) { return s === "Approved" ? "pos" : s === "Rejected" ? "neg" : "pri"; }
 
-function Leave({ db, mutate, me, isAdmin, openModal }) {
+function Leave({ db, team = [], mutate, me, isAdmin, openModal }) {
   const [filter, setFilter] = useState(isAdmin ? "Pending" : "all");
   const all = [...db.leave].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = isAdmin
@@ -3179,6 +3217,7 @@ function Leave({ db, mutate, me, isAdmin, openModal }) {
               {l.reason && <div className="item-meta" style={{ marginTop: 6 }}>{l.reason}</div>}
             </div>
             <div className="row-actions">
+              {isAdmin && (() => { const person = team.find((p) => p.id === l.userId); return person ? <ContactButtons person={person} compact message={`Hi ${l.userName || ""}, regarding your ${String(l.type || "").toLowerCase()} leave (${fmtDate(l.fromDate)} to ${fmtDate(l.toDate)}) —`} /> : null; })()}
               {isAdmin && l.status === "Pending" && (
                 <>
                   <button className="btn sm primary" onClick={() => decide(l, "Approved")}><Check size={13} />Approve</button>
@@ -3375,6 +3414,7 @@ function Team({ team, me, changeProfile, db, resolveResign }) {
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span className="hint-line" style={{ fontSize: 12 }}>{moduleSummary(p)}</span>
+                        {!isSelf && <ContactButtons person={p} compact />}
                         {p.role === "staff" && <button className="btn sm" onClick={() => setPermFor(p)}><Pencil size={12} />Edit</button>}
                         {me.role === "superadmin" && !isSelf && <button className="btn sm" onClick={() => setManageFor(p)}><KeyRound size={12} />Manage</button>}
                       </div>
@@ -3575,7 +3615,7 @@ function LastSeen({ team }) {
         {rows.length === 0 ? <Empty icon={<Users size={22} color="var(--muted)" />} title={view === "inactive" ? "Everyone's active" : "No one to show"} text={view === "inactive" ? "No one has been away for more than a week." : "Team members appear here with their activity."} />
           : <div style={{ overflowX: "auto" }}>
             <table className="tbl">
-              <thead><tr><th>Person</th><th>Status</th><th>Last seen</th><th>Last sign-in</th><th>Last sign-out</th></tr></thead>
+              <thead><tr><th>Person</th><th>Status</th><th>Last seen</th><th>Last sign-in</th><th>Last sign-out</th><th>Contact</th></tr></thead>
               <tbody>
                 {rows.map((p) => {
                   const online = isOnline(p);
@@ -3589,6 +3629,7 @@ function LastSeen({ team }) {
                       <td><span className="hint-line" style={away ? { color: "var(--neg)", fontWeight: 600 } : undefined}>{p.last_active ? relTime(p.last_active) : "never seen"}</span></td>
                       <td><span className="hint-line" style={{ fontSize: 12 }}>{a.last_login ? fmtDateTime(new Date(a.last_login).getTime()) : "—"}</span></td>
                       <td><span className="hint-line" style={{ fontSize: 12 }}>{a.last_logout ? fmtDateTime(new Date(a.last_logout).getTime()) : "—"}</span></td>
+                      <td><ContactButtons person={p} compact message={away ? `Hi ${p.name || ""}, we noticed you haven't been active on ALLBEE for a while — is everything okay?` : undefined} /></td>
                     </tr>
                   );
                 })}
@@ -6024,6 +6065,7 @@ function MyTeam({ db, team, me, mutate, onRefresh }) {
                   <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Days present</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.presentDays}</div></div>
                   <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Hours (mo)</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.hours}</div></div>
                 </div>
+                {p.id !== me.id && <div><ContactButtons person={p} /></div>}
               </div>
             );
           })}
@@ -8408,7 +8450,7 @@ export default function App() {
           : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
       case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} removeItem={removeItem} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
-      case "leave": return <Leave db={db} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
+      case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} />;
       case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
