@@ -4051,7 +4051,7 @@ function Lock({ isDark, setDark }) {
                   <div className="field"><label>Username</label><input className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" /></div>
                 </div>
                 <div className="field"><label>Why do you want to join APN?</label><textarea className="textarea" value={apn.reason} onChange={(e) => upApn("reason", e.target.value)} placeholder="Tell us briefly why you'd like to become a partner…" /></div>
-                <p className="hint-line" style={{ fontSize: 12 }}>APN partners are independent and commission-based — no salary and no joining fee. You must be 18 or older. Applications are approved by Haji or Alim.</p>
+                <p className="hint-line" style={{ fontSize: 12 }}>APN partners are independent and commission-based — no salary and no joining fee. You must be 18 or older. Applications are approved by an admin.</p>
               </div>
             ) : acctType === "staff" || acctType === "client" ? (
               <div className="field" style={{ textAlign: "left" }}>
@@ -6899,7 +6899,7 @@ function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
       <div className="lock-card gate-card">
         <div className="lock-badge" style={{ background: "linear-gradient(135deg,var(--accent),#d98c00)" }}><Hourglass size={26} /></div>
         <h1>Account inactive</h1>
-        <p>You've been marked inactive due to 7 days without attendance. Only Haji or Alim can reactivate your account — your district head can recommend it.</p>
+        <p>You've been marked inactive due to 7 days without attendance. Only an admin can reactivate your account — your district head can recommend it.</p>
         {meRow.reactivationRequested ? <div className="auth-msg ok"><Check size={14} />Reactivation requested — waiting on approval.</div>
           : <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} onClick={recommend}><RefreshCw size={15} />Request reactivation</button>}
         <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 10 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
@@ -7343,7 +7343,7 @@ function APNDistrict({ db, meRow, mutate }) {
         <APNMetric k="Leads" v={leads.length} icon={<UserPlus size={13} />} />
         <APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} />
       </div>
-      <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />You can recommend reactivation and monitor partners. Only Haji or Alim reactivate accounts or change commissions.</div>
+      <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />You can recommend reactivation and monitor partners. Only an admin can reactivate accounts or change commissions.</div>
       <div className="apn-list">{partners.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); return (
         <div key={p.id} className="apn-rowcard">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -7448,7 +7448,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate }) {
   );
 
   const eff = apnEffectiveStatus(meRow);
-  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Application received" body={`Thanks ${meRow.name}. Your APN partner application (${meRow.apnId}) is pending approval from Haji or Alim. You'll get full access as soon as it's approved.`} onSignOut={signOut} />;
+  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Application received" body={`Thanks ${meRow.name}. Your APN partner application (${meRow.apnId}) is pending approval from an admin. You'll get full access as soon as it's approved.`} onSignOut={signOut} />;
   if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
   if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
 
@@ -7723,7 +7723,7 @@ function APNAdminPartners({ db, isSuper, act, openModal }) {
       </div>
       <div className="apn-seg-scroll">{[["pending", "Pending"], ["active", "Active"], ["inactive", "Inactive"], ["heads", "District heads"], ["all", "All"]].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
       <div className="card">
-        {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No partners here" text="Applications and partners show up in these tabs." />
+        {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No partners here" text="Applications and partners show up in these tabs." action={isSuper ? <button className="btn primary" onClick={() => openModal({ type: "apnCreatePartner" })}><Plus size={16} />Add partner</button> : undefined} />
           : <div style={{ overflowX: "auto" }}><table className="tbl">
             <thead><tr><th>Partner</th><th>District</th><th>Level</th><th>Status</th><th></th></tr></thead>
             <tbody>{list.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); return (
@@ -7876,6 +7876,83 @@ function APNAdminLeaderboard({ db }) {
 }
 
 /* ── admin shell ─────────────────────────────────────────────────────── */
+function APNCreatePartnerForm({ db, mutate, currentUser, onClose }) {
+  const [f, setF] = useState({ name: "", email: "", password: "", mobile: "", district: TN_DISTRICTS[0], taluk: "", city: "", occupation: "", college: "", username: "", reason: "" });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
+  const create = async () => {
+    setErr("");
+    if (!f.name.trim()) { setErr("Enter the partner's full name."); return; }
+    if (!f.email.trim()) { setErr("Enter an email."); return; }
+    if (f.password.length < 6) { setErr("Set a password of at least 6 characters."); return; }
+    if (!f.mobile.trim()) { setErr("Enter a mobile number."); return; }
+    if (!f.district) { setErr("Choose a district."); return; }
+    setBusy(true);
+    try {
+      // 1) create a confirmed login via the same edge function used to add staff
+      const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "create", email: f.email.trim(), password: f.password, name: f.name.trim(), role: "staff" } });
+      if (error) throw error;
+      if (data && data.error) throw new Error(data.error);
+      // 2) resolve the new user id (works whatever the function returns)
+      let newId = data && (data.id || (data.user && data.user.id) || data.userId);
+      if (!newId) { const { data: p1 } = await supabase.from("profiles").select("id").eq("email", f.email.trim().toLowerCase()).maybeSingle(); newId = p1 && p1.id; }
+      if (!newId) { const { data: p2 } = await supabase.from("profiles").select("id").eq("email", f.email.trim()).maybeSingle(); newId = p2 && p2.id; }
+      if (!newId) throw new Error("Account created, but couldn't link the APN profile automatically. Ask them to sign in once, then approve them from Pending.");
+      // 3) make the profile a partner (so they land in the APN portal) and approved
+      await supabase.from("profiles").update({ role: "partner", approved: true }).eq("id", newId);
+      // 4) assign the next APN id
+      let n = await nextApnNumber();
+      if (n == null) { const nums = (db.apn_users || []).map((u) => Number(String(u.apnId || "").replace(/\D/g, "")) || 0); n = (nums.length ? Math.max(...nums) : 0) + 1; }
+      const row = {
+        id: newId, apnId: apnPadId(n), name: f.name.trim(), mobile: f.mobile.trim(), email: f.email.trim(), dob: "",
+        district: f.district, taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(),
+        college: f.college.trim(), reason: f.reason.trim(), username: f.username.trim().toLowerCase(),
+        status: "active", role: "partner", approvedBy: currentUser, approvedAt: Date.now(),
+        unlocked: {}, quizPasses: {}, createdAt: Date.now(),
+      };
+      // 5) create the APN profile row (active — the admin is vouching for them)
+      mutate((d) => ({ ...d, apn_users: (d.apn_users || []).some((u) => u.id === newId) ? d.apn_users.map((u) => u.id === newId ? { ...u, ...row } : u) : [...(d.apn_users || []), row] }), { action: `added APN partner "${f.name.trim()}"`, module: "APN" });
+      setOk(`${f.name.trim()} (${row.apnId}) can sign in right away with the email and password you set — no email confirmation needed.`);
+    } catch (e) {
+      const msg = (e && e.message) || "Couldn't create the partner.";
+      setErr(/already registered|already been registered|duplicate|exists/i.test(msg) ? "That email already has an account — use a different email."
+        : /admin-users|not deployed|Failed to send a request|Function|non-2xx/i.test(msg) ? "This needs the admin-users edge function deployed (the same one used to add staff on the Team screen)."
+        : msg);
+    } finally { setBusy(false); }
+  };
+  if (ok) return <Modal title="Partner added 🎉" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}><div className="banner" style={{ margin: 0, borderColor: "var(--pos)" }}><BadgeCheck size={15} color="var(--pos)" />{ok}</div></Modal>;
+  return (
+    <Modal title="Add APN partner" onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={create} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}Create partner</button></>}>
+      <div className="banner" style={{ margin: "0 0 12px" }}><GaugeCircle size={15} />Creates a ready-to-use partner account — confirmed and approved, so they can sign in immediately. Share the password with them securely.</div>
+      <div className="grid2">
+        <Field label="Full name" required><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Partner name" /></Field>
+        <Field label="Mobile" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
+      </div>
+      <div className="grid2">
+        <Field label="Email" required><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email.com" /></Field>
+        <Field label="Password" required hint="At least 6 characters."><input className="input" type="text" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" /></Field>
+      </div>
+      <div className="grid2">
+        <Field label="District" required><select className="select" value={f.district} onChange={(e) => set("district", e.target.value)}>{TN_DISTRICTS.map((d) => <option key={d}>{d}</option>)}</select></Field>
+        <Field label="Taluk"><input className="input" value={f.taluk} onChange={(e) => set("taluk", e.target.value)} placeholder="Taluk" /></Field>
+      </div>
+      <div className="grid2">
+        <Field label="City / town"><input className="input" value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="City" /></Field>
+        <Field label="Occupation"><input className="input" value={f.occupation} onChange={(e) => set("occupation", e.target.value)} placeholder="Student, freelancer…" /></Field>
+      </div>
+      <div className="grid2">
+        <Field label="College (optional)"><input className="input" value={f.college} onChange={(e) => set("college", e.target.value)} placeholder="College" /></Field>
+        <Field label="Username (optional)"><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="Sign-in username" /></Field>
+      </div>
+      <Field label="Notes / why joining (optional)"><textarea className="textarea" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field>
+      {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
+    </Modal>
+  );
+}
+
 function APNAdmin({ db, mutate, isSuper, currentUser }) {
   const [tab, setTab] = useState("partners");
   const [modal, setModal] = useState(null);
@@ -7910,6 +7987,7 @@ function APNAdmin({ db, mutate, isSuper, currentUser }) {
   return (
     <div className="content">
       <div className="page-head"><h3>APN — Partner Network</h3><span className="spacer" />
+        {tab === "partners" && isSuper && <button className="btn primary" onClick={() => setModal({ type: "apnCreatePartner" })}><Plus size={16} />Add partner</button>}
         {tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
         {tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
       </div>
@@ -7933,6 +8011,7 @@ function APNAdmin({ db, mutate, isSuper, currentUser }) {
       {tab === "board" && <APNAdminLeaderboard db={db} />}
 
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={(reason) => act.reject(modal.partner, reason)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnCreatePartner" && <APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} onClose={() => setModal(null)} />}
       {modal?.type === "apnLeadManage" && <APNLeadManage lead={modal.lead} onSave={saveLead} onClose={() => setModal(null)} />}
       {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} onSave={saveTarget} onClose={() => setModal(null)} />}
       {modal?.type === "apnTraining" && <APNTrainingForm initial={modal.initial} onSave={(r) => saveRow("apn_training", r, `${modal.initial ? "updated" : "added"} APN lesson "${r.title}"`)} onClose={() => setModal(null)} />}
