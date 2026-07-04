@@ -8,6 +8,7 @@ import {
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck,
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins,
+  Bug, ClipboardCheck, Image as ImageIcon,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -40,6 +41,18 @@ const EXPENSE_RECURRENCE = ["One-time", "Monthly", "Quarterly", "Yearly"];
 const REWARD_KINDS = ["Star performer", "On-time hero", "Team player", "Goal smashed", "Bonus"];
 const VAULT_CATEGORIES = ["Social", "Website", "Hosting", "Email", "Domain", "Banking", "Tools", "Other"];
 
+/* ── Phase Next: dynamic expense sharing + testing module ──────────────────
+   Company-level expenses (rent, internet, hosting, subscriptions, company
+   purchases…) are split by the LAST month that had revenue — see
+   revenueShareForMonth / expenseSharePlan below. Project & client costs keep
+   their own manual split, so these two category lists drive the picker. */
+const COMPANY_EXPENSE_CATEGORIES = ["Office Rent", "Internet", "Electricity", "Hosting", "Canva", "ChatGPT", "Software", "Subscriptions", "Company purchase", "Other"];
+const PROJECT_EXPENSE_CATEGORIES = ["Project cost", "Client expense", "Subcontractor", "Assets", "Travel", "Marketing", "Other"];
+const DEFAULT_EXPENSE_SHARE = { haji: 50, alim: 50 }; // used until a first revenue month exists
+// Testing module: screenshot retention and per-bug image cap.
+const TEST_IMAGE_TTL_DAYS = 30;  // testing screenshots auto-delete after 30 days
+const TEST_MAX_IMAGES = 4;       // maximum screenshots per bug report
+
 // ── Phase 7 additions: statuses, levels, notifications, file uploads ───────
 const CLIENT_STATUS = ["Prospect", "Active", "Inactive", "Blacklisted"];
 const PLANNED_STATUS = ["Planned", "Approved", "Purchased", "Cancelled"];
@@ -68,7 +81,13 @@ async function uploadAttachment(file) {
   const { error } = await supabase.storage.from("attachments").upload(path, file, { upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(error.message);
   const { data } = supabase.storage.from("attachments").getPublicUrl(path);
-  return { url: data.publicUrl, name: file.name, size: file.size, type: file.type };
+  return { url: data.publicUrl, name: file.name, size: file.size, type: file.type, path };
+}
+// Recover the storage object key from a public URL so the retention sweep can
+// delete the underlying file (older uploads only stored the URL, not the key).
+function storagePathFromUrl(url) {
+  try { const i = String(url || "").indexOf("/attachments/"); return i === -1 ? null : decodeURIComponent(String(url).slice(i + "/attachments/".length).split("?")[0]); }
+  catch { return null; }
 }
 
 // Recently Deleted (recycle bin): which collections support soft-delete + restore,
@@ -85,6 +104,7 @@ const MODULE_LABEL = {
   sheets: "Sheets",
   inhouse: "In-house projects",
   teams: "Team leads",
+  testing: "Testing",
 };
 const LOGO_FULL = "/allbee-logo.png";   // full lockup (monogram + wordmark)
 const LOGO_ICON = "/allbee-icon.png";   // square monogram
@@ -100,7 +120,7 @@ const STATUS_OPTIONS = ["active", "on_leave", "suspended", "resigned", "terminat
 // statuses that revoke sign-in (the row's `active` flag is set from this)
 const STATUS_ACTIVE = { active: true, on_leave: true, suspended: false, resigned: false, terminated: false };
 // business modules an admin can grant to an individual staff member, one by one
-const GRANTABLE_MODULES = [["projects", "Projects"], ["inhouse", "In-house projects"], ["leads", "Leads"], ["clients", "Clients"], ["quotations", "Quotations"], ["invoices", "Invoices"], ["portal-posts", "Client updates"], ["courses", "Courses"], ["marketing", "Marketing"], ["concepts", "Concepts"], ["sheets", "Sheets"], ["prompts", "Prompts"]];
+const GRANTABLE_MODULES = [["projects", "Projects"], ["inhouse", "In-house projects"], ["leads", "Leads"], ["clients", "Clients"], ["quotations", "Quotations"], ["invoices", "Invoices"], ["portal-posts", "Client updates"], ["courses", "Courses"], ["marketing", "Marketing"], ["concepts", "Concepts"], ["testing", "Testing"], ["sheets", "Sheets"], ["prompts", "Prompts"]];
 // Who must accept Terms & Conditions before using the app. Partners (superadmin)
 // author the agreements, so they're exempt; everyone else signs.
 const TNC_ROLES = ["admin", "accountant", "staff", "intern"];
@@ -206,7 +226,7 @@ const startOfWeek = (ref = new Date()) => { const d = new Date(ref); const day =
    only the rows that actually changed (insert / update / delete).
 ─────────────────────────────────────────────────────────────────────────── */
 const TABLES = ["transactions", "withdrawals", "tasks", "projects", "students", "marketing", "concepts", "audit", "attendance", "leave", "updates", "recycle",
-  "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat"];
+  "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat", "testing"];
 
 async function fetchAll() {
   const db = emptyDB();
@@ -383,7 +403,7 @@ const emptyDB = () => ({
   announcements: [], documents: [], knowledge: [], chat: [],
   rewards: [], vault: [], portal_posts: [],
   notifications: [], invoices: [], resignations: [], prompts: [], sheets: [],
-  inhouse: [], payroll: [], teams: [], team_chat: [],
+  inhouse: [], payroll: [], teams: [], team_chat: [], testing: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -506,6 +526,61 @@ function monthStats(db) {
   }
   return { rev: round2(rev), exp: round2(exp) };
 }
+
+/* ── dynamic expense sharing ───────────────────────────────────────────────
+   Company-level office expenses for a month are split by the previous VALID
+   revenue month's share. "Revenue share" for a month = how the month's income
+   actually credited each partner (each income entry carries its own split), as
+   a percentage of that month's total revenue. */
+// Revenue split for one month ("YYYY-MM"). null when the month had no revenue.
+function revenueShareForMonth(db, period) {
+  let haji = 0, alim = 0;
+  for (const t of (db.transactions || [])) {
+    if (t.kind !== "income" || (t.date || "").slice(0, 7) !== period) continue;
+    const a = Number(t.amount) || 0;
+    haji += (a * (Number(t.hajiPct) || 0)) / 100;
+    alim += (a * (Number(t.alimPct) || 0)) / 100;
+  }
+  const total = haji + alim;
+  if (total <= 0) return null;
+  const hp = round2((haji / total) * 100);
+  return { hajiRev: round2(haji), alimRev: round2(alim), total: round2(total), haji: hp, alim: round2(100 - hp) };
+}
+// The most recent month strictly before `period` that resolves to a real share.
+// This naturally skips no-revenue months (August in the spec's example), so the
+// last valid month's percentages keep applying until a new valid month exists.
+function latestRevenuePeriodBefore(db, period) {
+  const months = new Set();
+  for (const t of (db.transactions || [])) {
+    if (t.kind !== "income" || !((Number(t.amount) || 0) > 0)) continue;
+    const p = (t.date || "").slice(0, 7);
+    if (p && p < period) months.add(p);
+  }
+  const sorted = [...months].sort();
+  for (let i = sorted.length - 1; i >= 0; i--) if (revenueShareForMonth(db, sorted[i])) return sorted[i];
+  return null;
+}
+// How a company expense dated in `period` should split. Falls back to an even
+// 50/50 until the business has its first revenue month.
+function expenseSharePlan(db, period) {
+  const src = latestRevenuePeriodBefore(db, period);
+  if (src) { const rs = revenueShareForMonth(db, src); return { sourcePeriod: src, haji: rs.haji, alim: rs.alim, fallback: false, revenue: rs }; }
+  return { sourcePeriod: null, haji: DEFAULT_EXPENSE_SHARE.haji, alim: DEFAULT_EXPENSE_SHARE.alim, fallback: true, revenue: null };
+}
+// When was the driving revenue last touched (newest income entry in the source
+// month)? Powers the "Last updated" line in Share & accounts.
+function expenseShareLastUpdated(db, sourcePeriod) {
+  if (!sourcePeriod) return null;
+  let latest = 0;
+  for (const t of (db.transactions || [])) {
+    if (t.kind !== "income" || (t.date || "").slice(0, 7) !== sourcePeriod) continue;
+    latest = Math.max(latest, t.createdAt || 0);
+  }
+  return latest || null;
+}
+// Treat an expense as company-scoped when tagged, else infer from legacy data:
+// an expense tied to a project is project-scoped, everything else is company.
+const expenseScope = (t) => t.scope || (t.project ? "project" : "company");
 
 function marketingDue(m) {
   if (!m.startDate) return { label: "No start date", tone: "muted" };
@@ -796,6 +871,8 @@ table.tbl tr:hover td { background:var(--surface-2); }
   .userchip .role-badge { display:none; }
   .userchip { padding:4px; gap:0; }
   .cards-grid { grid-template-columns:1fr !important; }
+  .search-trigger { min-width:0; padding:8px; }
+  .search-trigger .st-lbl, .search-trigger .st-kbd { display:none; }
 }
 
 /* ── Phase 2 additions ─────────────────────────────────────────────────── */
@@ -889,6 +966,50 @@ table.tbl tr:hover td { background:var(--surface-2); }
 .status-active { background:var(--pos-soft); color:var(--pos); }
 .status-on_leave { background:rgba(234,164,23,.16); color:var(--accent); }
 .status-suspended, .status-resigned, .status-terminated { background:var(--neg-soft); color:var(--neg); }
+
+/* ── Phase Next: global search (Ctrl+K) ────────────────────────────────── */
+.search-trigger { display:flex; align-items:center; gap:8px; border:1px solid var(--border); background:var(--surface);
+  border-radius:9px; padding:6px 10px; cursor:pointer; color:var(--muted); font-size:13px; font-weight:500; min-width:170px; }
+.search-trigger:hover { background:var(--surface-2); color:var(--ink); }
+.search-trigger .st-kbd { margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:.3px; color:var(--muted);
+  border:1px solid var(--border); border-radius:6px; padding:1px 6px; background:var(--surface-2); }
+.cmdk-overlay { position:fixed; inset:0; background:rgba(10,14,20,.5); backdrop-filter:blur(2px); z-index:300;
+  display:flex; align-items:flex-start; justify-content:center; padding:64px 16px 24px; overflow-y:auto; }
+.cmdk { background:var(--surface); border:1px solid var(--border); border-radius:16px; width:100%; max-width:640px;
+  box-shadow:0 24px 64px rgba(0,0,0,.4); overflow:hidden; animation:pop .16s ease; }
+.cmdk-input { display:flex; align-items:center; gap:11px; padding:15px 18px; border-bottom:1px solid var(--border); }
+.cmdk-input input { flex:1; border:none; background:none; outline:none; font-size:16px; color:var(--ink); font-family:inherit; }
+.cmdk-results { max-height:60vh; overflow-y:auto; padding:8px; }
+.cmdk-group { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); padding:10px 12px 5px; }
+.cmdk-item { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:10px; cursor:pointer; }
+.cmdk-item:hover, .cmdk-item.on { background:var(--surface-2); }
+.cmdk-ic { width:32px; height:32px; border-radius:9px; background:var(--surface-2); display:grid; place-items:center; color:var(--muted); flex:none; }
+.cmdk-item.on .cmdk-ic { background:var(--primary-soft); color:var(--primary); }
+.cmdk-main { min-width:0; flex:1; }
+.cmdk-title { font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmdk-path { font-size:11.5px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmdk-meta { display:flex; align-items:center; gap:8px; flex:none; }
+.cmdk-empty { padding:40px 20px; text-align:center; color:var(--muted); font-size:14px; }
+.cmdk-foot { display:flex; align-items:center; gap:14px; padding:9px 16px; border-top:1px solid var(--border);
+  font-size:11px; color:var(--muted); flex-wrap:wrap; }
+.cmdk-foot .k { border:1px solid var(--border); border-radius:5px; padding:1px 6px; font-weight:700; background:var(--surface-2); }
+mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; padding:0 1px; }
+
+/* ── Phase Next: testing module ────────────────────────────────────────── */
+.check-item { display:flex; align-items:flex-start; gap:11px; padding:11px 0; border-bottom:1px solid var(--border); }
+.check-item:last-child { border-bottom:none; }
+.check-box { width:22px; height:22px; border-radius:7px; border:1.5px solid var(--border); background:var(--surface);
+  display:grid; place-items:center; cursor:pointer; flex:none; margin-top:1px; transition:.12s; color:#fff; }
+.check-box.done { background:var(--pos); border-color:var(--pos); }
+.check-box:not(.done):hover { border-color:var(--primary); }
+.check-txt { flex:1; min-width:0; font-size:14px; }
+.check-txt.done { text-decoration:line-through; color:var(--muted); }
+.thumb-row { display:flex; gap:8px; flex-wrap:wrap; }
+.thumb { width:74px; height:74px; border-radius:10px; object-fit:cover; border:1px solid var(--border); cursor:pointer; background:var(--surface-2); }
+.thumb-add { width:74px; height:74px; border-radius:10px; border:1.5px dashed var(--border); background:var(--surface-2);
+  display:grid; place-items:center; cursor:pointer; color:var(--muted); }
+.thumb-add:hover { border-color:var(--primary); color:var(--primary); }
+.bug-card { border:1px solid var(--border); border-radius:12px; padding:13px 15px; background:var(--surface-2); display:flex; flex-direction:column; gap:10px; }
 `;
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1014,32 +1135,43 @@ function Avatar({ name, url, size = 26, fontSize, style }) {
 /* ══════════════════════════════════════════════════════════════════════
    FORMS
 ══════════════════════════════════════════════════════════════════════ */
-function ShareForm({ kind, initial, onSave, onClose, currentUser }) {
+function ShareForm({ kind, initial, onSave, onClose, currentUser, db }) {
   const isIncome = kind === "income";
-  const [f, setF] = useState(() => ({
-    client: "", project: "", amount: "", date: todayISO(),
-    category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "",
-    ...initial,
-  }));
+  const [f, setF] = useState(() => {
+    const base = { client: "", project: "", amount: "", date: todayISO(), category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "", ...initial };
+    // New expenses default to the shared "company" bucket; legacy edits stay
+    // manual ("project") so historical splits are never silently rewritten.
+    if (!isIncome) base.scope = initial?.scope || (initial?.id ? "project" : "company");
+    return base;
+  });
   const [touched, setTouched] = useState(false);
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setSplit = (h) => setF((s) => ({ ...s, hajiPct: h, alimPct: 100 - h }));
 
+  // Company expenses derive their split from the previous valid revenue month.
+  const isCompany = !isIncome && f.scope === "company";
+  const plan = useMemo(() => expenseSharePlan(db || emptyDB(), (f.date || todayISO()).slice(0, 7)), [db, f.date]);
+  useEffect(() => {
+    if (isCompany) setF((s) => (Number(s.hajiPct) === plan.haji && Number(s.alimPct) === plan.alim ? s : { ...s, hajiPct: plan.haji, alimPct: plan.alim }));
+  }, [isCompany, plan.haji, plan.alim]);
+
   const amt = Number(f.amount) || 0;
   const sum = (Number(f.hajiPct) || 0) + (Number(f.alimPct) || 0);
   const splitOK = sum === 100;
-  const valid = amt > 0 && splitOK && f.date;
+  const valid = amt > 0 && (isCompany || splitOK) && f.date;
   const hShare = round2((amt * (Number(f.hajiPct) || 0)) / 100);
   const aShare = round2((amt * (Number(f.alimPct) || 0)) / 100);
 
   const save = () => {
     setTouched(true);
     if (!valid) return;
-    onSave({
+    const payload = {
       ...initial, id: initial?.id || uid(), kind, client: f.client.trim(), project: f.project.trim(),
       amount: amt, date: f.date, category: f.category, hajiPct: Number(f.hajiPct), alimPct: Number(f.alimPct),
       notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now(),
-    });
+    };
+    if (!isIncome) { payload.scope = f.scope; payload.shareSource = isCompany ? (plan.fallback ? null : plan.sourcePeriod) : null; }
+    onSave(payload);
     onClose();
   };
 
@@ -1057,25 +1189,46 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser }) {
         </Field>
         <Field label="Date" required><input className="input" type="date" value={f.date} onChange={(e) => up("date", e.target.value)} /></Field>
       </div>
+      {!isIncome && (
+        <Field label="Expense type" hint={isCompany ? "Company costs are shared automatically from your revenue split." : "Project & client costs keep their own manual split."}>
+          <div className="seg" style={{ display: "inline-flex" }}>
+            <button type="button" className={isCompany ? "on" : ""} onClick={() => up("scope", "company")}>Company (auto-shared)</button>
+            <button type="button" className={!isCompany ? "on" : ""} onClick={() => up("scope", "project")}>Project / client</button>
+          </div>
+        </Field>
+      )}
       <Field label="Category">
-        <SelectOther value={f.category} onChange={(v) => up("category", v)} options={(isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).filter((c) => c !== "Other")} placeholder="Custom category…" />
+        <SelectOther value={f.category} onChange={(v) => up("category", v)} options={(isIncome ? INCOME_CATEGORIES : (isCompany ? COMPANY_EXPENSE_CATEGORIES : PROJECT_EXPENSE_CATEGORIES)).filter((c) => c !== "Other")} placeholder="Custom category…" />
       </Field>
 
-      <Field label="Profit split" required error={touched && !splitOK ? `Split must total 100% (currently ${sum}%)` : ""}
-        hint="Set the share for this entry — no fixed percentage is assumed.">
-        <div className="preset-row" style={{ marginBottom: 10 }}>
-          {PRESETS.map(([h, a]) => (
-            <button key={h + "/" + a} className="preset" onClick={() => setSplit(h)}>{h} / {a}</button>
-          ))}
-        </div>
-        <div className="grid2">
-          <div><div className="hint-line" style={{ marginBottom: 5 }}>Haji %</div>
-            <input className="input mono" type="number" min="0" max="100" value={f.hajiPct} onChange={(e) => up("hajiPct", e.target.value === "" ? "" : Number(e.target.value))} /></div>
-          <div><div className="hint-line" style={{ marginBottom: 5 }}>Alim %</div>
-            <input className="input mono" type="number" min="0" max="100" value={f.alimPct} onChange={(e) => up("alimPct", e.target.value === "" ? "" : Number(e.target.value))} /></div>
-        </div>
-        <div style={{ marginTop: 12 }}><SplitBar h={Number(f.hajiPct) || 0} a={Number(f.alimPct) || 0} /></div>
-      </Field>
+      {isCompany ? (
+        <Field label="Company expense split" hint="Set automatically — manage it under Share & accounts.">
+          <div className="calc-box">
+            <div className="calc-row" style={{ color: "var(--muted)", fontSize: 12 }}>
+              {plan.fallback ? "No revenue recorded yet — using an even 50/50 split until your first revenue month." : `Based on ${fmtPeriod(plan.sourcePeriod)} revenue share`}
+            </div>
+            <div style={{ margin: "2px 0 4px" }}><SplitBar h={plan.haji} a={plan.alim} /></div>
+            <div className="calc-row"><span style={{ display: "flex", alignItems: "center", gap: 7 }}><span className="dot" style={{ background: "var(--haji)" }} />Haji</span><span className="mono" style={{ fontWeight: 700 }}>{plan.haji}%</span></div>
+            <div className="calc-row"><span style={{ display: "flex", alignItems: "center", gap: 7 }}><span className="dot" style={{ background: "var(--alim)" }} />Alim</span><span className="mono" style={{ fontWeight: 700 }}>{plan.alim}%</span></div>
+          </div>
+        </Field>
+      ) : (
+        <Field label="Profit split" required error={touched && !splitOK ? `Split must total 100% (currently ${sum}%)` : ""}
+          hint="Set the share for this entry — no fixed percentage is assumed.">
+          <div className="preset-row" style={{ marginBottom: 10 }}>
+            {PRESETS.map(([h, a]) => (
+              <button key={h + "/" + a} className="preset" onClick={() => setSplit(h)}>{h} / {a}</button>
+            ))}
+          </div>
+          <div className="grid2">
+            <div><div className="hint-line" style={{ marginBottom: 5 }}>Haji %</div>
+              <input className="input mono" type="number" min="0" max="100" value={f.hajiPct} onChange={(e) => up("hajiPct", e.target.value === "" ? "" : Number(e.target.value))} /></div>
+            <div><div className="hint-line" style={{ marginBottom: 5 }}>Alim %</div>
+              <input className="input mono" type="number" min="0" max="100" value={f.alimPct} onChange={(e) => up("alimPct", e.target.value === "" ? "" : Number(e.target.value))} /></div>
+          </div>
+          <div style={{ marginTop: 12 }}><SplitBar h={Number(f.hajiPct) || 0} a={Number(f.alimPct) || 0} /></div>
+        </Field>
+      )}
 
       {amt > 0 && splitOK && (
         <div className="calc-box">
@@ -1332,6 +1485,58 @@ function Birthdays({ team, windowDays = 30 }) {
   );
 }
 
+// Dashboard cards: previous month's revenue share (the source) + the split now
+// applied to this month's company expenses. Both read live from the ledger.
+function ExpenseShareCards({ db, go }) {
+  const period = todayISO().slice(0, 7);
+  const plan = expenseSharePlan(db, period);
+  const src = plan.sourcePeriod;
+  return (
+    <div className="cards-grid" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
+      <div className="card stat" style={{ cursor: "pointer" }} onClick={() => go("accounts")}>
+        <div className="lbl"><TrendingUp size={14} /> Previous month revenue share</div>
+        <div className="sub" style={{ marginTop: 4 }}>{src ? `Based on ${fmtPeriod(src)}` : "No revenue recorded yet"}</div>
+        <div style={{ margin: "12px 0 6px" }}><SplitBar h={plan.haji} a={plan.alim} legend={false} /></div>
+        <div className="split-legend"><span><span className="dot" style={{ background: "var(--haji)" }} /> Haji {plan.haji}%</span><span><span className="dot" style={{ background: "var(--alim)" }} /> Alim {plan.alim}%</span></div>
+      </div>
+      <div className="card stat" style={{ cursor: "pointer" }} onClick={() => go("accounts")}>
+        <div className="lbl"><Coins size={14} /> Current month expense share</div>
+        <div className="sub" style={{ marginTop: 4 }}>{plan.fallback ? "Even split until first revenue" : `Applied to ${fmtPeriod(period)} company costs`}</div>
+        <div style={{ margin: "12px 0 6px" }}><SplitBar h={plan.haji} a={plan.alim} legend={false} /></div>
+        <div className="split-legend"><span><span className="dot" style={{ background: "var(--haji)" }} /> Haji {plan.haji}%</span><span><span className="dot" style={{ background: "var(--alim)" }} /> Alim {plan.alim}%</span></div>
+      </div>
+    </div>
+  );
+}
+
+// Share & accounts panel: revenue share %, applied expense share %, the source
+// month the numbers came from, and when that revenue was last updated.
+function ExpenseSharePanel({ db }) {
+  const period = todayISO().slice(0, 7);
+  const plan = expenseSharePlan(db, period);
+  const updated = expenseShareLastUpdated(db, plan.sourcePeriod);
+  return (
+    <div className="card stat" style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Coins size={16} color="var(--muted)" />
+        <div style={{ fontWeight: 700 }}>Company expense sharing</div>
+        <span className="tag" style={{ marginLeft: "auto" }}>{plan.fallback ? "Default split" : "Auto"}</span>
+      </div>
+      <div className="hint-line" style={{ fontSize: 12, marginTop: 4 }}>
+        {plan.fallback ? "Company costs split 50/50 until your first revenue month." : `Company costs this month split by ${fmtPeriod(plan.sourcePeriod)}'s revenue share.`}
+      </div>
+      <div style={{ margin: "12px 0 6px" }}><SplitBar h={plan.haji} a={plan.alim} legend={false} /></div>
+      <div className="split-legend" style={{ marginBottom: 8 }}><span><span className="dot" style={{ background: "var(--haji)" }} /> Haji {plan.haji}%</span><span><span className="dot" style={{ background: "var(--alim)" }} /> Alim {plan.alim}%</span></div>
+      <div className="meta-grid" style={{ marginTop: 4 }}>
+        <div><div className="k">Revenue share</div><div className="v mono">{plan.revenue ? `${plan.revenue.haji}% / ${plan.revenue.alim}%` : "—"}</div></div>
+        <div><div className="k">Expense share</div><div className="v mono">{plan.haji}% / {plan.alim}%</div></div>
+        <div><div className="k">Source month</div><div className="v">{plan.sourcePeriod ? fmtPeriod(plan.sourcePeriod) : "—"}</div></div>
+        <div><div className="k">Last updated</div><div className="v">{updated ? fmtDate(new Date(updated).toISOString().slice(0, 10)) : "—"}</div></div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true, team = [] }) {
   const m = monthStats(db);
   const pending = db.tasks.filter((t) => t.status !== "Completed").length;
@@ -1383,6 +1588,8 @@ function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true,
           ))}
         </div>
       )}
+
+      {showMoney && <ExpenseShareCards db={db} go={go} />}
 
       {stats.length > 0 && (
         <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", marginBottom: 18 }}>
@@ -1856,6 +2063,8 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
           <div className="sub">{db.transactions.length} entries recorded</div></div>
       </div>
 
+      <ExpenseSharePanel db={db} />
+
       <div className="toolbar">
         <div className="search"><Search size={16} color="var(--muted)" /><input placeholder="Search client, project, notes…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <div className="seg">{[["all", "All"], ["income", "Income"], ["expense", "Expenses"]].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
@@ -1874,7 +2083,7 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
                   <tr key={t.id}>
                     <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtDate(t.date)}</td>
                     <td><div style={{ fontWeight: 600 }}>{t.project || t.client || "—"}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{t.client || ""}</div></td>
-                    <td><span className={"badge " + (t.kind === "income" ? "pos" : "neg")}>{t.kind === "income" ? "Income" : "Expense"}</span> <span className="tag">{t.category}</span></td>
+                    <td><span className={"badge " + (t.kind === "income" ? "pos" : "neg")}>{t.kind === "income" ? "Income" : "Expense"}</span> <span className="tag">{t.category}</span>{t.kind === "expense" && expenseScope(t) === "company" && <span className="tag" style={{ marginLeft: 4 }}>Shared</span>}</td>
                     <td className={"num-cell mono " + (t.kind === "income" ? "pos-txt" : "neg-txt")} style={{ fontWeight: 700 }}>{money(t.kind === "income" ? t.amount : -t.amount, { sign: t.kind === "income" })}</td>
                     <td style={{ minWidth: 130 }}><SplitBar h={t.hajiPct} a={t.alimPct} legend={false} /><div className="split-legend"><span>H {t.hajiPct}%</span><span>A {t.alimPct}%</span></div></td>
                     <td><div className="row-actions">
@@ -3374,6 +3583,7 @@ const NAV = [
   ["portal-posts", "Client updates", ExternalLink, "perm:portal-posts"],
   ["projects", "Projects", FolderKanban, "perm:projects"],
   ["inhouse", "In-house projects", Home, "perm:inhouse"],
+  ["testing", "Testing", ClipboardCheck, "perm:testing"],
   ["courses", "Courses", GraduationCap, "perm:courses"],
   ["marketing", "Marketing", Megaphone, "perm:marketing"],
   ["concepts", "Concepts", Lightbulb, "perm:concepts"],
@@ -5083,1036 +5293,4 @@ function InHouse({ db, mutate, openModal, removeItem, isAdmin, me, team = [] }) 
       <div className="page-head"><h3>In-house projects</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "inhouse" })}><Plus size={16} />New project</button></div>
       <div className="sumrow">
         <div className="card"><div className="k"><Home size={14} /> Total</div><div className="v">{list.length}</div></div>
-        <div className="card"><div className="k"><Activity size={14} /> In progress</div><div className="v">{active}</div></div>
-        <div className="card"><div className="k"><CheckCircle2 size={14} /> Launched</div><div className="v">{launched}</div></div>
-        {budget > 0 && <div className="card"><div className="k"><Wallet size={14} /> Budget</div><div className="v mono">{money(budget)}</div></div>}
-      </div>
-      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-        {list.length === 0 ? <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<Home size={22} color="var(--muted)" />} title="No in-house projects yet" text="Track the company's own products, internal tools and R&D from Idea to Launched." action={<button className="btn primary" onClick={() => openModal({ type: "inhouse" })}><Plus size={16} />New project</button>} /></div>
-          : list.map((p) => {
-            const pct = Math.max(0, Math.min(100, Number(p.progress) || 0));
-            return (
-              <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div><div className="sub">{p.category}{p.lead ? ` · ${p.lead}` : ""}</div></div>
-                  {p.priority && <span className={"badge " + priorityTone(p.priority)}>{p.priority}</span>}
-                </div>
-                <select className="select" value={p.stage} onChange={(e) => setStage(p, e.target.value)}>{INHOUSE_STAGES.map((s) => <option key={s}>{s}</option>)}</select>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)", marginBottom: 4 }}><span className={"badge " + stageTone(p.stage)}>{p.stage}</span><span className="mono">{pct}%</span></div>
-                  <div style={{ height: 6, borderRadius: 6, background: "var(--surface-2)", overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: pct === 100 ? "var(--pos)" : "var(--primary)", transition: ".2s" }} /></div>
-                </div>
-                <div className="item-meta">{p.start && <span>Start {fmtDate(p.start)}</span>}{p.target && <span>Target {fmtDate(p.target)}</span>}{Number(p.budget) > 0 && <span className="mono">{money(p.budget)}</span>}</div>
-                {p.link && <a href={p.link} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--primary)", textDecoration: "none", fontWeight: 600, wordBreak: "break-all" }}><ExternalLink size={13} style={{ flex: "none" }} />{p.link.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>}
-                {p.notes && <div className="hint-line" style={{ lineHeight: 1.5 }}>{p.notes.length > 120 ? p.notes.slice(0, 120) + "…" : p.notes}</div>}
-                <div style={{ display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                  {canEdit(p) && <button className="btn sm" onClick={() => openModal({ type: "inhouse", initial: p })}><Pencil size={13} />Edit</button>}
-                  {canEdit(p) && <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
-                  {!canEdit(p) && <span className="hint-line" style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}><LockIcon size={11} />{p.owner ? `Added by ${p.owner}` : "Admin-only"}</span>}
-                </div>
-              </div>
-            );
-          })}
-      </div>
-    </div>
-  );
-}
-
-/* ── Staff salary (admin) ──────────────────────────────────────────────── */
-function SalaryRow({ person, db, payroll, onSave }) {
-  const cfg = payrollFor(payroll, person.id);
-  const [fixed, setFixed] = useState(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : "");
-  const [pct, setPct] = useState(cfg?.commissionPct != null ? String(cfg.commissionPct) : "");
-  const [saved, setSaved] = useState(false);
-  useEffect(() => { setFixed(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : ""); setPct(cfg?.commissionPct != null ? String(cfg.commissionPct) : ""); }, [cfg?.fixedMonthly, cfg?.commissionPct]);
-  const E = staffEarnings(db, payroll, { id: person.id, name: person.name }, person.created_at);
-  const dirty = String(Number(fixed) || 0) !== String(E.fixedMonthly) || String(Number(pct) || 0) !== String(E.pct);
-  const save = () => { onSave(person, { fixedMonthly: Number(fixed) || 0, commissionPct: Number(pct) || 0 }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
-  return (
-    <div className="card stat" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className="who-cell">
-        <Avatar name={person.name} url={person.photo_url} size={30} />
-        <span><div style={{ fontWeight: 700 }}>{person.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[person.role] || person.role}{person.designation ? ` · ${person.designation}` : ""}</div></span>
-      </div>
-      <div className="grid2">
-        <Field label="Fixed salary / month"><input className="input mono" type="number" min="0" value={fixed} onChange={(e) => setFixed(e.target.value)} placeholder="0" /></Field>
-        <Field label="Commission %"><input className="input mono" type="number" min="0" max="100" value={pct} onChange={(e) => setPct(e.target.value)} placeholder="0" /></Field>
-      </div>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12.5 }}>
-        <span className="hint-line">Commission earned <b className="pos-txt mono" style={{ marginLeft: 4 }}>{money(E.realisedComm)}</b></span>
-        <span className="hint-line">Pipeline <b className="mono" style={{ marginLeft: 4 }}>{money(E.pipelineComm)}</b></span>
-        {E.fixedMonthly > 0 && <span className="hint-line">Salary to date <b className="mono" style={{ marginLeft: 4 }}>{money(E.salaryToDate)}</b></span>}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button className="btn sm primary" onClick={save} disabled={!dirty}><Check size={14} />Save</button>
-        {saved && <span className="hint-line" style={{ color: "var(--pos)" }}><Check size={13} style={{ verticalAlign: -2 }} /> Saved</span>}
-        {!E.configured && !dirty && <span className="hint-line">No pay set yet</span>}
-      </div>
-    </div>
-  );
-}
-
-function StaffSalary({ db, team, mutate, me }) {
-  const roster = team.filter((p) => p.role !== "client" && p.role !== "superadmin");
-  const setPay = (person, patch) => mutate((d) => {
-    const exists = (d.payroll || []).some((r) => r.userId === person.id);
-    const payroll = exists
-      ? d.payroll.map((r) => r.userId === person.id ? { ...r, ...patch, updatedAt: Date.now() } : r)
-      : [...(d.payroll || []), { id: uid(), userId: person.id, userName: person.name, fixedMonthly: 0, commissionPct: 0, createdAt: Date.now(), ...patch }];
-    return { ...d, payroll };
-  }, { action: `updated ${person.name}'s pay settings`, module: "Staff salary" });
-  const totalCommission = roster.reduce((s, p) => s + staffEarnings(db, db.payroll, { id: p.id, name: p.name }, p.created_at).realisedComm, 0);
-  const totalMonthly = (db.payroll || []).reduce((s, r) => s + (Number(r.fixedMonthly) || 0), 0);
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Staff salary</h3></div>
-      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Coins size={15} /> Set each person's fixed monthly salary, a commission rate, or both. Commission is a share of the value of every student, project or client they bring in.</div>
-      <div className="sumrow">
-        <div className="card"><div className="k"><Users size={14} /> People</div><div className="v">{roster.length}</div></div>
-        <div className="card"><div className="k"><Banknote size={14} /> Monthly salaries</div><div className="v mono">{money(totalMonthly)}</div></div>
-        <div className="card"><div className="k"><Coins size={14} /> Commission earned</div><div className="v mono">{money(totalCommission)}</div></div>
-      </div>
-      {roster.length === 0 ? <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="No team members yet" text="Add staff on the Team screen, then set their pay here." /></div>
-        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
-          {roster.map((p) => <SalaryRow key={p.id} person={p} db={db} payroll={db.payroll} onSave={setPay} />)}
-        </div>}
-      <div className="hint-line" style={{ marginTop: 14, lineHeight: 1.5 }}>
-        Commission is "earned" once an item is actually paying — a student fee marked Paid, a project marked Completed, or a client set to Active. Until then it sits in the pipeline. Everyone can see their own breakdown on the My earnings screen.
-      </div>
-    </div>
-  );
-}
-
-/* ── My earnings (every member sees their own) ─────────────────────────── */
-function MyEarnings({ db, me, role, payroll, profile, go }) {
-  if (role === "superadmin") {
-    return (
-      <div className="content">
-        <div className="page-head"><h3>My earnings</h3></div>
-        <div className="card"><Empty icon={<Wallet size={22} color="var(--muted)" />} title="Partners draw from the profit share" text="As a partner you don't take a fixed salary or commission — your earnings come from the Haji & Alim split tracked in Share & accounts." action={<button className="btn primary" onClick={() => go("accounts")}><Wallet size={16} />Open Share & accounts</button>} /></div>
-      </div>
-    );
-  }
-  const E = staffEarnings(db, payroll, { id: me.id, name: me.name }, profile?.created_at);
-  const realised = E.items.filter((i) => i.realized);
-  const pipeline = E.items.filter((i) => !i.realized);
-  const kindTone = (k) => k === "Student" ? "pri" : k === "Project" ? "accent" : "pos";
-  const Row = ({ i }) => (
-    <tr>
-      <td><div style={{ fontWeight: 600 }}>{i.name}</div>{i.date && <div className="hint-line" style={{ fontSize: 11 }}>{fmtDate(i.date)}</div>}</td>
-      <td><span className={"badge " + kindTone(i.kind)}>{i.kind}</span></td>
-      <td className="num-cell mono">{money(i.base)}</td>
-      <td><span className="hint-line">{i.status}</span></td>
-      <td className="num-cell mono" style={{ fontWeight: 700, color: i.realized ? "var(--pos)" : "var(--muted)" }}>{money(i.commission)}</td>
-    </tr>
-  );
-  return (
-    <div className="content">
-      <div className="page-head"><h3>My earnings</h3></div>
-      {!E.configured && E.items.length === 0 ? (
-        <div className="card"><Empty icon={<Coins size={22} color="var(--muted)" />} title="No earnings set up yet" text="Once an admin sets your salary or commission rate, what you earn from ALLBEE shows up here — including a share of every student, project and client you bring in." /></div>
-      ) : (
-        <>
-          <div className="sumrow">
-            <div className="card"><div className="k"><Wallet size={14} /> Earned to date</div><div className="v mono pos-txt">{money(E.totalToDate)}</div></div>
-            <div className="card"><div className="k"><Coins size={14} /> Commission earned</div><div className="v mono">{money(E.realisedComm)}</div></div>
-            <div className="card"><div className="k"><Hourglass size={14} /> In pipeline</div><div className="v mono">{money(E.pipelineComm)}</div></div>
-            {E.fixedMonthly > 0 && <div className="card"><div className="k"><Banknote size={14} /> Salary / month</div><div className="v mono">{money(E.fixedMonthly)}</div></div>}
-          </div>
-
-          {E.fixedMonthly > 0 && (
-            <div className="card stat" style={{ marginBottom: 16 }}>
-              <div className="lbl"><Banknote size={14} /> Fixed salary</div>
-              <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 10 }}>
-                <div><div className="hint-line">Per month</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{money(E.fixedMonthly)}</div></div>
-                <div><div className="hint-line">Months on the team</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{E.months}</div></div>
-                <div><div className="hint-line">Salary to date (estimate)</div><div className="mono" style={{ fontSize: 18, fontWeight: 700 }}>{money(E.salaryToDate)}</div></div>
-              </div>
-              <div className="hint-line" style={{ marginTop: 8 }}>Estimated from your joining date — your actual payslip is settled by the finance team.</div>
-            </div>
-          )}
-
-          <div className="card">
-            <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <Coins size={15} /><span style={{ fontWeight: 700 }}>Commission</span>
-              {E.pct > 0 ? <span className="badge pri">{E.pct}% of each deal</span> : <span className="hint-line">No commission rate set — you're on a fixed salary.</span>}
-            </div>
-            {E.items.length === 0 ? (
-              <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="Nothing to show yet" text="Register a student, add a project, or bring in a client with a deal value and your commission appears here." />
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="tbl">
-                  <thead><tr><th>Item</th><th>Type</th><th className="num-cell">Value</th><th>Status</th><th className="num-cell">Your commission</th></tr></thead>
-                  <tbody>
-                    {realised.length > 0 && <tr><td colSpan={5} style={{ background: "var(--surface-2)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--muted)", fontWeight: 700 }}>Earned</td></tr>}
-                    {realised.map((i) => <Row key={i.id} i={i} />)}
-                    {pipeline.length > 0 && <tr><td colSpan={5} style={{ background: "var(--surface-2)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--muted)", fontWeight: 700 }}>Pipeline — not earned yet</td></tr>}
-                    {pipeline.map((i) => <Row key={i.id} i={i} />)}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ── Team leads: superadmin sets a lead + their members ─────────────────── */
-function TeamConfigForm({ initial, roster, onSave, onClose }) {
-  const [name, setName] = useState(initial?.name || "");
-  const [leadId, setLeadId] = useState(initial?.leadId || "");
-  const [memberIds, setMemberIds] = useState(initial?.memberIds || []);
-  const [err, setErr] = useState("");
-  const toggle = (id) => setMemberIds((m) => m.includes(id) ? m.filter((x) => x !== id) : [...m, id]);
-  const candidates = roster.filter((p) => p.id !== leadId);
-  const save = () => {
-    if (!name.trim()) { setErr("Give the team a name."); return; }
-    if (!leadId) { setErr("Choose a team lead."); return; }
-    const lead = roster.find((p) => p.id === leadId);
-    onSave({ id: initial?.id || uid(), name: name.trim(), leadId, leadName: lead?.name || "", memberIds: memberIds.filter((id) => id !== leadId), createdAt: initial?.createdAt || Date.now(), updatedAt: Date.now() });
-  };
-  return (
-    <Modal title={initial?.id ? "Edit team" : "New team"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={16} />Save team</button></>}>
-      {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} /> {err}</div>}
-      <div className="grid2">
-        <Field label="Team name" required><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Development squad" /></Field>
-        <Field label="Team lead" required><select className="select" value={leadId} onChange={(e) => setLeadId(e.target.value)}><option value="">Choose…</option>{roster.map((p) => <option key={p.id} value={p.id}>{p.name} · {ROLE_LABEL[p.role] || p.role}</option>)}</select></Field>
-      </div>
-      <Field label={`Members${memberIds.length ? ` · ${memberIds.length} selected` : ""}`} hint="Tick everyone who reports to this lead. The lead is included automatically.">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8, maxHeight: 280, overflowY: "auto" }}>
-          {candidates.length === 0 ? <div className="hint-line">No other members available.</div> : candidates.map((p) => {
-            const on = memberIds.includes(p.id);
-            return (
-              <button key={p.id} type="button" onClick={() => toggle(p.id)} className="card" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", cursor: "pointer", textAlign: "left", border: on ? "1px solid var(--primary)" : "1px solid var(--border)", background: on ? "var(--primary-soft)" : "var(--surface)" }}>
-                <Avatar name={p.name} url={p.photo_url} size={26} />
-                <span style={{ minWidth: 0, flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></span>
-                {on && <Check size={15} color="var(--primary)" />}
-              </button>
-            );
-          })}
-        </div>
-      </Field>
-    </Modal>
-  );
-}
-
-function TeamLeads({ team, db, openModal, removeItem, me }) {
-  const teams = [...(db.teams || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const roster = team.filter((p) => p.role !== "client" && p.active !== false);
-  const byId = (id) => team.find((p) => p.id === id);
-  const del = (t) => removeItem("teams", t, { name: t.name, audit: `deleted team "${t.name}"` });
-  const assigned = new Set(teams.flatMap((t) => teamRosterIds(t)));
-  const unassigned = roster.filter((p) => !assigned.has(p.id) && p.role !== "superadmin");
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Team leads</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "teamcfg" })}><Plus size={16} />New team</button></div>
-      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><ShieldCheck size={15} /> Group people under a team lead. Leads (and their members) get a My team screen with the team's attendance, tasks, performance and a private team chat.</div>
-      {teams.length === 0 ? <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="No teams yet" text="Create a team, pick a lead, and assign the members who report to them." action={<button className="btn primary" onClick={() => openModal({ type: "teamcfg" })}><Plus size={16} />New team</button>} /></div>
-        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-          {teams.map((t) => {
-            const members = (t.memberIds || []).map(byId).filter(Boolean);
-            const lead = byId(t.leadId);
-            return (
-              <div key={t.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{t.name}</div><div className="sub">{members.length + 1} member{members.length ? "s" : ""}</div></div>
-                  <div className="row-actions">
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} title="Edit" onClick={() => openModal({ type: "teamcfg", initial: t })}><Pencil size={14} /></button>
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} title="Delete" onClick={() => openModal({ type: "deleteConfirm", title: "Delete team?", body: `Delete "${t.name}"?`, note: "Members keep their accounts — only the grouping is removed.", onConfirm: () => del(t) })}><Trash2 size={14} /></button>
-                  </div>
-                </div>
-                <div>
-                  <div className="hint-line" style={{ marginBottom: 6 }}>Team lead</div>
-                  <span className="who-cell"><Avatar name={lead?.name || "?"} url={lead?.photo_url} size={28} /><span><div style={{ fontWeight: 600 }}>{lead?.name || "—"} <span className="badge accent" style={{ marginLeft: 4 }}>Lead</span></div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[lead?.role] || ""}</div></span></span>
-                </div>
-                <div>
-                  <div className="hint-line" style={{ marginBottom: 6 }}>Members</div>
-                  {members.length === 0 ? <div className="hint-line">No members yet.</div>
-                    : <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{members.map((m) => <span key={m.id} className="who-cell" style={{ background: "var(--surface-2)", borderRadius: 999, padding: "3px 10px 3px 3px" }}><Avatar name={m.name} url={m.photo_url} size={22} /><span style={{ fontSize: 12.5, fontWeight: 600 }}>{m.name}</span></span>)}</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>}
-      {unassigned.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: 13 }}>Not on a team yet ({unassigned.length})</div>
-          <div style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", gap: 8 }}>{unassigned.map((p) => <span key={p.id} className="who-cell"><Avatar name={p.name} url={p.photo_url} size={22} /><span style={{ fontSize: 12.5 }}>{p.name}</span></span>)}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Team-scoped chat (private to one team) ────────────────────────────── */
-function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
-  const [text, setText] = useState("");
-  const endRef = useRef(null);
-  const list = [...(db.team_chat || [])].filter((m) => m.teamId === teamId && !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
-  useEffect(() => {
-    if (!onRefresh) return;
-    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") onRefresh(); }, 12000);
-    return () => clearInterval(t);
-  }, [onRefresh]);
-  useEffect(() => {
-    const unseen = (db.team_chat || []).filter((m) => m.teamId === teamId && m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id));
-    if (!unseen.length) return;
-    const ids = new Set(unseen.map((m) => m.id));
-    mutate((d) => ({ ...d, team_chat: d.team_chat.map((m) => ids.has(m.id) ? { ...m, seenBy: Array.from(new Set([...(m.seenBy || []), me.id])) } : m) }), null);
-  }, [db.team_chat, me.id, teamId, mutate]);
-  const send = () => {
-    const t = text.trim(); if (!t) return;
-    setText("");
-    mutate((d) => ({ ...d, team_chat: [...(d.team_chat || []), { id: uid(), teamId, userId: me.id, userName: me.name, text: t, createdAt: Date.now() }] }), null);
-  };
-  const del = (m) => { if (!window.confirm("Delete your message for the team?")) return; mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === m.id ? { ...x, deleted: true, text: "", deletedBy: me.name } : x) }), null); };
-  const photo = (id) => members.find((p) => p.id === id)?.photo_url;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 360 }}>
-      <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        {list.length === 0 ? <Empty icon={<Send size={22} color="var(--muted)" />} title="No messages yet" text="This chat is private to your team." />
-          : list.map((m) => {
-            const mine = m.userId === me.id;
-            return (
-              <div key={m.id} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row" }}>
-                <div style={{ flex: "none" }}><Avatar name={m.userName} url={photo(m.userId)} size={30} /></div>
-                <div style={{ maxWidth: "72%" }}>
-                  <div style={{ background: mine ? "var(--primary)" : "var(--surface-2)", color: mine ? "#fff" : "var(--ink)", padding: "9px 13px", borderRadius: 12, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{m.text}</div>
-                  <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : m.userName} · {fmtDateTime(m.createdAt)}{mine && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}</div>
-                </div>
-              </div>
-            );
-          })}
-        <div ref={endRef} />
-      </div>
-      <div className="composer" style={{ marginTop: 12 }}>
-        <textarea className="textarea" style={{ minHeight: 44 }} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Message your team… (Enter to send)" />
-        <button className="btn primary" onClick={send} disabled={!text.trim()}><Send size={16} />Send</button>
-      </div>
-    </div>
-  );
-}
-
-function MyTeam({ db, team, me, mutate, onRefresh }) {
-  const [tab, setTab] = useState("overview");
-  const [date, setDate] = useState(todayISO());
-  const myTeam = teamOfUser(db.teams, me.id);
-  if (!myTeam) {
-    return (
-      <div className="content">
-        <div className="page-head"><h3>My team</h3></div>
-        <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="You're not on a team yet" text="Once a super admin adds you to a team, you'll see your teammates' attendance, tasks and a private team chat here." /></div>
-      </div>
-    );
-  }
-  const amLead = myTeam.leadId === me.id;
-  const members = teamRosterIds(myTeam).map((id) => team.find((p) => p.id === id)).filter(Boolean);
-  const month = new Date();
-  const memberStats = (p) => {
-    const open = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status !== "Completed").length;
-    const done = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status === "Completed").length;
-    const presentDays = new Set(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month)).map((a) => a.date)).size;
-    const hours = round2(sumHours(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month))));
-    return { open, done, presentDays, hours };
-  };
-  const teamTasks = db.tasks
-    .filter((t) => members.some((p) => taskAssignees(t).includes(p.name)))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["tasks", "Tasks"], ["chat", "Team chat"]];
-  return (
-    <div className="content">
-      <div className="page-head">
-        <h3>{myTeam.name}</h3>
-        <span className="badge accent">{amLead ? "You lead this team" : "Member"}</span>
-        <span className="spacer" />
-        <span className="hint-line">{members.length} member{members.length !== 1 ? "s" : ""}</span>
-      </div>
-      <div className="toolbar"><div className="seg">{TABS.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</div></div>
-
-      {tab === "overview" && (
-        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
-          {members.map((p) => {
-            const s = memberStats(p);
-            const att = attStatus(db, p.id, todayISO());
-            return (
-              <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div className="who-cell">
-                  <Avatar name={p.name} url={p.photo_url} size={32} />
-                  <span style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{p.name}{p.id === myTeam.leadId ? <span className="badge accent" style={{ marginLeft: 6 }}>Lead</span> : ""}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></span>
-                  <span className={"badge " + att.tone}>{att.label}</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Open tasks</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.open}</div></div>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Completed</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.done}</div></div>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Days present</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.presentDays}</div></div>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Hours (mo)</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.hours}</div></div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {tab === "attendance" && (
-        <div className="card">
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>Attendance</span>
-            <input className="input" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} style={{ width: "auto" }} />
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Member</th><th>{fmtDate(date)}</th><th>Check in</th><th>Check out</th><th className="num-cell">Days this month</th></tr></thead>
-              <tbody>{members.map((p) => {
-                const st = attStatus(db, p.id, date);
-                const a = attendanceFor(db, p.id, date);
-                const presentDays = new Set(db.attendance.filter((x) => x.userId === p.id && sameMonth(x.date, month)).map((x) => x.date)).size;
-                return (
-                  <tr key={p.id}>
-                    <td><span className="who-cell"><Avatar name={p.name} url={p.photo_url} size={26} /><span style={{ fontWeight: 600 }}>{p.name}</span></span></td>
-                    <td><span className={"badge " + st.tone}>{st.label}</span></td>
-                    <td className="mono">{a ? clockTime(a.checkIn) : "—"}</td>
-                    <td className="mono">{a && a.checkOut ? clockTime(a.checkOut) : "—"}</td>
-                    <td className="num-cell mono">{presentDays}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "tasks" && (
-        <div className="card">
-          {teamTasks.length === 0 ? <Empty icon={<ListTodo size={22} color="var(--muted)" />} title="No tasks for the team yet" text="Tasks assigned to anyone on the team show up here." />
-            : teamTasks.map((t) => (
-              <div key={t.id} className="item-row">
-                <div className="item-main">
-                  <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                    {t.num != null && <span className="badge mono" style={{ fontWeight: 700 }}>#{t.num}</span>}
-                    <span className="item-title">{t.title}</span>
-                    <span className={"badge " + (t.status === "Completed" ? "pos" : t.status === "In Progress" ? "accent" : "pri")}>{t.status}</span>
-                    {t.priority && <span className={"badge " + priorityTone(t.priority)}>{t.priority}</span>}
-                  </div>
-                  <div className="item-meta" style={{ marginTop: 6 }}>
-                    <span>{t.assignedBy} → <b>{assigneeText(t)}</b></span>
-                    {t.due && <span><CalendarClock size={12} style={{ verticalAlign: -2 }} /> {fmtDate(t.due)}</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {tab === "chat" && <TeamChat db={db} mutate={mutate} me={me} members={members} teamId={myTeam.id} onRefresh={onRefresh} />}
-    </div>
-  );
-}
-
-export default function App() {
-  const [db, setDb] = useState(null);
-  const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
-  const [profile, setProfile] = useState(undefined);  // undefined = loading, null = none
-  const [team, setTeam] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [syncError, setSyncError] = useState(null);
-  const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
-  const [route, setRoute] = useState("dashboard");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [topBusy, setTopBusy] = useState(false);
-  const [userMenu, setUserMenu] = useState(false);
-  const [modal, setModal] = useState(null); // {type, ...}
-  const [balanceUser, setBalanceUser] = useState(null);
-  const [accountUser, setAccountUser] = useState(null);   // full-page partner statement (Haji/Alim)
-  const [taskDetailId, setTaskDetailId] = useState(null); // full-page task detail
-  const [config, setConfig] = useState(null);             // app_config (T&C body + version)
-  const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
-  const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
-  const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
-  const dragNavRef = useRef(null);
-
-  const currentUser = profile?.name || null;
-  const role = profile?.role;
-  const isSuper = isSuperRole(role);
-  const isAdmin = isAdminRole(role);        // management level (superadmin OR admin)
-  const canFinance = canFinanceRole(role);  // the money (superadmin OR accountant)
-  const me = { id: session?.user?.id, name: currentUser, role };
-
-  // ── tap feedback ──────────────────────────────────────────────────────
-  // Subtle tap feedback on interactive elements, app-wide. Very light, and only
-  // on real taps of buttons/nav (not typing or scrolling). Works where the device
-  // supports the web vibration API (Android); iOS Safari has no equivalent.
-  useEffect(() => {
-    const onTap = (e) => {
-      const t = e.target;
-      const el = t && t.closest ? t.closest("button, .btn, .navitem, .iconbtn, .userchip, .seg button, [role='button']") : null;
-      if (el && !el.disabled) haptic(6);
-    };
-    document.addEventListener("pointerdown", onTap, { passive: true });
-    return () => document.removeEventListener("pointerdown", onTap);
-  }, []);
-
-  // ── auth session ──────────────────────────────────────────────────────
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
-      // Supabase auto-refreshes the JWT whenever the tab/app regains focus and
-      // fires TOKEN_REFRESHED with a brand-new session object. That object change
-      // used to re-run the data-load effect, flip `loading`, and remount the whole
-      // page — wiping anything you were typing. Only update when the actual signed-in
-      // user changes (sign in / sign out / switch account); ignore pure token
-      // refreshes by returning the previous reference so React skips the update.
-      setSession((prev) => {
-        const prevId = prev && prev.user ? prev.user.id : null;
-        const nextId = s && s.user ? s.user.id : null;
-        if (prevId === nextId) return prev;   // same user → no churn, no reload
-        return s ?? null;
-      });
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  // ── load my profile + the team + config, with live updates ────────────
-  const loadPeople = useCallback(async (user) => {
-    try {
-      await ensureProfile(user);
-      const [list, cfg, lk] = await Promise.all([fetchTeam(), fetchConfig(), fetchLocks()]);
-      setTeam(list);
-      setConfig(cfg);
-      setLocks(lk);
-      setProfile(list.find((p) => p.id === user.id) || null);
-    } catch (e) { setSyncError(e.message || String(e)); setProfile(null); }
-  }, []);
-
-  useEffect(() => {
-    if (!session) { setProfile(undefined); setTeam([]); setConfig(null); setLocks([]); return; }
-    loadPeople(session.user);
-    const ch = supabase.channel("allbee-people")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadPeople(session.user))
-      .on("postgres_changes", { event: "*", schema: "public", table: "app_config" }, () => loadPeople(session.user))
-      .on("postgres_changes", { event: "*", schema: "public", table: "fin_locks" }, async () => setLocks(await fetchLocks()));
-    ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [session, loadPeople]);
-
-  const reload = useCallback(async () => {
-    try { setDb(await fetchAll()); setSyncError(null); }
-    catch (e) { setSyncError(e.message || String(e)); }
-    finally { setLoading(false); }
-  }, []);
-
-  // ── load data + live sync while signed in ─────────────────────────────
-  useEffect(() => {
-    if (!session) { setDb(null); setLoading(false); return; }
-    setLoading(true);
-    reload();
-    const ch = supabase.channel("allbee-db-sync");
-    TABLES.forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [session, reload]);
-
-  // If an admin changes my role or the modules I'm granted while I'm signed in,
-  // my row-level access changes — so refetch everything under the new permissions
-  // (otherwise a freshly-granted module would show up empty until a refresh).
-  const accessKey = `${profile?.role || ""}|${JSON.stringify(profile?.perms?.modules || [])}`;
-  const accessKeyRef = useRef(accessKey);
-  useEffect(() => {
-    if (accessKeyRef.current !== accessKey) {
-      accessKeyRef.current = accessKey;
-      if (session && db) reload();
-    }
-  }, [accessKey, session, db, reload]);
-
-  // mutate(updater, auditEntryOrNull) — updates the screen instantly, then
-  // saves only the rows that changed. The other staff member's screen updates live.
-  // Audit entries are written for admin actions only (staff can't access the log).
-  const mutate = useCallback((updater, audit) => {
-    setDb((prev) => {
-      if (!prev) return prev;
-      let next = updater(prev);
-      if (audit) next = { ...next, audit: [...next.audit, { id: uid(), ts: Date.now(), user: currentUser || "—", ...audit }] };
-      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
-      return next;
-    });
-  }, [currentUser]);
-
-  // ── soft delete (recycle bin) ─────────────────────────────────────────
-  // Move a row out of its table and into `recycle` instead of destroying it.
-  // Original screens need no change — the row simply disappears from their list.
-  // Audit is written for admins only (staff have no access to the audit table),
-  // but a staff member's deleted item is still recoverable by an admin.
-  const removeItem = useCallback((table, item, opts = {}) => {
-    const name = opts.name || item.name || item.title || item.client || "item";
-    const module = MODULE_LABEL[table] || table;
-    const rec = {
-      id: uid(), table, module, name, item,
-      deletedBy: currentUser || "—", deletedById: me.id || null, deletedAt: Date.now(),
-    };
-    mutate(
-      (d) => ({ ...d, [table]: d[table].filter((x) => x.id !== item.id), recycle: [...d.recycle, rec] }),
-      { action: opts.audit || `deleted ${module.toLowerCase()} "${name}"`, module }
-    );
-  }, [mutate, currentUser, isAdmin, me.id]);
-
-  // Restore a recycled row back into its original table.
-  const restoreItem = useCallback((rec) => {
-    mutate((d) => {
-      const exists = (d[rec.table] || []).some((x) => x.id === rec.item.id);
-      return {
-        ...d,
-        [rec.table]: exists ? d[rec.table] : [...(d[rec.table] || []), rec.item],
-        recycle: d.recycle.filter((r) => r.id !== rec.id),
-      };
-    }, { action: `restored ${rec.module.toLowerCase()} "${rec.name}"`, module: rec.module });
-  }, [mutate, isAdmin]);
-
-  // Auto-cleanup: permanently drop recycle rows older than 60 days. Runs once
-  // per load for admins (their RLS lets them delete any recycle row). This is a
-  // client-side sweep — see README for the optional server-side cron upgrade.
-  const purgedRef = useRef(false);
-  const purgeExpired = useCallback(() => {
-    const cutoff = Date.now() - RECYCLE_TTL_DAYS * 86400000;
-    setDb((prev) => {
-      if (!prev || !prev.recycle?.length) return prev;
-      const keep = prev.recycle.filter((r) => (r.deletedAt || 0) >= cutoff);
-      if (keep.length === prev.recycle.length) return prev;
-      const next = { ...prev, recycle: keep };
-      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (isAdmin && !loading && db && !purgedRef.current) { purgedRef.current = true; purgeExpired(); }
-  }, [isAdmin, loading, db, purgeExpired]);
-
-  const replaceDB = useCallback(async (d) => {
-    const clean = { ...emptyDB(), ...d };
-    try { await replaceAll(clean); setDb(clean); setSyncError(null); }
-    catch (e) { setSyncError(e.message || String(e)); }
-  }, []);
-
-  const changeProfile = useCallback(async (id, patch, auditAction) => {
-    try {
-      await updateProfile(id, patch);
-      // Profile updates write straight to Postgres (not through `mutate`), so on
-      // their own they never reach the audit log. When the caller supplies a
-      // description (role/status/approval changes), record it so the Audit log
-      // shows team-management actions too.
-      if (auditAction) mutate((d) => d, { action: auditAction, module: "Team" });
-      if (session) await loadPeople(session.user);
-    }
-    catch (e) { setSyncError(e.message || String(e)); }
-  }, [session, loadPeople, mutate]);
-
-  // Permanently remove a registered client (a self-signed-up portal account).
-  // Same approach as Manage user: delete the profile row (frees the email), then
-  // best-effort delete their login via the admin-users edge function if deployed.
-  const deleteClientAccount = useCallback(async (person) => {
-    if (!person || person.role !== "client") return;
-    try {
-      const { error } = await supabase.from("profiles").delete().eq("id", person.id);
-      if (error) throw error;
-    } catch (e) {
-      setSyncError(/(permission|denied|policy|row-level)/i.test((e && e.message) || "")
-        ? "The database is blocking the delete. Run allbee-delete-user.sql once, then try again."
-        : ("Couldn't remove the client: " + ((e && e.message) || "unknown error")));
-      return;
-    }
-    try { await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } }); } catch { /* edge function optional — profile already removed */ }
-    mutate((d) => d, { action: `deleted client account "${person.name}"`, module: "Clients" });
-    if (session) await loadPeople(session.user);
-  }, [session, loadPeople, mutate]);
-
-  // first-login profile completion + T&C acceptance (both write to my own row)
-  const saveMyProfile = useCallback((patch) => changeProfile(me.id, patch), [changeProfile, me.id]);
-  const acceptTnc = useCallback((agreements) => {
-    const patch = {};
-    let roleAccepts = null;
-    for (const a of (agreements || [])) {
-      if (a.key === "all") patch.tnc_version = a.version;
-      else { roleAccepts = roleAccepts || { ...acceptedRoleTnc(profile) }; roleAccepts[a.key] = a.version; }
-    }
-    if (roleAccepts) patch.tnc_roles_accepted = roleAccepts;
-    return changeProfile(me.id, patch);
-  }, [changeProfile, me.id, profile]);
-  // publish/edit the Terms (admins): bump the version so everyone re-accepts
-  const saveTnc = useCallback(async (body) => {
-    const next = Number(config?.tnc_version || 0) + 1;
-    await saveConfig({ tnc_body: body, tnc_version: next });
-    if (session) setConfig(await fetchConfig());
-  }, [config, session]);
-  // publish/edit a ROLE-SPECIFIC agreement; bumps just that role's version
-  const saveRoleTnc = useCallback(async (roleKey, body) => {
-    const map = roleTncOf(config);
-    const cur = map[roleKey] || {};
-    map[roleKey] = { body, version: Number(cur.version || 0) + 1 };
-    await saveConfig({ tnc_roles: JSON.stringify(map) });
-    if (session) setConfig(await fetchConfig());
-  }, [config, session]);
-  const saveCompany = useCallback(async (obj) => {
-    await saveConfig({ company: JSON.stringify(obj || {}) });
-    if (session) setConfig(await fetchConfig());
-  }, [session]);
-  const resolveResign = (r, decision) => {
-    mutate((d) => ({ ...d, resignations: (d.resignations || []).map((x) => x.id === r.id ? { ...x, status: decision, resolvedAt: Date.now() } : x) }), { action: `${decision === "Approved" ? "approved" : "declined"} ${r.userName}'s resignation request`, module: "Team" });
-    if (decision === "Approved") changeProfile(r.userId, { status: "resigned", active: false });
-  };
-
-  const signOut = async () => { setUserMenu(false); await supabase.auth.signOut(); };
-
-  const bal = useMemo(() => (db ? balances(db) : { Haji: 0, Alim: 0, company: 0 }), [db]);
-
-  const openModal = (m) => setModal(m);
-  const openBalance = (u) => setBalanceUser(u);
-  const setHash = (h) => { if (window.location.hash !== h) window.location.hash = h; };
-  const go = (r) => {
-    setRoute(r); setAccountUser(null); setTaskDetailId(null); setMenuOpen(false);
-    setHash(r === "dashboard" ? "#/" : `#/${r}`);
-  };
-  const openAccount = (u) => { setAccountUser(u); setTaskDetailId(null); setRoute("accounts"); setMenuOpen(false); setHash(`#/accounts/${String(u).toLowerCase()}`); };
-  const openTask = (id) => { setTaskDetailId(id); setAccountUser(null); setRoute("tasks"); setMenuOpen(false); setHash(`#/tasks/${encodeURIComponent(id)}`); };
-  const goBackDetail = () => {
-    const target = taskDetailId ? "tasks" : "accounts";
-    setAccountUser(null); setTaskDetailId(null); setRoute(target);
-    setHash(`#/${target}`);
-  };
-
-  // keep the URL hash and the in-app view in sync (reload-safe deep links)
-  useEffect(() => {
-    const apply = () => {
-      const p = parseHash(window.location.hash);
-      setAccountUser(p.account); setTaskDetailId(p.task);
-      if (p.route) setRoute(p.route);
-    };
-    apply();
-    window.addEventListener("hashchange", apply);
-    return () => window.removeEventListener("hashchange", apply);
-  }, []);
-
-  // Presence heartbeat: mark me active so teammates see an "online" dot.
-  useEffect(() => {
-    if (!session || !me.id) return;
-    const beat = () => { if (typeof document !== "undefined" && document.visibilityState === "hidden") return; supabase.from("profiles").update({ last_active: new Date().toISOString() }).eq("id", me.id).then(() => {}, () => {}); };
-    beat();
-    const t = setInterval(beat, 60000);
-    return () => clearInterval(t);
-  }, [session, me.id]);
-
-  // open income form prefilled (used by projects / courses / marketing)
-  const openIncome = (prefill) => setModal({ type: "income", initial: prefill, source: prefill?.source });
-
-  const saveShare = (entry, source) => {
-    const prev = entry.id ? db.transactions.find((t) => t.id === entry.id) : null;
-    const shareChanged = prev && (prev.hajiPct !== entry.hajiPct || prev.alimPct !== entry.alimPct);
-    const shareNote = shareChanged ? ` · share ${prev.hajiPct}/${prev.alimPct} → ${entry.hajiPct}/${entry.alimPct}` : "";
-    mutate((d) => {
-      let next = { ...d };
-      if (entry.id && d.transactions.some((t) => t.id === entry.id)) next.transactions = d.transactions.map((t) => t.id === entry.id ? entry : t);
-      else next.transactions = [...d.transactions, entry];
-      // update linked source status
-      if (source?.kind === "student") next.students = next.students.map((s) => s.id === source.id ? { ...s, paymentStatus: "Paid" } : s);
-      if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: entry.date } : m);
-      return next;
-    }, { action: `${entry.id ? "updated" : "added"} ${entry.kind} ${money(entry.amount)}${entry.client ? " · " + entry.client : ""}${shareNote}`, module: "Accounts" });
-  };
-
-  const saveTask = async (task, fromConcept) => {
-    const isUpdate = task.id && db.tasks.some((t) => t.id === task.id);
-    let t = task;
-    if (!isUpdate && t.num == null) {
-      const n = await nextTaskNumber();        // global counter — numbers are never reused
-      if (n != null) t = { ...t, num: n };
-    }
-    mutate((d) => {
-      let next = { ...d };
-      if (isUpdate) next.tasks = d.tasks.map((x) => x.id === t.id ? t : x);
-      else next.tasks = [...d.tasks, t];
-      if (fromConcept) next.concepts = d.concepts.filter((c) => c.id !== fromConcept);
-      return next;
-    }, { action: `${isUpdate ? "updated" : "created"} task "${t.title}"${!isUpdate && t.num ? ` (#${t.num})` : ""}`, module: "Tasks" });
-  };
-
-  const saveGeneric = (coll, item, label) => {
-    let toSave = item;
-    // staff-created projects need an admin's approval before they count as active
-    if (coll === "projects" && !db.projects.some((x) => x.id === item.id)) {
-      toSave = { ...item, approvalStatus: isAdmin ? "approved" : "pending", createdById: me.id, ownerName: currentUser };
-    }
-    // stamp the registrar on new students so commission credits the right person
-    if (coll === "students" && !db.students.some((x) => x.id === item.id)) {
-      toSave = { ...item, createdById: me.id, ownerName: currentUser };
-    }
-    mutate((d) => ({ ...d, [coll]: d[coll].some((x) => x.id === toSave.id) ? d[coll].map((x) => x.id === toSave.id ? toSave : x) : [...d[coll], toSave] }),
-      { action: `${db[coll].some((x) => x.id === item.id) ? "updated" : "added"} ${label}${coll === "projects" && !isAdmin && !db.projects.some((x) => x.id === item.id) ? " (awaiting approval)" : ""}`, module: label === "project" ? "Projects" : label === "student" ? "Courses" : label === "marketing client" ? "Marketing" : "Concepts" });
-  };
-
-  // CRM / collaboration / finance rows: stamp the owner + author on first save.
-  const saveOwned = (coll, item) => {
-    const isUpdate = db[coll].some((x) => x.id === item.id);
-    const row = isUpdate ? item : { ...item, ownerId: me.id, owner: currentUser, by: currentUser };
-    mutate((d) => ({ ...d, [coll]: isUpdate ? d[coll].map((x) => x.id === item.id ? row : x) : [...d[coll], row] }),
-      { action: `${isUpdate ? "updated" : "added"} ${MODULE_LABEL[coll] || coll}`, module: MODULE_LABEL[coll] || coll });
-    setModal(null);
-  };
-
-  // Create / update a team (super admin). Stored in the `teams` table.
-  const saveTeamCfg = (t) => {
-    const isUpdate = (db.teams || []).some((x) => x.id === t.id);
-    mutate((d) => ({ ...d, teams: isUpdate ? d.teams.map((x) => x.id === t.id ? t : x) : [...(d.teams || []), t] }),
-      { action: `${isUpdate ? "updated" : "created"} team "${t.name}"`, module: "Team leads" });
-    setModal(null);
-  };
-
-  const Loading = ({ note }) => (
-    <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-      <style>{CSS}</style>
-      <div style={{ color: "var(--muted)", display: "flex", alignItems: "center", gap: 10 }}>
-        <Hexagon size={20} className="spin" /> {note || "Loading ALLBEE…"}
-      </div>
-    </div>
-  );
-
-  if (session === undefined) return <Loading />;
-  if (!session) return <Lock isDark={isDark} setDark={setIsDark} />;
-  if (profile === undefined) return <Loading note="Signing you in…" />;
-  if (profile && profile.active === false)
-    return <Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />;
-  // new staff & client sign-ups wait for a partner to approve them
-  if (profile && (role === "staff" || role === "client") && profile.approved === false)
-    return <ApprovalPending isDark={isDark} name={currentUser} onSignOut={signOut} />;
-  // portal clients get their own surface and skip the internal profile/T&C gates
-  if (role === "client") {
-    if (loading || !db) return <Loading note="Loading your portal…" />;
-    return <ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} />;
-  }
-  // first login: require the core profile details before anything else
-  if (profile && (!profile.mobile || !profile.dob))
-    return <ProfileSetup profile={profile} onSave={saveMyProfile} onSignOut={signOut} isDark={isDark} />;
-  // then the Terms gate — show every agreement (general + role-specific) this
-  // user still needs to accept; they accept all before gaining access
-  const tncPending = pendingTnc(config, profile, role);
-  if (profile && tncPending.length)
-    return <TermsGate agreements={tncPending} onAccept={acceptTnc} onSignOut={signOut} isDark={isDark} />;
-  if (loading || !db) return <Loading />;
-
-  const teamNames = team.length ? team.filter((p) => p.role !== "client" && p.active !== false).map((p) => p.name) : USERS;
-  const myTeam = teamOfUser(db?.teams, me.id);
-  const visibleNav = NAV.filter((n) => navAllowed(n[3], role, profile?.perms || {}))
-    .filter((n) => n[0] !== "myteam" || !!myTeam);
-  const allowedRoutes = new Set(visibleNav.map((n) => n[0]));
-  const safeRoute = allowedRoutes.has(route) ? route : "dashboard";
-  const detailTask = taskDetailId ? db.tasks.find((t) => t.id === taskDetailId) : null;
-  const routeTitle =
-    accountUser && canFinance ? `${accountUser} — account` :
-    taskDetailId ? (detailTask ? detailTask.title : "Task") :
-    NAV.find((n) => n[0] === safeRoute)?.[1] || "";
-  const myPending = db.tasks.filter((t) => t.status !== "Completed" && (isAdmin || taskAssignees(t).includes(currentUser))).length;
-  const pendingLeave = isAdmin ? db.leave.filter((l) => l.status === "Pending").length : 0;
-  const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
-  const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
-  const portalClients = team.filter((p) => p.role === "client");
-  const unseenAnn = db.announcements.filter((a) => !profile?.notif_seen_at || (a.createdAt || 0) > new Date(profile.notif_seen_at).getTime()).length;
-
-  const renderPage = () => {
-    // full-page detail views take precedence over the tab routes
-    if (taskDetailId) return <TaskDetail db={db} taskId={taskDetailId} me={me} isAdmin={isAdmin} currentUser={currentUser} mutate={mutate} openModal={openModal} removeItem={removeItem} goBack={goBackDetail} />;
-    if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} goBack={goBackDetail} />;
-
-    switch (safeRoute) {
-      case "dashboard":
-        return (role === "staff" || role === "intern")
-          ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
-          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} />;
-      case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} removeItem={removeItem} />;
-      case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
-      case "leave": return <Leave db={db} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
-      case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
-      case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} />;
-      case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
-      case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
-      case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
-      case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
-      case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
-      case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} />;
-      case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
-      case "courses": return <Courses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
-      case "marketing": return <Marketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
-      case "projects": return <Projects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} />;
-      case "inhouse": return <InHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} />;
-      case "leads": return <Leads db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} />;
-      case "clients": return <Clients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} />;
-      case "quotations": return <Quotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} />;
-      case "invoices": return <Invoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
-      case "portal-posts": return <PortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
-      case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
-      case "vault": return <Vault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
-      case "notifications": return <Notifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} />;
-      case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
-      case "documents": return <Documents db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
-      case "knowledge": return <Knowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} />;
-      case "prompts": return <Prompts db={db} openModal={openModal} removeItem={removeItem} />;
-      case "sheets": return <Sheets db={db} openModal={openModal} removeItem={removeItem} />;
-      case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
-      case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
-      case "chat": return <Chat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} />;
-      case "performance": return <Performance db={db} team={team} />;
-      case "rewards": return <Rewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} />;
-      case "earnings": return <MyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} />;
-      case "recently-deleted": return <RecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} />;
-      case "audit": return <AuditLog db={db} />;
-      case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} />;
-      default: return null;
-    }
-  };
-
-  // Sidebar: favorites pinned on top + drag-to-reorder, persisted locally.
-  const persistNav = (o) => { try { localStorage.setItem("allbee_navorder", JSON.stringify(o)); } catch { /* ignore */ } };
-  const persistFavs = (o) => { try { localStorage.setItem("allbee_favs", JSON.stringify(o)); } catch { /* ignore */ } };
-  const toggleFav = (k) => setFavorites((prev) => { const nx = prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]; persistFavs(nx); return nx; });
-  const moveNav = (dragK, dropK) => {
-    if (dragK === dropK) return;
-    setNavOrder((prev) => {
-      const base = (prev && prev.length) ? prev.slice() : NAV.map((n) => n[0]);
-      if (!base.includes(dragK)) base.push(dragK);
-      if (!base.includes(dropK)) base.push(dropK);
-      base.splice(base.indexOf(dragK), 1);
-      base.splice(base.indexOf(dropK), 0, dragK);
-      persistNav(base);
-      return base;
-    });
-  };
-  const favSet = new Set(favorites);
-  const navRank = (k) => { const i = (navOrder || []).indexOf(k); return i === -1 ? 1000 + NAV.findIndex((n) => n[0] === k) : i; };
-  const sortedNav = visibleNav.slice().sort((a, b) => navRank(a[0]) - navRank(b[0]));
-  const favNav = sortedNav.filter((n) => favSet.has(n[0]));
-  const restNav = sortedNav.filter((n) => !favSet.has(n[0]));
-  const navBadge = (key) => (
-    <>
-      {key === "tasks" && myPending > 0 && <span className="badge pri">{myPending}</span>}
-      {key === "leave" && pendingLeave > 0 && <span className="badge pri">{pendingLeave}</span>}
-      {key === "notifications" && unreadNotifs > 0 && <span className="badge pri">{unreadNotifs}</span>}
-      {key === "chat" && unreadChat > 0 && <span className="badge pri">{unreadChat}</span>}
-    </>
-  );
-  const renderNav = ([key, label, Icon]) => (
-    <div key={key} draggable
-      onDragStart={(e) => { dragNavRef.current = key; try { e.dataTransfer.effectAllowed = "move"; } catch { /* ignore */ } }}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); if (dragNavRef.current) moveNav(dragNavRef.current, key); dragNavRef.current = null; }}
-      className={"navitem" + (safeRoute === key ? " active" : "")} onClick={() => go(key)} title="Drag to reorder">
-      <Icon size={18} />
-      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-      {navBadge(key)}
-      <button onClick={(e) => { e.stopPropagation(); toggleFav(key); }} title={favSet.has(key) ? "Unpin from favorites" : "Pin to favorites"} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 2, opacity: favSet.has(key) ? 0.95 : 0.3, flex: "none", display: "flex" }}><Star size={13} fill={favSet.has(key) ? "currentColor" : "none"} /></button>
-    </div>
-  );
-
-  return (
-    <ErrorBoundary>
-      <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"}>
-        <style>{CSS}</style>
-
-        {syncError && (
-          <div className="banner"><CloudOff size={15} /> Couldn't sync with the server: {syncError}</div>
-        )}
-
-        <div className="layout">
-          {menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />}
-          <aside className="sidebar">
-            <div className="brand">
-              <img className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
-              <div><h1>ALLBEE</h1><p>Solutions</p></div>
-            </div>
-            {favNav.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "6px 11px 2px" }}>Favorites</div>}
-            {favNav.map(renderNav)}
-            {favNav.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".05em", padding: "12px 11px 2px" }}>All modules</div>}
-            {restNav.map(renderNav)}
-            <div className="sidebar-foot">
-              <div className="navitem" onClick={() => { const nd = !isDark; setIsDark(nd); try { localStorage.setItem("allbee_theme", nd ? "dark" : "light"); } catch { /* ignore */ } }}>{isDark ? <Sun size={18} /> : <Moon size={18} />} {isDark ? "Light mode" : "Dark mode"}</div>
-            </div>
-          </aside>
-
-          <div className="main">
-            <header className="topbar">
-              <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu"><Menu size={18} /></button>
-              <div className="topbar-title"><h2>{routeTitle}</h2><div className="topbar-sub">ALLBEE Solutions · internal</div></div>
-              {canFinance && (
-                <div className="company-pill" title="Company balance">
-                  <Wallet size={14} color="var(--muted)" />
-                  <span className="lbl">Balance</span>
-                  <span className="val mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</span>
-                </div>
-              )}
-              <div className="usermenu">
-                <button className="iconbtn" title="Refresh" disabled={topBusy}
-                  onClick={async () => { setTopBusy(true); try { await reload(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
-                  <RefreshCw size={18} className={topBusy ? "spin" : ""} />
-                </button>
-                <button className="iconbtn" title="Announcements" style={{ position: "relative" }}
-                  onClick={() => { go("announcements"); if (me.id) changeProfile(me.id, { notif_seen_at: new Date().toISOString() }); }}>
-                  <Bell size={18} />
-                  {unseenAnn > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unseenAnn}</span>}
-                </button>
-                <div className="userchip" onClick={() => setUserMenu((v) => !v)}>
-                  <Avatar name={currentUser} url={profile?.photo_url} size={26} />
-                  <span className="userchip-name">{currentUser}</span>
-                  <span className={"role-badge " + (role || "staff")}>{ROLE_LABEL[role] || "Staff"}</span>
-                </div>
-                {userMenu && (
-                  <div className="dropdown" onMouseLeave={() => setUserMenu(false)}>
-                    <div className="drop-id">
-                      <Avatar name={currentUser} url={profile?.photo_url} size={22} fontSize={10} />
-                      <div><div style={{ fontWeight: 700, fontSize: 13 }}>{currentUser}</div><div className="hint-line" style={{ fontSize: 11 }}>{session?.user?.email}</div></div>
-                    </div>
-                    {role !== "superadmin" && <button onClick={() => { setUserMenu(false); openModal({ type: "resign" }); }}><XCircle size={15} />Request resignation</button>}
-                    <button onClick={signOut}><LogOut size={15} />Sign out</button>
-                  </div>
-                )}
-              </div>
-            </header>
-            {renderPage()}
-          </div>
-        </div>
-
-        {/* MODALS */}
-        {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
-        {modal?.type === "expense" && <ShareForm kind="expense" initial={modal.initial} currentUser={currentUser} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
-        {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
-        {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}
-        {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
-        {modal?.type === "project" && <ProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} />}
-        {modal?.type === "inhouse" && <InHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "teamcfg" && <TeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} />}
-        {modal?.type === "student" && <StudentForm initial={modal.initial} onSave={(s) => saveGeneric("students", s, "student")} onClose={() => setModal(null)} />}
-        {modal?.type === "marketing" && <MarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} />}
-        {modal?.type === "concept" && <ConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} />}
-        {modal?.type === "lead" && <LeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "client" && <ClientForm initial={modal.initial} existing={db.clients} onSave={(x) => { saveOwned("clients", x); }} onClose={() => setModal(null)} />}
-        {modal?.type === "quotation" && <QuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "invoice" && <InvoiceForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("invoices", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "planned" && <PlannedForm initial={modal.initial} onSave={(x) => saveOwned("planned", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "vault" && <VaultForm initial={modal.initial} onSave={(x) => saveOwned("vault", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "document" && <DocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "prompt" && <PromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "reward" && <RewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "notification" && <NotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "announcement" && <AnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "portalPost" && <PortalPostForm initial={modal.initial} portalClients={portalClients} onSave={(x) => saveOwned("portal_posts", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "resign" && <ResignForm existing={(db.resignations || []).filter((r) => r.userId === me.id)} onSave={(r) => { mutate((d) => ({ ...d, resignations: [...(d.resignations || []), { ...r, id: uid(), userId: me.id, userName: currentUser, status: "Pending", createdAt: Date.now() }] }), { action: "submitted a resignation request", module: "Team" }); setModal(null); }} onClose={() => setModal(null)} />}
-        {modal?.type === "confirm" && <Confirm title={modal.title} body={modal.body} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
-        {modal?.type === "deleteConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Delete"} icon={<Trash2 size={15} />} danger onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
-        {modal?.type === "restoreConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Restore"} icon={<RotateCcw size={15} />} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
-        {modal?.type === "okConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} word="OK" actionLabel={modal.actionLabel || "Confirm"} icon={modal.icon} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
-
-        {balanceUser && <BalanceDetail db={db} user={balanceUser} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
-      </div>
-    </ErrorBoundary>
-  );
-}
+        <div className="card"><di
