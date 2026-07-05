@@ -47,6 +47,16 @@ const VAULT_CATEGORIES = ["Social", "Website", "Hosting", "Email", "Domain", "Ba
 // Suggested course list — the form still accepts any typed value.
 const CLASS_COURSES = ["MS Office", "Tally", "Advanced Excel", "Python", "Data Entry", "DTP", "Web Design", "Digital Marketing", "Spoken English", "C / C++", "Java", "Other"];
 const CLASS_MODES = ["Offline", "Online", "Hybrid"];
+// Built-in Google Sheet mirror endpoint (Apps Script web-app /exec URL). Used
+// when nothing is set in Settings. An admin can override it — or clear it to
+// turn sync off — from the Google Sheet sync panel on the Class students page.
+const DEFAULT_CLASS_SHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbydBFxafdnA1PsKO70dfXt1D8RKQrtRScbJ3CUAZeUfjbyuUjRppsuq3YTY1sE1U58M6g/exec";
+// Resolve the active webhook: an unset key falls back to the default; an
+// explicitly-saved empty string means the admin turned sync off.
+const classWebhookOf = (config) => {
+  const v = config?.class_sheet_webhook;
+  return (v === undefined || v === null) ? DEFAULT_CLASS_SHEET_WEBHOOK : String(v).trim();
+};
 
 /* ── Phase Next: dynamic expense sharing + testing module ──────────────────
    Company-level expenses (rent, internet, hosting, subscriptions, company
@@ -2878,11 +2888,11 @@ function ClassStudents({ db, openModal, removeItem, mutate, currentUser, config,
 // Google Sheet mirror settings for class students (super admin only). Paste the
 // deployed Apps Script /exec URL; every add/edit then POSTs into that sheet.
 function ClassSheetSync({ config, saveClassWebhook }) {
-  const saved = (config?.class_sheet_webhook || "").trim();
+  const saved = classWebhookOf(config);
   const [url, setUrl] = useState(saved);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  useEffect(() => { setUrl((config?.class_sheet_webhook || "").trim()); }, [config?.class_sheet_webhook]);
+  useEffect(() => { setUrl(classWebhookOf(config)); }, [config?.class_sheet_webhook]);
 
   const valid = /^https:\/\/script\.google\.com\/.+/.test(url.trim());
   const save = async () => {
@@ -8684,7 +8694,7 @@ export default function App() {
   // Class students (training institute) — admin/superadmin only. Saves to the
   // app DB and, if a Google Sheet webhook is set, mirrors the row into that sheet.
   const pushClassStudentToSheet = (student, action) => {
-    const url = (config?.class_sheet_webhook || "").trim();
+    const url = classWebhookOf(config);
     if (!url) return;
     // Best-effort: the app database is the source of truth, so a sheet/network
     // failure must never block the save. no-cors avoids an Apps Script CORS preflight.
