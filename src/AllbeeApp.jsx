@@ -41,6 +41,13 @@ const EXPENSE_RECURRENCE = ["One-time", "Monthly", "Quarterly", "Yearly"];
 const REWARD_KINDS = ["Star performer", "On-time hero", "Team player", "Goal smashed", "Bonus"];
 const VAULT_CATEGORIES = ["Social", "Website", "Hosting", "Email", "Domain", "Banking", "Tools", "Other"];
 
+// ── Class students (training institute) ────────────────────────────────────
+// A separate roster from the commission-linked "students"/Courses module: the
+// offline/online classes ALLBEE runs (MS Office, Tally, Python…). Admin-only.
+// Suggested course list — the form still accepts any typed value.
+const CLASS_COURSES = ["MS Office", "Tally", "Advanced Excel", "Python", "Data Entry", "DTP", "Web Design", "Digital Marketing", "Spoken English", "C / C++", "Java", "Other"];
+const CLASS_MODES = ["Offline", "Online", "Hybrid"];
+
 /* ── Phase Next: dynamic expense sharing + testing module ──────────────────
    Company-level expenses (rent, internet, hosting, subscriptions, company
    purchases…) are split by the LAST month that had revenue — see
@@ -112,6 +119,7 @@ const MODULE_LABEL = {
   inhouse: "In-house projects",
   teams: "Team leads",
   testing: "Testing",
+  class_students: "Class students",
 };
 const LOGO_FULL = "/allbee-logo.png";   // full lockup (monogram + wordmark)
 const LOGO_ICON = "/allbee-icon.png";   // square monogram
@@ -233,7 +241,7 @@ const startOfWeek = (ref = new Date()) => { const d = new Date(ref); const day =
    only the rows that actually changed (insert / update / delete).
 ─────────────────────────────────────────────────────────────────────────── */
 const TABLES = ["transactions", "withdrawals", "tasks", "projects", "students", "marketing", "concepts", "audit", "attendance", "leave", "updates", "recycle",
-  "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat", "testing",
+  "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat", "testing", "class_students",
   // APN — ALLBEE Partner Network (logically separate from employee operations)
   "apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_achievements", "apn_notifications", "apn_documents"];
 
@@ -325,7 +333,7 @@ async function fetchTeam() {
 // The live Terms & Conditions + version live in app_config; staff can read only
 // the tnc_* keys (the admin sign-up code is locked away by row-level security).
 async function fetchConfig() {
-  const { data, error } = await supabase.from("app_config").select("key,value").in("key", ["tnc_version", "tnc_body", "tnc_roles", "company"]);
+  const { data, error } = await supabase.from("app_config").select("key,value").in("key", ["tnc_version", "tnc_body", "tnc_roles", "company", "class_sheet_webhook"]);
   if (error) return {}; // non-fatal — the T&C gate simply won't apply
   const out = {};
   for (const r of data || []) out[r.key] = r.value;
@@ -459,7 +467,7 @@ const emptyDB = () => ({
   announcements: [], documents: [], knowledge: [], chat: [],
   rewards: [], vault: [], portal_posts: [],
   notifications: [], invoices: [], resignations: [], prompts: [], sheets: [],
-  inhouse: [], payroll: [], teams: [], team_chat: [], testing: [],
+  inhouse: [], payroll: [], teams: [], team_chat: [], testing: [], class_students: [],
   apn_users: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
   apn_leads: [], apn_quotations: [], apn_commissions: [], apn_achievements: [], apn_notifications: [], apn_documents: [],
 });
@@ -1886,6 +1894,7 @@ function impPay(v) { const s = String(v).toLowerCase(); if (s.includes("partial"
 function impStatus(v) { const s = impNorm(v); if (s.includes("complete") || s === "done") return "Completed"; if (s.includes("progress")) return "In Progress"; if (s.includes("accept")) return "Accepted"; return "Created"; }
 function impPriority(v) { const s = String(v).toLowerCase(); if (s.includes("urgent")) return "Urgent"; if (s.includes("high")) return "High"; if (s.includes("low")) return "Low"; return "Medium"; }
 function impUser(v) { const s = String(v).trim().toLowerCase(); return s.startsWith("a") ? "Alim" : "Haji"; }
+function impMode(v) { const s = impNorm(v); if (s.includes("hybrid") || s.includes("both")) return "Hybrid"; if (s.includes("online")) return "Online"; return "Offline"; }
 
 const buildTxn = (kind) => (row) => {
   const amount = impNum(impPick(row, ["amount", "value", "total", "price", "fee", kind]));
@@ -1927,10 +1936,31 @@ const IMPORT_TARGETS = [
   { id: "tasks", label: "Tasks", table: "tasks", headers: ["Title", "Description", "Assigned by", "Assigned to", "Due date", "Priority", "Status", "Progress"],
     example: { Title: "Design landing page", Description: "Full mockup + responsive", "Assigned by": "Haji", "Assigned to": "Alim", "Due date": "2025-05-10", Priority: "High", Status: "In Progress", Progress: 40 },
     build: (row, ctx) => { const title = String(impPick(row, ["title", "task", "taskname", "name"]) || "").trim(); if (!title) return null; const by = String(impPick(row, ["assignedby", "by", "creator", "from"]) || ctx.currentUser || "Haji").trim() || ctx.currentUser; const toRaw = String(impPick(row, ["assignedto", "to", "assignee", "owner", "for"]) || "").trim(); const tl = toRaw.toLowerCase(); const assignedTo = (tl.includes("&") || tl.includes("both") || tl.includes("haji and alim")) ? COMBINED : tl.startsWith("h") ? "Haji" : tl.startsWith("a") ? "Alim" : (toRaw || ctx.currentUser); const status = impStatus(impPick(row, ["status", "stage"])); const progress = impClamp(impNum(impPick(row, ["progress", "percent", "percentage", "done"])), 0, 100); return { id: uid(), title, desc: String(impPick(row, ["desc", "description", "details", "notes"]) || "").trim(), assignedBy: by, assignedTo, due: impISO(impPick(row, ["due", "duedate", "deadline", "date"])), priority: impPriority(impPick(row, ["priority", "importance"])), status, progress: status === "Completed" ? 100 : progress, history: [{ status: "Created", at: Date.now(), by }], comments: [], attachments: [], createdAt: Date.now() }; } },
+  { id: "class_students", label: "Class students", table: "class_students", headers: ["Name", "Phone", "Email", "Course", "Mode", "Batch", "Joining date", "Fee", "Paid", "Payment status", "Notes"],
+    example: { Name: "Karthik S", Phone: "+91 90000 00000", Email: "karthik@email.com", Course: "Tally", Mode: "Offline", Batch: "Morning 10–11", "Joining date": "2025-06-01", Fee: 8000, Paid: 4000, "Payment status": "Partial", Notes: "" },
+    build: (row) => {
+      const name = String(impPick(row, ["name", "student", "studentname", "fullname"]) || "").trim();
+      if (!name) return null;
+      return {
+        id: (String(impPick(row, ["id", "studentid"]) || "").trim() || uid()),
+        name,
+        phone: String(impPick(row, ["phone", "mobile", "contact", "number", "phoneno", "whatsapp"]) || "").trim(),
+        email: String(impPick(row, ["email", "mail", "emailid"]) || "").trim(),
+        course: String(impPick(row, ["course", "coursename", "program", "subject", "training", "batchcourse"]) || "").trim(),
+        mode: impMode(impPick(row, ["mode", "classmode", "onlineoffline", "type", "medium"])),
+        batch: String(impPick(row, ["batch", "timing", "time", "slot", "schedule", "session"]) || "").trim(),
+        joinDate: impISO(impPick(row, ["joindate", "joined", "joiningdate", "date", "enrolled", "admissiondate", "startdate"])),
+        fee: impNum(impPick(row, ["fee", "fees", "amount", "cost", "totalfee", "coursefee"])),
+        paid: impNum(impPick(row, ["paid", "paidamount", "amountpaid", "received", "feepaid"])),
+        paymentStatus: impPay(impPick(row, ["paymentstatus", "status", "payment", "feestatus"])),
+        notes: String(impPick(row, ["notes", "note", "remark", "remarks", "details"]) || "").trim(),
+        createdAt: Date.now(),
+      };
+    } },
 ];
 
-function ImportData({ mutate, currentUser, onClose }) {
-  const [targetId, setTargetId] = useState("income");
+function ImportData({ mutate, currentUser, onClose, defaultTarget = "income", lockTarget = false }) {
+  const [targetId, setTargetId] = useState(IMPORT_TARGETS.some((t) => t.id === defaultTarget) ? defaultTarget : "income");
   const [rows, setRows] = useState(null);   // raw parsed objects
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1974,11 +2004,13 @@ function ImportData({ mutate, currentUser, onClose }) {
         <button className="btn primary" onClick={doImport} disabled={!built.length}><Upload size={16} />{built.length ? `Import ${built.length} record${built.length === 1 ? "" : "s"}` : "Import"}</button></>}>
       {done > 0 && <div className="calc-box" style={{ borderColor: "var(--pos)", marginBottom: 14 }}><div className="calc-row" style={{ color: "var(--pos)", fontWeight: 700 }}><Check size={15} /> Imported {done} record{done === 1 ? "" : "s"} into {target.label}.</div></div>}
 
-      <Field label="What are you importing?">
-        <select className="select" value={targetId} onChange={(e) => { setTargetId(e.target.value); setRows(null); setDone(0); setErr(""); }}>
-          {IMPORT_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
-      </Field>
+      {!lockTarget && (
+        <Field label="What are you importing?">
+          <select className="select" value={targetId} onChange={(e) => { setTargetId(e.target.value); setRows(null); setDone(0); setErr(""); }}>
+            {IMPORT_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </Field>
+      )}
 
       <div className="hint-line" style={{ lineHeight: 1.55, margin: "2px 0 12px" }}>
         Your sheet's first row should be column headers. Expected columns:{" "}
@@ -2727,6 +2759,222 @@ function Courses({ db, mutate, openModal, openIncome, removeItem, canFinance }) 
           </table></div>}
       </div>
     </div>
+  );
+}
+
+/* ── Class students (training institute roster) — admin/superadmin only ─────
+   Own module, own table (class_students). Import from an existing Excel/CSV/
+   Google Sheet, export back out any time, and — if a Google Sheet webhook is
+   connected — every add/edit is mirrored into that sheet automatically. */
+function ClassStudents({ db, openModal, removeItem, mutate, currentUser, config, saveClassWebhook, isSuper }) {
+  const [q, setQ] = useState("");
+  const [course, setCourse] = useState("all");
+  const [mode, setMode] = useState("all");
+  const [pay, setPay] = useState("all");
+  const [importOpen, setImportOpen] = useState(false);
+
+  const all = useMemo(() => [...(db.class_students || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [db.class_students]);
+  const courseOptions = useMemo(() => Array.from(new Set(all.map((s) => s.course).filter(Boolean))).sort(), [all]);
+  const list = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return all.filter((s) => {
+      if (course !== "all" && (s.course || "") !== course) return false;
+      if (mode !== "all" && (s.mode || "Offline") !== mode) return false;
+      if (pay !== "all" && (s.paymentStatus || "Unpaid") !== pay) return false;
+      if (needle && !`${s.name} ${s.phone} ${s.email} ${s.course} ${s.batch}`.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [all, q, course, mode, pay]);
+
+  const del = (s) => removeItem("class_students", s, { name: s.name, audit: `removed class student ${s.name}` });
+  const modeTone = (m) => (m === "Online" ? "pri" : m === "Hybrid" ? "accent" : "");
+  const payTone = (p) => (p === "Paid" ? "pos" : p === "Partial" ? "accent" : "neg");
+
+  const doExport = () => {
+    const columns = [
+      { label: "id", w: 10, value: (r) => r.id },
+      { label: "Name", w: 20, value: (r) => r.name || "" },
+      { label: "Phone", w: 16, value: (r) => r.phone || "" },
+      { label: "Email", w: 22, value: (r) => r.email || "" },
+      { label: "Course", w: 18, value: (r) => r.course || "" },
+      { label: "Mode", w: 10, value: (r) => r.mode || "Offline" },
+      { label: "Batch", w: 16, value: (r) => r.batch || "" },
+      { label: "Joining date", w: 14, value: (r) => r.joinDate || "" },
+      { label: "Fee", w: 10, value: (r) => (r.fee != null ? r.fee : "") },
+      { label: "Paid", w: 10, value: (r) => (r.paid != null ? r.paid : "") },
+      { label: "Payment status", w: 14, value: (r) => r.paymentStatus || "Unpaid" },
+      { label: "Notes", w: 26, value: (r) => r.notes || "" },
+    ];
+    exportRowsToExcel(`allbee-class-students-${todayISO()}.xlsx`, "Class students", columns, list.length ? list : all);
+  };
+
+  return (
+    <div className="content">
+      <div className="page-head">
+        <h3>Class students</h3>
+        <span className="spacer" />
+        <button className="btn" onClick={() => setImportOpen(true)}><Upload size={16} />Import from sheet</button>
+        <button className="btn" onClick={doExport} disabled={!all.length}><Download size={16} />Export</button>
+        <button className="btn primary" onClick={() => openModal({ type: "classStudent" })}><Plus size={16} />New student</button>
+      </div>
+
+      {isSuper && <ClassSheetSync config={config} saveClassWebhook={saveClassWebhook} />}
+
+      <div className="card">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ position: "relative", flex: "1 1 220px", minWidth: 180 }}>
+            <Search size={15} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, course…" style={{ paddingLeft: 32 }} />
+          </div>
+          <select className="select" style={{ width: "auto" }} value={course} onChange={(e) => setCourse(e.target.value)}>
+            <option value="all">All courses</option>
+            {courseOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} value={mode} onChange={(e) => setMode(e.target.value)}>
+            <option value="all">All modes</option>
+            {CLASS_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select className="select" style={{ width: "auto" }} value={pay} onChange={(e) => setPay(e.target.value)}>
+            <option value="all">All payments</option>
+            {["Unpaid", "Partial", "Paid"].map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+
+        {all.length === 0 ? (
+          <Empty icon={<GraduationCap size={22} color="var(--muted)" />} title="No class students yet"
+            text="Add students for your offline/online classes, or import your existing sheet with one click."
+            action={<div style={{ display: "flex", gap: 8 }}><button className="btn" onClick={() => setImportOpen(true)}><Upload size={16} />Import from sheet</button><button className="btn primary" onClick={() => openModal({ type: "classStudent" })}><Plus size={16} />New student</button></div>} />
+        ) : list.length === 0 ? (
+          <Empty icon={<Search size={22} color="var(--muted)" />} title="No matches" text="Try a different search or clear the filters." />
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead><tr><th>Student</th><th>Course</th><th>Mode</th><th>Batch</th><th>Joined</th><th className="num-cell">Fee</th><th>Payment</th><th></th></tr></thead>
+              <tbody>{list.map((s) => (
+                <tr key={s.id}>
+                  <td><div style={{ fontWeight: 600 }}>{s.name}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{s.phone || s.email || "—"}</div></td>
+                  <td>{s.course || "—"}</td>
+                  <td><span className={"badge " + modeTone(s.mode)}>{s.mode || "Offline"}</span></td>
+                  <td style={{ fontSize: 12.5 }}>{s.batch || "—"}</td>
+                  <td className="mono">{s.joinDate ? fmtDate(s.joinDate) : "—"}</td>
+                  <td className="num-cell mono">{s.fee ? money(s.fee) : "—"}{s.paid ? <div style={{ fontSize: 11, color: "var(--muted)" }}>paid {money(s.paid)}</div> : null}</td>
+                  <td><span className={"badge " + payTone(s.paymentStatus)}>{s.paymentStatus || "Unpaid"}</span></td>
+                  <td><div className="row-actions">
+                    <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "classStudent", initial: s })}><Pencil size={14} /></button>
+                    <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove student?", body: `Remove ${s.name}?`, note: "They move to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>
+                  </div></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {importOpen && <ImportData mutate={mutate} currentUser={currentUser} defaultTarget="class_students" lockTarget onClose={() => setImportOpen(false)} />}
+    </div>
+  );
+}
+
+// Google Sheet mirror settings for class students (super admin only). Paste the
+// deployed Apps Script /exec URL; every add/edit then POSTs into that sheet.
+function ClassSheetSync({ config, saveClassWebhook }) {
+  const saved = (config?.class_sheet_webhook || "").trim();
+  const [url, setUrl] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => { setUrl((config?.class_sheet_webhook || "").trim()); }, [config?.class_sheet_webhook]);
+
+  const valid = /^https:\/\/script\.google\.com\/.+/.test(url.trim());
+  const save = async () => {
+    setBusy(true); setMsg("");
+    try { await saveClassWebhook(url.trim()); setMsg(url.trim() ? "Saved. New students will be sent to your sheet." : "Sheet sync turned off."); }
+    catch { setMsg("Couldn't save — check your connection and try again."); }
+    finally { setBusy(false); }
+  };
+  const test = () => {
+    if (!saved) return;
+    setMsg("");
+    try {
+      fetch(saved, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "test", student: { id: "test", name: "ALLBEE test row", course: "Test", mode: "Offline", createdAt: Date.now() } }) }).catch(() => {});
+      setMsg("Test row sent — check the bottom of your Google Sheet.");
+    } catch { setMsg("Couldn't reach the sheet URL."); }
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <Link2 size={16} color="var(--muted)" />
+        <b style={{ fontSize: 14 }}>Google Sheet sync</b>
+        <span className={"badge " + (saved ? "pos" : "")} style={saved ? undefined : { background: "var(--surface-2)", color: "var(--muted)" }}>{saved ? "Connected" : "Not connected"}</span>
+      </div>
+      <div className="hint-line" style={{ lineHeight: 1.55, marginBottom: 10 }}>
+        Optional. When connected, every student you add or edit here is also written into your Google Sheet automatically.
+        Importing already reads <i>from</i> a sheet, so it's kept separate. Leave blank to keep everything in-app only.
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" style={{ flex: "1 1 320px", minWidth: 220 }} />
+        <button className="btn primary" onClick={save} disabled={busy || (url.trim() && !valid)}>{busy ? <RefreshCw size={15} className="spin" /> : <Check size={15} />}Save</button>
+        {saved && <button className="btn" onClick={test}><Send size={15} />Send test row</button>}
+      </div>
+      {url.trim() && !valid && <div className="hint-line" style={{ color: "var(--neg)", display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}><AlertTriangle size={13} />That doesn't look like an Apps Script URL — it should start with https://script.google.com/…</div>}
+      {msg && <div className="hint-line" style={{ color: "var(--pos)", marginTop: 8 }}>{msg}</div>}
+      <details style={{ marginTop: 10 }}>
+        <summary className="ttl-link" style={{ fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>How to connect a sheet (2 minutes)</summary>
+        <ol className="hint-line" style={{ lineHeight: 1.7, margin: "8px 0 0", paddingLeft: 18 }}>
+          <li>Open your Google Sheet → <b>Extensions → Apps Script</b>.</li>
+          <li>Paste the ALLBEE sync script (ask your developer for it), then <b>Deploy → New deployment → Web app</b>.</li>
+          <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>, then Deploy and copy the <b>Web app URL</b>.</li>
+          <li>Paste that URL above and press Save. Use <b>Send test row</b> to confirm it works.</li>
+        </ol>
+      </details>
+    </div>
+  );
+}
+
+function ClassStudentForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(() => ({ name: "", phone: "", email: "", course: "", mode: "Offline", batch: "", joinDate: todayISO(), fee: "", paid: "", paymentStatus: "Unpaid", notes: "", ...initial }));
+  const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const valid = (f.name || "").trim().length > 0;
+  const save = () => {
+    if (!valid) return;
+    onSave({
+      ...initial,
+      id: initial?.id || uid(),
+      name: f.name.trim(), phone: (f.phone || "").trim(), email: (f.email || "").trim(),
+      course: (f.course || "").trim(), mode: f.mode || "Offline", batch: (f.batch || "").trim(),
+      joinDate: f.joinDate, fee: Number(f.fee) || 0, paid: Number(f.paid) || 0,
+      paymentStatus: f.paymentStatus, notes: (f.notes || "").trim(),
+      createdAt: initial?.createdAt || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <Modal title={initial?.id ? "Edit class student" : "New class student"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />Save student</button></>}>
+      <div className="grid2">
+        <Field label="Student name" required><input className="input" value={f.name} onChange={(e) => up("name", e.target.value)} /></Field>
+        <Field label="Phone number"><input className="input" value={f.phone} onChange={(e) => up("phone", e.target.value)} placeholder="+91…" /></Field>
+      </div>
+      <div className="grid2">
+        <Field label="Email"><input className="input" type="email" value={f.email} onChange={(e) => up("email", e.target.value)} placeholder="name@email.com" /></Field>
+        <Field label="Course"><input className="input" list="class-course-list" value={f.course} onChange={(e) => up("course", e.target.value)} placeholder="MS Office, Tally, Python…" />
+          <datalist id="class-course-list">{CLASS_COURSES.map((c) => <option key={c} value={c} />)}</datalist>
+        </Field>
+      </div>
+      <div className="grid2">
+        <Field label="Class mode"><select className="select" value={f.mode} onChange={(e) => up("mode", e.target.value)}>{CLASS_MODES.map((m) => <option key={m}>{m}</option>)}</select></Field>
+        <Field label="Batch / timing"><input className="input" value={f.batch} onChange={(e) => up("batch", e.target.value)} placeholder="Morning 10–11" /></Field>
+      </div>
+      <div className="grid2">
+        <Field label="Joining date"><input className="input" type="date" value={f.joinDate} onChange={(e) => up("joinDate", e.target.value)} /></Field>
+        <Field label="Payment status"><select className="select" value={f.paymentStatus} onChange={(e) => up("paymentStatus", e.target.value)}>{["Unpaid", "Partial", "Paid"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+      </div>
+      <div className="grid2">
+        <Field label="Total fee"><input className="input mono" type="number" min="0" value={f.fee} onChange={(e) => up("fee", e.target.value)} /></Field>
+        <Field label="Amount paid"><input className="input mono" type="number" min="0" value={f.paid} onChange={(e) => up("paid", e.target.value)} /></Field>
+      </div>
+      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => up("notes", e.target.value)} /></Field>
+    </Modal>
   );
 }
 
@@ -3855,6 +4103,7 @@ const NAV = [
   ["inhouse", "In-house projects", Home, "perm:inhouse"],
   ["testing", "Testing", ClipboardCheck, "perm:testing"],
   ["courses", "Courses", GraduationCap, "perm:courses"],
+  ["class-students", "Class students", GraduationCap, "admin"],
   ["marketing", "Marketing", Megaphone, "perm:marketing"],
   ["concepts", "Concepts", Lightbulb, "perm:concepts"],
   ["accounts", "Share & accounts", Wallet, "finance"],
@@ -3897,7 +4146,7 @@ const NAV_CATEGORIES = [
 const NAV_CATEGORY = {
   dashboard: "overview", notifications: "overview", myteam: "overview",
   tasks: "work", attendance: "work", leave: "work", updates: "work", progress: "work", chat: "work",
-  leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", marketing: "sales", concepts: "sales", testing: "sales",
+  leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
   announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
   team: "admin", "team-leads": "admin", apn: "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
@@ -8432,6 +8681,29 @@ export default function App() {
       { action: `${db[coll].some((x) => x.id === item.id) ? "updated" : "added"} ${label}${coll === "projects" && !isAdmin && !db.projects.some((x) => x.id === item.id) ? " (awaiting approval)" : ""}`, module: label === "project" ? "Projects" : label === "student" ? "Courses" : label === "marketing client" ? "Marketing" : "Concepts" });
   };
 
+  // Class students (training institute) — admin/superadmin only. Saves to the
+  // app DB and, if a Google Sheet webhook is set, mirrors the row into that sheet.
+  const pushClassStudentToSheet = (student, action) => {
+    const url = (config?.class_sheet_webhook || "").trim();
+    if (!url) return;
+    // Best-effort: the app database is the source of truth, so a sheet/network
+    // failure must never block the save. no-cors avoids an Apps Script CORS preflight.
+    try {
+      fetch(url, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, student }) }).catch(() => {});
+    } catch { /* ignore — mirror only */ }
+  };
+  const saveClassStudent = (s) => {
+    const isUpdate = (db.class_students || []).some((x) => x.id === s.id);
+    const row = isUpdate ? s : { ...s, createdById: me.id, ownerName: currentUser };
+    mutate((d) => ({ ...d, class_students: isUpdate ? (d.class_students || []).map((x) => x.id === s.id ? row : x) : [...(d.class_students || []), row] }),
+      { action: `${isUpdate ? "updated" : "added"} class student "${s.name}"`, module: "Class students" });
+    pushClassStudentToSheet(row, isUpdate ? "update" : "add");
+  };
+  const saveClassWebhook = async (url) => {
+    await saveConfig({ class_sheet_webhook: (url || "").trim() });
+    if (session) setConfig(await fetchConfig());
+  };
+
   // CRM / collaboration / finance rows: stamp the owner + author on first save.
   const saveOwned = (coll, item) => {
     const isUpdate = db[coll].some((x) => x.id === item.id);
@@ -8542,6 +8814,7 @@ export default function App() {
       case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} />;
       case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
       case "courses": return <Courses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
+      case "class-students": return <ClassStudents db={db} openModal={openModal} removeItem={removeItem} mutate={mutate} currentUser={currentUser} config={config} saveClassWebhook={saveClassWebhook} isSuper={isSuper} />;
       case "marketing": return <Marketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
       case "projects": return <Projects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} />;
       case "inhouse": return <InHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} />;
@@ -8706,6 +8979,7 @@ export default function App() {
         {modal?.type === "testSession" && <TestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} />}
         {modal?.type === "teamcfg" && <TeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} />}
         {modal?.type === "student" && <StudentForm initial={modal.initial} onSave={(s) => saveGeneric("students", s, "student")} onClose={() => setModal(null)} />}
+        {modal?.type === "classStudent" && <ClassStudentForm initial={modal.initial} onSave={saveClassStudent} onClose={() => setModal(null)} />}
         {modal?.type === "marketing" && <MarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} />}
         {modal?.type === "concept" && <ConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} />}
         {modal?.type === "lead" && <LeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} />}
