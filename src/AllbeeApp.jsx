@@ -343,7 +343,7 @@ async function fetchTeam() {
 // The live Terms & Conditions + version live in app_config; staff can read only
 // the tnc_* keys (the admin sign-up code is locked away by row-level security).
 async function fetchConfig() {
-  const { data, error } = await supabase.from("app_config").select("key,value").in("key", ["tnc_version", "tnc_body", "tnc_roles", "company", "class_sheet_webhook"]);
+  const { data, error } = await supabase.from("app_config").select("key,value").in("key", ["tnc_version", "tnc_body", "tnc_roles", "company", "class_sheet_webhook", "ai"]);
   if (error) return {}; // non-fatal — the T&C gate simply won't apply
   const out = {};
   for (const r of data || []) out[r.key] = r.value;
@@ -356,6 +356,135 @@ async function saveConfig(patch) {
   const { error } = await supabase.from("app_config").upsert(rows, { onConflict: "key" });
   if (error) throw new Error(error.message);
 }
+
+/* ── ALLBEE AI — built-in assistant ────────────────────────────────────────
+   The AI config lives in app_config under the "ai" key (one JSON blob). Two
+   ways to run it:
+     • mode "function" (recommended): a Supabase Edge Function holds the API key
+       server-side; the browser only calls supabase.functions.invoke(name).
+     • mode "direct" (quick start / internal use): the browser calls the model
+       API directly with a key stored in config. The key is visible to anyone
+       who can open the app, so prefer the function for anything shared. */
+const AI_DEFAULT_MODEL = "claude-sonnet-4-5";
+const AI_DEFAULT_ENDPOINT = "https://api.anthropic.com/v1/messages";
+function aiConfigOf(config) {
+  let raw = {};
+  try { raw = JSON.parse((config && config.ai) || "{}") || {}; } catch { raw = {}; }
+  return {
+    enabled: !!raw.enabled,
+    mode: raw.mode === "direct" ? "direct" : "function",
+    functionName: (raw.functionName || "ai-chat").trim() || "ai-chat",
+    endpoint: (raw.endpoint || AI_DEFAULT_ENDPOINT).trim() || AI_DEFAULT_ENDPOINT,
+    model: (raw.model || AI_DEFAULT_MODEL).trim() || AI_DEFAULT_MODEL,
+    apiKey: raw.apiKey || "",
+  };
+}
+// Ready to answer? Function mode just needs a name (we can't see if it's deployed
+// until we call it); direct mode needs a key.
+function aiConfigured(cfg) {
+  if (!cfg || !cfg.enabled) return false;
+  return cfg.mode === "direct" ? !!cfg.apiKey : !!cfg.functionName;
+}
+// Send a chat turn and return the assistant's plain text. Tolerates a few
+// response shapes so a simple Edge Function ({ text }) or a passthrough of the
+// raw Anthropic response ({ content: [...] }) both work.
+async function callAI(cfg, system, messages) {
+  const model = cfg.model || AI_DEFAULT_MODEL;
+  if (cfg.mode !== "direct") {
+    const { data, error } = await supabase.functions.invoke(cfg.functionName || "ai-chat", {
+      body: { system, model, max_tokens: 1400, messages },
+    });
+    if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function. Is it deployed?`);
+    if (data && data.error) throw new Error(typeof data.error === "string" ? data.error : "The AI function returned an error.");
+    if (typeof data === "string") return data.trim();
+    if (data && typeof data.text === "string") return data.text.trim();
+    if (data && Array.isArray(data.content)) return data.content.filter((b) => b && b.type === "text").map((b) => b.text).join("\n").trim();
+    return typeof data === "object" ? JSON.stringify(data) : String(data ?? "");
+  }
+  const res = await fetch(cfg.endpoint || AI_DEFAULT_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": cfg.apiKey || "",
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({ model, max_tokens: 1400, system, messages }),
+  });
+  if (!res.ok) {
+    let t = ""; try { t = await res.text(); } catch { /* ignore */ }
+    throw new Error(`AI error ${res.status}${t ? ": " + t.slice(0, 300) : ""}`);
+  }
+  const data = await res.json();
+  return (data.content || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n").trim();
+}
+// A compact, bounded snapshot of the workspace so the assistant can answer
+// questions and draft quotations/replies grounded in real ALLBEE data.
+function buildAIContext(db, company) {
+  const cap = (arr, n) => (Array.isArray(arr) ? arr.slice(-n).reverse() : []);
+  const co = company || {};
+  const L = [];
+  L.push(`COMPANY: ${co.name || "ALLBEE Solutions"}${co.email ? " · " + co.email : ""}${co.phone ? " · " + co.phone : ""}${co.website ? " · " + co.website : ""}`);
+  if (co.address) L.push(`ADDRESS: ${co.address}`);
+
+  const clients = cap(db.clients, 40);
+  if (clients.length) {
+    L.push(`\nCLIENTS (${db.clients.length} total, newest first):`);
+    clients.forEach((c) => L.push(`- ${c.name}${c.company ? " (" + c.company + ")" : ""} · ${c.status || "—"}${c.phone ? " · " + c.phone : ""}${c.email ? " · " + c.email : ""}${c.value ? " · deal " + money(c.value) : ""}${c.notes ? " · " + String(c.notes).slice(0, 80) : ""}`));
+  }
+  const leads = cap(db.leads, 40);
+  if (leads.length) {
+    L.push(`\nLEADS (${db.leads.length}):`);
+    leads.forEach((x) => L.push(`- ${x.name}${x.company ? " (" + x.company + ")" : ""} · service ${x.service || "—"} · stage ${x.stage || "—"}${x.value ? " · est " + money(x.value) : ""}${x.leadOwner ? " · owner " + x.leadOwner : ""}${x.phone ? " · " + x.phone : ""}${x.notes ? " · " + String(x.notes).slice(0, 80) : ""}`));
+  }
+  const quotes = cap(db.quotations, 30);
+  if (quotes.length) {
+    L.push(`\nQUOTATIONS (${db.quotations.length}):`);
+    quotes.forEach((q) => {
+      const items = (q.items || []).map((it) => `${it.desc || "item"} x${it.qty || 1} @ ${money(it.rate || 0)}`).join("; ");
+      L.push(`- ${q.client || "—"}${q.title ? " · " + q.title : ""} · ${q.status || "Draft"} · total ${money(q.total || 0)}${items ? " · items: " + items.slice(0, 180) : ""}`);
+    });
+  }
+  const inv = cap(db.invoices, 30);
+  if (inv.length) {
+    L.push(`\nINVOICES (${db.invoices.length}):`);
+    inv.forEach((i) => L.push(`- ${i.number || ""} ${i.client || "—"}${i.title ? " · " + i.title : ""} · ${i.status || "Draft"} · ${money(i.amount || 0)}${i.dueDate ? " · due " + i.dueDate : ""}`));
+  }
+  const proj = cap(db.projects, 40);
+  if (proj.length) {
+    L.push(`\nPROJECTS (${db.projects.length}):`);
+    proj.forEach((p) => L.push(`- ${p.name}${p.client ? " for " + p.client : ""} · ${p.type || "—"} · ${p.stage || "—"}${p.cost ? " · " + money(p.cost) : ""}${p.expected ? " · due " + p.expected : ""}`));
+  }
+  const openTasks = (db.tasks || []).filter((t) => t.status !== "Completed");
+  const tks = cap(openTasks, 40);
+  if (tks.length) {
+    L.push(`\nOPEN TASKS (${openTasks.length}):`);
+    tks.forEach((t) => L.push(`- ${t.title} · ${assigneeText(t)} · ${t.status}${t.priority ? " · " + t.priority : ""}${t.due ? " · due " + t.due : ""}`));
+  }
+  const cs = cap(db.class_students, 30);
+  if (cs.length) {
+    L.push(`\nCLASS STUDENTS (${db.class_students.length}):`);
+    cs.forEach((s) => L.push(`- ${s.name}${s.course ? " · " + s.course : ""}${s.mode ? " · " + s.mode : ""}${s.fee ? " · fee " + money(s.fee) : ""}${s.paymentStatus ? " · " + s.paymentStatus : ""}`));
+  }
+  const counts = [];
+  if (db.students?.length) counts.push(`course students ${db.students.length}`);
+  if (db.marketing?.length) counts.push(`marketing clients ${db.marketing.length}`);
+  if (db.concepts?.length) counts.push(`concepts/ideas ${db.concepts.length}`);
+  if (db.inhouse?.length) counts.push(`in-house projects ${db.inhouse.length}`);
+  if (db.planned?.length) counts.push(`planned expenses ${db.planned.length}`);
+  if (counts.length) L.push(`\nOTHER COUNTS: ${counts.join(" · ")}`);
+
+  let out = L.join("\n");
+  if (out.length > 12000) out = out.slice(0, 12000) + "\n…(snapshot truncated)";
+  return out;
+}
+const AI_QUICK_PROMPTS = [
+  ["Draft a quotation", "A client asked for a quotation. Ask me for the client name and what they need if it's not obvious, then draft a clear, itemised quotation in INR (₹) with a subtotal and total, professional wording, and short terms."],
+  ["Reply to a client", "Help me write a short, professional reply to a client. Ask what the client said and the outcome I want, then draft it."],
+  ["Follow-ups due", "Look at the leads and quotations in the snapshot and list who I should follow up with, grouped by priority, with a one-line suggested message for each."],
+  ["Summarise open tasks", "Summarise the open tasks: what's overdue, what's high priority, and what each person is responsible for."],
+  ["Explain a feature", "Explain what a part of the ALLBEE app does and how to use it. Ask which feature if I haven't said."],
+];
 
 // Global, never-reused task number (atomic on the server).
 async function nextTaskNumber() {
@@ -541,9 +670,28 @@ const taskAssignees = (t) => {
 };
 const isMultiAssignee = (t) => taskAssignees(t).length > 1;
 const assigneeText = (t) => taskAssignees(t).join(", ") || "—";
-const canActOnTask = (t, name) => taskAssignees(t).includes(name);
+// Stable user-ids a task is assigned to. New tasks store `assigneeIds` alongside
+// the readable names, so a task keeps pointing at the right person even after a
+// display-name change (older tasks simply have no ids and fall back to names).
+const taskAssigneeIds = (t) => (Array.isArray(t.assigneeIds) ? t.assigneeIds.filter(Boolean) : []);
+// Is this task assigned to `who`? `who` may be a person object ({ id, name }) or
+// a bare name string. We match on user-id first (rename-proof) and fall back to
+// the name, so both new (id-carrying) and legacy (name-only) tasks resolve.
+const isTaskAssignee = (t, who) => {
+  const id = who && typeof who === "object" ? who.id : null;
+  const name = who && typeof who === "object" ? who.name : who;
+  const ids = taskAssigneeIds(t);
+  if (id && ids.length && ids.includes(id)) return true;
+  return !!name && taskAssignees(t).includes(name);
+};
+const canActOnTask = (t, who) => isTaskAssignee(t, who);
 // Who may edit / delete / monitor a task: an admin or the person who created it.
-const canEditTask = (t, name, isAdmin) => isAdmin || t.assignedBy === name;
+const canEditTask = (t, who, isAdmin) => {
+  if (isAdmin) return true;
+  const id = who && typeof who === "object" ? who.id : null;
+  const name = who && typeof who === "object" ? who.name : who;
+  return (!!id && t.assignedById === id) || (!!name && t.assignedBy === name);
+};
 
 // ── multi-person accept ───────────────────────────────────────────────────
 // A task with more than one assignee needs EACH assignee to Accept before it
@@ -1434,11 +1582,19 @@ function WithdrawForm({ balances, defaultUser, onSave, onClose }) {
   );
 }
 
-function TaskForm({ initial, onSave, onClose, currentUser, team = USERS, isAdmin = true }) {
+function TaskForm({ initial, onSave, onClose, currentUser, team = USERS, people = [], isAdmin = true }) {
   // Everyone (admins, staff AND interns) can assign a task to one or more
   // teammates. The roster always includes the person creating it, so they can
   // assign work to themselves too.
   const roster = team.includes(currentUser) ? team : [currentUser, ...team];
+  // name → stable user id, so a saved task keeps pointing at the right person
+  // even if their display name is edited later (fixes assigned tasks that stop
+  // showing up for the assignee). Legacy tasks with no ids still match by name.
+  const idByName = useMemo(() => {
+    const m = {};
+    (people || []).forEach((p) => { if (p && p.name && p.id) m[p.name] = p.id; });
+    return m;
+  }, [people]);
   const initialAssignees = () => {
     if (Array.isArray(initial?.assignees) && initial.assignees.length) return initial.assignees.slice();
     if (initial?.assignedTo === COMBINED) return USERS.slice();
@@ -1463,9 +1619,13 @@ function TaskForm({ initial, onSave, onClose, currentUser, team = USERS, isAdmin
     // the special two-partner label so existing combined-task behaviour is unchanged.
     const bothPartners = assignees.length === USERS.length && USERS.every((u) => assignees.includes(u));
     const assignedTo = assignees.length === 1 ? assignees[0] : bothPartners ? COMBINED : assignees.join(", ");
+    // Attach stable ids next to the names (missing when someone isn't in the
+    // roster yet — matching then simply falls back to the name).
+    const assigneeIds = assignees.map((n) => idByName[n]).filter(Boolean);
+    const assignedById = idByName[f.assignedBy] || initial?.assignedById || null;
     onSave({
       ...initial, id: initial?.id || uid(), title: f.title.trim(), desc: f.desc.trim(),
-      assignedBy: f.assignedBy, assignedTo, assignees, priority: f.priority, due: f.due,
+      assignedBy: f.assignedBy, assignedById, assignedTo, assignees, assigneeIds, priority: f.priority, due: f.due,
       notes: f.notes.trim(), status: initial?.status || "Created", progress: initial?.progress ?? 0,
       history: initial?.history || [{ status: "Created", at: Date.now(), by: f.assignedBy }],
       comments: initial?.comments || [], attachments: initial?.attachments || [], accepts: initial?.accepts || [],
@@ -2336,17 +2496,20 @@ function Withdrawals({ db, bal, mutate, openModal, removeItem, isSuper, currentU
 
 function priorityTone(p) { return p === "Urgent" || p === "High" ? "neg" : p === "Medium" ? "pri" : ""; }
 
-function Tasks({ db, mutate, openModal, isAdmin = true, currentUser, openTask, removeItem }) {
+function Tasks({ db, mutate, openModal, isAdmin = true, currentUser, me, openTask, removeItem }) {
   const [filter, setFilter] = useState("active");
   const [scope, setScope] = useState("mine"); // staff: mine | assigned
+  const who = me || { name: currentUser };
   const list = useMemo(() => {
     let r = [...db.tasks].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    if (!isAdmin) r = r.filter((t) => scope === "assigned" ? t.assignedBy === currentUser : taskAssignees(t).includes(currentUser));
+    if (!isAdmin) r = r.filter((t) => scope === "assigned"
+      ? ((who.id && t.assignedById === who.id) || t.assignedBy === currentUser)
+      : isTaskAssignee(t, who));
     if (filter === "active") r = r.filter((t) => t.status !== "Completed");
     else if (filter === "progress") r = r.filter((t) => t.status === "In Progress");
     else if (filter === "done") r = r.filter((t) => t.status === "Completed");
     return r;
-  }, [db.tasks, filter, scope, isAdmin, currentUser]);
+  }, [db.tasks, filter, scope, isAdmin, currentUser, who.id, who.name]);
 
   const auditFor = (action) => ({ action, module: "Tasks" });
 
@@ -2418,11 +2581,12 @@ function Tasks({ db, mutate, openModal, isAdmin = true, currentUser, openTask, r
   );
 }
 
-function Progress({ db, mutate, isAdmin = true, currentUser, openTask }) {
+function Progress({ db, mutate, isAdmin = true, currentUser, me, openTask }) {
+  const who = me || { name: currentUser };
   const inProgress = db.tasks.filter((t) => t.status === "In Progress");
   // Admins monitor the whole team; staff/interns see the in-progress tasks
   // they're assigned to (so they can update their own progress).
-  const list = isAdmin ? inProgress : inProgress.filter((t) => taskAssignees(t).includes(currentUser));
+  const list = isAdmin ? inProgress : inProgress.filter((t) => isTaskAssignee(t, who));
   const setProgress = (t, v) => {
     const done = v >= 100;
     const history = done ? [...(t.history || []), { status: "Completed", at: Date.now(), by: currentUser }] : (t.history || []);
@@ -3065,7 +3229,233 @@ function AuditLog({ db }) {
   );
 }
 
-function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCount, sessionEmail, config, saveTnc, saveRoleTnc, saveCompany }) {
+function AllbeeAI({ db, config, me, role, isAdmin, go }) {
+  const cfg = aiConfigOf(config);
+  const company = companyOf(config);
+  const configured = aiConfigured(cfg);
+  const [messages, setMessages] = useState([]);      // [{ role: "user"|"assistant", content }]
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(-1);
+  const scroller = useRef(null);
+  const boxRef = useRef(null);
+
+  useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, busy]);
+
+  const system = useMemo(() => {
+    const co = company.name || "ALLBEE Solutions";
+    const features = "Dashboard, Tasks, Attendance, Leave, Daily updates, Team chat, Leads, Clients, Quotations, Invoices, Client updates, Projects, In-house projects, Testing, Courses, Class students, Marketing, Concepts/Ideas, Share & accounts, Withdrawals, Planned expenses, Passwords vault, Notifications, Announcements, Documents, Knowledge base, Prompts, Sheets, Performance, Rewards, Earnings, Team & Team leads, Audit log, Settings.";
+    return [
+      `You are ALLBEE AI, the built-in assistant inside the ${co} business-management app (run by partners Haji & Alim).`,
+      `You are talking to ${me?.name || "a team member"} (role: ${ROLE_LABEL[role] || role || "staff"}).`,
+      `Help staff with anything in the business: drafting client quotations and replies, following up on leads, summarising tasks, pricing, explaining how app features work, and general help.`,
+      `The app has these modules: ${features}`,
+      `When drafting a quotation or anything with money, use Indian Rupees (₹) and show a clear itemised list with a subtotal and total. Keep a professional, friendly tone suited to an Indian small business.`,
+      `Be concise and practical. If you need a detail (client name, budget, scope), ask a short question first. Never invent client data — only use what's in the snapshot below or what the user tells you.`,
+      `\nCURRENT WORKSPACE SNAPSHOT (read-only, newest first, may be partial):\n${buildAIContext(db, company)}`,
+    ].join("\n");
+  }, [db, company, me, role]);
+
+  const send = async (text) => {
+    const content = (text != null ? text : input).trim();
+    if (!content || busy) return;
+    setError("");
+    const next = [...messages, { role: "user", content }];
+    setMessages(next);
+    setInput("");
+    setBusy(true);
+    try {
+      // Keep the last few turns for context, but the window must begin with a
+      // user turn (the model API rejects a leading assistant message).
+      let window = next.slice(-12);
+      while (window.length && window[0].role !== "user") window = window.slice(1);
+      const reply = await callAI(cfg, system, window);
+      setMessages((m) => [...m, { role: "assistant", content: reply || "(no reply)" }]);
+    } catch (e) {
+      setError((e && e.message) || "Something went wrong talking to the AI.");
+    } finally {
+      setBusy(false);
+      setTimeout(() => boxRef.current?.focus(), 30);
+    }
+  };
+  const copy = async (txt, i) => { try { await navigator.clipboard.writeText(txt || ""); setCopied(i); setTimeout(() => setCopied(-1), 1500); } catch { /* blocked */ } };
+  const onKey = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+
+  if (!configured) {
+    return (
+      <div className="content">
+        <div className="page-head"><h3><Sparkles size={18} style={{ verticalAlign: -3, marginRight: 6, color: "var(--primary)" }} />ALLBEE AI</h3></div>
+        <div className="card stat" style={{ textAlign: "center", padding: "34px 22px" }}>
+          <div style={{ width: 54, height: 54, borderRadius: 14, background: "var(--primary-soft)", display: "grid", placeItems: "center", margin: "0 auto 14px" }}><Sparkles size={26} color="var(--primary)" /></div>
+          <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>The assistant isn't switched on yet</div>
+          {isAdmin ? (
+            <>
+              <p className="hint-line" style={{ lineHeight: 1.6, maxWidth: 460, margin: "0 auto 16px" }}>
+                Turn on ALLBEE AI in Settings. The quickest secure way is a small Supabase Edge Function that holds your API key; you can also paste a key directly for internal testing.
+              </p>
+              <button className="btn primary" onClick={() => go("settings")}><SettingsIcon size={16} />Set up AI in Settings</button>
+            </>
+          ) : (
+            <p className="hint-line" style={{ lineHeight: 1.6, maxWidth: 440, margin: "0 auto" }}>
+              Ask a partner or admin (Haji or Alim) to switch on ALLBEE AI from Settings. Once it's on, you can ask it to draft quotations, reply to clients, and more — right here.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const bubbleWrap = { display: "flex", flexDirection: "column", gap: 12, padding: "4px 2px 12px" };
+  return (
+    <div className="content">
+      <div className="page-head">
+        <h3><Sparkles size={18} style={{ verticalAlign: -3, marginRight: 6, color: "var(--primary)" }} />ALLBEE AI</h3>
+        <span className="spacer" />
+        {messages.length > 0 && <button className="btn sm" onClick={() => { setMessages([]); setError(""); }}><RotateCcw size={13} />New chat</button>}
+      </div>
+
+      <div className="card" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 210px)", minHeight: 420, overflow: "hidden" }}>
+        <div ref={scroller} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 4px" }}>
+          {messages.length === 0 ? (
+            <div style={{ maxWidth: 620, margin: "6px auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: "var(--primary-soft)", display: "grid", placeItems: "center" }}><Sparkles size={17} color="var(--primary)" /></div>
+                <div style={{ fontWeight: 700 }}>Hi {me?.name || "there"} — how can I help?</div>
+              </div>
+              <p className="hint-line" style={{ lineHeight: 1.6, marginBottom: 14 }}>
+                I can see your clients, leads, quotations, projects and open tasks. Ask me to draft a quotation for a client, write a reply, or summarise what's pending. Try one:
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {AI_QUICK_PROMPTS.map(([label, prompt]) => (
+                  <button key={label} className="btn sm" onClick={() => send(prompt)} style={{ borderRadius: 999 }}>
+                    <Sparkles size={13} />{label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={bubbleWrap}>
+              {messages.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{
+                    maxWidth: "82%", padding: "10px 13px", borderRadius: 14, lineHeight: 1.55, fontSize: 14, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    background: m.role === "user" ? "var(--primary-soft)" : "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    borderBottomRightRadius: m.role === "user" ? 4 : 14,
+                    borderBottomLeftRadius: m.role === "user" ? 14 : 4,
+                  }}>
+                    {m.content}
+                    {m.role === "assistant" && (
+                      <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                        <button className="btn sm" onClick={() => copy(m.content, i)} style={{ padding: "3px 8px" }}>
+                          {copied === i ? <><Check size={12} />Copied</> : <><Copy size={12} />Copy</>}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {busy && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div style={{ padding: "10px 13px", borderRadius: 14, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--muted)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <RefreshCw size={14} className="spin" /> Thinking…
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="banner" style={{ margin: "0 12px 8px", background: "var(--neg-soft)" }}>
+            <AlertTriangle size={15} /> {error}
+          </div>
+        )}
+
+        <div style={{ borderTop: "1px solid var(--border)", padding: 12, display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <textarea
+            ref={boxRef}
+            className="textarea"
+            style={{ flex: 1, minHeight: 44, maxHeight: 140, resize: "none" }}
+            placeholder="Ask ALLBEE AI to draft a quotation, reply to a client, summarise tasks…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKey}
+            disabled={busy}
+          />
+          <button className="btn primary" onClick={() => send()} disabled={busy || !input.trim()} style={{ height: 44 }}>
+            <Send size={16} />Send
+          </button>
+        </div>
+      </div>
+      <p className="hint-line" style={{ marginTop: 10, lineHeight: 1.5 }}>
+        ALLBEE AI can make mistakes — double-check figures and client details before sending anything out. It reads a read-only snapshot of your workspace and doesn't change any records.
+      </p>
+    </div>
+  );
+}
+
+function AISettings({ config, saveAI }) {
+  const init = aiConfigOf(config);
+  const [f, setF] = useState(init);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDone(false); };
+  const save = async () => { setBusy(true); try { await saveAI(f); setDone(true); } finally { setBusy(false); } };
+  return (
+    <div className="card stat" style={{ marginBottom: 14 }}>
+      <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: 7 }}>
+        <Sparkles size={14} color="var(--primary)" /> ALLBEE AI assistant
+      </div>
+      <p className="hint-line" style={{ lineHeight: 1.6, marginBottom: 14 }}>
+        Adds a built-in AI on the <b style={{ color: "var(--ink)" }}>ALLBEE AI</b> screen that staff can ask to draft quotations, reply to clients and summarise work — grounded in your live data.
+      </p>
+
+      <label className="perm-item" style={{ marginBottom: 12 }}>
+        <input type="checkbox" checked={f.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+        <span>Turn ALLBEE AI on for the team</span>
+      </label>
+
+      <Field label="How the app reaches the AI">
+        <select className="select" value={f.mode} onChange={(e) => set("mode", e.target.value)}>
+          <option value="function">Supabase Edge Function (recommended — key stays on the server)</option>
+          <option value="direct">Direct API key (quick start — key is stored in settings)</option>
+        </select>
+      </Field>
+
+      {f.mode === "function" ? (
+        <Field label="Edge Function name" hint="Deploy the ai-chat function (code in the project README) and set its ANTHROPIC_API_KEY secret.">
+          <input className="input mono" value={f.functionName} onChange={(e) => set("functionName", e.target.value)} placeholder="ai-chat" />
+        </Field>
+      ) : (
+        <>
+          <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 12, background: "var(--neg-soft)" }}>
+            <AlertTriangle size={15} /> A direct key is downloaded to every signed-in browser and can be read by staff. Use this only for internal testing — prefer the Edge Function for anything shared.
+          </div>
+          <Field label="API endpoint">
+            <input className="input mono" value={f.endpoint} onChange={(e) => set("endpoint", e.target.value)} placeholder={AI_DEFAULT_ENDPOINT} />
+          </Field>
+          <Field label="API key">
+            <div style={{ display: "flex", gap: 8 }}>
+              <input className="input mono" type={showKey ? "text" : "password"} value={f.apiKey} onChange={(e) => set("apiKey", e.target.value)} placeholder="sk-ant-…" style={{ flex: 1 }} />
+              <button className="iconbtn" type="button" title={showKey ? "Hide" : "Show"} onClick={() => setShowKey((s) => !s)} style={{ width: 40 }}>{showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+            </div>
+          </Field>
+        </>
+      )}
+
+      <Field label="Model" hint="Set this to a model your API key can use. Change it if you get a model-not-found error.">
+        <input className="input mono" value={f.model} onChange={(e) => set("model", e.target.value)} placeholder={AI_DEFAULT_MODEL} />
+      </Field>
+
+      <button className="btn primary" onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}{done ? "Saved" : "Save AI settings"}</button>
+    </div>
+  );
+}
+
+function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCount, sessionEmail, config, saveTnc, saveRoleTnc, saveCompany, saveAI }) {
   const fileRef = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
   const exportJSON = () => {
@@ -3102,6 +3492,9 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
       <TncManager config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} />
 
       <CompanySettings config={config} saveCompany={saveCompany} />
+
+      <AISettings config={config} saveAI={saveAI} />
+
 
       <div className="card stat" style={{ marginBottom: 14 }}>
         <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Import from Excel / Google Sheets</div>
@@ -3182,7 +3575,7 @@ function StaffDashboard({ db, me, go, mutate, openModal, team = [] }) {
   const openSess = todays.find((a) => !a.checkOut);
   const todayH = sumHours(todays);
   const leaveToday = onApprovedLeave(db, me.id, today);
-  const myOpen = db.tasks.filter((t) => taskAssignees(t).includes(me.name) && t.status !== "Completed");
+  const myOpen = db.tasks.filter((t) => isTaskAssignee(t, me) && t.status !== "Completed");
   const myPendingLeave = db.leave.filter((l) => l.userId === me.id && l.status === "Pending");
   const myUpdatesToday = db.updates.filter((u) => u.userId === me.id && u.date === today);
   const hr = new Date().getHours();
@@ -3266,55 +3659,68 @@ function Attendance({ db, mutate, me, isAdmin, isSuper, team, openModal }) {
   const [date, setDate] = useState(today);
   const [editing, setEditing] = useState(null); // super-admin attendance edit: { p, a }
 
+  // ── Personal attendance — available to EVERYONE, admins included, so a
+  // partner/admin can check themselves in and out just like the rest of the team.
+  const mineAll = db.attendance.filter((a) => a.userId === me.id);
+  const todays = mineAll.filter((a) => a.date === today);
+  const openSess = todays.find((a) => !a.checkOut);
+  const leaveToday = onApprovedLeave(db, me.id, today);
+  const mine = [...mineAll].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 60);
+  const weekStart = startOfWeek();
+  const todayH = sumHours(todays);
+  const weekH = sumHours(mineAll.filter((a) => new Date(a.date + "T00:00:00") >= weekStart));
+  const monthH = sumHours(mineAll.filter((a) => sameMonth(a.date)));
+  const doCheckIn = () => mutate((d) => ({ ...d, attendance: [...d.attendance, { id: uid(), userId: me.id, userName: me.name, date: today, checkIn: new Date().toISOString(), checkOut: null, createdAt: Date.now() }] }), { action: "checked in", module: "Attendance" });
+  const doCheckOut = () => { if (!openSess) return; mutate((d) => ({ ...d, attendance: d.attendance.map((a) => a.id === openSess.id ? { ...a, checkOut: new Date().toISOString() } : a) }), { action: "checked out", module: "Attendance" }); };
+  const checkIn = () => openModal({ type: "okConfirm", title: "Check in?", body: "Type OK to confirm your check-in.", actionLabel: "Check in", icon: <LogIn size={15} />, onConfirm: () => { haptic(12); doCheckIn(); } });
+  const checkOut = () => openModal({ type: "okConfirm", title: "Check out?", body: "Type OK to confirm your check-out.", actionLabel: "Check out", icon: <CheckCircle2 size={15} />, onConfirm: () => { haptic(12); doCheckOut(); } });
+
+  const myCheckInCard = (
+    <div className="card stat" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div className="lbl"><Clock size={14} /> {fmtDate(today)}{isAdmin ? " · You" : ""}</div>
+        <div style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>
+          {leaveToday ? "You're on approved leave today" : openSess ? `Checked in at ${clockTime(openSess.checkIn)}` : todays.length ? `${todays.length} session${todays.length > 1 ? "s" : ""} · ${todayH.toFixed(1)}h today` : "Not checked in yet"}
+        </div>
+      </div>
+      {!leaveToday && !openSess && <button className="btn primary" onClick={checkIn}><LogIn size={16} />Check in</button>}
+      {!leaveToday && openSess && <button className="btn primary" onClick={checkOut}><CheckCircle2 size={16} />Check out</button>}
+    </div>
+  );
+
+  const myStatsRow = (
+    <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", marginBottom: 16 }}>
+      <div className="card stat"><div className="lbl"><Clock size={14} /> Today</div><div className="num">{todayH.toFixed(1)}h</div></div>
+      <div className="card stat"><div className="lbl"><CalendarDays size={14} /> This week</div><div className="num">{weekH.toFixed(1)}h</div></div>
+      <div className="card stat"><div className="lbl"><CalendarDays size={14} /> This month</div><div className="num">{monthH.toFixed(1)}h</div></div>
+    </div>
+  );
+
+  const myRecentCard = (
+    <div className="card">
+      <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>My recent attendance</div>
+      {mine.length === 0 ? <Empty icon={<UserCheck size={22} color="var(--muted)" />} title="No records yet" text="Check in each day and your history builds up here." /> : (
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl">
+            <thead><tr><th>Date</th><th>In</th><th>Out</th><th className="num-cell">Hours</th></tr></thead>
+            <tbody>{mine.map((a) => (
+              <tr key={a.id}><td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtDate(a.date)}</td>
+                <td className="mono">{clockTime(a.checkIn)}</td><td className="mono">{clockTime(a.checkOut)}</td>
+                <td className="num-cell mono">{a.checkOut ? hoursBetween(a.checkIn, a.checkOut)?.toFixed(1) : "—"}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
   if (!isAdmin) {
-    const mineAll = db.attendance.filter((a) => a.userId === me.id);
-    const todays = mineAll.filter((a) => a.date === today);
-    const openSess = todays.find((a) => !a.checkOut);
-    const leaveToday = onApprovedLeave(db, me.id, today);
-    const mine = [...mineAll].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 60);
-    const weekStart = startOfWeek();
-    const todayH = sumHours(todays);
-    const weekH = sumHours(mineAll.filter((a) => new Date(a.date + "T00:00:00") >= weekStart));
-    const monthH = sumHours(mineAll.filter((a) => sameMonth(a.date)));
-    const doCheckIn = () => mutate((d) => ({ ...d, attendance: [...d.attendance, { id: uid(), userId: me.id, userName: me.name, date: today, checkIn: new Date().toISOString(), checkOut: null, createdAt: Date.now() }] }), { action: "checked in", module: "Attendance" });
-    const doCheckOut = () => { if (!openSess) return; mutate((d) => ({ ...d, attendance: d.attendance.map((a) => a.id === openSess.id ? { ...a, checkOut: new Date().toISOString() } : a) }), { action: "checked out", module: "Attendance" }); };
-    const checkIn = () => openModal({ type: "okConfirm", title: "Check in?", body: "Type OK to confirm your check-in.", actionLabel: "Check in", icon: <LogIn size={15} />, onConfirm: () => { haptic(12); doCheckIn(); } });
-    const checkOut = () => openModal({ type: "okConfirm", title: "Check out?", body: "Type OK to confirm your check-out.", actionLabel: "Check out", icon: <CheckCircle2 size={15} />, onConfirm: () => { haptic(12); doCheckOut(); } });
     return (
       <div className="content">
         <div className="page-head"><h3>Attendance</h3></div>
-        <div className="card stat" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div className="lbl"><Clock size={14} /> {fmtDate(today)}</div>
-            <div style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>
-              {leaveToday ? "You're on approved leave today" : openSess ? `Checked in at ${clockTime(openSess.checkIn)}` : todays.length ? `${todays.length} session${todays.length > 1 ? "s" : ""} · ${todayH.toFixed(1)}h today` : "Not checked in yet"}
-            </div>
-          </div>
-          {!leaveToday && !openSess && <button className="btn primary" onClick={checkIn}><LogIn size={16} />Check in</button>}
-          {!leaveToday && openSess && <button className="btn primary" onClick={checkOut}><CheckCircle2 size={16} />Check out</button>}
-        </div>
-
-        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", marginBottom: 16 }}>
-          <div className="card stat"><div className="lbl"><Clock size={14} /> Today</div><div className="num">{todayH.toFixed(1)}h</div></div>
-          <div className="card stat"><div className="lbl"><CalendarDays size={14} /> This week</div><div className="num">{weekH.toFixed(1)}h</div></div>
-          <div className="card stat"><div className="lbl"><CalendarDays size={14} /> This month</div><div className="num">{monthH.toFixed(1)}h</div></div>
-        </div>
-
-        <div className="card">
-          <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>My recent attendance</div>
-          {mine.length === 0 ? <Empty icon={<UserCheck size={22} color="var(--muted)" />} title="No records yet" text="Check in each day and your history builds up here." /> : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="tbl">
-                <thead><tr><th>Date</th><th>In</th><th>Out</th><th className="num-cell">Hours</th></tr></thead>
-                <tbody>{mine.map((a) => (
-                  <tr key={a.id}><td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtDate(a.date)}</td>
-                    <td className="mono">{clockTime(a.checkIn)}</td><td className="mono">{clockTime(a.checkOut)}</td>
-                    <td className="num-cell mono">{a.checkOut ? hoursBetween(a.checkIn, a.checkOut)?.toFixed(1) : "—"}</td></tr>
-                ))}</tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {myCheckInCard}
+        {myStatsRow}
+        {myRecentCard}
       </div>
     );
   }
@@ -3346,6 +3752,11 @@ function Attendance({ db, mutate, me, isAdmin, isSuper, team, openModal }) {
     <div className="content">
       <div className="page-head"><h3>Attendance</h3><span className="spacer" />
         <input className="input" type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} style={{ width: "auto" }} /></div>
+      {/* Admins & partners mark their own attendance too */}
+      {myCheckInCard}
+      <div className="lbl" style={{ margin: "4px 2px 10px", fontSize: 13, fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: 7 }}>
+        <Users size={14} /> Team · {fmtDate(date)}
+      </div>
       <div className="cards-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 16 }}>
         <div className="card stat"><div className="lbl"><UserCheck size={14} /> Present</div><div className="num pos-txt">{present}</div></div>
         <div className="card stat"><div className="lbl"><Plane size={14} /> On leave</div><div className="num">{onLeave}</div></div>
@@ -4099,6 +4510,7 @@ class ErrorBoundary extends React.Component {
 
 const NAV = [
   ["dashboard", "Dashboard", LayoutDashboard, "everyone"],
+  ["assistant", "ALLBEE AI", Sparkles, "everyone"],
   ["tasks", "Tasks", ListTodo, "work"],
   ["attendance", "Attendance", UserCheck, "work"],
   ["leave", "Leave", Plane, "leave"],
@@ -4154,7 +4566,7 @@ const NAV_CATEGORIES = [
   ["personal", "Personal"],
 ];
 const NAV_CATEGORY = {
-  dashboard: "overview", notifications: "overview", myteam: "overview",
+  dashboard: "overview", notifications: "overview", myteam: "overview", assistant: "overview",
   tasks: "work", attendance: "work", leave: "work", updates: "work", progress: "work", chat: "work",
   leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
@@ -5336,8 +5748,8 @@ function Performance({ db, team }) {
   const month = new Date();
   const staff = (team || []).filter((p) => ["staff", "intern", "admin", "accountant"].includes(p.role) && p.active !== false);
   const rows = staff.map((p) => {
-    const done = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status === "Completed").length;
-    const open = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status !== "Completed").length;
+    const done = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status === "Completed").length;
+    const open = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status !== "Completed").length;
     const myLeads = db.leads.filter((l) => l.ownerId === p.id || l.leadOwner === p.name);
     const leadsGen = myLeads.length;
     const leadsWon = myLeads.filter((l) => l.stage === "Converted").length;
@@ -6286,14 +6698,14 @@ function MyTeam({ db, team, me, mutate, onRefresh }) {
   const members = teamRosterIds(myTeam).map((id) => team.find((p) => p.id === id)).filter(Boolean);
   const month = new Date();
   const memberStats = (p) => {
-    const open = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status !== "Completed").length;
-    const done = db.tasks.filter((t) => taskAssignees(t).includes(p.name) && t.status === "Completed").length;
+    const open = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status !== "Completed").length;
+    const done = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status === "Completed").length;
     const presentDays = new Set(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month)).map((a) => a.date)).size;
     const hours = round2(sumHours(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month))));
     return { open, done, presentDays, hours };
   };
   const teamTasks = db.tasks
-    .filter((t) => members.some((p) => taskAssignees(t).includes(p.name)))
+    .filter((t) => members.some((p) => isTaskAssignee(t, p)))
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["tasks", "Tasks"], ["chat", "Team chat"]];
   return (
@@ -8589,6 +9001,10 @@ export default function App() {
     await saveConfig({ company: JSON.stringify(obj || {}) });
     if (session) setConfig(await fetchConfig());
   }, [session]);
+  const saveAI = useCallback(async (obj) => {
+    await saveConfig({ ai: JSON.stringify(obj || {}) });
+    if (session) setConfig(await fetchConfig());
+  }, [session]);
   const resolveResign = (r, decision) => {
     mutate((d) => ({ ...d, resignations: (d.resignations || []).map((x) => x.id === r.id ? { ...x, status: decision, resolvedAt: Date.now() } : x) }), { action: `${decision === "Approved" ? "approved" : "declined"} ${r.userName}'s resignation request`, module: "Team" });
     if (decision === "Approved") changeProfile(r.userId, { status: "resigned", active: false });
@@ -8792,7 +9208,7 @@ export default function App() {
     accountUser && canFinance ? `${accountUser} — account` :
     taskDetailId ? (detailTask ? detailTask.title : "Task") :
     NAV.find((n) => n[0] === safeRoute)?.[1] || "";
-  const myPending = db.tasks.filter((t) => t.status !== "Completed" && (isAdmin || taskAssignees(t).includes(currentUser))).length;
+  const myPending = db.tasks.filter((t) => t.status !== "Completed" && (isAdmin || isTaskAssignee(t, me))).length;
   const pendingLeave = isAdmin ? db.leave.filter((l) => l.status === "Pending").length : 0;
   const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
   const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
@@ -8809,7 +9225,8 @@ export default function App() {
         return (role === "staff" || role === "intern")
           ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
           : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
-      case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} removeItem={removeItem} />;
+      case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} />;
+      case "assistant": return <AllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
@@ -8821,7 +9238,7 @@ export default function App() {
       case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
       case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
       case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
-      case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} openTask={openTask} />;
+      case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} />;
       case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
       case "courses": return <Courses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
       case "class-students": return <ClassStudents db={db} openModal={openModal} removeItem={removeItem} mutate={mutate} currentUser={currentUser} config={config} saveClassWebhook={saveClassWebhook} isSuper={isSuper} />;
@@ -8850,7 +9267,7 @@ export default function App() {
       case "earnings": return <MyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} />;
       case "recently-deleted": return <RecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} />;
       case "audit": return <AuditLog db={db} />;
-      case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} />;
+      case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} saveAI={saveAI} />;
       default: return null;
     }
   };
@@ -8982,7 +9399,7 @@ export default function App() {
         {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
         {modal?.type === "expense" && <ShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
         {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
-        {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}
+        {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}
         {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
         {modal?.type === "project" && <ProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} />}
         {modal?.type === "inhouse" && <InHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} />}
