@@ -6223,10 +6223,13 @@ function ManageUserModal({ person, onClose }) {
         : ("Couldn't remove them: " + ((e && e.message) || "unknown error")));
       return;
     }
-    // 2. Best-effort: also delete their login via the edge function so the email
-    //    frees up too. If it isn't deployed, that's fine — they're already gone.
-    try { await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } }); } catch { /* function not deployed — profile already removed */ }
+    // 2. Delete their login via the edge function so the email frees up too.
+    //    Surface any failure instead of silently leaving an orphaned auth user
+    //    (an orphaned login is what makes a "deleted" email still report
+    //    "User already registered" on the signup screen).
+    const { error: delErr } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
     setBusy(false);
+    if (delErr) { setErr("Removed from the team, but their login couldn't be deleted, so the email stays reserved. Deploy or repair the admin-users function, then delete again."); return; }
     onClose();
   };
   return (
@@ -8966,7 +8969,8 @@ export default function App() {
         : ("Couldn't remove the client: " + ((e && e.message) || "unknown error")));
       return;
     }
-    try { await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } }); } catch { /* edge function optional — profile already removed */ }
+    const { error: delErr } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
+    if (delErr) { setSyncError("Client removed from the list, but their login couldn't be deleted, so the email stays reserved. Deploy or repair the admin-users function, then delete again."); return; }
     mutate((d) => d, { action: `deleted client account "${person.name}"`, module: "Clients" });
     if (session) await loadPeople(session.user);
   }, [session, loadPeople, mutate]);
