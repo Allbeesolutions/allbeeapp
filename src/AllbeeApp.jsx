@@ -921,7 +921,9 @@ const CSS = `
 .topbar h2 { font-size:15px; margin:0; font-weight:700; line-height:1.15; }
 .topbar-sub { font-size:11px; color:var(--muted); margin-top:0; }
 .company-pill { margin-left:auto; display:flex; align-items:center; gap:7px; background:var(--surface);
-  border:1px solid var(--border); padding:5px 11px; border-radius:9px; box-shadow:var(--shadow); }
+  border:1px solid var(--border); padding:5px 11px; border-radius:9px; box-shadow:var(--shadow); cursor:pointer; transition:.12s; }
+.company-pill:hover { background:var(--surface-2); }
+.company-pill:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
 .company-pill .lbl { font-size:11px; color:var(--muted); font-weight:600; }
 .company-pill .val { font-size:14px; font-weight:700; }
 .iconbtn { width:36px; height:36px; border-radius:9px; border:1px solid var(--border); background:var(--surface);
@@ -9359,7 +9361,9 @@ export default function App() {
               <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu"><Menu size={18} /></button>
               <div className="topbar-title"><h2>{routeTitle}</h2><div className="topbar-sub">ALLBEE Solutions · internal</div></div>
               {canFinance && (
-                <div className="company-pill" title="Company balance">
+                <div className="company-pill" role="button" tabIndex={0} aria-label="Open Share & accounts" title="Open Share & accounts"
+                  onClick={() => go("accounts")}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("accounts"); } }}>
                   <Wallet size={14} color="var(--muted)" />
                   <span className="lbl">Balance</span>
                   <span className="val mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</span>
