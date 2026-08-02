@@ -12,6 +12,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const url = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const APN_TABLES = ["apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_achievements", "apn_notifications", "apn_documents", "apn_timeline", "apn_warnings", "apn_notes", "apn_activity", "apn_transfer_history", "apn_communications"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -38,8 +39,8 @@ Deno.serve(async (req) => {
 
     const { userId } = body;
     const { data: target } = userId ? await admin.from("profiles").select("role").eq("id", userId).maybeSingle() : { data: null };
-    const targetIsApn = ["partner", "district_head"].includes(target?.role);
-    if (targetIsApn && callerRole !== "superadmin" && ["reset_password", "update_email", "delete"].includes(action)) {
+    const targetIsApn = ["partner", "district_head", "state_head"].includes(target?.role);
+    if (targetIsApn && callerRole !== "superadmin" && ["reset_password", "update_email", "delete", "permanent_delete"].includes(action)) {
       return json({ error: "Only a Super Admin may perform this APN account action." }, 403);
     }
 
@@ -59,6 +60,53 @@ Deno.serve(async (req) => {
       const { error: profileError } = await admin.from("profiles").update({ email }).eq("id", userId);
       if (profileError) return json({ error: profileError.message }, 400);
       return json({ ok: true });
+    }
+
+    if (action === "permanent_delete") {
+      if (callerRole !== "superadmin") return json({ error: "Only a Super Admin may permanently delete an APN account." }, 403);
+      if (!userId) return json({ error: "User id is required." }, 400);
+      if (userId === caller.id) return json({ error: "You can't delete your own account." }, 400);
+      if (target?.role === "superadmin") return json({ error: "Super Admin accounts can't be deleted." }, 403);
+
+      const { data: targetProfile } = await admin.from("profiles").select("photo_url").eq("id", userId).maybeSingle();
+
+      // APN data is JSON-backed. Resolve related rows first so deletion covers
+      // leads, quotations, commissions, notifications and history without
+      // relying on a fragile collection-specific query expression.
+      for (const table of APN_TABLES) {
+        const { data: rows, error: readError } = await admin.from(table).select("id,data");
+        if (readError && !/does not exist|schema cache|PGRST205/i.test(readError.message || "")) return json({ error: `Could not clean ${table}: ${readError.message}` }, 400);
+        const ids = (rows || []).filter((row) => {
+          const value = row?.data || {};
+          return row.id === userId || value.partnerId === userId || value.fromPartnerId === userId || value.userId === userId || value.createdById === userId || value.updatedById === userId || value.audience === `partner:${userId}`;
+        }).map((row) => row.id).filter(Boolean);
+        if (ids.length) {
+          const { error: deleteError } = await admin.from(table).delete().in("id", ids);
+          if (deleteError) return json({ error: `Could not clean ${table}: ${deleteError.message}` }, 400);
+        }
+      }
+
+      // Partner documents use a private bucket with the partner id as the
+      // first path segment. Remove those objects before removing the account.
+      const { data: objects } = await admin.storage.from("apn-private").list("", { limit: 1000, offset: 0 });
+      const partnerPrefix = `${String(userId)}/`;
+      const paths = (objects || []).filter((item) => item?.name && (item.name === String(userId) || item.name.startsWith(partnerPrefix))).map((item) => item.name);
+      if (paths.length) await admin.storage.from("apn-private").remove(paths);
+
+      // APN avatars currently use the shared attachment bucket. Remove the
+      // exact object when the profile stores its public URL.
+      const avatarUrl = String(targetProfile?.photo_url || "");
+      const marker = "/attachments/";
+      const markerIndex = avatarUrl.indexOf(marker);
+      if (markerIndex >= 0) {
+        const avatarPath = decodeURIComponent(avatarUrl.slice(markerIndex + marker.length).split("?")[0]);
+        if (avatarPath) await admin.storage.from("attachments").remove([avatarPath]);
+      }
+
+      await admin.from("profiles").delete().eq("id", userId);
+      const { error: authError } = await admin.auth.admin.deleteUser(String(userId));
+      if (authError && !/not found|does not exist/i.test(authError.message)) return json({ error: authError.message }, 400);
+      return json({ ok: true, permanentlyDeleted: true, reason: String(body.reason || "") });
     }
 
     if (action === "delete") {
