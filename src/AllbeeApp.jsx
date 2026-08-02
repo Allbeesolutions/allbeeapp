@@ -81,8 +81,8 @@ const INHOUSE_STAGES = ["Idea", "Planning", "Building", "Testing", "Launched", "
 const INHOUSE_CATEGORIES = ["Product", "Internal tool", "Marketing", "R&D", "Automation", "Other"];
 const ONLINE_MS = 2 * 60 * 1000; // a member is "online" if active within 2 minutes
 const isOnline = (p) => !!(p && p.last_active) && (Date.now() - new Date(p.last_active).getTime()) < ONLINE_MS;
-// "Inactive" = no activity for over a week. Uses last seen, falling back to the
-// join date so brand-new accounts get a grace period before they're flagged.
+// Internal team inactivity remains a one-week signal. APN partner inactivity
+// uses its separate 30-day rule below.
 const INACTIVE_WEEK_MS = 7 * 86400000;
 const lastSeenMs = (p) => { const t = p && (p.last_active || p.created_at); const ms = t ? new Date(t).getTime() : 0; return isNaN(ms) ? 0 : ms; };
 const isInactiveWeek = (p) => !!p && (Date.now() - lastSeenMs(p)) > INACTIVE_WEEK_MS;
@@ -213,7 +213,7 @@ const LOGO_ICON = "/allbee-icon.png";   // square monogram
    superadmin (Haji & Alim) · admin · accountant · staff · intern.
    The money (Share & accounts, Withdrawals) is superadmin + accountant only;
    a plain admin runs the team and business but never sees the partner split. */
-const ROLE_LABEL = { superadmin: "Super admin", admin: "Admin", accountant: "Accountant", staff: "Staff", intern: "Intern", partner: "APN Partner", district_head: "District Head" };
+const ROLE_LABEL = { superadmin: "Super admin", admin: "Admin", accountant: "Accountant", staff: "Staff", intern: "Intern", partner: "APN Partner", district_head: "District Head", state_head: "State Head" };
 const ROLE_OPTIONS = ["admin", "accountant", "staff", "intern"]; // an admin may assign these — never superadmin
 const STATUS_LABEL = { active: "Active", on_leave: "On leave", suspended: "Suspended", resigned: "Resigned", terminated: "Terminated" };
 const STATUS_OPTIONS = ["active", "on_leave", "suspended", "resigned", "terminated"];
@@ -291,16 +291,25 @@ function money(n, { sign = false } = {}) {
   if (sign) return "+" + core;
   return core;
 }
-function fmtDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  if (isNaN(d)) return iso;
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+function dateValue(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "number") return new Date(value);
+  const text = String(value);
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00` : text);
 }
-function fmtTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+function pad2(value) { return String(value).padStart(2, "0"); }
+function formatDateValue(value, withTime = false) {
+  const d = dateValue(value);
+  if (!d || Number.isNaN(d.getTime())) return value ? String(value) : "—";
+  const date = `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
+  if (!withTime) return date;
+  const hours = d.getHours();
+  const hour = hours % 12 || 12;
+  return `${date} ${pad2(hour)}:${pad2(d.getMinutes())} ${hours >= 12 ? "PM" : "AM"}`;
 }
+function fmtDate(iso) { return formatDateValue(iso); }
+function fmtTime(ts) { return formatDateValue(ts, true); }
 const sameMonth = (iso, ref = new Date()) => {
   const d = new Date(iso + "T00:00:00");
   return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
@@ -612,7 +621,7 @@ async function unlockPeriod(period) {
 }
 const periodOf = (iso) => (iso ? String(iso).slice(0, 7) : todayISO().slice(0, 7)); // 'YYYY-MM'
 const fmtPeriod = (p) => { const [y, m] = (p || "").split("-"); const d = new Date(Number(y), Number(m) - 1, 1); return isNaN(d) ? p : d.toLocaleDateString("en-IN", { month: "long", year: "numeric" }); };
-const fmtDateTime = (ts) => { const d = new Date(ts); return isNaN(d) ? "—" : d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true }); };
+const fmtDateTime = (ts) => formatDateValue(ts, true);
 // "5m ago" / "2h ago" / "3d ago" style relative time, for last-seen displays.
 function relTime(iso) {
   if (!iso) return "—";
@@ -1957,7 +1966,7 @@ function Birthdays({ team, windowDays = 30 }) {
     .sort((a, b) => a.days - b.days);
   if (upcoming.length === 0) return null;
   const rel = (n) => (n === 0 ? "Today 🎂" : n === 1 ? "Tomorrow" : `in ${n} days`);
-  const dayMonth = (dobISO) => { const d = new Date(dobISO + "T00:00:00"); return new Date(new Date().getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }); };
+  const dayMonth = (dobISO) => fmtDate(dobISO);
   return (
     <div className="card stat" style={{ marginBottom: 14 }}>
       <div className="lbl" style={{ fontWeight: 700, color: "var(--ink)" }}><CalendarDays size={14} /> Upcoming birthdays</div>
@@ -6190,8 +6199,18 @@ function ResignForm({ existing, onSave, onClose }) {
   );
 }
 
+function PortalRefreshButton({ onRefresh }) {
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    if (busy || !onRefresh) return;
+    setBusy(true);
+    try { await onRefresh(); } finally { setBusy(false); }
+  };
+  return <button className="iconbtn" title="Refresh" aria-label="Refresh current portal" disabled={busy} onClick={refresh}><RefreshCw size={17} className={busy ? "spin" : ""} /></button>;
+}
+
 /* ── Client portal: a separate, read-only surface for external clients ──── */
-function ClientPortal({ db, profile, signOut, isDark, config }) {
+function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
   const myId = profile?.id;
   const co = companyOf(config);
   const posts = [...db.portal_posts].filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -6208,6 +6227,7 @@ function ClientPortal({ db, profile, signOut, isDark, config }) {
         <img className="brand-logo" src={co.logoUrl || LOGO_ICON} alt={co.name || "ALLBEE"} style={{ height: 30 }} />
         <div><h2 style={{ fontSize: 16 }}>{co.name || "ALLBEE Solutions"}</h2><div className="topbar-sub">Client portal</div></div>
         <span className="spacer" style={{ flex: 1 }} />
+        <PortalRefreshButton onRefresh={reload} />
         <div className="userchip" onClick={signOut} style={{ cursor: "pointer" }}><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={26} /><span className="userchip-name">{profile?.name}</span><LogOut size={15} /></div>
       </header>
       <div className="content" style={{ maxWidth: 820, margin: "0 auto" }}>
@@ -7618,6 +7638,15 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
 const APN_ID_PREFIX = "APN-TN-";
 const apnPadId = (n) => APN_ID_PREFIX + String(n).padStart(4, "0");
 const apnLeadId = (n) => "APN-L-" + String(n).padStart(4, "0");
+const APN_RESERVED_NUMBERS = new Set([2, 3]);
+const APN_MIN_DYNAMIC_NUMBER = 6;
+function apnNumberOf(value) { return Number(String(value || "").replace(/\D/g, "")) || 0; }
+function nextAvailableApnNumber(rows = [], requested) {
+  const occupied = new Set((rows || []).map((row) => apnNumberOf(row.apnId)).filter(Boolean));
+  let number = Math.max(Number(requested) || 0, APN_MIN_DYNAMIC_NUMBER);
+  while (occupied.has(number) || APN_RESERVED_NUMBERS.has(number)) number += 1;
+  return number;
+}
 
 const TN_DISTRICTS = ["Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri", "Dindigul", "Erode", "Kallakurichi", "Kancheepuram", "Kanniyakumari", "Karur", "Krishnagiri", "Madurai", "Mayiladuthurai", "Nagapattinam", "Namakkal", "Nilgiris", "Perambalur", "Pudukkottai", "Ramanathapuram", "Ranipet", "Salem", "Sivaganga", "Tenkasi", "Thanjavur", "Theni", "Thoothukudi", "Tiruchirappalli", "Tirunelveli", "Tirupathur", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore", "Viluppuram", "Virudhunagar"];
 
@@ -7631,14 +7660,22 @@ const APN_LEVELS = [
   { key: 2, name: "Growth Partner", rate: 20, min: 50 },
   { key: 3, name: "Elite Partner", rate: 25, min: 100 },
 ];
-const APN_ADMIN_LEVELS = ["Trainee", "Partner", "Senior Partner", "District Head"];
+const APN_ADMIN_LEVELS = ["Trainee", "Partner", "Senior Partner", "District Head", "State Head"];
 const APN_ADMIN_STATUSES = ["pending", "active", "inactive", "suspended", "deleted"];
+const APN_PERCENT_MIN = 0;
+const APN_PERCENT_MAX = 100;
+function apnPercent(value, label) {
+  if (value === "" || value == null) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < APN_PERCENT_MIN || number > APN_PERCENT_MAX) throw new Error(`${label} must be between 0 and 100.`);
+  return number;
+}
 const APN_SUSPEND_REASONS = ["Spam", "Fake Leads", "Policy Violation", "Requested by Admin", "Other"];
 const APN_WARNING_TYPES = ["Poor Lead Quality", "Fake Information", "Customer Complaint", "Spam Behaviour", "Policy Violation", "Inactivity", "Other"];
 const APN_REACTIVATION_REASONS = ["Training Completed", "Investigation Closed", "Admin Decision", "Mistaken Suspension", "Other"];
 const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
 const apnStatusClass = (s) => s === "active" ? "status-active" : s === "pending" ? "status-on_leave" : s === "suspended" ? "status-terminated" : s === "inactive" ? "status-inactive" : s === "deleted" ? "status-deleted" : "status-on_leave";
-const apnAdminLevel = (u, stats) => u?.level || (u?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
+const apnAdminLevel = (u, stats) => u?.level || (u?.role === "state_head" ? "State Head" : u?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
 const apnTargetFor = (db, pid, resetAt = 0) => [...(db.apn_targets || [])]
   .filter((t) => t.partnerId === pid && (t.createdAt || 0) > (resetAt || 0))
   .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
@@ -7949,11 +7986,7 @@ function apnBuildCommissions(d, lead) {
 async function ensureApnProfile(user, existingRows) {
   if ((existingRows || []).some((u) => u.id === user.id)) return false;
   const meta = user.user_metadata?.apn || {};
-  let n = await nextApnNumber();
-  if (n == null) {
-    const nums = (existingRows || []).map((u) => Number(String(u.apnId || "").replace(/\D/g, "")) || 0);
-    n = (nums.length ? Math.max(...nums) : 0) + 1;
-  }
+  const n = nextAvailableApnNumber(existingRows, await nextApnNumber());
   const row = {
     id: user.id, apnId: apnPadId(n),
     name: meta.name || user.user_metadata?.name || (user.email ? user.email.split("@")[0] : "Partner"),
@@ -7999,7 +8032,7 @@ function APNCheckIn({ db, pid, mutate }) {
       ...d,
       apn_attendance: [...(d.apn_attendance || []), { id: uid(), partnerId: pid, date: todayISO(), at: Date.now() }],
       apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, lastCheckIn: Date.now() } : u),
-    }), null);
+    }), { action: "checked in for APN attendance", module: "APN", entity: "APN Attendance", entityId: todayISO(), partnerId: pid });
     setStep("idle"); setWord("");
   };
   return (
@@ -8319,7 +8352,7 @@ function APNTraining({ db, meRow, pid, mutate }) {
   const unlocked = apnUnlocked(meRow);
   const articles = (db.apn_training || []).filter((t) => t.category === cat).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const catQuiz = (db.apn_quizzes || []).find((q) => q.category === cat);
-  const passQuiz = (score) => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, unlocked: { ...(u.unlocked || {}), [cat]: true }, quizPasses: { ...(u.quizPasses || {}), [cat]: score } } : u) }), null);
+  const passQuiz = (score) => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, unlocked: { ...(u.unlocked || {}), [cat]: true }, quizPasses: { ...(u.quizPasses || {}), [cat]: score }, quizCompletedAt: Date.now() } : u) }), { action: `completed APN ${APN_SERVICE_LABEL[cat] || cat} quiz`, module: "APN", entity: "APN Quiz", entityId: cat, partnerId: pid, metadata: { score } });
   return (
     <div>
       <div className="apn-section-h">Training</div>
@@ -8394,7 +8427,7 @@ function APNNotifications({ db, meRow, pid, mutate }) {
   const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   React.useEffect(() => {
     const unread = list.filter((n) => !(meRow.notifReads || []).includes(n.id)).map((n) => n.id);
-    if (unread.length) mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, notifReads: [...(u.notifReads || []), ...unread] } : u) }), null);
+    if (unread.length) mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, notifReads: [...(u.notifReads || []), ...unread] } : u) }), { action: "read APN notifications", module: "APN", entity: "APN Notification", entityId: unread[0], partnerId: pid, metadata: { notificationIds: unread } });
   }, []); // eslint-disable-line
   return (
     <div>
@@ -8548,7 +8581,11 @@ function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut
       const { error: profileError } = await supabase.from("profiles").update({ name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || null, photo_url: f.photoUrl || null }).eq("id", meRow.id);
       if (profileError) throw new Error(profileError.message);
       const at = Date.now();
-      mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === meRow.id ? { ...u, name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || "", address: f.address.trim(), district: f.district.trim(), taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(), college: f.college.trim(), profilePicture: f.photoUrl || "", updatedAt: at } : u) }), { action: "updated own APN profile", module: "APN", partnerId: meRow.id });
+      const nextProfile = { name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || "", address: f.address.trim(), district: f.district.trim(), taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(), college: f.college.trim(), profilePicture: f.photoUrl || "" };
+      const previousProfile = { name: meRow.name || "", username: meRow.username || profile?.username || "", email: previousEmail, mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "", address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", profilePicture: apnAvatarUrl(meRow, profile) };
+      const changedFields = Object.keys(nextProfile).filter((key) => String(previousProfile[key] ?? "") !== String(nextProfile[key] ?? ""));
+      const profileAction = changedFields.includes("profilePicture") ? (nextProfile.profilePicture ? "changed APN profile picture" : "removed APN profile picture") : "updated own APN profile";
+      mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === meRow.id ? { ...u, ...nextProfile, updatedAt: at } : u) }), { action: profileAction, module: "APN", partnerId: meRow.id, previousValue: previousProfile, newValue: nextProfile, metadata: { changedFields } });
       setSaved(true);
     } catch (error) { setErr(error.message || "Couldn't save your profile."); }
     finally { setBusy(false); }
@@ -8625,7 +8662,7 @@ function APNSearch({ db, meRow, pid, go, onClose }) {
 }
 
 /* ── portal shell ────────────────────────────────────────────────────── */
-function APNPortal({ db, profile, session, signOut, isDark, mutate }) {
+function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const pid = profile.id;
   const meRow = apnMe(db, pid);
   const [tab, setTab] = useState("home");
@@ -8692,7 +8729,8 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate }) {
       <style>{CSS}</style>
       <header className="apn-top">
         <img className="brand-logo" src={LOGO_ICON} alt="APN" />
-        <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{meRow.apnId} · {meRow.district || "Tamil Nadu"}</div></div>
+        <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{meRow.apnId} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
+        <PortalRefreshButton onRefresh={reload} />
         <button className="iconbtn" style={{ width: 34, height: 34 }} onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
         <button className="iconbtn" style={{ width: 34, height: 34, position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unreadNotif}</span>}</button>
       </header>
@@ -8724,8 +8762,8 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate }) {
       )}
 
       {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
-      {modal?.type === "apnLead" && <APNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), null)} onClose={() => setModal(null)} />}
-      {modal?.type === "apnQuote" && <APNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), null)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnLead" && <APNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} />}
+      {modal?.type === "apnQuote" && <APNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -8734,7 +8772,16 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate }) {
    APN ADMIN (internal) — run by Haji / Alim / admins. Approvals, District Head
    appointment and reactivation are partner-only (superadmin) actions.
 ══════════════════════════════════════════════════════════════════════ */
-const apnNotify = (n) => ({ id: uid(), title: n.title || "", body: n.body || "", audience: n.audience || "all", level: n.level || "General", reads: [], createdAt: Date.now() });
+const APN_APPROVERS = [
+  { name: "Syed Hasan Kuddos Sahib", designation: "Co-Founder & CFO" },
+  { name: "Mohamed Backer Alim Sahib", designation: "Founder & CEO" },
+];
+const apnApproverFor = (actor) => /syed|haji/i.test(String(actor || "")) ? APN_APPROVERS[0] : APN_APPROVERS[1];
+const apnApprovalNotification = (partner, actor) => {
+  const approvedBy = apnApproverFor(actor);
+  return { title: "Welcome to APN 🎉", body: `Your partner account has been approved.\n\nApproved by\n${approvedBy.name}\n${approvedBy.designation}`, approvedBy, partnerId: partner.id, audience: `partner:${partner.id}` };
+};
+const apnNotify = (n) => ({ id: uid(), title: n.title || "", body: n.body || "", audience: n.audience || "all", level: n.level || "General", reads: [], createdAt: Date.now(), ...(n.approvedBy ? { approvedBy: n.approvedBy } : {}), ...(n.partnerId ? { partnerId: n.partnerId } : {}), ...(n.metadata ? { metadata: n.metadata } : {}) });
 
 /* ── admin forms ─────────────────────────────────────────────────────── */
 function APNRejectForm({ partner, onSave, onClose }) {
@@ -9092,6 +9139,17 @@ function APNPartnerCommunications({ rows, onAdd, isSuper }) {
   return <div className="apn-profile-section"><div className="apn-section-head"><h4>Communication log</h4><span className="spacer" />{isSuper && <button className="btn sm" onClick={onAdd}><Plus size={13} />Log communication</button>}</div>{rows.length ? rows.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map((x) => <div className="apn-activity-row" key={x.id}><div><b>{x.type || "Communication"} · {x.subject || "No subject"}</b><div className="hint-line">{x.sender || "—"} → {x.receiver || "Partner"} · {x.status || "Logged"}</div></div><div className="apn-activity-meta">{fmtDateTime(x.createdAt)}</div></div>) : <div className="hint-line">No communication history recorded.</div>}</div>;
 }
 
+function APNPartnerProfileShell({ fullPage, title, onClose, onSave, onOpenFullPage, children }) {
+  if (!fullPage) return <Modal title={title} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Close</button>{onOpenFullPage && <button className="btn" onClick={onOpenFullPage}>Open full page</button>}{onSave && <button className="btn primary" onClick={onSave}><Check size={15} />Save changes</button>}</>}>{children}</Modal>;
+  return <div className="content" style={{ maxWidth: 1120, margin: "0 auto", paddingBottom: 40 }}>
+    <div className="page-head" style={{ position: "sticky", top: 0, zIndex: 4, background: "var(--bg)", paddingTop: 12, paddingBottom: 12 }}>
+      <button className="backlink" onClick={onClose}><ArrowLeft size={15} />Back to Partners</button><h3 style={{ margin: 0 }}>{title}</h3><span className="spacer" />
+      <button className="btn" onClick={onClose}>Close</button>{onSave && <button className="btn primary" onClick={onSave}><Check size={15} />Save changes</button>}
+    </div>
+    {children}
+  </div>;
+}
+
 function APNTagForm({ partner, onSave, onClose }) {
   const [tags, setTags] = useState(partner.tags || []);
   const toggle = (tag) => setTags((prev) => prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]);
@@ -9112,7 +9170,7 @@ function APNActionMenu({ partner, isSuper, onAction }) {
   const [open, setOpen] = useState(false);
   const options = [
     ["Edit Profile", true], ["View Timeline", true], ["View Activity", true],
-    ["Reset Password", isSuper], ["Send Notification", isSuper], ["Generate Report", isSuper], ["Promote", isSuper && partner.role !== "district_head"], ["Demote", isSuper && partner.role === "district_head"],
+    ["Reset Password", isSuper], ["Send Notification", isSuper], ["Generate Report", isSuper], ["Promote", isSuper && partner.role !== "state_head"], ["Demote", isSuper && (partner.role === "district_head" || partner.role === "state_head")],
     ["Transfer District", isSuper], ["Reset Quiz", isSuper], ["Reset Training", isSuper], ["Reset Attendance", isSuper], ["Reset Target", isSuper],
     ["Suspend", isSuper && !["suspended", "deleted"].includes(apnEffectiveStatus(partner))], ["Deactivate", isSuper && apnEffectiveStatus(partner) === "active"],
     ["Reactivate", isSuper && ["inactive", "suspended"].includes(apnEffectiveStatus(partner))], ["Delete Partner", isSuper && partner.status !== "deleted"],
@@ -9124,7 +9182,7 @@ function APNActionMenu({ partner, isSuper, onAction }) {
   </div>;
 }
 
-function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose }) {
+function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose, onOpenFullPage }) {
   const stats = apnPartnerStats(db, partner.id);
   const target = apnTargetFor(db, partner.id, partner.targetResetAt);
   const profile = people.find((x) => x.id === partner.id);
@@ -9175,11 +9233,12 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
     if (!f.district) { setErr("Choose a district."); return; }
     if (f.status === "suspended" && partner.status !== "suspended") { setErr("Use the Suspend action so a reason and suspension audit record are captured."); return; }
     if (partner.status === "suspended" && f.status === "active") { setErr("Use the Reactivate action to restore login access and record the change."); return; }
+    try { apnPercent(f.commissionPct, "Commission %"); apnPercent(f.attendanceScore, "Attendance score"); } catch (e) { setErr(e.message); return; }
     onSave({
       ...partner, ...f, name: f.name.trim(), username: f.username.trim().toLowerCase(), email: f.email.trim().toLowerCase(),
       mobile: f.mobile.trim(), alternateNumber: f.alternateNumber.trim(), target: Number(f.target) || 0,
-      commissionPct: Number(f.commissionPct) || 0, attendanceScore: f.attendanceScore === "" ? null : Number(f.attendanceScore) || 0,
-      updatedAt: Date.now(), role: f.level === "District Head" ? "district_head" : (partner.role === "district_head" && f.level !== "District Head" ? "partner" : partner.role),
+      commissionPct: apnPercent(f.commissionPct, "Commission %") ?? 0, attendanceScore: apnPercent(f.attendanceScore, "Attendance score"),
+      updatedAt: Date.now(), role: f.level === "State Head" ? "state_head" : f.level === "District Head" ? "district_head" : (["district_head", "state_head"].includes(partner.role) && !["District Head", "State Head"].includes(f.level) ? "partner" : partner.role),
     });
   };
   const actions = canEdit
@@ -9211,13 +9270,12 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
     onAction(action, partner);
   };
   return (
-    <Modal title={`Partner profile · ${partner.name}`} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Close</button>{canEdit && <button className="btn primary" onClick={save}><Check size={15} />Save changes</button>}</>}>
+    <APNPartnerProfileShell fullPage={fullPage} title={`Partner profile · ${partner.name}`} onClose={onClose} onSave={canEdit ? save : null} onOpenFullPage={!fullPage ? onOpenFullPage : null}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <Avatar name={partner.name} url={apnAvatarUrl(partner, profile)} size={42} fontSize={17} />
         <div style={{ flex: 1 }}><div style={{ fontSize: 18, fontWeight: 800 }}>{partner.name}</div><div className="hint-line">{partner.apnId} · {partner.email || "No email"}</div></div>
         <span className={"status-pill " + apnStatusClass(apnEffectiveStatus(partner))}>{apnStatusLabel(apnEffectiveStatus(partner))}</span>
-        {partner.role === "district_head" && <span className="badge pri">District Head</span>}
+        {(["district_head", "state_head"].includes(partner.role) || ["District Head", "State Head"].includes(partner.level)) && <span className="badge pri">{apnAdminLevel(partner, stats)}</span>}
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>{(partner.tags || []).map((tag) => <span className="apn-tag" key={tag}>{tag}</span>)}{isSuper && <button className="btn sm" onClick={() => onTags(partner)}><Tag size={13} />Manage tags</button>}</div>
       <APNPartnerDashboard summary={summary} health={health} />
@@ -9288,7 +9346,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
         ...(db.apn_commissions || []).filter((x) => x.partnerId === partner.id).map((x) => ({ ts: x.createdAt, text: `Commission ${x.status || "recorded"} · ${money(x.amount)}` })),
       ].filter((x) => x.ts).sort((a, b) => b.ts - a.ts).slice(0, 8).map((x, i) => <div key={i} className="apn-profile-kv"><span>{fmtDateTime(x.ts)}</span><span>{x.text}</span></div>)}{!(db.apn_leads || []).some((x) => x.partnerId === partner.id) && !(db.apn_quotations || []).some((x) => x.partnerId === partner.id) && !(db.apn_commissions || []).some((x) => x.partnerId === partner.id) && <div className="hint-line">No activity recorded yet.</div>}</div>
       <div ref={activityRef}>{showAllActivity ? <APNPartnerActivity rows={activityRows} /> : <button className="btn" style={{ width: "100%" }} onClick={() => { pendingActivityScrollRef.current = true; setShowAllActivity(true); }}><Activity size={14} />View complete activity history</button>}</div>
-    </Modal>
+    </APNPartnerProfileShell>
   );
 }
 
@@ -9298,7 +9356,7 @@ function APNAdminPartners({ db, people = [], isSuper, act, openModal, onOpenProf
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(() => new Set());
   const users = (db.apn_users || []).filter((u) => view === "archived" ? u.status === "deleted" : u.status !== "deleted");
-  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => apnEffectiveStatus(u) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head" || u.level === "District Head").length };
+  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => apnEffectiveStatus(u) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head" || u.level === "District Head").length, stateHeads: users.filter((u) => u.role === "state_head" || u.level === "State Head").length };
   const query = q.trim().toLowerCase();
   const relatedIndex = useMemo(() => {
     const map = new Map(); const add = (pid, ...values) => { if (!pid) return; const next = map.get(pid) || []; next.push(...values.flat().filter(Boolean)); map.set(pid, next); };
@@ -9313,7 +9371,7 @@ function APNAdminPartners({ db, people = [], isSuper, act, openModal, onOpenProf
   const matches = (u) => !query || searchIndex.get(u.id)?.includes(query);
   const filtered = users.filter((u) => {
     const status = apnEffectiveStatus(u);
-    const filterMatch = ["all", "archived"].includes(view) ? true : view === "heads" ? u.role === "district_head" || u.level === "District Head" : status === view;
+    const filterMatch = ["all", "archived"].includes(view) ? true : view === "heads" ? u.role === "district_head" || u.level === "District Head" : view === "state_heads" ? u.role === "state_head" || u.level === "State Head" : status === view;
     return filterMatch && matches(u);
   }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const pageSize = 50;
@@ -9331,9 +9389,10 @@ function APNAdminPartners({ db, people = [], isSuper, act, openModal, onOpenProf
         <div className="card"><div className="k"><Check size={14} color="var(--pos)" /> Active</div><div className="v mono">{counts.active}</div></div>
         <div className="card"><div className="k"><XCircle size={14} /> Inactive</div><div className="v mono">{counts.inactive}</div></div>
         <div className="card"><div className="k"><ShieldCheck size={14} /> District heads</div><div className="v mono">{counts.heads}</div></div>
+        <div className="card"><div className="k"><ShieldCheck size={14} /> State heads</div><div className="v mono">{counts.stateHeads}</div></div>
       </div>
       <div className="toolbar"><div className="search" style={{ flex: 1, maxWidth: 560 }}><Search size={16} color="var(--muted)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, username, APN ID, phone, email, tags, timeline, warnings, notes, documents…" /></div></div>
-      <div className="apn-seg-scroll">{[["all", "All"], ["active", "Active"], ["pending", "Pending"], ["inactive", "Inactive"], ["heads", "District Heads"], ...(isSuper ? [["archived", "Archived Partners"]] : [])].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => changeView(k)}>{l}</button>)}</div>
+      <div className="apn-seg-scroll">{[["all", "All"], ["active", "Active"], ["pending", "Pending"], ["inactive", "Inactive"], ["heads", "District Heads"], ["state_heads", "State Heads"], ...(isSuper ? [["archived", "Archived Partners"]] : [])].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => changeView(k)}>{l}</button>)}</div>
       {selectedPartners.length > 0 && <div className="toolbar" style={{ marginTop: 0 }}><span className="hint-line">{selectedPartners.length} selected</span><span className="spacer" /><select className="select" style={{ width: "auto" }} defaultValue="" onChange={(e) => { if (e.target.value) { act.bulk(e.target.value, selectedPartners); e.target.value = ""; } }}><option value="">Bulk actions…</option><option>Activate</option><option>Deactivate</option><option>Suspend</option><option>Transfer District</option><option>Assign District Head</option><option>Export</option><option>Delete</option><option>Send Notification</option></select><button className="btn sm" onClick={() => setSelected(new Set())}>Clear</button></div>}
       <div className="card">
         {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No partners here" text="Applications and partners show up in these tabs." action={isSuper ? <button className="btn primary" onClick={() => openModal({ type: "apnCreatePartner" })}><Plus size={16} />Add partner</button> : undefined} />
@@ -9342,7 +9401,7 @@ function APNAdminPartners({ db, people = [], isSuper, act, openModal, onOpenProf
             <tbody>{list.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); return (
               <tr key={p.id} className="apn-admin-row" tabIndex={0} role="button" aria-label={`Open partner profile for ${p.name}`} onClick={() => onOpenProfile(p)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenProfile(p); } }}>
                 <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} aria-label={`Select ${p.name}`} /></td>
-                <td><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={p.name} url={apnAvatarUrl(p, people.find((x) => x.id === p.id))} size={28} /><div><div style={{ fontWeight: 600 }}>{p.name}{p.role === "district_head" && <span className="badge pri" style={{ marginLeft: 6 }}>Head</span>}</div><div className="hint-line" style={{ fontSize: 11 }}>{p.apnId} · {p.mobile || "—"}{p.reactivationRequested || p.reactivationRecommended ? " · ⟳ reactivation requested" : ""}</div>{p.tags?.slice(0, 2).map((tag) => <span className="apn-tag" style={{ margin: "3px 3px 0 0" }} key={tag}>{tag}</span>)}</div></div>{view === "archived" && <div className="hint-line" style={{ fontSize: 11 }}>Deleted by {p.deletedBy || "—"} · {p.deletedAt ? fmtDateTime(p.deletedAt) : "—"} · {p.deleteReason || p.archiveReason || "No reason recorded"}</div>}</td>
+                <td><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={p.name} url={apnAvatarUrl(p, people.find((x) => x.id === p.id))} size={28} /><div><div style={{ fontWeight: 600 }}>{p.name}{(["district_head", "state_head"].includes(p.role) || ["District Head", "State Head"].includes(p.level)) && <span className="badge pri" style={{ marginLeft: 6 }}>{apnAdminLevel(p, s)}</span>}</div><div className="hint-line" style={{ fontSize: 11 }}>{p.apnId} · {p.mobile || "—"}{p.reactivationRequested || p.reactivationRecommended ? " · ⟳ reactivation requested" : ""}</div>{p.tags?.slice(0, 2).map((tag) => <span className="apn-tag" style={{ margin: "3px 3px 0 0" }} key={tag}>{tag}</span>)}</div></div>{view === "archived" && <div className="hint-line" style={{ fontSize: 11 }}>Deleted by {p.deletedBy || "—"} · {p.deletedAt ? fmtDateTime(p.deletedAt) : "—"} · {p.deleteReason || p.archiveReason || "No reason recorded"}</div>}</td>
                 <td>{p.district || "—"}<div className="hint-line" style={{ fontSize: 11 }}>{p.taluk || ""}</div></td>
                 <td><span className="tag">{apnAdminLevel(p, s)}</span><div className="hint-line" style={{ fontSize: 11 }}>{money(s.revenue)} · {s.completed} done</div></td>
                 <td><span className={"status-pill " + apnStatusClass(eff)}>{apnStatusLabel(eff)}</span>{(p.suspensionReason || p.suspendedAt) && eff === "suspended" && <div className="hint-line" style={{ fontSize: 11 }}>{p.suspensionReason || "Suspended"}</div>}</td>
@@ -9515,8 +9574,7 @@ function APNCreatePartnerForm({ db, mutate, currentUser, onClose }) {
       // 3) make the profile a partner (so they land in the APN portal) and approved
       await supabase.from("profiles").update({ role: "partner", approved: true }).eq("id", newId);
       // 4) assign the next APN id
-      let n = await nextApnNumber();
-      if (n == null) { const nums = (db.apn_users || []).map((u) => Number(String(u.apnId || "").replace(/\D/g, "")) || 0); n = (nums.length ? Math.max(...nums) : 0) + 1; }
+      const n = nextAvailableApnNumber(db.apn_users || [], await nextApnNumber());
       const row = {
         id: newId, apnId: apnPadId(n), name: f.name.trim(), mobile: f.mobile.trim(), email: f.email.trim(), dob: "",
         district: f.district, taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(),
@@ -9607,6 +9665,8 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
   };
   const saveProfileNow = async (partner, next) => {
     if (!isSuper) return;
+    apnPercent(next.commissionPct, "Commission %");
+    apnPercent(next.attendanceScore, "Attendance score");
     const changes = [];
     const labels = { name: "Changed Name", username: "Changed Username", email: "Changed Email", mobile: "Changed Mobile Number", district: "Changed District", level: "Changed Level", status: "Changed Status", target: "Changed Target", commissionPct: "Changed Commission", attendanceScore: "Changed Attendance", notes: "Changed Notes" };
     for (const [key, label] of Object.entries(labels)) if (String(partner[key] ?? "") !== String(next[key] ?? "")) changes.push(label);
@@ -9645,7 +9705,14 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
         const at = Date.now();
         return mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "active", reactivatedAt: at, reactivatedBy: currentUser, reactivationReason: item.reason, reactivationRequested: null, reactivationRecommended: null, updatedAt: at } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "Account reactivated", body: "Your APN account is active again. Remember to check in daily.", audience: "partner:" + p.id })] }), M(`reactivated APN partner "${p.name}" · ${item.reason}`, p.id), timeline(p, "reactivated", "Reactivated", item.reason));
       }
-      if (item.kind === "promote" || item.kind === "demote") { const at = Date.now(); return mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, role: item.kind === "promote" ? "district_head" : "partner", level: item.kind === "promote" ? "District Head" : "Senior Partner", ...(item.kind === "promote" ? { promotedAt: at, promotedBy: currentUser } : { demotedAt: at, demotedBy: currentUser }), updatedAt: at } : u) }), M(`${item.kind === "promote" ? "promoted" : "demoted"} APN partner "${p.name}"`, p.id), timeline(p, item.kind, item.kind === "promote" ? "Promoted" : "Demoted", "Partner hierarchy was changed.", at)); }
+      if (item.kind === "promote" || item.kind === "demote") {
+        const at = Date.now();
+        const promoting = item.kind === "promote";
+        const toState = promoting && (p.role === "district_head" || p.level === "District Head");
+        const targetLevel = promoting ? (toState ? "State Head" : "District Head") : (p.role === "state_head" || p.level === "State Head" ? "District Head" : "Senior Partner");
+        const targetRole = targetLevel === "State Head" ? "state_head" : targetLevel === "District Head" ? "district_head" : "partner";
+        return mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, role: targetRole, level: targetLevel, ...(promoting ? { promotedAt: at, promotedBy: currentUser } : { demotedAt: at, demotedBy: currentUser }), updatedAt: at } : u) }), M(`${promoting ? "promoted" : "demoted"} APN partner "${p.name}" to ${targetLevel}`, p.id), timeline(p, item.kind, promoting ? "Promoted" : "Demoted", `Partner hierarchy changed to ${targetLevel}.`, at));
+      }
       if (item.kind === "resetQuiz") return mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, quizPasses: {}, unlocked: {}, updatedAt: Date.now() } : u) }), M(`reset quiz status for APN partner "${p.name}"`, p.id));
       if (item.kind === "resetTraining") return mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, unlocked: {}, updatedAt: Date.now() } : u) }), M(`reset training status for APN partner "${p.name}"`, p.id));
       if (item.kind === "resetAttendance") return mutateApn((d) => ({ ...d, apn_attendance: (d.apn_attendance || []).filter((a) => a.partnerId !== p.id), apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, attendanceScore: null, attendanceResetAt: Date.now(), updatedAt: Date.now() } : u) }), M(`reset attendance for APN partner "${p.name}"`, p.id));
@@ -9671,7 +9738,7 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
   };
 
   const act = {
-    approve: (p) => mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "active", approvedAt: Date.now(), approvedBy: currentUser } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "Welcome to APN 🎉", body: "Your partner account is approved. Complete training, pass a quiz, and start submitting leads.", audience: "partner:" + p.id })] }), M(`approved APN partner "${p.name}"`, p.id), timeline(p, "approved", "Approved by Super Admin", "The APN application was approved.")),
+    approve: (p) => mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "active", approvedAt: Date.now(), approvedBy: currentUser } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify(apnApprovalNotification(p, currentUser))] }), M(`approved APN partner "${p.name}"`, p.id), timeline(p, "approved", "Approved by Super Admin", "The APN application was approved.")),
     reject: (p, reason) => mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "rejected", rejectReason: reason } : u) }), M(`rejected APN application "${p.name}"`, p.id)),
     deactivate: (p) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "inactive" } : u) }), M(`deactivated APN partner "${p.name}"`)),
     reactivate: (p) => mutate((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "active", reactivatedAt: Date.now(), reactivationRequested: null, reactivationRecommended: null } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "Account reactivated", body: "Your APN account is active again. Remember to check in daily.", audience: "partner:" + p.id })] }), M(`reactivated APN partner "${p.name}"`)),
@@ -9679,17 +9746,21 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
     bulk: (action, selectedPartners) => setModal({ type: "apnBulk", action, partners: selectedPartners }),
     run: runAction,
   };
-  const saveLead = (lead) => mutate((d) => {
+  const saveLead = (lead) => {
+    const previous = (db.apn_leads || []).find((x) => x.id === lead.id) || null;
+    const action = previous?.status !== lead.status && lead.status ? `marked APN lead ${lead.status.toLowerCase()}` : `updated APN lead "${lead.clientName}"`;
+    return mutate((d) => {
     let next = { ...d, apn_leads: (d.apn_leads || []).map((x) => x.id === lead.id ? lead : x) };
     const hasComm = (d.apn_commissions || []).some((c) => c.leadId === lead.id);
     if (lead.status === "Converted" && lead.paymentReceived && lead.projectCompleted && !hasComm) next.apn_commissions = [...(d.apn_commissions || []), ...apnBuildCommissions(next, lead)];
     return next;
-  }, M(`updated APN lead "${lead.clientName}" → ${lead.status}`));
+    }, { ...M(action, lead.partnerId, previous, lead), entity: "APN Lead", entityId: lead.id, metadata: { status: lead.status } });
+  };
   const setCommStatus = (c, status) => mutate((d) => {
     let next = { ...d, apn_commissions: d.apn_commissions.map((x) => x.id === c.id ? { ...x, status, ...(status === "Approved" ? { approvedAt: Date.now() } : {}), ...(status === "Paid" ? { paidAt: Date.now() } : {}) } : x) };
     if (status === "Approved" && c.kind !== "district") next.apn_notifications = [...(d.apn_notifications || []), apnNotify({ title: "Commission approved ✅", body: `${money(c.amount)} for ${c.project} is approved and added to your wallet.`, audience: "partner:" + c.partnerId, level: "Important" })];
     return next;
-  }, M(`set APN commission for ${c.project} → ${status}`));
+  }, { ...M(`${status === "Paid" ? "paid" : status === "Approved" ? "approved" : "updated"} APN commission for ${c.project}`, c.partnerId, c.status, status), entity: "APN Commission", entityId: c.id });
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" })] }), M(`assigned APN target "${t.title}"`));
   const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));
   const sendNotif = (n) => mutate((d) => ({ ...d, apn_notifications: [...(d.apn_notifications || []), n] }), M(`sent APN notification "${n.title}"`));
@@ -9830,7 +9901,7 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
       {tab === "board" && <APNAdminLeaderboard db={db} />}
 
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={(reason) => act.reject(modal.partner, reason)} onClose={() => setModal(null)} />}
-      {modal?.type === "apnPartnerProfile" && <APNPartnerProfile partner={modal.partner} db={db} people={people} isSuper={isSuper} initialSection={modal.section} onSave={(next) => { setModal(null); setPendingAction({ kind: "saveProfile", partner: modal.partner, next }); }} onAction={runAction} onWarning={(p) => setModal({ type: "apnWarning", partner: p })} onResolveWarning={(warning) => resolveWarning(modal.partner, warning)} onDeleteWarning={(warning) => setPendingAction({ kind: "deleteWarning", partner: modal.partner, warning })} onNote={(p) => setModal({ type: "apnNote", partner: p })} onEditNote={(note) => setModal({ type: "apnNote", partner: modal.partner, initial: note })} onTags={(p) => setModal({ type: "apnTags", partner: p })} onDocuments={(p) => setModal({ type: "apnDocument", partner: p })} onDocumentDownload={downloadPartnerDocument} onCommunication={(p) => setModal({ type: "apnCommunication", partner: p })} onExport={(p) => exportApnPartnerReport(p)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnPartnerProfile" && <APNPartnerProfile fullPage={!!modal.fullPage} partner={modal.partner} db={db} people={people} isSuper={isSuper} initialSection={modal.section} onSave={(next) => { setModal(null); setPendingAction({ kind: "saveProfile", partner: modal.partner, next }); }} onAction={runAction} onWarning={(p) => setModal({ type: "apnWarning", partner: p })} onResolveWarning={(warning) => resolveWarning(modal.partner, warning)} onDeleteWarning={(warning) => setPendingAction({ kind: "deleteWarning", partner: modal.partner, warning })} onNote={(p) => setModal({ type: "apnNote", partner: p })} onEditNote={(note) => setModal({ type: "apnNote", partner: modal.partner, initial: note })} onTags={(p) => setModal({ type: "apnTags", partner: p })} onDocuments={(p) => setModal({ type: "apnDocument", partner: p })} onDocumentDownload={downloadPartnerDocument} onCommunication={(p) => setModal({ type: "apnCommunication", partner: p })} onExport={(p) => exportApnPartnerReport(p)} onOpenFullPage={() => setModal((current) => ({ ...current, fullPage: true }))} onClose={() => setModal(null)} />}
       {modal?.type === "apnResetPassword" && <APNResetPasswordForm partner={modal.partner} onClose={() => setModal(null)} onSave={(password) => withActionError(async () => { const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "reset_password", userId: modal.partner.id, password } }); if (error) throw new Error(error.message); if (data?.error) throw new Error(data.error); mutate((d) => d, M(`reset password for APN partner "${modal.partner.name}"`, modal.partner.id)); setModal(null); })} />}
       {modal?.type === "apnSuspend" && <APNSuspendForm partner={modal.partner} onClose={() => setModal(null)} onSave={({ reason, notes }) => { const p = modal.partner; setModal(null); withActionError(async () => { const at = Date.now(); await updateProfileStatus(p, false, "suspended"); mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "suspended", suspensionReason: reason, suspensionNotes: notes, suspendedBy: currentUser, suspendedAt: at, updatedAt: at } : u) }), M(`suspended APN partner "${p.name}" · ${reason}`, p.id), timeline(p, "suspended", "Suspended", notes ? `${reason}: ${notes}` : reason, at)); }); }} />}
       {modal?.type === "apnReactivate" && <APNReactivateForm partner={modal.partner} onClose={() => setModal(null)} onSave={(reason) => { const p = modal.partner; setModal(null); setPendingAction({ kind: "reactivate", partner: p, reason }); }} />}
@@ -10376,13 +10447,13 @@ export default function App() {
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <Loading note="Loading your portal…" />;
-    return <ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} />;
+    return <ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} />;
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
   if (role === "partner") {
     if (loading || !db) return <Loading note="Loading APN…" />;
-    return <APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} />;
+    return <APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} reload={reload} />;
   }
   // first login: require the core profile details before anything else
   if (profile && (!profile.mobile || !profile.dob))
