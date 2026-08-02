@@ -131,6 +131,81 @@ const MODULE_LABEL = {
   testing: "Testing",
   class_students: "Class students",
 };
+const ACTIVITY_MODULES = ["Tasks", "Finance", "APN", "Clients", "Leads", "Quotations", "Invoices", "Attendance", "Documents", "Knowledge Base", "AI", "Settings", "System"];
+const ACTIVITY_MODULE_ALIASES = {
+  Accounts: "Finance", Withdrawals: "Finance", "Planned expenses": "Finance", Payroll: "Finance", Earnings: "Finance",
+  "Daily updates": "System", Leave: "Attendance", Progress: "Tasks", Projects: "Tasks", "In-house projects": "Tasks",
+  "Class students": "System", Courses: "System", Marketing: "System", Concepts: "System", Announcements: "System",
+  Chat: "System", "Team chat": "System", Team: "System", "Team leads": "System", Passwords: "System",
+  Notifications: "System", "Client updates": "Clients", Rewards: "System", Sheets: "System", Testing: "System",
+  "APN Partner Network": "APN",
+};
+function activityModuleOf(module) {
+  const value = String(module || "System");
+  if (ACTIVITY_MODULES.includes(value)) return value;
+  if (ACTIVITY_MODULE_ALIASES[value]) return ACTIVITY_MODULE_ALIASES[value];
+  const lower = value.toLowerCase();
+  if (lower.includes("finance") || lower.includes("account") || lower.includes("withdraw") || lower.includes("commission")) return "Finance";
+  if (lower.includes("apn") || lower.includes("partner")) return "APN";
+  if (lower.includes("client")) return "Clients";
+  if (lower.includes("lead")) return "Leads";
+  if (lower.includes("quote")) return "Quotations";
+  if (lower.includes("invoice")) return "Invoices";
+  if (lower.includes("attendance") || lower.includes("leave")) return "Attendance";
+  if (lower.includes("document") || lower.includes("file")) return "Documents";
+  if (lower.includes("knowledge")) return "Knowledge Base";
+  if (lower.includes("prompt") || lower.includes("ai")) return "AI";
+  if (lower.includes("setting") || lower.includes("permission") || lower.includes("security")) return "Settings";
+  if (lower.includes("task") || lower.includes("project") || lower.includes("progress")) return "Tasks";
+  return "System";
+}
+
+// Convert the existing audit shape into the stable activity contract while
+// retaining every legacy field and identifier for backward compatibility.
+function activityEntry(entry, { user, userId, avatar } = {}) {
+  const actor = entry.user || user || "System";
+  const action = entry.action || entry.description || "performed an action";
+  return {
+    ...entry,
+    user: actor,
+    userId: entry.userId || userId || null,
+    avatar: entry.avatar || avatar || null,
+    module: activityModuleOf(entry.module),
+    action,
+    entity: entry.entity || entry.module || "System",
+    entityId: entry.entityId || entry.partnerId || null,
+    description: entry.description || `${actor} ${action}`,
+  };
+}
+
+// A few older mutation paths intentionally pass no audit entry. Keep those
+// actions visible in the global feed by deriving one append-only event from
+// the changed collection, without changing the underlying business mutation.
+function activityForMutation(prev, next) {
+  const candidates = TABLES.filter((table) => table !== "audit" && table !== "recycle" && JSON.stringify(prev?.[table] || []) !== JSON.stringify(next?.[table] || []));
+  const table = candidates[0];
+  if (!table) return null;
+  const before = prev?.[table] || [];
+  const after = next?.[table] || [];
+  const beforeIds = new Set(before.map((x) => x.id));
+  const afterIds = new Set(after.map((x) => x.id));
+  const added = after.find((x) => !beforeIds.has(x.id));
+  const removed = before.find((x) => !afterIds.has(x.id));
+  const changed = after.find((x) => {
+    const prior = before.find((b) => b.id === x.id);
+    return prior && JSON.stringify(prior) !== JSON.stringify(x);
+  });
+  const record = added || changed || removed;
+  const label = MODULE_LABEL[table] || table;
+  const name = record && (record.name || record.title || record.client || record.number);
+  const verb = added ? "created" : removed ? "deleted" : "updated";
+  return {
+    action: `${verb} ${label.toLowerCase()}${name ? ` "${name}"` : ""}`,
+    module: activityModuleOf(label),
+    entity: label,
+    entityId: record?.id || null,
+  };
+}
 const LOGO_FULL = "/allbee-logo.png";   // full lockup (monogram + wordmark)
 const LOGO_ICON = "/allbee-icon.png";   // square monogram
 
@@ -274,6 +349,21 @@ async function fetchAll() {
   return db;
 }
 
+async function fetchAuditRows() {
+  const { data, error } = await supabase.from("audit").select("id,data");
+  if (error) throw new Error(`Loading audit: ${error.message}`);
+  return (data || [])
+    .map((r) => ({ ...(r.data || {}), id: r.id }))
+    .filter((x) => x && typeof x === "object")
+    .sort((a, b) => (a?.ts || 0) - (b?.ts || 0));
+}
+
+async function appendAuditEvent(entry) {
+  const event = activityEntry({ id: uid(), ts: Date.now(), ...entry });
+  const { error } = await supabase.from("audit").insert({ id: event.id, data: event, updated_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+}
+
 // Persist the difference between two db snapshots (per collection, by id).
 async function applyDiff(prev, next) {
   const stamp = new Date().toISOString();
@@ -284,10 +374,12 @@ async function applyDiff(prev, next) {
     const upserts = [];
     for (const [id, row] of after) {
       const b = before.get(id);
-      if (!b || JSON.stringify(b) !== JSON.stringify(row)) upserts.push({ id, data: row, updated_at: stamp });
+      // Audit rows are immutable: only brand-new activity events may be
+      // appended. Legacy rows remain untouched and can never be overwritten.
+      if ((!b || JSON.stringify(b) !== JSON.stringify(row)) && (t !== "audit" || !b)) upserts.push({ id, data: row, updated_at: stamp });
     }
     const deletes = [];
-    for (const id of before.keys()) if (!after.has(id)) deletes.push(id);
+    if (t !== "audit") for (const id of before.keys()) if (!after.has(id)) deletes.push(id);
     // The audit table is an append-only activity log. If it can't be written
     // (e.g. its RLS policy hasn't been added yet) that must NEVER block the
     // user's actual change — log it quietly and carry on.
@@ -324,6 +416,9 @@ async function persistWithRetry(prev, next) {
 async function replaceAll(clean) {
   const stamp = new Date().toISOString();
   for (const t of TABLES) {
+    // Backups may restore business data, but the global activity feed is an
+    // immutable historical record and must never be erased or overwritten.
+    if (t === "audit") continue;
     const del = await supabase.from(t).delete().neq("id", "");
     if (del.error) throw new Error(`Clearing ${t}: ${del.error.message}`);
     const rows = (clean[t] || []).map((x) => ({ id: x.id, data: x, updated_at: stamp }));
@@ -957,6 +1052,25 @@ const CSS = `
 .topbar .dropdown { top:42px; }
 
 .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); }
+.activity-feed-card { cursor:pointer; transition:background .12s; }
+.activity-feed-card:hover, .activity-feed-card:focus-visible { background:var(--surface-2); }
+.activity-row { cursor:pointer; }
+.activity-row:hover, .activity-row:focus-visible, .activity-table-row:hover td, .activity-table-row:focus-visible td { background:var(--surface-2); }
+.activity-drawer-overlay { position:fixed; inset:0; z-index:250; background:rgba(10,14,20,.34); display:flex; justify-content:flex-end; }
+.activity-drawer { width:min(480px,100%); height:100%; overflow:hidden; background:var(--surface); border-left:1px solid var(--border); box-shadow:-18px 0 50px rgba(0,0,0,.22); animation:activity-drawer-in .16s ease; display:flex; flex-direction:column; }
+@keyframes activity-drawer-in { from { opacity:0; transform:translateX(18px); } to { opacity:1; transform:none; } }
+.activity-drawer-head { display:flex; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid var(--border); }
+.activity-drawer-head h3 { margin:0 0 4px; font-size:17px; }
+.activity-drawer-body { overflow-y:auto; padding:18px 20px 28px; display:flex; flex-direction:column; gap:18px; }
+.activity-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.activity-detail-value { margin-top:4px; overflow-wrap:anywhere; }
+.activity-detail-block { padding-top:14px; border-top:1px solid var(--border); }
+.activity-detail-pre { white-space:pre-wrap; font:inherit; color:var(--ink); }
+.activity-detail-meta { margin-top:4px; color:var(--muted); font-size:11px; }
+.activity-timeline { margin-top:10px; }
+.activity-timeline-item { position:relative; display:flex; gap:10px; min-height:54px; }
+.activity-timeline-dot { width:9px; height:9px; margin-top:5px; border-radius:50%; background:var(--primary); flex:none; z-index:1; }
+.activity-timeline-line { position:absolute; left:4px; top:14px; bottom:0; width:1px; background:var(--border); }
 .cards-grid { display:grid; gap:14px; }
 .stat { padding:16px 18px; }
 .stat .lbl { font-size:12px; color:var(--muted); display:flex; align-items:center; gap:7px; font-weight:500; }
@@ -1259,6 +1373,7 @@ table.tbl tr:hover td { background:var(--surface-2); }
 .apn-section-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .apn-section-head h4 { margin:0; }
 .apn-activity-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-bottom:10px; }
+.audit-filter-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
 .apn-activity-row, .apn-document-row { display:flex; align-items:flex-start; gap:9px; padding:9px 0; border-bottom:1px solid var(--border); }
 .apn-activity-row:last-child, .apn-document-row:last-child { border-bottom:0; }
 .apn-activity-meta { color:var(--muted); font-size:11px; white-space:nowrap; }
@@ -1275,6 +1390,8 @@ table.tbl tr:hover td { background:var(--surface-2); }
 @media (max-width:900px) { .apn-dashboard-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:719px) { .apn-profile-grid { grid-template-columns:1fr; } .apn-profile-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .apn-milestones { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:560px) { .apn-dashboard-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .apn-activity-filters { grid-template-columns:1fr 1fr; } .apn-activity-row, .apn-document-row { flex-wrap:wrap; } .apn-activity-meta { width:100%; } }
+@media (max-width:720px) { .audit-filter-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width:720px) { .activity-drawer-overlay { align-items:flex-end; } .activity-drawer { width:100%; height:auto; max-height:88vh; border-left:0; border-top:1px solid var(--border); border-radius:16px 16px 0 0; animation:activity-sheet-in .16s ease; } @keyframes activity-sheet-in { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:none; } } }
 
 /* ── Phase Next: global search (Ctrl+K) ────────────────────────────────── */
 .search-trigger { display:flex; align-items:center; gap:8px; border:1px solid var(--border); background:var(--surface);
@@ -1910,12 +2027,17 @@ function ExpenseSharePanel({ db }) {
   );
 }
 
-function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true, team = [], isSuper = false }) {
+function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true, showOps = true, team = [], isSuper = false }) {
   const m = monthStats(db);
   const pending = db.tasks.filter((t) => t.status !== "Completed").length;
   const active = db.projects.filter((p) => p.stage !== "Completed").length;
-  const recent = [...db.audit].slice(-8).reverse();
+  const recent = [...db.audit].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, 20);
   const awayList = isSuper ? inactiveMembers(team) : [];
+  const openAudit = (e) => {
+    if (e.type === "keydown" && !["Enter", " "].includes(e.key)) return;
+    if (e.type === "keydown") e.preventDefault();
+    go("audit");
+  };
   const stats = [];
   if (showMoney) {
     stats.push(<div key="rev" className="card stat"><div className="lbl"><TrendingUp size={14} /> Monthly revenue</div><div className="num mono pos-txt">{money(m.rev)}</div></div>);
@@ -1978,15 +2100,16 @@ function Dashboard({ db, bal, go, openBalance, showMoney = true, showOps = true,
         </div>
       )}
 
-      <div className="card">
+      <div className="card activity-feed-card" role="button" tabIndex={0} aria-label="Open Admin audit log" title="Open Admin audit log"
+        onClick={openAudit} onKeyDown={openAudit}>
         <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Recent activity</div>
         {recent.length === 0 ? (
           <Empty icon={<ScrollText size={22} color="var(--muted)" />} title="Nothing here yet" text="Your activity feed fills up as the team works." />
         ) : recent.map((a) => (
-          <div key={a.id} className="item-row">
-            <div className="avatar" style={{ background: avatarColor(a.user), width: 28, height: 28, fontSize: 11 }}>{a.user[0]}</div>
-            <div className="item-main"><div className="item-title" style={{ fontWeight: 500, fontSize: 14 }}><b>{a.user}</b> {a.action}</div>
-              <div className="item-meta"><span>{a.module}</span><span>{fmtTime(a.ts)}</span></div></div>
+          <div key={a.id} className="item-row activity-row" role="button" tabIndex={0} aria-label={`View activity details: ${a.description || a.action || "activity"}`} onClick={(e) => { e.stopPropagation(); onOpenActivity?.(a); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpenActivity?.(a); } }}>
+            <Avatar name={a.user || "System"} url={a.avatar} size={28} fontSize={11} />
+            <div className="item-main"><div className="item-title" style={{ fontWeight: 500, fontSize: 14 }}>{a.description || `${a.user || "System"} ${a.action || "performed an action"}`}</div>
+              <div className="item-meta"><span>{activityModuleOf(a.module)}</span><span>{fmtTime(a.ts)}</span></div></div>
           </div>
         ))}
       </div>
@@ -3275,21 +3398,124 @@ function Concepts({ db, mutate, openModal, removeItem }) {
   );
 }
 
-function AuditLog({ db }) {
-  const list = [...db.audit].reverse();
+const AUDIT_FILTER_SESSION_KEY = "allbee_audit_filters";
+function sessionAuditFilter(key) {
+  try { return JSON.parse(sessionStorage.getItem(AUDIT_FILTER_SESSION_KEY) || "{}")[key]; } catch { return undefined; }
+}
+function activityValue(value) {
+  if (value == null || value === "") return "—";
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+function activityTimelineLabel(activity) {
+  const text = `${activity.action || ""} ${activity.description || ""}`.toLowerCase();
+  if (/delete|removed|archived|rejected/.test(text)) return "Deleted";
+  if (/complete|paid|converted|closed/.test(text)) return "Completed";
+  if (/approv|accept|reactivat/.test(text)) return "Approved";
+  if (/edit|updated|changed|modified|reset|transfer|assigned/.test(text)) return "Edited";
+  if (/creat|add|register|received|submitted|upload|logged|recorded/.test(text)) return "Created";
+  return activity.action || "Activity";
+}
+function activityRelated(db, activity) {
+  const id = activity?.entityId;
+  if (!id) return null;
+  const module = activityModuleOf(activity.module);
+  const table = module === "Tasks" ? "tasks" : module === "APN" ? "apn_users" : module === "Leads" ? "leads" : module === "Clients" ? "clients" : module === "Invoices" ? "invoices" : module === "Quotations" ? "quotations" : module === "Finance" ? (activity.entity === "Withdrawals" ? "withdrawals" : "transactions") : null;
+  const record = table ? (db[table] || []).find((x) => x.id === id) : null;
+  if (!record) return null;
+  return { module, table, record, label: module === "APN" ? "Open partner profile" : `Open ${module.slice(0, -1).toLowerCase() || "record"}` };
+}
+function downloadActivityCsv(rows) {
+  const columns = ["Event ID", "Timestamp", "User", "Module", "Action", "Entity", "Entity ID", "Description", "Previous Value", "New Value"];
+  const cell = (value) => `"${String(value == null ? "" : typeof value === "object" ? JSON.stringify(value) : value).replace(/"/g, '""')}"`;
+  const csv = [columns, ...rows.map((a) => [a.id, a.ts ? new Date(a.ts).toISOString() : "", a.user || "System", activityModuleOf(a.module), a.action || "", a.entity || "", a.entityId || "", a.description || "", activityValue(a.previousValue), activityValue(a.newValue)])].map((row) => row.map(cell).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `allbee-audit-${todayISO()}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+
+function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
+  useEffect(() => {
+    if (!activity) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activity, onClose]);
+  if (!activity) return null;
+  const related = activityRelated(db, activity);
+  const module = activityModuleOf(activity.module);
+  const timelineRows = [...(db.audit || [])].filter((x) => activity.entityId && x.entityId === activity.entityId && activityModuleOf(x.module) === module).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const sequence = timelineRows.length ? timelineRows : [activity];
+  return (
+    <div className="activity-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <aside className="activity-drawer" role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title">
+        <div className="activity-drawer-head"><div><h3 id="activity-drawer-title">Activity details</h3><div className="hint-line">{activity.description || activity.action || "Activity event"}</div></div><button className="iconbtn" onClick={onClose} aria-label="Close activity details"><X size={18} /></button></div>
+        <div className="activity-drawer-body">
+          <div className="activity-detail-grid">
+            {[['Event ID', activity.id], ['Timestamp', activity.ts ? fmtDateTime(activity.ts) : "—"], ['User', activity.user || "System"], ['Module', module], ['Action', activity.action], ['Entity', activity.entity], ['Entity ID', activity.entityId]].map(([label, value]) => <div key={label}><div className="k">{label}</div><div className="activity-detail-value">{activityValue(value)}</div></div>)}
+          </div>
+          <div className="activity-detail-block"><div className="k">Human-readable description</div><div>{activity.description || `${activity.user || "System"} ${activity.action || "performed an action"}`}</div></div>
+          <div className="activity-detail-grid">
+            {[['Previous value', activity.previousValue], ['New value', activity.newValue], ['Device information', activity.device || "Future-ready"], ['IP address', activity.ip || "Future-ready"], ['Browser', activity.browser || "Future-ready"]].map(([label, value]) => <div key={label}><div className="k">{label}</div><pre className="activity-detail-value activity-detail-pre">{activityValue(value)}</pre></div>)}
+          </div>
+          {related && <div className="activity-detail-block"><div className="k">Related link</div><button className="btn sm" onClick={() => onRelated(related, activity)}><ExternalLink size={13} />{related.label}</button></div>}
+          <div className="activity-detail-block"><div className="k">Timeline</div><div className="activity-timeline">{sequence.map((x, i) => <div className="activity-timeline-item" key={x.id || i}><span className="activity-timeline-dot" /><div><b>{activityTimelineLabel(x)}</b><div className="hint-line">{x.description || x.action || "Activity"}</div><div className="activity-detail-meta">{x.ts ? fmtDateTime(x.ts) : "—"} · {x.user || "System"}</div></div>{i < sequence.length - 1 && <span className="activity-timeline-line" />}</div>)}</div></div>
+          {isSuper && <div className="hint-line">This activity record is immutable. Export is available from the filtered Audit Log.</div>}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function AuditLog({ db, isSuper, onOpenActivity }) {
+  const [user, setUser] = useState(() => sessionAuditFilter("user") || "all");
+  const [module, setModule] = useState(() => sessionAuditFilter("module") || "all");
+  const [date, setDate] = useState(() => sessionAuditFilter("date") || "");
+  const [search, setSearch] = useState(() => sessionAuditFilter("search") || "");
+  const [page, setPage] = useState(0);
+  const users = useMemo(() => Array.from(new Set(["Haji", "Alim", ...db.audit.map((a) => a.user).filter(Boolean)])), [db.audit]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return [...db.audit].sort((a, b) => (b.ts || 0) - (a.ts || 0)).filter((a) => {
+      const day = a.ts ? new Date(a.ts).toLocaleDateString("en-CA") : "";
+      const haystack = [a.user, a.module, a.action, a.description, a.entity, a.entityId].filter(Boolean).join(" ").toLowerCase();
+      return (user === "all" || a.user === user)
+        && (module === "all" || activityModuleOf(a.module) === module)
+        && (!date || day === date)
+        && (!q || haystack.includes(q));
+    });
+  }, [db.audit, user, module, date, search]);
+  useEffect(() => { try { sessionStorage.setItem(AUDIT_FILTER_SESSION_KEY, JSON.stringify({ user, module, date, search })); } catch { /* session storage is optional */ } }, [user, module, date, search]);
+  useEffect(() => setPage(0), [user, module, date, search]);
+  const pageSize = 50;
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const list = filtered.slice(page * pageSize, (page + 1) * pageSize);
   return (
     <div className="content">
       <div className="page-head"><h3>Audit log</h3></div>
+      <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <div className="audit-filter-grid">
+          <select className="select" value={user} onChange={(e) => setUser(e.target.value)} aria-label="Filter audit log by user">
+            <option value="all">All users</option>{users.map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <select className="select" value={module} onChange={(e) => setModule(e.target.value)} aria-label="Filter audit log by module">
+            <option value="all">All modules</option>{ACTIVITY_MODULES.map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Filter audit log by date" />
+          <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search activity…" aria-label="Search audit log" />
+          {isSuper && <><button className="btn sm" onClick={() => downloadActivityCsv(filtered)}><Download size={13} />CSV</button><button className="btn sm" onClick={() => exportRowsToExcel(`allbee-audit-${todayISO()}.xlsx`, "Audit Log", [{ label: "Event ID", value: (a) => a.id }, { label: "Timestamp", value: (a) => a.ts ? fmtDateTime(a.ts) : "" }, { label: "User", value: (a) => a.user || "System" }, { label: "Module", value: (a) => activityModuleOf(a.module) }, { label: "Action", value: (a) => a.action || "" }, { label: "Entity", value: (a) => a.entity || "" }, { label: "Entity ID", value: (a) => a.entityId || "" }, { label: "Description", value: (a) => a.description || "" }, { label: "Previous Value", value: (a) => activityValue(a.previousValue) }, { label: "New Value", value: (a) => activityValue(a.newValue) }], filtered)}><Download size={13} />Excel</button></>}
+        </div>
+      </div>
       <div className="card">
-        {list.length === 0 ? <Empty icon={<ScrollText size={22} color="var(--muted)" />} title="No activity recorded" text="Every action — edits, share changes, expenses, withdrawals — is logged here permanently." />
+        {list.length === 0 ? <Empty icon={<ScrollText size={22} color="var(--muted)" />} title={filtered.length ? "No activity on this page" : "No matching activity"} text="Every action — edits, share changes, expenses, withdrawals — is logged here permanently." />
           : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>When</th><th>User</th><th>Action</th><th>Module</th></tr></thead>
+            <thead><tr><th>When</th><th>User</th><th>Activity</th><th>Module</th><th>Entity</th></tr></thead>
             <tbody>{list.map((a) => (
-              <tr key={a.id}><td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtTime(a.ts)}</td>
-                <td><span className="badge"><span className="dot" style={{ background: avatarColor(a.user), display: "inline-block", marginRight: 5 }} />{a.user}</span></td>
-                <td>{a.action}</td><td><span className="tag">{a.module}</span></td></tr>
+              <tr key={a.id} className="activity-table-row" role="button" tabIndex={0} aria-label={`View activity details: ${a.description || a.action || "activity"}`} onClick={() => onOpenActivity?.(a)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenActivity?.(a); } }}><td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtTime(a.ts)}</td>
+                <td><span className="badge" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Avatar name={a.user || "System"} url={a.avatar} size={20} fontSize={9} />{a.user || "System"}</span></td>
+                <td>{a.description || `${a.user || "System"} ${a.action || "performed an action"}`}</td><td><span className="tag">{activityModuleOf(a.module)}</span></td><td>{a.entity || "—"}{a.entityId ? ` · ${a.entityId}` : ""}</td></tr>
             ))}</tbody>
           </table></div>}
+        {pages > 1 && <div className="apn-pagination" style={{ padding: "12px 14px" }}><button className="btn sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {page + 1} of {pages} · {filtered.length} records</span><button className="btn sm" disabled={page >= pages - 1} onClick={() => setPage((p) => p + 1)}>Next</button></div>}
       </div>
     </div>
   );
@@ -4051,7 +4277,7 @@ function PermsModal({ person, onSave, onClose }) {
   );
 }
 
-function Team({ team, me, changeProfile, db, resolveResign }) {
+function Team({ team, me, changeProfile, db, resolveResign, onActivity }) {
   const [permFor, setPermFor] = useState(null);
   const [creating, setCreating] = useState(false);
   const [manageFor, setManageFor] = useState(null);
@@ -4166,8 +4392,8 @@ function Team({ team, me, changeProfile, db, resolveResign }) {
         </div>
       </div>
       {permFor && <PermsModal person={permFor} onClose={() => setPermFor(null)} onSave={(modules) => changeProfile(permFor.id, { perms: { ...(permFor.perms || {}), modules } }, `updated ${permFor.name}'s module access`)} />}
-      {creating && <CreateUserModal onClose={() => setCreating(false)} />}
-      {manageFor && <ManageUserModal person={manageFor} onClose={() => setManageFor(null)} />}
+      {creating && <CreateUserModal onActivity={onActivity} onClose={() => setCreating(false)} />}
+      {manageFor && <ManageUserModal person={manageFor} onActivity={onActivity} onClose={() => setManageFor(null)} />}
     </div>
   );
 }
@@ -6215,7 +6441,7 @@ function CompanySettings({ config, saveCompany }) {
   );
 }
 
-function CreateUserModal({ onClose }) {
+function CreateUserModal({ onClose, onActivity }) {
   const [f, setF] = useState({ name: "", email: "", password: "", role: "staff" });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const [busy, setBusy] = useState(false);
@@ -6228,6 +6454,7 @@ function CreateUserModal({ onClose }) {
       const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "create", email: f.email.trim(), password: f.password, name: f.name.trim(), role: f.role } });
       if (error) throw error;
       if (data && data.error) throw new Error(data.error);
+      onActivity?.({ action: `created user "${f.name.trim() || f.email.trim()}"`, module: "System", entity: "User", entityId: data?.user?.id || null });
       setOk(true);
     } catch (e) { setErr((e && e.message) || "Couldn't create the user. Is the admin-users function deployed?"); }
     finally { setBusy(false); }
@@ -6248,7 +6475,7 @@ function CreateUserModal({ onClose }) {
   );
 }
 
-function ManageUserModal({ person, onClose }) {
+function ManageUserModal({ person, onClose, onActivity }) {
   const [designation, setDesignation] = useState(person.designation || "");
   const [username, setUsername] = useState(person.username || "");
   const [pw, setPw] = useState("");
@@ -6258,16 +6485,16 @@ function ManageUserModal({ person, onClose }) {
   const call = async (body) => { setBusy(true); setMsg(""); setErr(""); try { const { data, error } = await supabase.functions.invoke("admin-users", { body }); if (error) throw error; if (data && data.error) throw new Error(data.error); return true; } catch (e) { setErr((e && e.message) || "Action failed. Is the admin-users function deployed?"); return false; } finally { setBusy(false); } };
   const saveDes = async () => {
     setBusy(true); setMsg(""); setErr("");
-    try { const { error } = await supabase.from("profiles").update({ designation: designation.trim() || null }).eq("id", person.id); if (error) throw error; setMsg("Job title updated."); }
+    try { const { error } = await supabase.from("profiles").update({ designation: designation.trim() || null }).eq("id", person.id); if (error) throw error; onActivity?.({ action: `updated ${person.name}'s job title`, module: "System", entity: "User", entityId: person.id }); setMsg("Job title updated."); }
     catch (e) { setErr((e && e.message) || "Couldn't update the job title."); }
     finally { setBusy(false); }
   };
-  const resetPw = async () => { if (pw.length < 6) { setErr("Password must be at least 6 characters."); return; } if (await call({ action: "reset_password", userId: person.id, password: pw })) { setMsg("Password reset."); setPw(""); } };
+  const resetPw = async () => { if (pw.length < 6) { setErr("Password must be at least 6 characters."); return; } if (await call({ action: "reset_password", userId: person.id, password: pw })) { onActivity?.({ action: `reset password for ${person.name}`, module: "System", entity: "User", entityId: person.id }); setMsg("Password reset."); setPw(""); } };
   // Username writes straight to the profile (no edge function needed).
   const saveUsername = async () => {
     setBusy(true); setMsg(""); setErr("");
     const uname = username.trim().toLowerCase().replace(/\s+/g, "") || null;
-    try { const { error } = await supabase.from("profiles").update({ username: uname }).eq("id", person.id); if (error) throw error; setMsg("Username updated."); }
+    try { const { error } = await supabase.from("profiles").update({ username: uname }).eq("id", person.id); if (error) throw error; onActivity?.({ action: `updated ${person.name}'s username`, module: "System", entity: "User", entityId: person.id }); setMsg("Username updated."); }
     catch (e) { setErr((e && e.message && /duplicate|unique/i.test(e.message)) ? "That username is already taken." : ((e && e.message) || "Couldn't update the username.")); }
     finally { setBusy(false); }
   };
@@ -6296,6 +6523,7 @@ function ManageUserModal({ person, onClose }) {
     const { error: delErr } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
     setBusy(false);
     if (delErr) { setErr("Removed from the team, but their login couldn't be deleted, so the email stays reserved. Deploy or repair the admin-users function, then delete again."); return; }
+    onActivity?.({ action: `deleted user "${person.name}"`, module: "System", entity: "User", entityId: person.id });
     onClose();
   };
   return (
@@ -7279,6 +7507,12 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
         if (s.filter && !s.filter(x, ctx)) continue;
         const title = (s.title ? s.title(x) : "") || "—";
         out.push({ id: s.coll + ":" + (x.id || Math.random()), module: s.label, route: s.route, title, sub: s.sub ? (s.sub(x) || "") : "", user: s.user ? (s.user(x) || "") : "", dateISO: s.date ? (s.date(x) || "") : "", path: `${s.label} > ${title}`, text: searchHay(x), navTask: s.nav ? s.nav(x) : null });
+      }
+    }
+    if (allow.has("audit")) {
+      for (const a of (db.audit || [])) {
+        const description = a.description || `${a.user || "System"} ${a.action || "performed an action"}`;
+        out.push({ id: "audit:" + a.id, module: "Audit log", route: "audit", title: description, sub: activityModuleOf(a.module), user: a.user || "System", dateISO: a.ts ? new Date(a.ts).toISOString().slice(0, 10) : "", path: `Audit log > ${description}`, text: [a.user, description, a.entity, a.module, a.entityId, a.action].filter(Boolean).join(" ").toLowerCase(), navTask: null });
       }
     }
     return out;
@@ -8788,7 +9022,17 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
   const risks = apnRiskIndicators(db, partner, profile);
   const partnerDocuments = (db.apn_documents || []).filter((x) => x.partnerId === partner.id);
   const communications = (db.apn_communications || []).filter((x) => x.partnerId === partner.id);
-  const [showAllActivity, setShowAllActivity] = useState(initialSection === "timeline");
+  const [showAllActivity, setShowAllActivity] = useState(initialSection === "activity");
+  const profileFormRef = useRef(null);
+  const nameInputRef = useRef(null);
+  const timelineRef = useRef(null);
+  const activityRef = useRef(null);
+  const pendingActivityScrollRef = useRef(false);
+  useEffect(() => {
+    if (!pendingActivityScrollRef.current || !showAllActivity) return;
+    pendingActivityScrollRef.current = false;
+    requestAnimationFrame(() => activityRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [showAllActivity]);
   const [timelinePage, setTimelinePage] = useState(0);
   const warnings = (db.apn_warnings || []).filter((x) => x.partnerId === partner.id).sort((a, b) => (b.issuedAt || b.createdAt || 0) - (a.issuedAt || a.createdAt || 0));
   const notes = (db.apn_notes || []).filter((x) => x.partnerId === partner.id).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
@@ -8832,6 +9076,24 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
   const auditPageSize = 12;
   const auditPages = Math.max(1, Math.ceil(auditAll.length / auditPageSize));
   const audit = auditAll.slice(auditPage * auditPageSize, auditPage * auditPageSize + auditPageSize);
+  const handleQuickAction = (action) => {
+    if (action === "Edit Profile") {
+      profileFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      requestAnimationFrame(() => nameInputRef.current?.focus());
+      return;
+    }
+    if (action === "View Timeline") {
+      timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action === "View Activity") {
+      pendingActivityScrollRef.current = true;
+      setShowAllActivity(true);
+      if (showAllActivity) requestAnimationFrame(() => activityRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+    onAction(action, partner);
+  };
   return (
     <Modal title={`Partner profile · ${partner.name}`} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Close</button>{canEdit && <button className="btn primary" onClick={save}><Check size={15} />Save changes</button>}</>}>
@@ -8842,11 +9104,11 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>{(partner.tags || []).map((tag) => <span className="apn-tag" key={tag}>{tag}</span>)}{isSuper && <button className="btn sm" onClick={() => onTags(partner)}><Tag size={13} />Manage tags</button>}</div>
       <APNPartnerDashboard summary={summary} health={health} />
-      {isSuper && <div className="apn-quick-actions" aria-label="Quick Actions"><b style={{ alignSelf: "center", marginRight: 3 }}>Quick Actions</b>{["Edit Profile", "View Timeline", "View Activity", "Reset Password", "Send Notification", "Promote", "Suspend", "Delete Partner"].map((action) => <button key={action} className="btn sm" onClick={() => onAction(action, partner)} disabled={action === "Suspend" && ["suspended", "deleted"].includes(apnEffectiveStatus(partner)) || action === "Delete Partner" && partner.status === "deleted"}>{action}</button>)}<button className="btn sm" onClick={() => onExport?.(partner)}><Download size={13} />Generate Report</button></div>}
+      {isSuper && <div className="apn-quick-actions" aria-label="Quick Actions"><b style={{ alignSelf: "center", marginRight: 3 }}>Quick Actions</b>{["Edit Profile", "View Timeline", "View Activity", "Reset Password", "Send Notification", "Promote", "Suspend", "Delete Partner"].map((action) => <button key={action} className="btn sm" onClick={() => handleQuickAction(action)} disabled={action === "Suspend" && ["suspended", "deleted"].includes(apnEffectiveStatus(partner)) || action === "Delete Partner" && partner.status === "deleted"}>{action}</button>)}<button className="btn sm" onClick={() => onExport?.(partner)}><Download size={13} />Generate Report</button></div>}
       {actions.length > 0 && <Field label="Actions"><select className="select" value="" onChange={(e) => { if (e.target.value && e.target.value !== "View as Partner (Coming Soon)") onAction(e.target.value, partner); }}><option value="">Choose an action…</option>{actions.map((a) => <option key={a} value={a} disabled={a === "View as Partner (Coming Soon)"}>{a}</option>)}</select></Field>}
 
-      <div className="apn-profile-section"><h4>Basic information</h4><div className="apn-profile-grid">
-        <Field label="Full name" required><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} disabled={!canEdit} /></Field>
+      <div ref={profileFormRef} className="apn-profile-section"><h4>Basic information</h4><div className="apn-profile-grid">
+        <Field label="Full name" required><input ref={nameInputRef} className="input" value={f.name} onChange={(e) => set("name", e.target.value)} disabled={!canEdit} /></Field>
         <Field label="Username"><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} disabled={!canEdit} /></Field>
         <Field label="Email" required error={err}><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} disabled={!canEdit} /></Field>
         <Field label="Mobile number"><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} disabled={!canEdit} /></Field>
@@ -8899,7 +9161,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
 
       <div className="apn-profile-section"><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><h4 style={{ margin: 0 }}>Internal Notes</h4><span className="spacer" />{!partner.deletedAt && <button className="btn sm" onClick={() => onNote(partner)}><Plus size={13} />Add note</button>}</div>{notes.length ? notes.map((n) => <div className="apn-note" key={n.id}><div dangerouslySetInnerHTML={{ __html: apnSafeHtml(n.bodyHtml || n.body) }} /><div className="hint-line" style={{ marginTop: 7 }}>{n.author || "—"} · {fmtDateTime(n.updatedAt || n.createdAt)}{n.history?.length ? ` · ${n.history.length} edit${n.history.length === 1 ? "" : "s"}` : ""}<button className="btn sm" style={{ marginLeft: 8 }} onClick={() => onEditNote(n)}>Edit</button></div></div>) : <div className="hint-line">No internal notes recorded.</div>}</div>
 
-      <div className="apn-profile-section"><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><h4 style={{ margin: 0 }}>Partner Timeline</h4><span className="spacer" />{onExport && isSuper && <button className="btn sm" onClick={() => onExport(partner)}><Download size={13} />Export report</button>}</div><div className="apn-timeline">{visibleTimeline.length ? visibleTimeline.map((x) => <div className="apn-timeline-item" key={x.id}><div className="apn-timeline-dot" /><div><div className="apn-timeline-title">{x.title}</div><div style={{ fontSize: 12.5, marginTop: 2 }}>{x.description}</div><div className="apn-timeline-meta">{fmtDateTime(x.createdAt)} · {x.performedBy || "System"}</div></div></div>) : <div className="hint-line">No timeline events recorded yet.</div>}</div>{timelinePages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={timelinePage === 0} onClick={() => setTimelinePage((p) => p - 1)}>Previous</button><span className="hint-line">Page {timelinePage + 1} of {timelinePages}</span><button className="btn sm" disabled={timelinePage >= timelinePages - 1} onClick={() => setTimelinePage((p) => p + 1)}>Next</button></div>}</div>
+      <div ref={timelineRef} className="apn-profile-section"><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><h4 style={{ margin: 0 }}>Partner Timeline</h4><span className="spacer" />{onExport && isSuper && <button className="btn sm" onClick={() => onExport(partner)}><Download size={13} />Export report</button>}</div><div className="apn-timeline">{visibleTimeline.length ? visibleTimeline.map((x) => <div className="apn-timeline-item" key={x.id}><div className="apn-timeline-dot" /><div><div className="apn-timeline-title">{x.title}</div><div style={{ fontSize: 12.5, marginTop: 2 }}>{x.description}</div><div className="apn-timeline-meta">{fmtDateTime(x.createdAt)} · {x.performedBy || "System"}</div></div></div>) : <div className="hint-line">No timeline events recorded yet.</div>}</div>{timelinePages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={timelinePage === 0} onClick={() => setTimelinePage((p) => p - 1)}>Previous</button><span className="hint-line">Page {timelinePage + 1} of {timelinePages}</span><button className="btn sm" disabled={timelinePage >= timelinePages - 1} onClick={() => setTimelinePage((p) => p + 1)}>Next</button></div>}</div>
 
       <div className="apn-profile-section"><h4>Account information</h4>{kv("Username", f.username)}{kv("Email", f.email)}{kv("Phone", f.mobile)}{kv("Created at", partner.createdAt ? fmtDateTime(partner.createdAt) : "—")}{kv("Updated at", partner.updatedAt ? fmtDateTime(partner.updatedAt) : "—")}{kv("Terms accepted", partner.termsAccepted || (partner.tncAccepted ? "Yes" : "Not recorded"))}{kv("KYC status", f.kycStatus)}{kv("Documents", Array.isArray(partner.documents) ? `${partner.documents.length} document(s)` : "Future-ready")}{kv("Last login", partner.lastLogin ? fmtDateTime(partner.lastLogin) : "—")}{kv("Last Seen", apnLastSeenLabel(partner, profile))}</div>
       <div className="apn-profile-section"><h4>Audit log</h4>{audit.length ? audit.map((x) => <div key={x.id} className="apn-profile-kv"><span>{fmtDateTime(x.ts)} · {x.user || "—"}</span><span>{x.action}</span></div>) : <div className="hint-line">No APN audit entries recorded yet.</div>}{auditPages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={auditPage === 0} onClick={() => setAuditPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {auditPage + 1} of {auditPages}</span><button className="btn sm" disabled={auditPage >= auditPages - 1} onClick={() => setAuditPage((p) => p + 1)}>Next</button></div>}</div>
@@ -8908,7 +9170,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, initialSection =
         ...(db.apn_quotations || []).filter((x) => x.partnerId === partner.id).map((x) => ({ ts: x.createdAt, text: `Quotation created · ${x.clientName || "Unnamed client"}` })),
         ...(db.apn_commissions || []).filter((x) => x.partnerId === partner.id).map((x) => ({ ts: x.createdAt, text: `Commission ${x.status || "recorded"} · ${money(x.amount)}` })),
       ].filter((x) => x.ts).sort((a, b) => b.ts - a.ts).slice(0, 8).map((x, i) => <div key={i} className="apn-profile-kv"><span>{fmtDateTime(x.ts)}</span><span>{x.text}</span></div>)}{!(db.apn_leads || []).some((x) => x.partnerId === partner.id) && !(db.apn_quotations || []).some((x) => x.partnerId === partner.id) && !(db.apn_commissions || []).some((x) => x.partnerId === partner.id) && <div className="hint-line">No activity recorded yet.</div>}</div>
-      <div>{showAllActivity ? <APNPartnerActivity rows={activityRows} /> : <button className="btn" style={{ width: "100%" }} onClick={() => setShowAllActivity(true)}><Activity size={14} />View complete activity history</button>}</div>
+      <div ref={activityRef}>{showAllActivity ? <APNPartnerActivity rows={activityRows} /> : <button className="btn" style={{ width: "100%" }} onClick={() => { pendingActivityScrollRef.current = true; setShowAllActivity(true); }}><Activity size={14} />View complete activity history</button>}</div>
     </Modal>
   );
 }
@@ -9186,7 +9448,7 @@ function APNCreatePartnerForm({ db, mutate, currentUser, onClose }) {
   );
 }
 
-function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = [] }) {
+function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = [], focusPartnerId, onFocusConsumed }) {
   const [tab, setTab] = useState("partners");
   const [modal, setModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
@@ -9210,6 +9472,12 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
     if (missing.length) mutate((d) => appendTimeline(d, missing), null);
     setModal({ type: "apnPartnerProfile", partner, section });
   };
+  useEffect(() => {
+    if (!focusPartnerId) return;
+    const partner = partners.find((p) => p.id === focusPartnerId) || (db.apn_users || []).find((p) => p.id === focusPartnerId);
+    if (partner) { setTab("partners"); openProfile(partner); }
+    onFocusConsumed?.();
+  }, [focusPartnerId]);
   const withActionError = async (fn) => {
     setActionError("");
     try { await fn(); }
@@ -9271,7 +9539,8 @@ function APNAdmin({ db, mutate, isSuper, currentUser, refreshPeople, people = []
   };
   const runAction = (action, partner) => {
     if (action === "Edit Profile" || action === "Change Username" || action === "Change Email" || action === "Change Phone" || action === "Transfer District") return openProfile(partner);
-    if (["View Activity Log", "View Timeline", "View Activity"].includes(action)) return openProfile(partner, "timeline");
+    if (action === "View Timeline") return openProfile(partner, "timeline");
+    if (["View Activity Log", "View Activity"].includes(action)) return openProfile(partner, "activity");
     if (action === "Send Notification") return setModal({ type: "apnCommunication", partner });
     if (action === "Generate Report") return exportApnPartnerReport(partner);
     if (action === "Reset Password") return setModal({ type: "apnResetPassword", partner });
@@ -9481,6 +9750,8 @@ export default function App() {
   const [topBusy, setTopBusy] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
   const [modal, setModal] = useState(null); // {type, ...}
+  const [activityDetail, setActivityDetail] = useState(null);
+  const [apnFocusPartnerId, setApnFocusPartnerId] = useState(null);
   const [balanceUser, setBalanceUser] = useState(null);
   const [accountUser, setAccountUser] = useState(null);   // full-page partner statement (Haji/Alim)
   const [taskDetailId, setTaskDetailId] = useState(null); // full-page task detail
@@ -9532,6 +9803,8 @@ export default function App() {
       // Record a fresh sign-in time (best-effort; the column may not exist yet).
       if (_evt === "SIGNED_IN" && s && s.user) {
         supabase.from("profiles").update({ last_login: new Date().toISOString() }).eq("id", s.user.id).then(() => {}, () => {});
+        const actor = s.user.user_metadata?.name || s.user.email?.split("@")[0] || "System";
+        appendAuditEvent({ user: actor, userId: s.user.id, action: "logged in", module: "System", entity: "Authentication", description: `${actor} logged in` }).catch(() => {});
       }
       // Supabase auto-refreshes the JWT whenever the tab/app regains focus and
       // fires TOKEN_REFRESHED with a brand-new session object. That object change
@@ -9584,7 +9857,12 @@ export default function App() {
     setLoading(true);
     reload();
     const ch = supabase.channel("allbee-db-sync");
-    TABLES.forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    // Activity is a high-frequency feed. Refresh only the audit collection so
+    // a new event does not reload the entire application state.
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
+      fetchAuditRows().then((audit) => setDb((prev) => prev ? { ...prev, audit } : prev)).catch((e) => setSyncError(e.message || String(e)));
+    });
     ch.subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [session, reload]);
@@ -9603,16 +9881,27 @@ export default function App() {
 
   // mutate(updater, auditEntryOrNull) — updates the screen instantly, then
   // saves only the rows that changed. The other staff member's screen updates live.
-  // Audit entries are written for admin actions only (staff can't access the log).
+  // Every mutation gets one standardized activity event. Explicit audit
+  // descriptions remain authoritative; older paths without one receive a
+  // backward-compatible event derived from the changed collection.
   const mutate = useCallback((updater, audit) => {
     setDb((prev) => {
       if (!prev) return prev;
       let next = updater(prev);
-      if (audit) next = { ...next, audit: [...next.audit, { id: uid(), ts: Date.now(), user: currentUser || "—", ...audit }] };
+      const derived = activityForMutation(prev, next);
+      const supplied = audit ? { ...audit, entity: audit.entity || derived?.entity, entityId: audit.entityId || derived?.entityId } : derived;
+      if (supplied) {
+        const event = activityEntry({ id: uid(), ts: Date.now(), ...supplied }, { user: currentUser || "—", userId: me.id, avatar: profile?.photo_url });
+        next = { ...next, audit: [...(next.audit || []), event] };
+      }
       persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
       return next;
     });
-  }, [currentUser]);
+  }, [currentUser, me.id, profile?.photo_url]);
+
+  const recordActivity = useCallback((entry) => {
+    appendAuditEvent(activityEntry(entry, { user: currentUser || "—", userId: me.id, avatar: profile?.photo_url })).catch((e) => setSyncError(e.message || String(e)));
+  }, [currentUser, me.id, profile?.photo_url]);
 
   // ── soft delete (recycle bin) ─────────────────────────────────────────
   // Move a row out of its table and into `recycle` instead of destroying it.
@@ -9746,7 +10035,7 @@ export default function App() {
   }, [session, loadPeople, mutate]);
 
   // first-login profile completion + T&C acceptance (both write to my own row)
-  const saveMyProfile = useCallback((patch) => changeProfile(me.id, patch), [changeProfile, me.id]);
+  const saveMyProfile = useCallback((patch) => changeProfile(me.id, patch, "updated own profile"), [changeProfile, me.id]);
   const acceptTnc = useCallback((agreements) => {
     const patch = {};
     let roleAccepts = null;
@@ -9755,30 +10044,34 @@ export default function App() {
       else { roleAccepts = roleAccepts || { ...acceptedRoleTnc(profile) }; roleAccepts[a.key] = a.version; }
     }
     if (roleAccepts) patch.tnc_roles_accepted = roleAccepts;
-    return changeProfile(me.id, patch);
+    return changeProfile(me.id, patch, "accepted terms and conditions");
   }, [changeProfile, me.id, profile]);
   // publish/edit the Terms (admins): bump the version so everyone re-accepts
   const saveTnc = useCallback(async (body) => {
     const next = Number(config?.tnc_version || 0) + 1;
     await saveConfig({ tnc_body: body, tnc_version: next });
+    recordActivity({ action: "edited company terms", module: "Settings", entity: "Company settings" });
     if (session) setConfig(await fetchConfig());
-  }, [config, session]);
+  }, [config, session, recordActivity]);
   // publish/edit a ROLE-SPECIFIC agreement; bumps just that role's version
   const saveRoleTnc = useCallback(async (roleKey, body) => {
     const map = roleTncOf(config);
     const cur = map[roleKey] || {};
     map[roleKey] = { body, version: Number(cur.version || 0) + 1 };
     await saveConfig({ tnc_roles: JSON.stringify(map) });
+    recordActivity({ action: `edited ${ROLE_LABEL[roleKey] || roleKey} terms`, module: "Settings", entity: "Permissions" });
     if (session) setConfig(await fetchConfig());
-  }, [config, session]);
+  }, [config, session, recordActivity]);
   const saveCompany = useCallback(async (obj) => {
     await saveConfig({ company: JSON.stringify(obj || {}) });
+    recordActivity({ action: "edited company settings", module: "Settings", entity: "Company settings" });
     if (session) setConfig(await fetchConfig());
-  }, [session]);
+  }, [session, recordActivity]);
   const saveAI = useCallback(async (obj) => {
     await saveConfig({ ai: JSON.stringify(obj || {}) });
+    recordActivity({ action: "updated AI settings", module: "AI", entity: "AI settings" });
     if (session) setConfig(await fetchConfig());
-  }, [session]);
+  }, [session, recordActivity]);
   const resolveResign = (r, decision) => {
     mutate((d) => ({ ...d, resignations: (d.resignations || []).map((x) => x.id === r.id ? { ...x, status: decision, resolvedAt: Date.now() } : x) }), { action: `${decision === "Approved" ? "approved" : "declined"} ${r.userName}'s resignation request`, module: "Team" });
     if (decision === "Approved") changeProfile(r.userId, { status: "resigned", active: false });
@@ -9786,7 +10079,10 @@ export default function App() {
 
   const signOut = async () => {
     setUserMenu(false);
-    try { if (me.id) await supabase.from("profiles").update({ last_logout: new Date().toISOString() }).eq("id", me.id); } catch { /* column may not exist yet */ }
+    try {
+      if (me.id) await supabase.from("profiles").update({ last_logout: new Date().toISOString() }).eq("id", me.id);
+      if (me.id) await appendAuditEvent({ user: currentUser || "System", userId: me.id, action: "logged out", module: "System", entity: "Authentication", description: `${currentUser || "User"} logged out` });
+    } catch { /* profile columns or audit migration may not exist yet */ }
     await supabase.auth.signOut();
   };
 
@@ -9801,6 +10097,13 @@ export default function App() {
   };
   const openAccount = (u) => { setAccountUser(u); setTaskDetailId(null); setRoute("accounts"); setMenuOpen(false); setHash(`#/accounts/${String(u).toLowerCase()}`); };
   const openTask = (id) => { setTaskDetailId(id); setAccountUser(null); setRoute("tasks"); setMenuOpen(false); setHash(`#/tasks/${encodeURIComponent(id)}`); };
+  const openActivityRelated = (related, activity) => {
+    setActivityDetail(null);
+    if (related.table === "tasks" && related.record?.id) return openTask(related.record.id);
+    if (related.module === "APN" && related.record?.id) { setApnFocusPartnerId(related.record.id); return go("apn"); }
+    const route = { Leads: "leads", Clients: "clients", Quotations: "quotations", Invoices: "invoices", Finance: related.table === "withdrawals" ? "withdrawals" : "accounts" }[related.module];
+    if (route) go(route);
+  };
   const goBackDetail = () => {
     const target = taskDetailId ? "tasks" : "accounts";
     setAccountUser(null); setTaskDetailId(null); setRoute(target);
@@ -9901,6 +10204,7 @@ export default function App() {
   };
   const saveClassWebhook = async (url) => {
     await saveConfig({ class_sheet_webhook: (url || "").trim() });
+    recordActivity({ action: "updated class student sheet integration", module: "Settings", entity: "Settings" });
     if (session) setConfig(await fetchConfig());
   };
 
@@ -9998,15 +10302,15 @@ export default function App() {
       case "dashboard":
         return (role === "staff" || role === "intern")
           ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
-          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
+          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} onOpenActivity={setActivityDetail} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
       case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} />;
       case "assistant": return <AllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
-      case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} />;
+      case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} onActivity={recordActivity} />;
       case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
-      case "apn": return <APNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} currentUser={currentUser} refreshPeople={session ? () => loadPeople(session.user) : undefined} />;
+      case "apn": return <APNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} currentUser={currentUser} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} />;
       case "activity": return <LastSeen team={team} />;
       case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
       case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
@@ -10040,7 +10344,7 @@ export default function App() {
       case "rewards": return <Rewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} />;
       case "earnings": return <MyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} />;
       case "recently-deleted": return <RecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} />;
-      case "audit": return <AuditLog db={db} />;
+      case "audit": return <AuditLog db={db} isSuper={isSuper} onOpenActivity={setActivityDetail} />;
       case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} saveAI={saveAI} />;
       default: return null;
     }
@@ -10206,6 +10510,8 @@ export default function App() {
         {modal?.type === "okConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} word="OK" actionLabel={modal.actionLabel || "Confirm"} icon={modal.icon} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
 
         {balanceUser && <BalanceDetail db={db} user={balanceUser} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
+
+        {activityDetail && <ActivityDetailsDrawer activity={activityDetail} db={db} isSuper={isSuper} onClose={() => setActivityDetail(null)} onRelated={openActivityRelated} />}
 
         {searchOpen && <GlobalSearch db={db} team={team} profile={profile} role={role} me={me} allowedRoutes={[...allowedRoutes]} go={go} openTask={openTask} onClose={() => setSearchOpen(false)} />}
       </div>
