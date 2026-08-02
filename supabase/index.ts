@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
         email: String(email).trim().toLowerCase(),
         password: String(password),
         email_confirm: true, // confirmed → they can sign in immediately
-        user_metadata: { name: name ?? "", role: role ?? "staff" },
+        user_metadata: { name: name ?? "", role: role ?? "staff", role_intent: role === "partner" ? "partner" : undefined, apn: role === "partner" ? { username: body.username ?? "", mobile: body.mobile ?? "" } : undefined },
       });
       if (error) return json({ error: error.message }, 400);
       return json({ id: data.user?.id, user: data.user });
@@ -89,17 +89,36 @@ Deno.serve(async (req) => {
       if (!userId || !password) return json({ error: "User and new password are required." }, 400);
       if (String(password).length < 6) return json({ error: "Password must be at least 6 characters." }, 400);
 
-      // Defense in depth: don't let a plain admin reset a partner's password.
+      // Defense in depth: APN partner credentials are Super Admin controlled.
       const { data: target } = await admin
         .from("profiles").select("role").eq("id", userId).maybeSingle();
+      if (["partner", "district_head"].includes(target?.role) && callerRole !== "superadmin") {
+        return json({ error: "Only a Super Admin can reset an APN partner password." }, 403);
+      }
       if (target?.role === "superadmin" && callerRole !== "superadmin") {
-        return json({ error: "Only a partner can reset another partner's password." }, 403);
+        return json({ error: "Only a Super Admin can reset this password." }, 403);
       }
 
       const { error } = await admin.auth.admin.updateUserById(String(userId), {
         password: String(password),
       });
       if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+
+    // ── UPDATE EMAIL ─────────────────────────────────────────────────────────
+    if (action === "update_email") {
+      const { userId, email } = body;
+      if (!userId || !email) return json({ error: "User and email are required." }, 400);
+      const { data: target } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
+      if (["partner", "district_head"].includes(target?.role) && callerRole !== "superadmin") {
+        return json({ error: "Only a Super Admin can change an APN partner email." }, 403);
+      }
+      const normalized = String(email).trim().toLowerCase();
+      const { error } = await admin.auth.admin.updateUserById(String(userId), { email: normalized, email_confirm: true });
+      if (error) return json({ error: error.message }, 400);
+      const { error: profileError } = await admin.from("profiles").update({ email: normalized }).eq("id", userId);
+      if (profileError) return json({ error: profileError.message }, 400);
       return json({ ok: true });
     }
 
@@ -111,7 +130,22 @@ Deno.serve(async (req) => {
       const { data: target } = await admin
         .from("profiles").select("role").eq("id", userId).maybeSingle();
       if (target?.role === "superadmin") {
-        return json({ error: "Partners can't be deleted." }, 403);
+        return json({ error: "Super Admin accounts can't be deleted." }, 403);
+      }
+      if (["partner", "district_head"].includes(target?.role) && callerRole !== "superadmin") {
+        return json({ error: "Only a Super Admin can delete an APN partner." }, 403);
+      }
+
+      // Preserve the APN row and all business records as an internal archive
+      // before removing the login/profile. A later signup gets a fresh profile.
+      if (["partner", "district_head"].includes(target?.role)) {
+        const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
+        if (apn?.data) {
+          await admin.from("apn_users").update({
+            data: { ...apn.data, status: "deleted", archived: true, archiveReason: String(body.archiveReason ?? "Account archived"), archivedAt: Date.now(), deletedAt: Date.now(), deletedBy: caller.id },
+            updated_at: new Date().toISOString(),
+          }).eq("id", userId);
+        }
       }
 
       // Remove the login. This frees the email so it can be re-registered.
