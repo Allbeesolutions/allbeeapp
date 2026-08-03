@@ -8,7 +8,7 @@ import {
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck, ShieldAlert,
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag, Maximize2,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins, Minimize2,
-  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical,
+  Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical, Flame,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -370,6 +370,23 @@ const WITHDRAWAL_READS = {
   apn_withdrawal_exports: "id,exported_by,format,filters,row_count,created_at",
 };
 
+// PR4 normalized CRM reads. Writes go through transactional CRM RPCs so the
+// lead, follow-up, quotation, project, revenue, finance, audit, and notification
+// records remain consistent with the existing ERP and APN engines.
+const CRM_READS = {
+  crm_clients: "id,client_key,customer_name,company,mobile,email,location,address,city,district,state,country,pincode,business_type,notes,created_by,created_at,updated_at",
+  crm_leads: "id,lead_number,source,lead_owner_id,assigned_employee_id,assigned_partner_id,assigned_district_head_id,assigned_state_head_id,company,customer_name,mobile,email,location,address,city,district,state,country,pincode,business_type,project_category,expected_budget,expected_closing_date,priority,lead_score,status,remarks,tags,created_by,created_at,updated_at,converted_at,client_id,quotation_id,project_id",
+  crm_follow_ups: "id,lead_id,follow_up_date,follow_up_time,reminder_at,priority,notes,outcome,next_follow_up,completed_by,completed_at,status,created_by,created_at,updated_at",
+  crm_quotations: "id,quote_number,lead_id,client_id,service_type,title,items,subtotal,discount,tax,gst,grand_total,validity_until,status,version,approval_status,approved_by,approved_at,created_by,created_at,updated_at",
+  crm_quotation_versions: "id,quotation_id,version,snapshot,created_by,created_at",
+  crm_projects: "id,project_number,lead_id,quotation_id,client_id,name,service_type,project_value,status,assigned_employee_id,assigned_partner_id,apn_project_id,created_by,created_at,updated_at",
+  crm_revenue_collections: "id,project_id,received_amount,received_at,commission_generated,incentive,status,remarks,created_by,created_at",
+  crm_activities: "id,lead_id,project_id,event_type,title,description,actor_id,actor_name,metadata,created_at",
+  crm_files: "id,lead_id,project_id,quotation_id,file_name,file_url,file_type,file_size,uploaded_by,created_at",
+  crm_reminders: "id,lead_id,reminder_day,due_at,priority,status,created_at",
+  crm_audit: "id,lead_id,project_id,quotation_id,action,actor_id,actor_name,metadata,created_at",
+};
+
 async function fetchReferralData() {
   const out = {};
   await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
@@ -396,6 +413,19 @@ async function fetchWithdrawalData() {
   return out;
 }
 
+async function fetchCRMData() {
+  const out = {};
+  await Promise.all(Object.entries(CRM_READS).map(async ([table, columns]) => {
+    const { data, error } = await supabase.from(table).select(columns).order("created_at", { ascending: false });
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
 async function fetchAll() {
   const db = emptyDB();
   await Promise.all(TABLES.map(async (t) => {
@@ -412,7 +442,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData());
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData());
   return db;
 }
 
@@ -773,6 +803,7 @@ const emptyDB = () => ({
   apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [],
   apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
+  crm_clients: [], crm_leads: [], crm_lead_assignments: [], crm_follow_ups: [], crm_quotations: [], crm_quotation_versions: [], crm_projects: [], crm_revenue_collections: [], crm_activities: [], crm_files: [], crm_reminders: [], crm_audit: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -1248,6 +1279,11 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .calc-row { display:flex; align-items:center; justify-content:space-between; font-size:13.5px; }
 
 .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+.crm-kanban { display:grid; grid-template-columns:repeat(7,minmax(190px,1fr)); gap:10px; overflow-x:auto; padding-bottom:6px; }
+.crm-kanban > .card { min-width:190px; min-height:220px; }
+.crm-kanban-card { margin:8px; padding:11px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); cursor:grab; }
+.crm-kanban-card:active { cursor:grabbing; }
+.crm-kanban-card:hover { border-color:var(--primary); }
 .search { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border);
   border-radius:9px; padding:0 12px; flex:1; min-width:180px; }
 .search:focus-within { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
@@ -5128,7 +5164,7 @@ const NAV = [
   ["leave", "Leave", Plane, "leave"],
   ["updates", "Daily updates", MessageSquare, "work"],
   ["chat", "Team chat", Send, "collab"],
-  ["leads", "Leads", UserPlus, "perm:leads"],
+  ["leads", "Leads & pipeline", UserPlus, "perm:leads"],
   ["clients", "Clients", Building2, "perm:clients"],
   ["quotations", "Quotations", FileText, "perm:quotations"],
   ["invoices", "Invoices", Banknote, "perm:invoices"],
@@ -5991,6 +6027,91 @@ function AnnouncementForm({ initial, onSave, onClose }) {
 function LoadMore({ shown, total, onMore }) {
   if (shown >= total) return null;
   return <div style={{ textAlign: "center", padding: "14px 0" }}><button className="btn" onClick={onMore}>Show more ({total - shown} more)</button></div>;
+}
+
+function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
+  const [tab, setTab] = useState("overview");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("All");
+  const [priority, setPriority] = useState("All");
+  const [selected, setSelected] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [dragId, setDragId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [leadForm, setLeadForm] = useState({ customer_name: "", company: "", mobile: "", email: "", source: "Manual Entry", project_category: "Website", expected_budget: "", expected_closing_date: "", priority: "Medium", district: "", state: "Tamil Nadu", remarks: "", tags: "" });
+  const [followForm, setFollowForm] = useState({ follow_up_date: todayISO(), follow_up_time: "10:00", priority: "Medium", notes: "", next_follow_up: "" });
+  const [quoteForm, setQuoteForm] = useState({ title: "", service_type: "Website", description: "", quantity: "1", unit_price: "", discount: "0", gst: "18", validity_until: "" });
+  const [revenueForm, setRevenueForm] = useState({ amount: "", received_at: todayISO(), incentive: "0", remarks: "" });
+  const leads = db.crm_leads || [];
+  const followUps = db.crm_follow_ups || [];
+  const quotes = db.crm_quotations || [];
+  const projects = db.crm_projects || [];
+  const revenue = db.crm_revenue_collections || [];
+  const partners = (db.apn_users || []).filter((p) => p.status === "active");
+  const employees = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.active !== false);
+  const dashboard = useMemo(() => {
+    const active = leads.filter((l) => !["Won", "Lost", "Cancelled", "Converted", "Closed"].includes(l.status));
+    const won = leads.filter((l) => ["Won", "Converted", "Closed"].includes(l.status));
+    const decided = leads.filter((l) => ["Won", "Converted", "Closed", "Lost"].includes(l.status));
+    return { newLeads: leads.filter((l) => l.status === "New").length, hot: leads.filter((l) => ["High", "Urgent"].includes(l.priority)).length, cold: leads.filter((l) => l.priority === "Low").length, followUps: followUps.filter((f) => f.status === "Open" && f.follow_up_date >= todayISO()).length, missed: followUps.filter((f) => f.status === "Open" && f.follow_up_date < todayISO()).length, won: won.length, lost: leads.filter((l) => l.status === "Lost").length, revenue: revenue.filter((r) => r.status !== "Cancelled").reduce((s, r) => s + Number(r.received_amount || 0), 0), conversion: decided.length ? Math.round(won.length * 100 / decided.length) : 0, active: active.length };
+  }, [leads, followUps, revenue]);
+  const visibleLeads = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return leads.filter((l) => (status === "All" || l.status === status) && (priority === "All" || l.priority === priority) && (!q || [l.lead_number, l.customer_name, l.company, l.mobile, l.email, l.district, l.state, l.source, l.project_category, ...(l.tags || [])].filter(Boolean).join(" ").toLowerCase().includes(q))).sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+  }, [leads, query, status, priority]);
+  const call = async (name, args) => {
+    setBusy(true); setError("");
+    try { const { data, error: rpcError } = await supabase.rpc(name, args); if (rpcError) throw new Error(rpcError.message); await reload(); return data; }
+    catch (e) { setError(e.message || "CRM action failed."); throw e; }
+    finally { setBusy(false); }
+  };
+  const saveLead = async () => {
+    if (!leadForm.customer_name.trim()) { setError("Customer name is required."); return; }
+    await call("crm_create_lead", { p_payload: { ...leadForm, expected_budget: Number(leadForm.expected_budget || 0), tags: leadForm.tags.split(",").map((x) => x.trim()).filter(Boolean), lead_owner_id: me?.id } });
+    setModal(null); setLeadForm({ customer_name: "", company: "", mobile: "", email: "", source: "Manual Entry", project_category: "Website", expected_budget: "", expected_closing_date: "", priority: "Medium", district: "", state: "Tamil Nadu", remarks: "", tags: "" });
+  };
+  const updateStatus = async (lead, next) => { await call("crm_update_lead", { p_lead_id: lead.id, p_patch: { status: next } }); };
+  const assign = async (lead, employeeId, partnerId) => { await call("crm_assign_lead", { p_lead_id: lead.id, p_employee_id: employeeId || null, p_partner_id: partnerId || null, p_district_head_id: null, p_state_head_id: null }); };
+  const addFollowUp = async () => { if (!selected) return; await call("crm_add_follow_up", { p_lead_id: selected.id, p_payload: followForm }); setModal(null); };
+  const createQuote = async () => {
+    if (!selected || !quoteForm.title.trim()) { setError("Select a lead and add a quotation title."); return; }
+    await call("crm_create_quotation", { p_lead_id: selected.id, p_payload: { service_type: quoteForm.service_type, title: quoteForm.title, discount: Number(quoteForm.discount || 0), gst: Number(quoteForm.gst || 0), validity_until: quoteForm.validity_until || null, items: [{ description: quoteForm.description || quoteForm.title, quantity: Number(quoteForm.quantity || 1), unit_price: Number(quoteForm.unit_price || 0) }] } });
+    setModal(null);
+  };
+  const recordRevenue = async () => { if (!selected?.project_id || Number(revenueForm.amount) <= 0) { setError("Select a converted lead and enter a positive collection."); return; } await call("crm_record_revenue", { p_project_id: selected.project_id, p_amount: Number(revenueForm.amount), p_received_at: revenueForm.received_at, p_incentive: Number(revenueForm.incentive || 0), p_remarks: revenueForm.remarks || null }); setModal(null); };
+  const selectLead = (lead) => { setSelected(lead); setTab("leads"); };
+  const activityFor = (leadId) => (db.crm_activities || []).filter((a) => a.lead_id === leadId).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const quoteStatus = async (q, next) => { await call("crm_update_quotation_status", { p_quote_id: q.id, p_status: next }); };
+  const statusColumns = ["New", "Contacted", "Interested", "Quotation Sent", "Negotiation", "Won", "Lost"];
+  const statCards = [["New leads", dashboard.newLeads, UserPlus], ["Hot leads", dashboard.hot, Flame], ["Today's follow-ups", dashboard.followUps, CalendarClock], ["Missed follow-ups", dashboard.missed, AlertTriangle], ["Won", dashboard.won, Trophy], ["Lost", dashboard.lost, XCircle], ["Revenue", money(dashboard.revenue), Coins], ["Conversion", `${dashboard.conversion}%`, GaugeCircle]];
+  return (
+    <div className="content">
+      <div className="page-head"><div><h3>Leads & sales pipeline</h3><div className="hint-line">Lead → follow-up → quotation → project → revenue, connected to APN, finance, audit and notifications.</div></div><span className="spacer" /><button className="btn primary" onClick={() => setModal("lead")}><Plus size={16} />New lead</button></div>
+      {error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}<button className="iconbtn" style={{ marginLeft: "auto", width: 26, height: 26 }} onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div>}
+      <div className="seg" style={{ marginBottom: 16, overflowX: "auto" }}>{[["overview", "Overview"], ["pipeline", "Pipeline"], ["leads", "Leads"], ["followups", "Follow-ups"], ["quotations", "Quotations"], ["revenue", "Revenue & projects"]].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</div>
+      {tab === "overview" && <>
+        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", marginBottom: 16 }}>{statCards.map(([label, value, Icon]) => <div className="card stat" key={label}><div className="lbl"><Icon size={14} />{label}</div><div className="num mono">{value}</div></div>)}</div>
+        <div className="cards-grid" style={{ gridTemplateColumns: "1.35fr 1fr", alignItems: "start" }}>
+          <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Conversion funnel</div><div className="item-meta">Active {dashboard.active} · {leads.length} total leads</div></div><span className="badge pri">{dashboard.conversion}% conversion</span></div>{statusColumns.map((s) => { const n = leads.filter((l) => l.status === s).length; return <div key={s} className="item-row" style={{ padding: "10px 16px" }}><span style={{ flex: 1 }}>{s}</span><div className="progress-track" style={{ width: 140 }}><div className="progress-fill" style={{ width: `${leads.length ? Math.round(n * 100 / leads.length) : 0}%` }} /></div><span className="mono" style={{ width: 28, textAlign: "right" }}>{n}</span></div>; })}</div>
+          <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Recent activity</div><div className="item-meta">Live CRM timeline</div></div><Activity size={16} color="var(--primary)" /></div>{(db.crm_activities || []).slice(0, 6).map((a) => <div className="item-row" key={a.id} style={{ padding: "10px 16px" }}><div className="item-main"><div style={{ fontWeight: 600 }}>{a.title}</div><div className="hint-line">{a.description}</div></div><span className="hint-line" style={{ whiteSpace: "nowrap" }}>{fmtDate(a.created_at)}</span></div>)}{!(db.crm_activities || []).length && <Empty icon={<Activity size={22} />} title="No CRM activity yet" text="Create a lead to start the lifecycle timeline." />}</div>
+        </div>
+      </>}
+      {tab === "pipeline" && <div className="crm-kanban">{statusColumns.map((s) => <div className="card" key={s} onDragOver={(e) => e.preventDefault()} onDrop={async () => { const l = leads.find((x) => x.id === dragId); if (l && l.status !== s) await updateStatus(l, s); setDragId(null); }}><div className="item-row" style={{ padding: "12px 14px" }}><div className="item-main"><div className="item-title">{s}</div><div className="item-meta">{leads.filter((l) => l.status === s).length} leads</div></div></div>{leads.filter((l) => l.status === s).map((l) => <div key={l.id} draggable onDragStart={() => setDragId(l.id)} className="crm-kanban-card" onClick={() => selectLead(l)}><div style={{ fontWeight: 700 }}>{l.customer_name}</div><div className="hint-line">{l.lead_number} · {l.project_category || "—"}</div><div className="item-meta"><span className={`badge ${l.priority === "Urgent" ? "neg" : l.priority === "High" ? "accent" : ""}`}>{l.priority}</span><span>{l.expected_budget ? money(l.expected_budget) : "Budget —"}</span></div></div>)}</div>)}</div>}
+      {tab === "leads" && <>
+        <div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ID, customer, company, phone, owner, district, state, tags…" aria-label="Search CRM leads" /></div><select className="select" value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto" }}><option>All</option>{["New","Assigned","Contacted","Follow-up","Interested","Quotation Sent","Negotiation","Won","Lost","On Hold","Cancelled","Converted","Closed"].map((s) => <option key={s}>{s}</option>)}</select><select className="select" value={priority} onChange={(e) => setPriority(e.target.value)} style={{ width: "auto" }}><option>All</option>{PRIORITIES.map((p) => <option key={p}>{p}</option>)}</select></div>
+        <div className="card"><div className="table-wrap">{visibleLeads.length ? <table className="tbl"><thead><tr><th>Lead</th><th>Contact</th><th>Source</th><th>Owner / partner</th><th>Budget</th><th>Status</th><th></th></tr></thead><tbody>{visibleLeads.map((l) => <tr key={l.id} onClick={() => selectLead(l)} style={{ cursor: "pointer" }}><td><div style={{ fontWeight: 700 }}>{l.customer_name}</div><div className="hint-line">{l.lead_number}{l.company ? ` · ${l.company}` : ""}</div></td><td>{l.mobile || "—"}<div className="hint-line">{l.email || ""}</div></td><td><span className="badge pri">{l.source}</span></td><td><select className="select" value={l.assigned_employee_id || ""} onClick={(e) => e.stopPropagation()} onChange={(e) => assign(l, e.target.value, l.assigned_partner_id)} style={{ minWidth: 140, padding: "5px 8px" }}><option value="">Unassigned</option>{employees.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>{l.assigned_partner_id && <div className="hint-line">APN: {(partners.find((p) => p.id === l.assigned_partner_id)?.name) || l.assigned_partner_id}</div>}</td><td className="mono">{money(l.expected_budget)}</td><td><select className="select" value={l.status} onClick={(e) => e.stopPropagation()} onChange={(e) => updateStatus(l, e.target.value)} style={{ width: "auto", padding: "5px 8px" }}>{["New","Assigned","Contacted","Follow-up","Interested","Quotation Sent","Negotiation","Won","Lost","On Hold","Cancelled","Converted","Closed"].map((s) => <option key={s}>{s}</option>)}</select></td><td><button className="btn sm" onClick={(e) => { e.stopPropagation(); setSelected(l); setModal("follow"); }}><CalendarClock size={13} />Follow-up</button></td></tr>)}</tbody></table> : <Empty icon={<UserPlus size={22} />} title={query || status !== "All" ? "No matching leads" : "No leads yet"} text="Capture a lead once and keep every next step linked to the same record." action={!query && <button className="btn primary" onClick={() => setModal("lead")}><Plus size={16} />Create first lead</button>} />}</div></div>
+      </>}
+      {tab === "followups" && <div className="card"><div className="table-wrap">{followUps.length ? <table className="tbl"><thead><tr><th>Date / time</th><th>Lead</th><th>Priority</th><th>Notes</th><th>Status</th></tr></thead><tbody>{followUps.map((f) => { const l = leads.find((x) => x.id === f.lead_id); return <tr key={f.id}><td className="mono">{fmtDate(f.follow_up_date)}{f.follow_up_time ? ` · ${f.follow_up_time}` : ""}</td><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => l && selectLead(l)}>{l?.customer_name || "—"}</button><div className="hint-line">{l?.lead_number}</div></td><td><span className={`badge ${f.priority === "Urgent" || f.priority === "High" ? "neg" : "accent"}`}>{f.priority}</span></td><td>{f.notes || "—"}</td><td><span className={`badge ${f.status === "Completed" ? "pos" : f.follow_up_date < todayISO() ? "neg" : "pri"}`}>{f.status === "Open" && f.follow_up_date < todayISO() ? "Missed" : f.status}</span></td></tr>; })}</tbody></table> : <Empty icon={<CalendarClock size={22} />} title="No follow-ups scheduled" text="Open any lead and schedule a call, reminder, or next action." />}</div></div>}
+      {tab === "quotations" && <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))" }}>{quotes.length ? quotes.map((q) => <div className="card stat" key={q.id}><div style={{ display: "flex", gap: 8 }}><div className="item-main"><div className="item-title">{q.title}</div><div className="item-meta">{q.quote_number} · {leads.find((l) => l.id === q.lead_id)?.customer_name || "—"}</div></div><div className="mono" style={{ fontWeight: 700 }}>{money(q.grand_total)}</div></div><div className="item-meta"><span className={`badge ${q.status === "Accepted" || q.status === "Converted" ? "pos" : q.status === "Rejected" ? "neg" : "pri"}`}>{q.status}</span><span>Valid until {q.validity_until ? fmtDate(q.validity_until) : "—"}</span></div><div className="row-actions"><select className="select" value={q.status} onChange={(e) => quoteStatus(q, e.target.value)} style={{ width: "auto", padding: "5px 8px" }}>{["Draft","Pending Approval","Approved","Sent","Viewed","Accepted","Rejected","Expired","Converted"].map((s) => <option key={s}>{s}</option>)}</select></div></div>) : <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<FileText size={22} />} title="No CRM quotations" text="Create a quotation from a lead to keep versions, approval and conversion linked." /></div>}</div>}
+      {tab === "revenue" && <div className="card"><div className="table-wrap">{projects.length ? <table className="tbl"><thead><tr><th>Project</th><th>Lead</th><th>Value</th><th>Revenue</th><th>APN / commission</th><th></th></tr></thead><tbody>{projects.map((p) => { const l = leads.find((x) => x.id === p.lead_id); const rev = revenue.filter((r) => r.project_id === p.id); return <tr key={p.id}><td><div style={{ fontWeight: 700 }}>{p.name}</div><div className="hint-line">{p.project_number} · {p.status}</div></td><td>{l?.customer_name || "—"}</td><td className="mono">{money(p.project_value)}</td><td className="mono">{money(rev.reduce((s, r) => s + Number(r.received_amount || 0), 0))}</td><td>{p.assigned_partner_id ? <span className="badge accent">APN linked</span> : <span className="hint-line">Direct</span>}{rev.length > 0 && <div className="hint-line">{money(rev.reduce((s, r) => s + Number(r.commission_generated || 0), 0))} commission</div>}</td><td>{l && <button className="btn sm primary" onClick={() => { setSelected(l); setModal("revenue"); }}>Record collection</button>}</td></tr>; })}</tbody></table> : <Empty icon={<FolderKanban size={22} />} title="No converted projects" text="Accept a quotation to create a project and connect future revenue automatically." />}</div></div>}
+      {selected && <div className="card" style={{ marginTop: 16 }}><div className="item-row"><div className="item-main"><div className="item-title">{selected.customer_name} <span className="badge pri" style={{ marginLeft: 6 }}>{selected.lead_number}</span></div><div className="item-meta">{selected.company || "No company"} · {selected.status} · {selected.source}</div></div><ContactButtons person={{ name: selected.customer_name, mobile: selected.mobile, email: selected.email }} compact /><button className="iconbtn" onClick={() => setSelected(null)} aria-label="Close lead details"><X size={15} /></button></div><div className="item-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}><div className="item-main"><div className="hint-line">{selected.address || selected.location || "No address"}{selected.district ? ` · ${selected.district}` : ""}{selected.state ? ` · ${selected.state}` : ""}</div><div className="item-meta">Budget {money(selected.expected_budget)} · Score {selected.lead_score}/100 · Priority {selected.priority}</div></div><div className="row-actions"><button className="btn sm" onClick={() => setModal("follow")}><CalendarClock size={13} />Schedule follow-up</button><button className="btn sm" onClick={() => setModal("quote")}><FileText size={13} />Create quotation</button>{selected.project_id && <button className="btn sm primary" onClick={() => setModal("revenue")}><Coins size={13} />Record revenue</button>}</div></div><div className="activity-timeline" style={{ padding: "0 16px 16px" }}>{activityFor(selected.id).map((a) => <div className="activity-timeline-item" key={a.id}><div className="activity-timeline-dot" /><div><div style={{ fontWeight: 600 }}>{a.title}</div><div className="hint-line">{a.description} · {fmtDate(a.created_at)} · {a.actor_name || "System"}</div></div></div>)}</div></div>}
+      {modal === "lead" && <Modal title="Create CRM lead" onClose={() => setModal(null)} onMaximize={() => {}} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={saveLead}>{busy ? "Saving…" : "Create lead"}</button></>}><div className="grid2"><Field label="Customer name" required><input className="input" autoFocus value={leadForm.customer_name} onChange={(e) => setLeadForm({ ...leadForm, customer_name: e.target.value })} /></Field><Field label="Company"><input className="input" value={leadForm.company} onChange={(e) => setLeadForm({ ...leadForm, company: e.target.value })} /></Field><Field label="Mobile"><input className="input" value={leadForm.mobile} onChange={(e) => setLeadForm({ ...leadForm, mobile: e.target.value })} /></Field><Field label="Email"><input className="input" type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} /></Field><Field label="Lead source"><select className="select" value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}>{["Website","WhatsApp","Instagram","Facebook","Walk-in","Phone Call","Referral","Existing Client","APN Referral","Employee Referral","Manual Entry"].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Project category"><select className="select" value={leadForm.project_category} onChange={(e) => setLeadForm({ ...leadForm, project_category: e.target.value })}>{["Website","Mobile App","Software","Marketing","Training","AMC","Custom Services"].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Expected budget"><input className="input" type="number" min="0" value={leadForm.expected_budget} onChange={(e) => setLeadForm({ ...leadForm, expected_budget: e.target.value })} /></Field><Field label="Expected closing date"><input className="input" type="date" value={leadForm.expected_closing_date} onChange={(e) => setLeadForm({ ...leadForm, expected_closing_date: e.target.value })} /></Field><Field label="Priority"><select className="select" value={leadForm.priority} onChange={(e) => setLeadForm({ ...leadForm, priority: e.target.value })}>{PRIORITIES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="District"><input className="input" value={leadForm.district} onChange={(e) => setLeadForm({ ...leadForm, district: e.target.value })} /></Field></div><Field label="Remarks"><textarea className="textarea" value={leadForm.remarks} onChange={(e) => setLeadForm({ ...leadForm, remarks: e.target.value })} /></Field><Field label="Tags" hint="Comma-separated"><input className="input" value={leadForm.tags} onChange={(e) => setLeadForm({ ...leadForm, tags: e.target.value })} placeholder="website, hot, referral" /></Field></Modal>}
+      {modal === "follow" && <Modal title={`Schedule follow-up · ${selected?.customer_name || "Lead"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={addFollowUp}>Schedule</button></>}><div className="grid2"><Field label="Date" required><input className="input" type="date" value={followForm.follow_up_date} onChange={(e) => setFollowForm({ ...followForm, follow_up_date: e.target.value })} /></Field><Field label="Time"><input className="input" type="time" value={followForm.follow_up_time} onChange={(e) => setFollowForm({ ...followForm, follow_up_time: e.target.value })} /></Field><Field label="Priority"><select className="select" value={followForm.priority} onChange={(e) => setFollowForm({ ...followForm, priority: e.target.value })}>{PRIORITIES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Next follow-up"><input className="input" type="date" value={followForm.next_follow_up} onChange={(e) => setFollowForm({ ...followForm, next_follow_up: e.target.value })} /></Field></div><Field label="Notes"><textarea className="textarea" value={followForm.notes} onChange={(e) => setFollowForm({ ...followForm, notes: e.target.value })} autoFocus /></Field></Modal>}
+      {modal === "quote" && <Modal title={`Create quotation · ${selected?.customer_name || "Lead"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={createQuote}>Create quotation</button></>}><div className="grid2"><Field label="Title" required><input className="input" autoFocus value={quoteForm.title} onChange={(e) => setQuoteForm({ ...quoteForm, title: e.target.value })} placeholder="Website development proposal" /></Field><Field label="Service"><select className="select" value={quoteForm.service_type} onChange={(e) => setQuoteForm({ ...quoteForm, service_type: e.target.value })}>{["Website","Mobile App","Software","Marketing","Training","AMC","Custom Services"].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Item description"><input className="input" value={quoteForm.description} onChange={(e) => setQuoteForm({ ...quoteForm, description: e.target.value })} /></Field><Field label="Quantity"><input className="input" type="number" min="1" value={quoteForm.quantity} onChange={(e) => setQuoteForm({ ...quoteForm, quantity: e.target.value })} /></Field><Field label="Unit price"><input className="input" type="number" min="0" value={quoteForm.unit_price} onChange={(e) => setQuoteForm({ ...quoteForm, unit_price: e.target.value })} /></Field><Field label="Discount"><input className="input" type="number" min="0" value={quoteForm.discount} onChange={(e) => setQuoteForm({ ...quoteForm, discount: e.target.value })} /></Field><Field label="GST %"><input className="input" type="number" min="0" value={quoteForm.gst} onChange={(e) => setQuoteForm({ ...quoteForm, gst: e.target.value })} /></Field><Field label="Validity"><input className="input" type="date" value={quoteForm.validity_until} onChange={(e) => setQuoteForm({ ...quoteForm, validity_until: e.target.value })} /></Field></div></Modal>}
+      {modal === "revenue" && <Modal title={`Record revenue · ${selected?.customer_name || "Project"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={recordRevenue}>Record collection</button></>}><div className="grid2"><Field label="Amount" required><input className="input" type="number" min="0.01" autoFocus value={revenueForm.amount} onChange={(e) => setRevenueForm({ ...revenueForm, amount: e.target.value })} /></Field><Field label="Received date"><input className="input" type="date" value={revenueForm.received_at} onChange={(e) => setRevenueForm({ ...revenueForm, received_at: e.target.value })} /></Field><Field label="Incentive"><input className="input" type="number" min="0" value={revenueForm.incentive} onChange={(e) => setRevenueForm({ ...revenueForm, incentive: e.target.value })} /></Field></div><Field label="Remarks"><textarea className="textarea" value={revenueForm.remarks} onChange={(e) => setRevenueForm({ ...revenueForm, remarks: e.target.value })} /></Field><div className="hint-line">This creates the CRM collection and automatically links finance, APN commission, direct referral earnings, timeline, audit, and notifications.</div></Modal>}
+    </div>
+  );
 }
 
 function Leads({ db, mutate, openModal, removeItem, isAdmin }) {
@@ -11001,6 +11122,7 @@ export default function App() {
     TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
@@ -11510,7 +11632,7 @@ export default function App() {
       case "projects": return <Projects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} />;
       case "inhouse": return <InHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} />;
       case "testing": return <Testing db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} />;
-      case "leads": return <Leads db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} />;
+      case "leads": return <EnterpriseCRM db={db} team={team} me={me} isAdmin={isAdmin} reload={reload} />;
       case "clients": return <Clients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} />;
       case "quotations": return <Quotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} />;
       case "invoices": return <Invoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
