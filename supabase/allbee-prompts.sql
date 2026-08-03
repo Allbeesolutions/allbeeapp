@@ -21,7 +21,7 @@ do $$
 begin
   drop policy if exists prompts_all on public.prompts;
   -- Prefer the helper if your schema defines it…
-  if exists (select 1 from pg_proc where proname = 'is_internal') then
+  if to_regprocedure('public.is_internal()') is not null then
     execute $p$
       create policy prompts_all on public.prompts
         for all to authenticated

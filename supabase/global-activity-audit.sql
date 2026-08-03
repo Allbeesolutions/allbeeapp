@@ -41,11 +41,13 @@ grant select, insert on public.audit to authenticated;
 -- The existing client subscribes to this table for cross-user updates.
 do $$
 begin
-  begin
-    alter publication supabase_realtime add table public.audit;
-  exception when duplicate_object then
-    null;
-  end;
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin
+      alter publication supabase_realtime add table public.audit;
+    exception when duplicate_object then
+      null;
+    end;
+  end if;
 end
 $$;
 

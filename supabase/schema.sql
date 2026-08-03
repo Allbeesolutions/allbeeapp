@@ -1,5 +1,5 @@
 -- ============================================================================
--- ALLBEE — database schema for Supabase (Postgres)  ·  v3 (5 roles + access)
+-- ALLBEE — database schema for Supabase (Postgres)  ·  v3 (roles + access)
 -- Run once: Supabase Dashboard -> SQL Editor -> New query -> paste -> Run.
 -- Safe to re-run AND safe to run on top of a v2 install — every change is
 -- guarded (create-if-not-exists / add-column-if-not-exists / drop-then-create),
@@ -63,10 +63,46 @@ alter table public.profiles add column if not exists tnc_version int   not null 
 -- from the old two-role check).
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add  constraint profiles_role_check
-  check (role in ('superadmin','admin','accountant','staff','intern'));
+  check (role in ('superadmin','admin','accountant','staff','intern','client','partner','district_head','state_head')) not valid;
 alter table public.profiles drop constraint if exists profiles_status_check;
 alter table public.profiles add  constraint profiles_status_check
-  check (status in ('active','on_leave','suspended','resigned','terminated'));
+  check (status in ('active','on_leave','suspended','resigned','terminated')) not valid;
+
+-- Preserve legacy duplicate usernames/mobile numbers while preventing new
+-- duplicates. Later migrations add unique indexes only when existing data
+-- permits them; this guard keeps upgrades data-preserving otherwise.
+create or replace function public.profiles_identity_guard()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  new_username text := lower(trim(coalesce(to_jsonb(new)->>'username', '')));
+  old_username text := '';
+  new_mobile text := regexp_replace(coalesce(to_jsonb(new)->>'mobile', ''), '[^0-9]', '', 'g');
+  old_mobile text := '';
+begin
+  if tg_op = 'UPDATE' then
+    old_username := lower(trim(coalesce(to_jsonb(old)->>'username', '')));
+    old_mobile := regexp_replace(coalesce(to_jsonb(old)->>'mobile', ''), '[^0-9]', '', 'g');
+  end if;
+  if new_username <> '' and new_username <> old_username and exists (
+    select 1 from public.profiles p
+    where p.id <> new.id
+      and lower(trim(coalesce(to_jsonb(p)->>'username', ''))) = new_username
+  ) then
+    raise exception 'Username already exists.' using errcode = 'unique_violation';
+  end if;
+  if new_mobile <> '' and new_mobile <> old_mobile and exists (
+    select 1 from public.profiles p
+    where p.id <> new.id
+      and regexp_replace(coalesce(to_jsonb(p)->>'mobile', ''), '[^0-9]', '', 'g') = new_mobile
+  ) then
+    raise exception 'Mobile number already exists.' using errcode = 'unique_violation';
+  end if;
+  return new;
+end $$;
+drop trigger if exists profiles_identity_guard_trg on public.profiles;
+create trigger profiles_identity_guard_trg
+before insert or update on public.profiles
+for each row execute function public.profiles_identity_guard();
 
 -- ── helper functions (SECURITY DEFINER avoids policy recursion) ─────────────
 -- Defined BEFORE any policy that calls them.
@@ -331,7 +367,7 @@ select public._allbee_realtime('recycle');
 alter table public.profiles add column if not exists notif_seen_at timestamptz;
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add  constraint profiles_role_check
-  check (role in ('superadmin','admin','accountant','staff','intern','client'));
+  check (role in ('superadmin','admin','accountant','staff','intern','client','partner','district_head','state_head')) not valid;
 
 create or replace function public.is_client()
 returns boolean language sql security definer stable set search_path = public as $$
@@ -368,6 +404,11 @@ create policy profiles_select on public.profiles for select to authenticated
 
 -- ── GLOBAL TASK NUMBERING (monotonic, never reused) ─────────────────────────
 insert into public.app_config (key, value) values ('task_counter','0') on conflict (key) do nothing;
+-- Older installs created this same zero-argument function as RETURNS bigint
+-- (the sequence-based implementation). PostgreSQL cannot change a function's
+-- return type through CREATE OR REPLACE, so remove only this exact overload
+-- before installing the current RETURNS int implementation.
+drop function if exists public.next_task_number();
 create or replace function public.next_task_number()
 returns int language plpgsql security definer set search_path = public as $$
 declare n int;

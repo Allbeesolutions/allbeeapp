@@ -8,11 +8,16 @@
 
 -- Preserve the requested legacy identity mapping without renumbering any other
 -- existing partner. The remaining reserved numbers are never allocated.
-update public.apn_users
+update public.apn_users as target_row
 set data = jsonb_set(data, '{apnId}', to_jsonb('APN-TN-0001'::text), true),
     updated_at = now()
-where lower(coalesce(data->>'username', '')) = 'hajiapn'
-  and coalesce(data->>'apnId', '') <> 'APN-TN-0001';
+where lower(coalesce(target_row.data->>'username', '')) = 'hajiapn'
+  and coalesce(target_row.data->>'apnId', '') <> 'APN-TN-0001'
+  and not exists (
+    select 1 from public.apn_users other
+    where other.id <> target_row.id
+      and lower(trim(coalesce(other.data->>'apnId',''))) = 'apn-tn-0001'
+  );
 
 -- Allocate new registrations from APN-TN-0006 onward. The transaction lock
 -- prevents two concurrent registrations from receiving the same number.
@@ -27,7 +32,7 @@ declare
   next_number bigint;
 begin
   perform pg_advisory_xact_lock(hashtext('allbee.apn.partner.number'));
-  select greatest(coalesce(max((regexp_replace(data->>'apnId', '[^0-9]', '', 'g'))::bigint), 5) + 1, 6)
+  select greatest(coalesce(max(case when regexp_replace(data->>'apnId', '[^0-9]', '', 'g') ~ '^[0-9]+$' then (regexp_replace(data->>'apnId', '[^0-9]', '', 'g'))::bigint end), 5) + 1, 6)
     into next_number
     from public.apn_users;
   while next_number in (2, 3)

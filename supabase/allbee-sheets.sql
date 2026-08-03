@@ -22,7 +22,7 @@ alter table public.sheets enable row level security;
 do $$
 begin
   drop policy if exists sheets_all on public.sheets;
-  if exists (select 1 from pg_proc where proname = 'is_internal') then
+  if to_regprocedure('public.is_internal()') is not null then
     execute $p$
       create policy sheets_all on public.sheets
         for all to authenticated

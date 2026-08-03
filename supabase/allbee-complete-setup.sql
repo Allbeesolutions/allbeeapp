@@ -184,8 +184,18 @@ create policy "attachments delete" on storage.objects for delete to authenticate
 alter table public.profiles add column if not exists username    text;
 alter table public.profiles add column if not exists designation text;
 alter table public.profiles add column if not exists last_active timestamptz;  -- online-status heartbeat
-create unique index if not exists profiles_username_key
-  on public.profiles (lower(username)) where username is not null;
+do $$
+begin
+  if exists (
+    select 1 from public.profiles
+    where nullif(trim(username), '') is not null
+    group by lower(trim(username)) having count(*) > 1
+  ) then
+    execute $sql$create index if not exists profiles_username_lookup_idx on public.profiles (lower(trim(username))) where username is not null and trim(username) <> ''$sql$;
+  else
+    execute $sql$create unique index if not exists profiles_username_key on public.profiles (lower(trim(username))) where username is not null and trim(username) <> ''$sql$;
+  end if;
+end $$;
 
 -- The app heartbeats `last_active` on the signed-in user's own row every 60s.
 -- This relies on your existing "a user may update their own profile" RLS

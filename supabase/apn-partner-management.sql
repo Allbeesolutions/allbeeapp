@@ -6,14 +6,33 @@ alter table public.profiles add column if not exists designation text;
 alter table public.profiles add column if not exists approved boolean not null default true;
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check
-  (role in ('superadmin','admin','accountant','staff','intern','client','partner','district_head'));
+  (role in ('superadmin','admin','accountant','staff','intern','client','partner','district_head','state_head')) not valid;
 
-create unique index if not exists profiles_username_apn_unique
-  on public.profiles (lower(trim(username)))
-  where username is not null and trim(username) <> '';
-create unique index if not exists profiles_mobile_apn_unique
-  on public.profiles ((regexp_replace(mobile, '[^0-9]', '', 'g')))
-  where mobile is not null and regexp_replace(mobile, '[^0-9]', '', 'g') <> '';
+-- Existing production data may contain duplicate legacy identities. Preserve
+-- those rows, retain lookup performance, and enforce uniqueness for all new or
+-- changed values through profiles_identity_guard(). Once legacy duplicates are
+-- resolved, re-running this block automatically creates the unique indexes.
+do $$
+begin
+  if exists (
+    select 1 from public.profiles
+    where nullif(trim(username), '') is not null
+    group by lower(trim(username)) having count(*) > 1
+  ) then
+    execute $sql$create index if not exists profiles_username_apn_lookup_idx on public.profiles (lower(trim(username))) where username is not null and trim(username) <> ''$sql$;
+  else
+    execute $sql$create unique index if not exists profiles_username_apn_unique on public.profiles (lower(trim(username))) where username is not null and trim(username) <> ''$sql$;
+  end if;
+  if exists (
+    select 1 from public.profiles
+    where nullif(regexp_replace(mobile, '[^0-9]', '', 'g'), '') is not null
+    group by regexp_replace(mobile, '[^0-9]', '', 'g') having count(*) > 1
+  ) then
+    execute $sql$create index if not exists profiles_mobile_apn_lookup_idx on public.profiles ((regexp_replace(mobile, '[^0-9]', '', 'g'))) where mobile is not null and regexp_replace(mobile, '[^0-9]', '', 'g') <> ''$sql$;
+  else
+    execute $sql$create unique index if not exists profiles_mobile_apn_unique on public.profiles ((regexp_replace(mobile, '[^0-9]', '', 'g'))) where mobile is not null and regexp_replace(mobile, '[^0-9]', '', 'g') <> ''$sql$;
+  end if;
+end $$;
 
 do $$
 declare t text;
@@ -191,12 +210,12 @@ end $$;
 create index if not exists apn_users_status_idx on public.apn_users ((data->>'status'));
 create index if not exists apn_users_district_idx on public.apn_users ((data->>'district'));
 create index if not exists apn_users_name_idx on public.apn_users (lower(data->>'name'));
-create index if not exists apn_timeline_partner_created_idx on public.apn_timeline ((data->>'partnerId'), ((nullif(data->>'createdAt',''))::bigint) desc);
+create index if not exists apn_timeline_partner_created_idx on public.apn_timeline ((data->>'partnerId'), ((case when data->>'createdAt' ~ '^[0-9]+$' then (data->>'createdAt')::bigint end)) desc);
 create index if not exists apn_warnings_partner_status_idx on public.apn_warnings ((data->>'partnerId'), (data->>'status'));
-create index if not exists apn_notes_partner_updated_idx on public.apn_notes ((data->>'partnerId'), ((nullif(data->>'updatedAt',''))::bigint) desc);
-create index if not exists apn_activity_partner_created_idx on public.apn_activity ((data->>'partnerId'), ((nullif(data->>'createdAt',''))::bigint) desc);
-create index if not exists apn_transfer_partner_effective_idx on public.apn_transfer_history ((data->>'partnerId'), ((nullif(data->>'effectiveDate',''))::bigint) desc);
-create index if not exists apn_communications_partner_created_idx on public.apn_communications ((data->>'partnerId'), ((nullif(data->>'createdAt',''))::bigint) desc);
+create index if not exists apn_notes_partner_updated_idx on public.apn_notes ((data->>'partnerId'), ((case when data->>'updatedAt' ~ '^[0-9]+$' then (data->>'updatedAt')::bigint end)) desc);
+create index if not exists apn_activity_partner_created_idx on public.apn_activity ((data->>'partnerId'), ((case when data->>'createdAt' ~ '^[0-9]+$' then (data->>'createdAt')::bigint end)) desc);
+create index if not exists apn_transfer_partner_effective_idx on public.apn_transfer_history ((data->>'partnerId'), ((case when data->>'effectiveDate' ~ '^[0-9]+$' then (data->>'effectiveDate')::bigint end)) desc);
+create index if not exists apn_communications_partner_created_idx on public.apn_communications ((data->>'partnerId'), ((case when data->>'createdAt' ~ '^[0-9]+$' then (data->>'createdAt')::bigint end)) desc);
 
 -- Partner identity documents are private and downloaded through short-lived
 -- signed URLs. Existing APN sales materials continue to use apn_documents

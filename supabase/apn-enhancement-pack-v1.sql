@@ -24,18 +24,18 @@ begin
   if public.is_admin() then
     -- Preserve the existing admin permission boundary: non-superadmins may
     -- process allowed statuses, but cannot edit partner identity fields.
-    foreach k in array['name','username','email','mobile','alternateNumber','gender','dob','country','state','district','taluk','city','pincode','address','level','target','targetMetric','commissionPct','attendanceScore','notes','role','revenueGenerated','walletBalance','suspensionReason','suspensionNotes','suspendedBy','suspendedAt','deletedAt','deletedBy','archivedAt'] loop
+    foreach k in array array['name','username','email','mobile','alternateNumber','gender','dob','country','state','district','taluk','city','pincode','address','level','target','targetMetric','commissionPct','attendanceScore','notes','role','revenueGenerated','walletBalance','suspensionReason','suspensionNotes','suspendedBy','suspendedAt','deletedAt','deletedBy','archivedAt'] loop
       if old.data ? k then new.data := jsonb_set(new.data, array[k], old.data->k, true); else new.data := new.data - k; end if;
     end loop;
   else
     -- Self-service APN profile fields.
-    foreach k in array['id','apnId','status','role','level','target','targetMetric','commissionPct','attendanceScore','notes','revenueGenerated','walletBalance','suspensionReason','suspensionNotes','suspendedBy','suspendedAt','deletedAt','deletedBy','archivedAt','createdAt','approvedAt','approvedBy','reactivatedAt','reactivatedBy'] loop
+    foreach k in array array['id','apnId','status','role','level','target','targetMetric','commissionPct','attendanceScore','notes','revenueGenerated','walletBalance','suspensionReason','suspensionNotes','suspendedBy','suspendedAt','deletedAt','deletedBy','archivedAt','createdAt','approvedAt','approvedBy','reactivatedAt','reactivatedBy'] loop
       if old.data ? k then new.data := jsonb_set(new.data, array[k], old.data->k, true); else new.data := new.data - k; end if;
     end loop;
   end if;
 
   if public.is_admin() then
-    foreach k in array['quizPasses','unlocked','notifReads','lastCheckIn','lastActivity','reactivationRequested','reactivationRecommended'] loop
+    foreach k in array array['quizPasses','unlocked','notifReads','lastCheckIn','lastActivity','reactivationRequested','reactivationRecommended'] loop
       if old.data ? k then new.data := jsonb_set(new.data, array[k], old.data->k, true); else new.data := new.data - k; end if;
     end loop;
   end if;
@@ -84,7 +84,12 @@ for each row execute function public.profiles_guard();
 -- Canonicalize the existing hajiAPN seed/account identifier without leaving
 -- the superseded identifier in application data. The numeric comparison also
 -- handles equivalent padded APN identifier formats safely.
-update public.apn_users
+update public.apn_users as target_row
 set data = jsonb_set(data, '{apnId}', to_jsonb('APN-TN-0001'::text), true), updated_at = now()
-where lower(trim(coalesce(data->>'username',''))) = 'hajiapn'
-  and regexp_replace(coalesce(data->>'apnId',''), '[^0-9]', '', 'g') = '0003';
+where lower(trim(coalesce(target_row.data->>'username',''))) = 'hajiapn'
+  and regexp_replace(coalesce(target_row.data->>'apnId',''), '[^0-9]', '', 'g') = '0003'
+  and not exists (
+    select 1 from public.apn_users other
+    where other.id <> target_row.id
+      and lower(trim(coalesce(other.data->>'apnId',''))) = 'apn-tn-0001'
+  );

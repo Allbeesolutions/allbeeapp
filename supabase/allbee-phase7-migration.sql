@@ -82,9 +82,18 @@ create policy documents_client_read on public.documents
 -- unique index so username→email resolution is never ambiguous.
 alter table public.profiles add column if not exists username text;
 
-create unique index if not exists profiles_username_unique
-  on public.profiles (lower(username))
-  where username is not null;
+do $$
+begin
+  if exists (
+    select 1 from public.profiles
+    where nullif(trim(username), '') is not null
+    group by lower(trim(username)) having count(*) > 1
+  ) then
+    execute $sql$create index if not exists profiles_username_lookup_idx on public.profiles (lower(trim(username))) where username is not null and trim(username) <> ''$sql$;
+  else
+    execute $sql$create unique index if not exists profiles_username_unique on public.profiles (lower(trim(username))) where username is not null and trim(username) <> ''$sql$;
+  end if;
+end $$;
 
 -- ============================================================================
 -- Done. After running:

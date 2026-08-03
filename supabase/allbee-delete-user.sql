@@ -22,7 +22,7 @@ begin
     -- Admins & partners may delete any NON-partner profile. Partners (superadmin)
     -- can never be deleted. Uses the is_admin() helper if present, else a direct
     -- role check.
-    if exists (select 1 from pg_proc where proname = 'is_admin') then
+    if to_regprocedure('public.is_admin()') is not null then
       execute $p$
         create policy profiles_admin_delete on public.profiles
           for delete to authenticated
