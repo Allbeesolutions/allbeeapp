@@ -12,7 +12,6 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const url = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APN_TABLES = ["apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_achievements", "apn_notifications", "apn_documents", "apn_timeline", "apn_warnings", "apn_notes", "apn_activity", "apn_transfer_history", "apn_communications"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -32,8 +31,17 @@ Deno.serve(async (req) => {
     if (action === "create") {
       const { email, password, name, role = "staff" } = body;
       if (!email || !password) return json({ error: "Email and password are required." }, 400);
-      const { data, error } = await admin.auth.admin.createUser({ email: String(email).trim().toLowerCase(), password: String(password), email_confirm: true, user_metadata: { name: name ?? "", role, role_intent: role === "partner" ? "partner" : undefined, apn: role === "partner" ? { username: body.username ?? "", mobile: body.mobile ?? "" } : undefined } });
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const normalizedUsername = body.username ? String(body.username).trim().toLowerCase().replace(/\s+/g, "") : "";
+      const { data, error } = await admin.auth.admin.createUser({ email: normalizedEmail, password: String(password), email_confirm: true, user_metadata: { name: name ?? "", role, role_intent: role === "partner" ? "partner" : undefined, apn: role === "partner" ? { username: normalizedUsername, mobile: body.mobile ?? "" } : undefined } });
       if (error) return json({ error: error.message }, 400);
+      if (data.user?.id && normalizedUsername) {
+        const { error: profileError } = await admin.from("profiles").update({ username: normalizedUsername }).eq("id", data.user.id);
+        if (profileError) {
+          await admin.auth.admin.deleteUser(data.user.id);
+          return json({ error: profileError.message }, 400);
+        }
+      }
       return json({ id: data.user?.id, user: data.user });
     }
 
@@ -67,46 +75,20 @@ Deno.serve(async (req) => {
       if (!userId) return json({ error: "User id is required." }, 400);
       if (userId === caller.id) return json({ error: "You can't delete your own account." }, 400);
       if (target?.role === "superadmin") return json({ error: "Super Admin accounts can't be deleted." }, 403);
+      if (!targetIsApn) return json({ error: "Permanent deletion is reserved for APN accounts." }, 400);
 
-      const { data: targetProfile } = await admin.from("profiles").select("photo_url").eq("id", userId).maybeSingle();
-
-      // APN data is JSON-backed. Resolve related rows first so deletion covers
-      // leads, quotations, commissions, notifications and history without
-      // relying on a fragile collection-specific query expression.
-      for (const table of APN_TABLES) {
-        const { data: rows, error: readError } = await admin.from(table).select("id,data");
-        if (readError && !/does not exist|schema cache|PGRST205/i.test(readError.message || "")) return json({ error: `Could not clean ${table}: ${readError.message}` }, 400);
-        const ids = (rows || []).filter((row) => {
-          const value = row?.data || {};
-          return row.id === userId || value.partnerId === userId || value.fromPartnerId === userId || value.userId === userId || value.createdById === userId || value.updatedById === userId || value.audience === `partner:${userId}`;
-        }).map((row) => row.id).filter(Boolean);
-        if (ids.length) {
-          const { error: deleteError } = await admin.from(table).delete().in("id", ids);
-          if (deleteError) return json({ error: `Could not clean ${table}: ${deleteError.message}` }, 400);
-        }
-      }
-
-      // Partner documents use a private bucket with the partner id as the
-      // first path segment. Remove those objects before removing the account.
-      const { data: objects } = await admin.storage.from("apn-private").list("", { limit: 1000, offset: 0 });
-      const partnerPrefix = `${String(userId)}/`;
-      const paths = (objects || []).filter((item) => item?.name && (item.name === String(userId) || item.name.startsWith(partnerPrefix))).map((item) => item.name);
-      if (paths.length) await admin.storage.from("apn-private").remove(paths);
-
-      // APN avatars currently use the shared attachment bucket. Remove the
-      // exact object when the profile stores its public URL.
-      const avatarUrl = String(targetProfile?.photo_url || "");
-      const marker = "/attachments/";
-      const markerIndex = avatarUrl.indexOf(marker);
-      if (markerIndex >= 0) {
-        const avatarPath = decodeURIComponent(avatarUrl.slice(markerIndex + marker.length).split("?")[0]);
-        if (avatarPath) await admin.storage.from("attachments").remove([avatarPath]);
-      }
-
-      await admin.from("profiles").delete().eq("id", userId);
+      // APN business records are the financial and audit history. Mark the
+      // identity as permanently deleted, then remove only the auth identity;
+      // never delete APN rows, documents, commissions, or timeline records.
       const { error: authError } = await admin.auth.admin.deleteUser(String(userId));
       if (authError && !/not found|does not exist/i.test(authError.message)) return json({ error: authError.message }, 400);
-      return json({ ok: true, permanentlyDeleted: true, reason: String(body.reason || "") });
+      const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
+      if (apn?.data) {
+        const now = Date.now();
+        const { error: apnError } = await admin.from("apn_users").update({ data: { ...apn.data, status: "deleted", archived: true, permanentlyDeleted: true, archiveReason: String(body.reason || "Permanent deletion"), archivedAt: now, deletedAt: now, deletedBy: caller.id }, updated_at: new Date().toISOString() }).eq("id", userId);
+        if (apnError) return json({ error: apnError.message }, 400);
+      }
+      return json({ ok: true, permanentlyDeleted: true, emailReusable: true, historyPreserved: true, reason: String(body.reason || "") });
     }
 
     if (action === "delete") {
@@ -114,8 +96,12 @@ Deno.serve(async (req) => {
       if (userId === caller.id) return json({ error: "You can't delete your own account." }, 400);
       if (target?.role === "superadmin") return json({ error: "Super Admin accounts can't be deleted." }, 403);
       if (targetIsApn) {
+        if (!body.archive) return json({ error: "APN accounts must be archived or permanently deleted by a Super Admin." }, 400);
         const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
         if (apn?.data) await admin.from("apn_users").update({ data: { ...apn.data, status: "deleted", archived: true, archiveReason: String(body.archiveReason ?? "Account archived"), archivedAt: Date.now(), deletedAt: Date.now(), deletedBy: caller.id }, updated_at: new Date().toISOString() }).eq("id", userId);
+        const { error: profileError } = await admin.from("profiles").update({ active: false, approved: false, status: "terminated" }).eq("id", userId);
+        if (profileError) return json({ error: profileError.message }, 400);
+        return json({ ok: true, archived: true, emailReusable: false, historyPreserved: true });
       }
       const { error } = await admin.auth.admin.deleteUser(String(userId));
       if (error && !/not found|does not exist/i.test(error.message)) return json({ error: error.message }, 400);

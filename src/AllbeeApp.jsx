@@ -2,12 +2,12 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from 
 import {
   LayoutDashboard, Wallet, ArrowDownToLine, ListTodo, TrendingUp, Lightbulb,
   GraduationCap, Megaphone, FolderKanban, ScrollText, Settings as SettingsIcon,
-  Plus, X, Sun, Moon, Search, Trash2, Pencil, ChevronRight, Check, AlertTriangle,
+  Plus, X, Sun, Moon, Search, Trash2, Pencil, ChevronRight, ChevronDown, Check, AlertTriangle,
   Download, Upload, LogOut, Hexagon, CalendarClock, ArrowRight, Menu, Wifi, WifiOff,
   Mail, KeyRound, LogIn, RefreshCw, CloudOff,
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck, ShieldAlert,
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag, Maximize2,
-  Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins,
+  Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins, Minimize2,
   Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
@@ -1074,6 +1074,7 @@ const CSS = `
 .activity-row:hover, .activity-row:focus-visible, .activity-table-row:hover td, .activity-table-row:focus-visible td { background:var(--surface-2); }
 .activity-drawer-overlay { position:fixed; inset:0; z-index:250; background:rgba(10,14,20,.34); display:flex; justify-content:flex-end; }
 .activity-drawer { width:min(480px,100%); height:100%; overflow:hidden; background:var(--surface); border-left:1px solid var(--border); box-shadow:-18px 0 50px rgba(0,0,0,.22); animation:activity-drawer-in .16s ease; display:flex; flex-direction:column; }
+.activity-drawer.maximized { width:100%; border-left:0; }
 @keyframes activity-drawer-in { from { opacity:0; transform:translateX(18px); } to { opacity:1; transform:none; } }
 .activity-drawer-head { display:flex; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid var(--border); }
 .activity-drawer-head h3 { margin:0 0 4px; font-size:17px; }
@@ -1172,6 +1173,10 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .input:focus, .select:focus, .textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
 .input[aria-invalid="true"], .select[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color:var(--neg); }
 .textarea { resize:vertical; min-height:90px; line-height:1.5; }
+.password-wrap { position:relative; display:flex; align-items:center; }
+.password-wrap .input { padding-right:44px; }
+.password-toggle { position:absolute; right:6px; width:34px; height:34px; display:grid; place-items:center; border:0; border-radius:7px; background:transparent; color:var(--muted); cursor:pointer; }
+.password-toggle:hover { background:var(--surface-2); color:var(--ink); }
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .hint-line { font-size:12px; color:var(--muted); }
 .field-err { font-size:12px; color:var(--neg); margin-top:5px; display:flex; align-items:center; gap:5px; }
@@ -1460,6 +1465,29 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
   font-size:11px; color:var(--muted); flex-wrap:wrap; }
 .cmdk-foot .k { border:1px solid var(--border); border-radius:5px; padding:1px 6px; font-weight:700; background:var(--surface-2); }
 mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; padding:0 1px; }
+.modal.modal-maximized { width:100%; max-width:none; height:100%; max-height:none; border-radius:0; }
+.modal.modal-maximized .modal-body { max-height:none; }
+.combo { position:relative; width:100%; }
+.combo-trigger { width:100%; min-height:42px; display:flex; align-items:center; gap:8px; justify-content:space-between; text-align:left; }
+.combo-trigger .combo-value { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.combo-menu { position:absolute; left:0; right:0; top:calc(100% + 5px); z-index:80; padding:7px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); }
+.combo-search { width:100%; margin-bottom:6px; }
+.combo-options { max-height:240px; overflow-y:auto; overscroll-behavior:contain; }
+.combo-option { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding:9px 10px; border:0; border-radius:7px; background:transparent; color:var(--ink); text-align:left; cursor:pointer; }
+.combo-option:hover, .combo-option.on { background:var(--primary-soft); color:var(--primary); }
+.combo-option:disabled { opacity:.5; cursor:not-allowed; }
+.combo-option-main { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.combo-option-meta { color:var(--muted); font-size:11px; white-space:nowrap; }
+.combo-empty { padding:16px 10px; color:var(--muted); text-align:center; font-size:12.5px; }
+.toast-viewport { position:fixed; right:18px; bottom:18px; z-index:500; display:grid; gap:10px; width:min(380px,calc(100vw - 28px)); pointer-events:none; }
+.toast { pointer-events:auto; display:flex; align-items:flex-start; gap:10px; padding:12px 13px; border:1px solid var(--border); border-left:4px solid var(--primary); border-radius:11px; background:var(--surface); box-shadow:0 14px 32px rgba(16,22,32,.18); animation:toast-in .18s ease; }
+.toast.success { border-left-color:var(--pos); } .toast.warning { border-left-color:var(--accent); } .toast.error { border-left-color:var(--neg); }
+.toast-icon { flex:none; margin-top:1px; color:var(--primary); } .toast.success .toast-icon { color:var(--pos); } .toast.warning .toast-icon { color:var(--accent); } .toast.error .toast-icon { color:var(--neg); }
+.toast-body { flex:1; min-width:0; font-size:13px; line-height:1.45; }
+.toast-close { width:28px; height:28px; display:grid; place-items:center; border:0; border-radius:7px; background:transparent; color:var(--muted); cursor:pointer; }
+.toast-close:hover { background:var(--surface-2); color:var(--ink); }
+@keyframes toast-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@media (max-width:560px) { .toast-viewport { right:12px; bottom:12px; } .combo-options { max-height:210px; } }
 
 /* ── Phase Next: testing module ────────────────────────────────────────── */
 .check-item { display:flex; align-items:flex-start; gap:11px; padding:11px 0; border-bottom:1px solid var(--border); }
@@ -1547,9 +1575,154 @@ function SplitBar({ h, a, legend = true }) {
   );
 }
 
+// One app-wide feedback channel. Any feature can emit a toast without owning
+// another notification component or falling back to a blocking browser alert.
+function emitToast(message, type = "info", options = {}) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("allbee-toast", { detail: { message, type, duration: options.duration ?? 4200 } }));
+}
+
+function ToastHost() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    const onToast = (event) => {
+      const detail = event.detail || {};
+      const item = { id: uid(), message: String(detail.message || ""), type: detail.type || "info", duration: detail.duration ?? 4200 };
+      if (!item.message) return;
+      setItems((current) => [...current.slice(-4), item]);
+    };
+    window.addEventListener("allbee-toast", onToast);
+    return () => window.removeEventListener("allbee-toast", onToast);
+  }, []);
+  useEffect(() => {
+    const timers = items.filter((item) => item.duration > 0).map((item) => setTimeout(() => setItems((current) => current.filter((x) => x.id !== item.id)), item.duration));
+    return () => timers.forEach(clearTimeout);
+  }, [items]);
+  return <div className="toast-viewport" aria-live="polite" aria-atomic="false">{items.map((item) => {
+    const Icon = item.type === "success" ? Check : item.type === "warning" || item.type === "error" ? AlertTriangle : Bell;
+    return <div key={item.id} className={`toast ${item.type}`} role={item.type === "error" ? "alert" : "status"}>
+      <Icon className="toast-icon" size={17} aria-hidden="true" />
+      <div className="toast-body">{item.message}</div>
+      <button type="button" className="toast-close" aria-label="Dismiss notification" onClick={() => setItems((current) => current.filter((x) => x.id !== item.id))}><X size={15} /></button>
+    </div>;
+  })}</div>;
+}
+
+function SearchableSelect({ options = [], value, onChange, placeholder = "Choose…", disabled = false, ariaLabel, id }) {
+  const rootRef = useRef(null);
+  const searchRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+  const normalized = useMemo(() => options.map((option) => typeof option === "object" ? option : ({ value: option, label: option })), [options]);
+  const selected = normalized.find((option) => String(option.value) === String(value));
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? normalized.filter((option) => `${option.label || ""} ${option.meta || ""}`.toLowerCase().includes(q)) : normalized;
+  }, [normalized, query]);
+  useEffect(() => {
+    const onPointer = (event) => { if (!rootRef.current?.contains(event.target)) setOpen(false); };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, []);
+  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
+  useEffect(() => { setHighlight(0); }, [query]);
+  const choose = (option) => { if (option?.disabled) return; onChange?.(option.value); setQuery(""); setOpen(false); };
+  const onTriggerKey = (event) => {
+    if (disabled) return;
+    if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") { event.preventDefault(); setOpen(true); }
+    if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+  };
+  const onSearchKey = (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); setHighlight((current) => Math.min(current + 1, Math.max(0, filtered.length - 1))); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); setHighlight((current) => Math.max(0, current - 1)); }
+    else if (event.key === "Enter") { event.preventDefault(); choose(filtered[highlight]); }
+    else if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+  };
+  return <div ref={rootRef} className="combo" id={id}>
+    <button type="button" className="input combo-trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onTriggerKey}>
+      <span className="combo-value">{selected?.label || placeholder}</span><ChevronDown size={16} aria-hidden="true" />
+    </button>
+    {open && <div className="combo-menu">
+      <input ref={searchRef} className="input combo-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={onSearchKey} placeholder="Type to filter…" aria-label={`Filter ${ariaLabel || "options"}`} autoComplete="off" />
+      <div className="combo-options" role="listbox" aria-label={ariaLabel || "Options"}>
+        {filtered.length ? filtered.map((option, index) => <button type="button" key={String(option.value)} role="option" aria-selected={String(option.value) === String(value)} disabled={option.disabled} className={`combo-option${index === highlight ? " on" : ""}`} onMouseEnter={() => setHighlight(index)} onClick={() => choose(option)}>
+          <span className="combo-option-main">{option.label}</span>{option.meta && <span className="combo-option-meta">{option.meta}</span>}
+        </button>) : <div className="combo-empty">No matches found.</div>}
+      </div>
+    </div>}
+  </div>;
+}
+
+function normalizeUsername(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function useUsernameAvailability(value, excludeId = null) {
+  const normalized = normalizeUsername(value);
+  const [state, setState] = useState({ checking: false, available: null });
+  useEffect(() => {
+    let cancelled = false;
+    if (!normalized) { setState({ checking: false, available: null }); return undefined; }
+    setState({ checking: true, available: null });
+    const timer = setTimeout(async () => {
+      let available = null;
+      try {
+        const result = await supabase.rpc("username_available", { p_username: normalized, p_exclude: excludeId });
+        if (!result.error) available = Boolean(result.data);
+      } catch { /* deployed edge fallback below */ }
+      if (available === null) {
+        try {
+          const result = await supabase.functions.invoke("username-login", { body: { username: normalized, check: true, exclude: excludeId } });
+          if (!result.error && result.data && typeof result.data.available === "boolean") available = result.data.available;
+        } catch { /* availability remains unknown until the save guard runs */ }
+      }
+      if (!cancelled) setState({ checking: false, available });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [normalized, excludeId]);
+  return { normalized, ...state };
+}
+
+function useEmailAvailability(value, excludeId = null) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const [state, setState] = useState({ checking: false, available: null });
+  useEffect(() => {
+    let cancelled = false;
+    if (!normalized || !normalized.includes("@")) { setState({ checking: false, available: null }); return undefined; }
+    setState({ checking: true, available: null });
+    const timer = setTimeout(async () => {
+      let available = null;
+      try {
+        const result = await supabase.rpc("email_available", { p_email: normalized, p_exclude: excludeId });
+        if (!result.error) available = Boolean(result.data);
+      } catch { /* deployed edge fallback below */ }
+      if (available === null) {
+        try {
+          const result = await supabase.functions.invoke("username-login", { body: { username: normalized, kind: "email", check: true, exclude: excludeId } });
+          if (!result.error && result.data && typeof result.data.available === "boolean") available = result.data.available;
+        } catch { /* availability remains unknown until auth validates the save */ }
+      }
+      if (!cancelled) setState({ checking: false, available });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [normalized, excludeId]);
+  return { normalized, ...state };
+}
+
+function PasswordField({ label, value, onChange, error, hint, required, ...inputProps }) {
+  const [visible, setVisible] = useState(false);
+  return <Field label={label} required={required} error={error} hint={hint}>
+    <div className="password-wrap"><input {...inputProps} className={`input${inputProps.className ? ` ${inputProps.className}` : ""}`} type={visible ? "text" : "password"} value={value} onChange={onChange} />
+      <button type="button" className="password-toggle" aria-label={visible ? `Hide ${label || "password"}` : `Show ${label || "password"}`} title={visible ? "Hide password" : "Show password"} onClick={() => setVisible((current) => !current)}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+    </div>
+  </Field>;
+}
+
 function Modal({ title, onClose, children, footer, onMaximize }) {
   const modalRef = useRef(null);
   const titleId = useId();
+  const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     const previous = document.activeElement;
     const root = modalRef.current;
@@ -1569,9 +1742,9 @@ function Modal({ title, onClose, children, footer, onMaximize }) {
   };
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={trapFocus}>
+      <div ref={modalRef} className={`modal${maximized ? " modal-maximized" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={trapFocus}>
         <div className="modal-head"><h3 id={titleId}>{title}</h3><span style={{ flex: 1 }} />
-          {onMaximize && <button className="iconbtn" onClick={onMaximize} aria-label="Open full page" title="Open full page"><Maximize2 size={16} /></button>}
+          <button className="iconbtn" onClick={() => onMaximize ? onMaximize() : setMaximized((current) => !current)} aria-label={maximized ? "Restore dialog" : onMaximize ? "Open full page" : "Maximize dialog"} title={maximized ? "Restore dialog" : onMaximize ? "Open full page" : "Maximize dialog"}>{maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
           <button className="iconbtn" onClick={onClose} aria-label="Close dialog" title="Close dialog"><X size={18} /></button>
         </div>
         <div className="modal-body">{children}</div>
@@ -1676,7 +1849,7 @@ function Avatar({ name, url, size = 26, fontSize, style }) {
 /* ══════════════════════════════════════════════════════════════════════
    FORMS
 ══════════════════════════════════════════════════════════════════════ */
-function ShareForm({ kind, initial, onSave, onClose, currentUser, db }) {
+function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProjects = [] }) {
   const isIncome = kind === "income";
   const [f, setF] = useState(() => {
     const base = { client: "", project: "", amount: "", date: todayISO(), category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "", ...initial };
@@ -1686,6 +1859,7 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db }) {
     return base;
   });
   const [touched, setTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setSplit = (h) => setF((s) => ({ ...s, hajiPct: h, alimPct: 100 - h }));
 
@@ -1703,27 +1877,29 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db }) {
   const hShare = round2((amt * (Number(f.hajiPct) || 0)) / 100);
   const aShare = round2((amt * (Number(f.alimPct) || 0)) / 100);
 
-  const save = () => {
+  const save = async () => {
     setTouched(true);
     if (!valid) return;
     const payload = {
       ...initial, id: initial?.id || uid(), kind, client: f.client.trim(), project: f.project.trim(),
       amount: amt, date: f.date, category: f.category, hajiPct: Number(f.hajiPct), alimPct: Number(f.alimPct),
-      notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now(),
+      notes: f.notes.trim(), apnProjectId: isIncome ? (f.apnProjectId || null) : null, createdAt: initial?.createdAt || Date.now(),
     };
     if (!isIncome) { payload.scope = f.scope; payload.shareSource = isCompany ? (plan.fallback ? null : plan.sourcePeriod) : null; }
-    onSave(payload);
-    onClose();
+    setSaving(true);
+    try { const result = await onSave(payload); if (result !== false) onClose(); }
+    finally { setSaving(false); }
   };
 
   return (
     <Modal title={(initial?.id ? "Edit " : "Add ") + (isIncome ? "income" : "expense")} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />{isIncome ? "Add income" : "Add expense"}</button></>}>
+        <button className="btn primary" onClick={save} disabled={!valid || saving}><Check size={16} />{saving ? "Saving…" : isIncome ? "Add income" : "Add expense"}</button></>}>
       <div className="grid2">
         <Field label="Client name"><input className="input" value={f.client} onChange={(e) => up("client", e.target.value)} placeholder="e.g. Sun Textiles" /></Field>
         <Field label={isIncome ? "Project / source" : "Project (optional)"}><input className="input" value={f.project} onChange={(e) => up("project", e.target.value)} placeholder={isIncome ? "Website redesign" : "Tied to a project?"} /></Field>
       </div>
+      {isIncome && apnProjects.length > 0 && <div className="field"><label>APN collection link <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><SearchableSelect value={f.apnProjectId || ""} onChange={(value) => up("apnProjectId", value)} ariaLabel="Link income to an APN commission project" options={[{ value: "", label: "No APN link" }, ...apnProjects.map((p) => ({ value: p.id, label: `${p.projectName} · ${p.clientName}`, meta: `${money(p.remainingAmount)} remaining · ${p.partnerName || "Partner"}` }))]} /><div className="hint-line" style={{ marginTop: 5 }}>Links this income receipt to the selected APN collection. The APN engine remains the source for commission calculations.</div></div>}
       <div className="grid2">
         <Field label={isIncome ? "Income amount" : "Expense amount"} required error={touched && amt <= 0 ? "Enter an amount above ₹0" : ""}>
           <input className="input mono" type="number" min="0" value={f.amount} onChange={(e) => up("amount", e.target.value)} placeholder="10000" />
@@ -2240,7 +2416,7 @@ async function exportRowsToExcel(filename, sheetName, columns, rows) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, (sheetName || "Sheet1").slice(0, 31));
     XLSX.writeFile(wb, filename);
-  } catch (e) { console.error(e); alert("Couldn't build the Excel file — the export library failed to load. Check your internet connection and try again."); }
+  } catch (e) { console.error(e); emitToast("Couldn't build the Excel file — check your connection and try again.", "error"); }
 }
 // Full backup → one worksheet per table, every row flattened. Opens directly in
 // Excel or Google Sheets (File → Import) and doubles as a keep-safe snapshot.
@@ -2262,9 +2438,9 @@ async function exportFullBackupXLSX(db) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), name);
       any = true;
     }
-    if (!any) { alert("There's no data to back up yet."); return; }
+    if (!any) { emitToast("There's no data to back up yet.", "warning"); return; }
     XLSX.writeFile(wb, `allbee-backup-${todayISO()}.xlsx`);
-  } catch (e) { console.error(e); alert("Couldn't build the Excel backup — the export library failed to load. Check your connection and try again."); }
+  } catch (e) { console.error(e); emitToast("Couldn't build the Excel backup — check your connection and try again.", "error"); }
 }
 async function exportRowsToPDF(filename, title, subtitle, columns, rows) {
   try {
@@ -2282,7 +2458,7 @@ async function exportRowsToPDF(filename, title, subtitle, columns, rows) {
       alternateRowStyles: { fillColor: [244, 247, 249] },
     });
     doc.save(filename);
-  } catch (e) { console.error(e); alert("Couldn't build the PDF — the export library failed to load. Check your internet connection and try again."); }
+  } catch (e) { console.error(e); emitToast("Couldn't build the PDF — check your connection and try again.", "error"); }
 }
 
 /* ── spreadsheet import (Excel / CSV / Google Sheets export) ────────────────
@@ -2553,8 +2729,8 @@ function AccountFull({ db, user, goBack }) {
         <div className="filterbar">
           <Field label="From date"><input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
           <Field label="To date"><input className="input" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></Field>
-          <Field label="Client"><select className="select" value={client} onChange={(e) => setClient(e.target.value)}><option value="all">All clients</option>{clients.map((c) => <option key={c}>{c}</option>)}</select></Field>
-          <Field label="Project"><select className="select" value={project} onChange={(e) => setProject(e.target.value)}><option value="all">All projects</option>{projects.map((p) => <option key={p}>{p}</option>)}</select></Field>
+          <div className="field"><label>Client</label><SearchableSelect value={client} onChange={setClient} ariaLabel="Filter by client" options={[{ value: "all", label: "All clients" }, ...clients.map((c) => ({ value: c, label: c }))]} /></div>
+          <div className="field"><label>Project</label><SearchableSelect value={project} onChange={setProject} ariaLabel="Filter by project" options={[{ value: "all", label: "All projects" }, ...projects.map((p) => ({ value: p, label: p }))]} /></div>
           <Field label="Category"><select className="select" value={category} onChange={(e) => setCategory(e.target.value)}><option value="all">All categories</option>{categories.map((c) => <option key={c}>{c}</option>)}</select></Field>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
@@ -2606,7 +2782,7 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
   const [q, setQ] = useState("");
   const thisPeriod = todayISO().slice(0, 7);
   const lockedThis = locks.includes(thisPeriod);
-  const doLock = async (p, on) => { try { on ? await lockPeriod(p, currentUser) : await unlockPeriod(p); } catch (e) { alert(e.message || "Couldn't update the lock."); } };
+  const doLock = async (p, on) => { try { on ? await lockPeriod(p, currentUser) : await unlockPeriod(p); emitToast(on ? "Period locked." : "Period unlocked.", "success"); } catch (e) { emitToast(e.message || "Couldn't update the lock.", "error"); } };
   const list = useMemo(() => {
     let r = [...db.transactions].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt));
     if (view !== "all") r = r.filter((t) => t.kind === view);
@@ -3501,6 +3677,7 @@ function downloadActivityCsv(rows) {
 
 function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
   const drawerRef = useRef(null);
+  const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     if (!activity) return undefined;
     const previous = document.activeElement;
@@ -3516,7 +3693,7 @@ function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
   const sequence = timelineRows.length ? timelineRows : [activity];
   return (
     <div className="activity-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside ref={drawerRef} className="activity-drawer" role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title" tabIndex={-1} onKeyDown={(e) => {
+      <aside ref={drawerRef} className={`activity-drawer${maximized ? " maximized" : ""}`} role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title" tabIndex={-1} onKeyDown={(e) => {
         if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
         if (e.key !== "Tab") return;
         const nodes = Array.from(drawerRef.current?.querySelectorAll("button:not(:disabled), [href], [tabindex]:not([tabindex=\"-1\"])") || []);
@@ -3525,7 +3702,7 @@ function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }}>
-        <div className="activity-drawer-head"><div><h3 id="activity-drawer-title">Activity details</h3><div className="hint-line">{activity.description || activity.action || "Activity event"}</div></div><button className="iconbtn" onClick={onClose} aria-label="Close activity details"><X size={18} /></button></div>
+        <div className="activity-drawer-head"><div><h3 id="activity-drawer-title">Activity details</h3><div className="hint-line">{activity.description || activity.action || "Activity event"}</div></div><span style={{ flex: 1 }} /><button className="iconbtn" onClick={() => setMaximized((current) => !current)} aria-label={maximized ? "Restore activity details" : "Maximize activity details"} title={maximized ? "Restore" : "Maximize"}>{maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button><button className="iconbtn" onClick={onClose} aria-label="Close activity details" title="Close activity details"><X size={18} /></button></div>
         <div className="activity-drawer-body">
           <div className="activity-detail-grid">
             {[['Event ID', activity.id], ['Timestamp', activity.ts ? fmtDateTime(activity.ts) : "—"], ['User', activity.user || "System"], ['Module', module], ['Action', activity.action], ['Entity', activity.entity], ['Entity ID', activity.entityId]].map(([label, value]) => <div key={label}><div className="k">{label}</div><div className="activity-detail-value">{activityValue(value)}</div></div>)}
@@ -3571,9 +3748,7 @@ function AuditLog({ db, isSuper, onOpenActivity }) {
       <div className="page-head"><h3>Audit log</h3></div>
       <div className="card" style={{ padding: 12, marginBottom: 12 }}>
         <div className="audit-filter-grid">
-          <select className="select" value={user} onChange={(e) => setUser(e.target.value)} aria-label="Filter audit log by user">
-            <option value="all">All users</option>{users.map((x) => <option key={x}>{x}</option>)}
-          </select>
+          <SearchableSelect value={user} onChange={setUser} ariaLabel="Filter audit log by user" options={[{ value: "all", label: "All users" }, ...users.map((x) => ({ value: x, label: x }))]} />
           <select className="select" value={module} onChange={(e) => setModule(e.target.value)} aria-label="Filter audit log by module">
             <option value="all">All modules</option>{ACTIVITY_MODULES.map((x) => <option key={x}>{x}</option>)}
           </select>
@@ -3837,7 +4012,7 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
   const importJSON = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const r = new FileReader();
-    r.onload = () => { try { const d = JSON.parse(r.result); if (d && d.transactions) replaceDB(d); } catch { alert("That file couldn't be read as an ALLBEE backup."); } };
+    r.onload = () => { try { const d = JSON.parse(r.result); if (d && d.transactions) replaceDB(d); } catch { emitToast("That file couldn't be read as an ALLBEE backup.", "error"); } };
     r.readAsText(file); e.target.value = "";
   };
   const counts = { "Team members": teamCount || 0, Transactions: db.transactions.length, Withdrawals: db.withdrawals.length, Tasks: db.tasks.length, Projects: db.projects.length, Students: db.students.length, "Marketing clients": db.marketing.length, "Leave requests": db.leave.length, "Daily updates": db.updates.length };
@@ -4173,7 +4348,7 @@ function AttendanceEditModal({ member, record, date, onSave, onClear, onClose })
     if (!inT) return;
     const ci = atTime(inT);
     const co = atTime(outT);
-    if (co && new Date(co) < new Date(ci)) { alert("Check-out can't be before check-in."); return; }
+    if (co && new Date(co) < new Date(ci)) { emitToast("Check-out can't be before check-in.", "error"); return; }
     onSave(ci, co);
   };
   return (
@@ -4490,7 +4665,7 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
 function Blocked({ isDark, name, onSignOut }) {
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="lock-card">
         <div className="lock-badge" style={{ background: "var(--surface-2)" }}><Hourglass size={28} color="var(--muted)" /></div>
         <h1>Access paused</h1>
@@ -4504,7 +4679,7 @@ function Blocked({ isDark, name, onSignOut }) {
 function ApprovalPending({ isDark, name, onSignOut }) {
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="lock-card">
         <div className="lock-badge" style={{ background: "var(--surface-2)" }}><ShieldCheck size={28} color="var(--muted)" /></div>
         <h1>Awaiting approval</h1>
@@ -4536,7 +4711,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
   };
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="lock-card gate-card">
         <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
         <h1>Complete your profile</h1>
@@ -4566,7 +4741,6 @@ function ChangePasswordCard({ email }) {
   const [cur, setCur] = useState("");
   const [nw, setNw] = useState("");
   const [cf, setCf] = useState("");
-  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -4591,14 +4765,13 @@ function ChangePasswordCard({ email }) {
       <div className="lbl" style={{ fontWeight: 700, color: "var(--ink)" }}><KeyRound size={14} /> Sign-in &amp; security</div>
       <p className="hint-line" style={{ marginTop: 6, marginBottom: 12 }}>Change the password you use to sign in. You'll enter your current password to confirm it's you.</p>
       <div className="grid2">
-        <Field label="Current password"><input className="input" type={show ? "text" : "password"} value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" placeholder="••••••••" /></Field>
+        <PasswordField label="Current password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" placeholder="••••••••" />
         <div />
       </div>
       <div className="grid2">
-        <Field label="New password" hint="At least 6 characters."><input className="input" type={show ? "text" : "password"} value={nw} onChange={(e) => setNw(e.target.value)} autoComplete="new-password" placeholder="••••••••" /></Field>
-        <Field label="Confirm new password"><input className="input" type={show ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} autoComplete="new-password" placeholder="••••••••" /></Field>
+        <PasswordField label="New password" hint="At least 6 characters." value={nw} onChange={(e) => setNw(e.target.value)} autoComplete="new-password" placeholder="••••••••" />
+        <PasswordField label="Confirm new password" value={cf} onChange={(e) => setCf(e.target.value)} autoComplete="new-password" placeholder="••••••••" />
       </div>
-      <label className="hint-line" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", marginTop: 2 }}><input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show passwords</label>
       {err && <div className="auth-msg err" style={{ marginTop: 8 }}><AlertTriangle size={14} /> {err}</div>}
       {msg && <div className="auth-msg ok" style={{ marginTop: 8 }}><Check size={14} /> {msg}</div>}
       <div style={{ marginTop: 12 }}><button className="btn primary" onClick={change} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <KeyRound size={16} />}Change password</button></div>
@@ -4795,7 +4968,7 @@ function TermsGate({ agreements = [], onAccept, onSignOut, isDark }) {
   const multi = list.length > 1;
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="lock-card gate-card">
         <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
         <h1>Terms &amp; conditions</h1>
@@ -4973,6 +5146,34 @@ function parseHash(hash) {
   return { route: parts[0], account: null, task: null };
 }
 
+function PasswordRecovery({ isDark, onComplete }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+  const save = async () => {
+    setErr("");
+    if (password.length < 6) { setErr("Password must be at least 6 characters."); return; }
+    if (password !== confirm) { setErr("Passwords do not match."); return; }
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setDone(true); emitToast("Password reset successfully.", "success");
+    } catch (e) { const message = /expired|invalid|token|session/i.test(e?.message || "") ? "This reset link is invalid or expired. Request a new reset email." : (e?.message || "Password reset failed. Please try again."); setErr(message); emitToast(message, "error"); }
+    finally { setBusy(false); }
+  };
+  return <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+    <style>{CSS}</style><ToastHost />
+    <div className="lock-card">
+      <img className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
+      {done ? <><div className="lock-badge" style={{ background: "var(--pos-soft)", color: "var(--pos)" }}><Check size={28} /></div><h1>Password updated</h1><p>Your password reset was successful. You can continue using ALLBEE.</p><button className="btn primary" onClick={() => onComplete?.()}>Continue</button></>
+        : <><h1>Set a new password</h1><p>Choose a new password for your ALLBEE account.</p><PasswordField label="New password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="At least 6 characters" /><PasswordField label="Confirm password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" placeholder="Repeat your password" />{err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}<button className="btn primary" style={{ width: "100%", marginTop: 12 }} onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <KeyRound size={16} />}Update password</button></>}
+    </div>
+  </div>;
+}
+
 function Lock({ isDark, setDark }) {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [entry, setEntry] = useState("choose"); // choose | form  (the two-button gate)
@@ -4984,15 +5185,24 @@ function Lock({ isDark, setDark }) {
   const [who, setWho] = useState("Haji"); // owner partner identity
   const [code, setCode] = useState("");   // admin access code
   const [busy, setBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
+  const recoveryMessage = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const raw = `${window.location.search} ${window.location.hash}`.toLowerCase();
+    return /otp_expired|access_denied|invalid.*token|expired.*token/.test(raw) ? "This password reset link is invalid or expired. Request a new reset email and use its latest link." : "";
+  }, []);
   const [apn, setApn] = useState({ mobile: "", dob: "", district: "", taluk: "", city: "", occupation: "", college: "", reason: "", username: "" });
+  const usernameCheck = useUsernameAvailability(apn.username);
+  const emailCheck = useEmailAvailability(email);
   const upApn = (k, v) => setApn((s) => ({ ...s, [k]: v }));
 
   const submit = async () => {
     setErr(""); setNotice("");
     if (!email.trim() || !pw) { setErr("Enter your username or email and your password to continue."); return; }
     if (mode === "signup") {
+      if (emailCheck.available === false) { setErr("That email already has an account. Sign in or use another email."); return; }
       if ((acctType === "staff" || acctType === "client") && !name.trim()) { setErr("Enter your name so we know who you are."); return; }
       if (acctType === "owner" && !code.trim()) { setErr("Enter the admin access code, or sign up as a team member instead."); return; }
       if (acctType === "partner") {
@@ -5003,12 +5213,13 @@ function Lock({ isDark, setDark }) {
         const bd = new Date(apn.dob); const now = new Date();
         const age = now.getFullYear() - bd.getFullYear() - (now < new Date(now.getFullYear(), bd.getMonth(), bd.getDate()) ? 1 : 0);
         if (isNaN(age) || age < 18) { setErr("You must be at least 18 years old to join APN."); return; }
+        if (usernameCheck.available === false) { setErr("That username is already taken. Choose another one."); return; }
       }
     }
     setBusy(true);
     try {
       if (mode === "signin") {
-        let loginEmail = email.trim();
+        let loginEmail = email.trim().toLowerCase();
         if (!loginEmail.includes("@")) {
           // Username path: resolve the username to its account email so we can
           // sign in. Tries a SQL function first (no edge function needed — just
@@ -5036,7 +5247,7 @@ function Lock({ isDark, setDark }) {
           : acctType === "client" ? { name: name.trim(), role_intent: "client" }
           : acctType === "partner" ? { name: name.trim(), role_intent: "partner", apn: { name: name.trim(), mobile: apn.mobile.trim(), dob: apn.dob, district: apn.district, taluk: apn.taluk.trim(), city: apn.city.trim(), occupation: apn.occupation.trim(), college: apn.college.trim(), reason: apn.reason.trim(), username: apn.username.trim().toLowerCase() } }
           : { name: name.trim() };
-        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { data: meta } });
+        const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password: pw, options: { data: meta } });
         if (error) throw error;
         if (!data.session) setNotice("Account created. Check your email to confirm it, then sign in.");
       }
@@ -5053,11 +5264,30 @@ function Lock({ isDark, setDark }) {
       setErr(msg);
     } finally { setBusy(false); }
   };
+  const requestReset = async () => {
+    setErr(""); setNotice("");
+    let resetEmail = email.trim().toLowerCase();
+    if (!resetEmail.includes("@")) {
+      try {
+        const { data, error } = await supabase.rpc("username_to_email", { p_username: resetEmail });
+        if (!error && data) resetEmail = typeof data === "string" ? data : (data.email || "");
+      } catch { /* fall through to the helpful validation below */ }
+    }
+    if (!resetEmail || !resetEmail.includes("@")) { setErr("Enter your email address or a username with an account email before resetting your password."); return; }
+    setResetBusy(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: `${window.location.origin}${window.location.pathname}` });
+      if (error) throw error;
+      setNotice("Password reset email sent. Check your inbox for the secure reset link.");
+      emitToast("Password reset email sent.", "success");
+    } catch (e) { setErr(e?.message || "Password reset failed. Please try again."); emitToast("Password reset failed. Please try again.", "error"); }
+    finally { setResetBusy(false); }
+  };
   const onKey = (e) => { if (e.key === "Enter") submit(); };
 
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="lock-card">
         <img className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
         <p>{mode === "signin" ? (entry === "choose" ? "How would you like to sign in?" : (loginAs === "client" ? "Client sign in" : loginAs === "partner" ? "APN partner sign in" : "Employee sign in")) : "Create your account"}</p>
@@ -5091,7 +5321,7 @@ function Lock({ isDark, setDark }) {
                   <div className="field"><label>Date of birth</label><input className="input" type="date" value={apn.dob} onChange={(e) => upApn("dob", e.target.value)} /></div>
                 </div>
                 <div className="grid2">
-                  <div className="field"><label>District</label><select className="select" value={apn.district} onChange={(e) => upApn("district", e.target.value)}><option value="">Select district…</option>{TN_DISTRICTS.map((d) => <option key={d}>{d}</option>)}</select></div>
+                  <div className="field"><label>District</label><SearchableSelect value={apn.district} onChange={(value) => upApn("district", value)} ariaLabel="APN district" options={[{ value: "", label: "Select district…" }, ...TN_DISTRICTS.map((d) => ({ value: d, label: d }))]} /></div>
                   <div className="field"><label>Taluk</label><input className="input" value={apn.taluk} onChange={(e) => upApn("taluk", e.target.value)} placeholder="Taluk" /></div>
                 </div>
                 <div className="grid2">
@@ -5100,7 +5330,7 @@ function Lock({ isDark, setDark }) {
                 </div>
                 <div className="grid2">
                   <div className="field"><label>College (optional)</label><input className="input" value={apn.college} onChange={(e) => upApn("college", e.target.value)} placeholder="College" /></div>
-                  <div className="field"><label>Username</label><input className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" /></div>
+                  <div className="field"><label>Username</label><input className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" aria-describedby="signup-username-status" />{apn.username.trim() && <div id="signup-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
                 </div>
                 <div className="field"><label>Why do you want to join APN?</label><textarea className="textarea" value={apn.reason} onChange={(e) => upApn("reason", e.target.value)} placeholder="Tell us briefly why you'd like to become a partner…" /></div>
                 <p className="hint-line" style={{ fontSize: 12 }}>APN partners are independent and commission-based — no salary and no joining fee. You must be 18 or older. Applications are approved by an admin.</p>
@@ -5136,20 +5366,20 @@ function Lock({ isDark, setDark }) {
           <div className="field">
             <label>{mode === "signin" ? "Username or email" : "Email"}</label>
             <input className="input" type={mode === "signin" ? "text" : "email"} autoComplete={mode === "signin" ? "username" : "email"} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={onKey} placeholder={mode === "signin" ? "username or you@allbee.in" : "you@allbee.in"} />
+            {mode === "signup" && email.trim().includes("@") && <div className="hint-line" style={{ color: emailCheck.available === false ? "var(--neg)" : emailCheck.available === true ? "var(--pos)" : undefined }}>{emailCheck.checking ? "Checking email availability…" : emailCheck.available === false ? "Email already registered" : emailCheck.available === true ? "Email available" : ""}</div>}
           </div>
-          <div className="field">
-            <label>Password</label>
-            <input className="input" type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={onKey} placeholder="••••••••" />
-          </div>
+          <PasswordField label="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={onKey} autoComplete={mode === "signin" ? "current-password" : "new-password"} placeholder="••••••••" />
         </div>
 
-        {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
+        {(err || recoveryMessage) && <div className="auth-msg err"><AlertTriangle size={14} /> {err || recoveryMessage}</div>}
         {notice && <div className="auth-msg ok"><Check size={14} /> {notice}</div>}
 
         <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 6 }} onClick={submit} disabled={busy}>
           {busy ? <RefreshCw size={16} className="spin" /> : mode === "signin" ? <LogIn size={16} /> : <Mail size={16} />}
           {mode === "signin" ? "Sign in" : "Create account"}
         </button>
+
+        {mode === "signin" && <button className="linkbtn" onClick={requestReset} disabled={resetBusy}>{resetBusy ? "Sending reset email…" : "Forgot password?"}</button>}
 
         <button className="linkbtn" onClick={() => { const goSignup = mode === "signin"; setMode(goSignup ? "signup" : "signin"); if (goSignup && loginAs === "partner") setAcctType("partner"); else if (goSignup && loginAs === "client") setAcctType("client"); setEntry("form"); setErr(""); setNotice(""); }}>
           {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
@@ -5484,7 +5714,7 @@ function Prompts({ db, openModal, removeItem }) {
   const all = [...(db.prompts || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const cats = Array.from(new Set(all.map((p) => p.category).filter(Boolean)));
   const list = all.filter((p) => (cat === "all" || p.category === cat) && (!q.trim() || (p.title + " " + (p.body || "") + " " + (p.category || "")).toLowerCase().includes(q.trim().toLowerCase())));
-  const copy = async (p) => { try { await navigator.clipboard.writeText(p.body || ""); setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500); } catch { alert("Couldn't copy — your browser blocked clipboard access."); } };
+  const copy = async (p) => { try { await navigator.clipboard.writeText(p.body || ""); setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500); } catch { emitToast("Couldn't copy — your browser blocked clipboard access.", "error"); } };
   const del = (p) => removeItem("prompts", p, { name: p.title, audit: `deleted prompt "${p.title}"` });
   return (
     <div className="content">
@@ -5545,7 +5775,7 @@ function Sheets({ db, openModal, removeItem }) {
   const all = [...(db.sheets || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const cats = Array.from(new Set(all.map((p) => p.category).filter(Boolean)));
   const list = all.filter((p) => (cat === "all" || p.category === cat) && (!q.trim() || (p.title + " " + (p.note || "") + " " + (p.category || "")).toLowerCase().includes(q.trim().toLowerCase())));
-  const copy = async (p) => { try { await navigator.clipboard.writeText(p.url || ""); setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500); } catch { alert("Couldn't copy the link."); } };
+  const copy = async (p) => { try { await navigator.clipboard.writeText(p.url || ""); setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500); } catch { emitToast("Couldn't copy the link.", "error"); } };
   const del = (p) => removeItem("sheets", p, { name: p.title, audit: `deleted sheet link "${p.title}"` });
   return (
     <div className="content">
@@ -6048,6 +6278,7 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
   const endRef = useRef(null);
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const list = [...db.chat].filter((m) => !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
   // Realtime can lag on mobile/background tabs — gently re-pull while the chat is
@@ -6074,7 +6305,7 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
     const file = e.target.files?.[0]; if (!file) return;
     setBusy(true);
     try { const up = await uploadAttachment(file); mutate((d) => ({ ...d, chat: [...d.chat, { id: uid(), userId: me.id, userName: me.name, text: "", attachment: up, createdAt: Date.now() }] }), null); }
-    catch (er) { alert(er.message || "Upload failed."); }
+    catch (er) { emitToast(er.message || "Upload failed.", "error"); }
     finally { setBusy(false); if (e.target) e.target.value = ""; }
   };
   const onlineCount = (team || []).filter((p) => p.id !== me.id && isOnline(p)).length;
@@ -6082,10 +6313,11 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
   const saveEdit = (m) => { const t = editText.trim(); if (!t) { setEditId(null); return; } mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? { ...x, text: t, editedAt: Date.now() } : x) }), null); setEditId(null); setEditText(""); };
   // Delete = tombstone (keeps message order, works under existing chat RLS).
   // Admins can delete anyone's; everyone else only their own.
-  const del = (m) => { const whose = m.userId === me.id ? "your message" : `${m.userName}'s message`; if (!window.confirm(`Delete ${whose} for everyone?`)) return; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? { ...x, deleted: true, text: "", attachment: null, deletedBy: me.name } : x) }), null); };
+  const del = (m) => setConfirmDelete(m);
+  const deleteNow = () => { if (!confirmDelete) return; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? { ...x, deleted: true, text: "", attachment: null, deletedBy: me.name } : x) }), null); setConfirmDelete(null); };
   // Names of teammates who've seen one of my messages.
   const seenNames = (m) => (m.seenBy || []).filter((u) => u !== me.id).map((u) => ((team || []).find((p) => p.id === u)?.name) || "Someone").filter(Boolean);
-  return (
+  return (<>
     <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
       <div className="page-head"><h3>Team chat</h3><span className="spacer" />{onlineCount > 0 && <span className="hint-line" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginRight: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--pos)", display: "inline-block" }} />{onlineCount} online</span>}<button className="btn sm" onClick={refresh} disabled={refreshing} title="Refresh messages"><RefreshCw size={14} className={refreshing ? "spin" : ""} />Refresh</button></div>
       <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -6122,6 +6354,8 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
         <button className="btn primary" onClick={send} disabled={!text.trim()}><Send size={16} />Send</button>
       </div>
     </div>
+    {confirmDelete && <Confirm title="Delete message?" body={`Delete ${confirmDelete.userId === me.id ? "your message" : `${confirmDelete.userName}'s message`} for everyone?`} onConfirm={deleteNow} onClose={() => setConfirmDelete(null)} />}
+    </>
   );
 }
 
@@ -6302,7 +6536,7 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
   const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";
   return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ minHeight: "100vh" }}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <header className="topbar" style={{ position: "sticky", top: 0 }}>
         <img className="brand-logo" src={co.logoUrl || LOGO_ICON} alt={co.name || "ALLBEE"} style={{ height: 30 }} />
         <div><h2 style={{ fontSize: 16 }}>{co.name || "ALLBEE Solutions"}</h2><div className="topbar-sub">Client portal</div></div>
@@ -6449,7 +6683,7 @@ function NotificationForm({ initial, team, onSave, onClose }) {
       <Field label="Message"><textarea className="textarea" value={f.body} onChange={(e) => set("body", e.target.value)} placeholder="Details\u2026" /></Field>
       <div className="grid2">
         <Field label="Priority"><select className="select" value={f.level} onChange={(e) => set("level", e.target.value)}>{NOTIF_LEVELS.map((l) => <option key={l}>{l}</option>)}</select></Field>
-        <Field label="Send to"><select className="select" value={f.audience} onChange={(e) => set("audience", e.target.value)}>{NOTIF_AUDIENCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}<optgroup label="One person">{people.map((p) => <option key={p.id} value={"user:" + p.id}>{p.name}</option>)}</optgroup></select></Field>
+        <div className="field"><label>Send to</label><SearchableSelect value={f.audience} onChange={(value) => set("audience", value)} ariaLabel="Notification recipients" options={[...NOTIF_AUDIENCES.map(([k, l]) => ({ value: k, label: l })), ...people.map((p) => ({ value: "user:" + p.id, label: p.name, meta: ROLE_LABEL[p.role] || p.role }))]} /></div>
       </div>
     </Modal>
   );
@@ -6579,7 +6813,7 @@ function CreateUserModal({ onClose, onActivity }) {
         <Field label="Role"><select className="select" value={f.role} onChange={(e) => set("role", e.target.value)}>{ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
       </div>
       <Field label="Email" required><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@allbee.in" /></Field>
-      <Field label="Password" required hint="At least 6 characters. Share it with them securely."><input className="input" type="text" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" /></Field>
+      <PasswordField label="Password" required hint="At least 6 characters. Share it with them securely." value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" autoComplete="new-password" />
       {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
       <p className="hint-line" style={{ marginTop: 8 }}>Requires the <b>admin-users</b> edge function to be deployed.</p>
     </Modal>
@@ -6593,6 +6827,8 @@ function ManageUserModal({ person, onClose, onActivity }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const usernameCheck = useUsernameAvailability(username, person.id);
   const call = async (body) => { setBusy(true); setMsg(""); setErr(""); try { const { data, error } = await supabase.functions.invoke("admin-users", { body }); if (error) throw error; if (data && data.error) throw new Error(data.error); return true; } catch (e) { setErr((e && e.message) || "Action failed. Is the admin-users function deployed?"); return false; } finally { setBusy(false); } };
   const saveDes = async () => {
     setBusy(true); setMsg(""); setErr("");
@@ -6605,54 +6841,45 @@ function ManageUserModal({ person, onClose, onActivity }) {
   const saveUsername = async () => {
     setBusy(true); setMsg(""); setErr("");
     const uname = username.trim().toLowerCase().replace(/\s+/g, "") || null;
+    if (uname && usernameCheck.available === false) { setBusy(false); setErr("That username is already taken."); return; }
     try { const { error } = await supabase.from("profiles").update({ username: uname }).eq("id", person.id); if (error) throw error; onActivity?.({ action: `updated ${person.name}'s username`, module: "System", entity: "User", entityId: person.id }); setMsg("Username updated."); }
     catch (e) { setErr((e && e.message && /duplicate|unique/i.test(e.message)) ? "That username is already taken." : ((e && e.message) || "Couldn't update the username.")); }
     finally { setBusy(false); }
   };
-  // Permanently delete: removes their login + profile so the email/username can be
-  // reused. Partners can't be deleted. Goes through the admin-users edge function.
+  // Permanently delete: the edge function removes the auth identity first and
+  // retains business/audit rows. Partners use the APN archive flow instead.
   const removeUser = async () => {
-    if (person.role === "superadmin") { setErr("Partners can't be deleted."); return; }
-    if (!window.confirm(`Permanently delete ${person.name}? They're removed from the team and can't sign back in. You can re-create them afterwards.`)) return;
+    if (person.role === "superadmin" || person.role === "partner" || person.role === "district_head" || person.role === "state_head") { setErr("APN and Super Admin accounts use their dedicated lifecycle controls."); return; }
     setBusy(true); setMsg(""); setErr("");
-    // 1. Remove the profile row directly. This works with no edge function and
-    //    takes them out of the team immediately (and frees their username).
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", person.id);
+      const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
       if (error) throw error;
-    } catch (e) {
-      setBusy(false);
-      setErr(/(permission|denied|policy|row-level)/i.test((e && e.message) || "")
-        ? "The database is blocking the delete. Run allbee-delete-user.sql once, then try again."
-        : ("Couldn't remove them: " + ((e && e.message) || "unknown error")));
-      return;
-    }
-    // 2. Delete their login via the edge function so the email frees up too.
-    //    Surface any failure instead of silently leaving an orphaned auth user
-    //    (an orphaned login is what makes a "deleted" email still report
-    //    "User already registered" on the signup screen).
-    const { error: delErr } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
-    setBusy(false);
-    if (delErr) { setErr("Removed from the team, but their login couldn't be deleted, so the email stays reserved. Deploy or repair the admin-users function, then delete again."); return; }
-    onActivity?.({ action: `deleted user "${person.name}"`, module: "System", entity: "User", entityId: person.id });
-    onClose();
+      if (data?.error) throw new Error(data.error);
+      onActivity?.({ action: `deleted user "${person.name}"`, module: "System", entity: "User", entityId: person.id });
+      emitToast("User deleted; login access and email reservation were removed.", "success");
+      onClose();
+    } catch (e) { setErr((e && e.message) || "Couldn't delete the user. No account data was removed."); }
+    finally { setBusy(false); setConfirmDelete(false); }
   };
   return (
+    <>
     <Modal title={"Manage " + person.name} onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
       <Field label="Job title / designation"><div style={{ display: "flex", gap: 8 }}><input className="input" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Developer" /><button className="btn primary" onClick={saveDes} disabled={busy}>Save</button></div></Field>
-      <Field label="Username" hint="They can sign in with this instead of their email."><div style={{ display: "flex", gap: 8 }}><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. priya" /><button className="btn primary" onClick={saveUsername} disabled={busy}>Save</button></div></Field>
-      <Field label="Reset password" hint="Sets a new password for this user immediately."><div style={{ display: "flex", gap: 8 }}><input className="input" type="text" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" /><button className="btn primary" onClick={resetPw} disabled={busy}>Reset</button></div></Field>
+      <div className="field"><label>Username</label><div style={{ display: "flex", gap: 8 }}><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. priya" aria-describedby="manage-username-status" /><button className="btn primary" onClick={saveUsername} disabled={busy}>Save</button></div><div id="manage-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{username.trim() ? usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved." : "They can sign in with this instead of their email."}</div></div>
+      <div className="field"><PasswordField label="Reset password" hint="Sets a new password for this user immediately." value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" autoComplete="new-password" /><button className="btn primary" onClick={resetPw} disabled={busy}>Reset</button></div>
       {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
       {msg && <div className="auth-msg ok"><Check size={14} /> {msg}</div>}
-      {person.role !== "superadmin" && (
+      {!(["superadmin", "partner", "district_head", "state_head"].includes(person.role)) && (
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
           <div className="lbl" style={{ fontSize: 12, fontWeight: 700, color: "var(--neg)", marginBottom: 6 }}>Danger zone</div>
           <p className="hint-line" style={{ marginBottom: 10 }}>Permanently delete this account. Their login and profile are removed and the email/username can be reused to re-create them.</p>
-          <button className="btn danger" onClick={removeUser} disabled={busy}><Trash2 size={15} />Delete user</button>
+          <button className="btn danger" onClick={() => setConfirmDelete(true)} disabled={busy}><Trash2 size={15} />Delete user</button>
         </div>
       )}
       <p className="hint-line" style={{ marginTop: 12 }}>Delete, password reset and adding users need the <b>admin-users</b> edge function deployed. Username and job title save directly.</p>
     </Modal>
+    {confirmDelete && <TypedConfirm title={`Delete ${person.name}?`} body="This removes the login identity and profile. Existing business, financial, audit, and timeline records are retained." note="The email and username become available again only after the auth identity is successfully removed." actionLabel="Delete user" onConfirm={removeUser} onClose={() => setConfirmDelete(false)} />}
+    </>
   );
 }
 
@@ -7043,6 +7270,7 @@ function TeamLeads({ team, db, openModal, removeItem, me }) {
 /* ── Team-scoped chat (private to one team) ────────────────────────────── */
 function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
   const [text, setText] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const endRef = useRef(null);
   const list = [...(db.team_chat || [])].filter((m) => m.teamId === teamId && !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
@@ -7062,9 +7290,10 @@ function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
     setText("");
     mutate((d) => ({ ...d, team_chat: [...(d.team_chat || []), { id: uid(), teamId, userId: me.id, userName: me.name, text: t, createdAt: Date.now() }] }), null);
   };
-  const del = (m) => { if (!window.confirm("Delete your message for the team?")) return; mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === m.id ? { ...x, deleted: true, text: "", deletedBy: me.name } : x) }), null); };
+  const del = (m) => setConfirmDelete(m);
+  const deleteNow = () => { if (!confirmDelete) return; mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === confirmDelete.id ? { ...x, deleted: true, text: "", deletedBy: me.name } : x) }), null); setConfirmDelete(null); };
   const photo = (id) => members.find((p) => p.id === id)?.photo_url;
-  return (
+  return (<>
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 360 }}>
       <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {list.length === 0 ? <Empty icon={<Send size={22} color="var(--muted)" />} title="No messages yet" text="This chat is private to your team." />
@@ -7087,6 +7316,8 @@ function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
         <button className="btn primary" onClick={send} disabled={!text.trim()}><Send size={16} />Send</button>
       </div>
     </div>
+    {confirmDelete && <Confirm title="Delete message?" body="Delete your message for the team?" onConfirm={deleteNow} onClose={() => setConfirmDelete(null)} />}
+    </>
   );
 }
 
@@ -8173,7 +8404,7 @@ async function ensureApnProfile(user, existingRows) {
 function APNGate({ isDark, icon, title, body, name, tone, onSignOut }) {
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="lock-card gate-card">
         <div className="lock-badge" style={tone === "neg" ? { background: "linear-gradient(135deg,var(--neg),#a92a2a)" } : undefined}>{icon}</div>
         <h1>{title}</h1>
@@ -8900,7 +9131,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
 
   return (
     <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <header className="apn-top">
         <img className="brand-logo" src={LOGO_ICON} alt="APN" />
         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
@@ -9022,7 +9253,7 @@ function APNTargetForm({ partners, onSave, onClose }) {
   return (
     <Modal title="Assign target" onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Assign</button></>}>
-      <Field label="Partner"><select className="select" value={f.partnerId} onChange={(e) => set("partnerId", e.target.value)}>{partners.map((p) => <option key={p.id} value={p.id}>{p.name} ({apnIdFor(p)})</option>)}</select></Field>
+      <div className="field"><label>Partner</label><SearchableSelect value={f.partnerId} onChange={(value) => set("partnerId", value)} ariaLabel="Assign target to partner" options={partners.map((p) => ({ value: p.id, label: p.name, meta: apnIdFor(p) }))} /></div>
       <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. 5 leads this month" /></Field>
       <div className="grid2">
         <Field label="Measure"><select className="select" value={f.metric} onChange={(e) => set("metric", e.target.value)}>{APN_TARGET_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
@@ -9150,8 +9381,8 @@ function APNResetPasswordForm({ partner, onSave, onClose }) {
     <Modal title={`Reset password — ${partner.name}`} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><KeyRound size={15} />Reset password</button></>}>
       <div className="banner" style={{ margin: 0 }}><ShieldCheck size={15} />The partner will need the new password at their next sign-in.</div>
-      <Field label="New password" required error={err}><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus /></Field>
-      <Field label="Confirm password" required><input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+      <PasswordField label="New password" required error={err} value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="new-password" />
+      <PasswordField label="Confirm password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
     </Modal>
   );
 }
@@ -9218,7 +9449,7 @@ function APNDeleteForm({ partner, onSave, onClose }) {
   return (
     <Modal title={`Delete ${partner.name}?`} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!ok} style={ok ? { background: "var(--neg)", borderColor: "var(--neg)" } : {}} onClick={() => onSave(reason.trim())}><Trash2 size={15} />Delete partner</button></>}>
-      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.55 }}>The APN account will be removed and its business history archived. The user may register again later as a fresh partner.</p>
+      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.55 }}>This archives the partner account, blocks login, and preserves financial, commission, audit, timeline, notification, and reporting history. The email and username remain reserved while the archive exists.</p>
       <Field label="Deletion reason" required><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this account being archived?" /></Field>
       <Field label={<>Type <b className="mono">DELETE</b> to continue</>} required><input className="input mono" value={word} onChange={(e) => setWord(e.target.value)} placeholder="DELETE" autoFocus /></Field>
     </Modal>
@@ -9232,7 +9463,7 @@ function APNPermanentDeleteForm({ partner, onSave, onClose }) {
   return (
     <Modal title={`Permanently delete ${partner.name}?`} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn danger" disabled={!ok} onClick={() => onSave(reason.trim())}><Trash2 size={15} />Permanently delete</button></>}>
-      <div className="banner" style={{ margin: 0, borderColor: "var(--neg)" }}><AlertTriangle size={15} />This removes the APN account and associated APN records. Deactivate or archive instead when business history must remain available.</div>
+      <div className="banner" style={{ margin: 0, borderColor: "var(--neg)" }}><AlertTriangle size={15} />This removes only the login identity. APN business records, financial history, commissions, audit, timeline, notifications, and reports are preserved; the email becomes reusable after the auth identity is removed.</div>
       <Field label="Reason" required><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why must this account be permanently removed?" /></Field>
       <Field label={<>Type <b className="mono">DELETE</b> to continue</>} required><input className="input mono" value={word} onChange={(e) => setWord(e.target.value)} autoFocus /></Field>
     </Modal>
@@ -9696,7 +9927,7 @@ function APNCommissionEntry({ db, partners, initial, onSave, onClose }) {
   const title = initial?.id ? "Edit Project Commission Manager" : "Project Commission Manager";
   return <Modal title={title} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!partner || !f.projectName.trim() || !f.clientName.trim() || projectValue <= 0}><Coins size={15} />{totalReceived > 0 ? "Save collection" : "Save project"}</button></>}>
     <div className="banner" style={{ margin: 0 }}><GaugeCircle size={15} />Commission is credited only on client money actually received. It never exceeds the maximum commission.</div>
-    <div className="grid2"><Field label="Partner" required><select className="select" value={f.partnerId} onChange={(e) => set("partnerId", e.target.value)} disabled={!!initial?.id}>{partners.map((p) => <option key={p.id} value={p.id}>{p.name} ({apnIdFor(p)})</option>)}</select></Field><Field label="Project category"><select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>{APN_SERVICES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field></div>
+    <div className="grid2"><div className="field"><label>Partner<span className="req" aria-hidden="true"> *</span></label><SearchableSelect value={f.partnerId} onChange={(value) => set("partnerId", value)} disabled={!!initial?.id} ariaLabel="Commission partner" options={partners.map((p) => ({ value: p.id, label: p.name, meta: apnIdFor(p) }))} /></div><Field label="Project category"><select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>{APN_SERVICES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field></div>
     <div className="grid2"><Field label="Project name" required><input className="input" value={f.projectName} onChange={(e) => set("projectName", e.target.value)} placeholder="Website redesign" /></Field><Field label="Client name" required><input className="input" value={f.clientName} onChange={(e) => set("clientName", e.target.value)} placeholder="Client" /></Field></div>
     <div className="grid2"><Field label="Total project value" required><input className="input mono" type="number" min="0" value={f.projectValue} onChange={(e) => set("projectValue", e.target.value)} placeholder="100000" /></Field><Field label="Commission %" required hint="Defaults to the partner's current rate."><input className="input mono" type="number" min="0" max="100" value={f.commissionRate} onChange={(e) => set("commissionRate", e.target.value)} placeholder={String(derivedRate)} /></Field></div>
     <div className="grid2"><div className="apn-profile-kv"><span>Maximum commission</span><b className="mono">{money(maximumCommission)}</b></div><Field label="Status"><select className="select" value={f.status === "Cancelled" ? "Cancelled" : derivedStatus} onChange={(e) => set("status", e.target.value)}><option value="Pending">Pending (automatic)</option><option value="Processing">Processing (automatic)</option><option value="Completed">Completed (automatic)</option><option value="Cancelled">Cancelled (manual)</option></select></Field></div>
@@ -9811,6 +10042,8 @@ function APNAdminLeaderboard({ db }) {
 /* ── admin shell ─────────────────────────────────────────────────────── */
 function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
   const [f, setF] = useState({ name: "", email: "", password: "", mobile: "", apnId: "", district: TN_DISTRICTS[0], taluk: "", city: "", occupation: "", college: "", username: "", reason: "" });
+  const usernameCheck = useUsernameAvailability(f.username);
+  const emailCheck = useEmailAvailability(f.email);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -9819,9 +10052,11 @@ function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
     setErr("");
     if (!f.name.trim()) { setErr("Enter the partner's full name."); return; }
     if (!f.email.trim()) { setErr("Enter an email."); return; }
+    if (emailCheck.available === false) { setErr("That email already has an account. Use a different email."); return; }
     if (f.password.length < 6) { setErr("Set a password of at least 6 characters."); return; }
     if (!f.mobile.trim()) { setErr("Enter a mobile number."); return; }
     if (!f.district) { setErr("Choose a district."); return; }
+    if (usernameCheck.available === false) { setErr("That username is already taken. Choose another one."); return; }
     let assignedApnId;
     try {
       if (f.apnId.trim() && !normalizeManualApnId(f.apnId)) throw new Error("APN ID must be four digits, for example 0006 or APN-TN-0006.");
@@ -9869,11 +10104,11 @@ function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
       </div>
       {canManage && <Field label="APN ID (optional)" hint="Leave blank to allocate the next ID. Reserved gaps may be filled manually; the ID is immutable after creation."><input className="input mono" value={f.apnId} onChange={(e) => set("apnId", e.target.value)} placeholder="0006 or APN-TN-0006" /></Field>}
       <div className="grid2">
-        <Field label="Email" required><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email.com" /></Field>
-        <Field label="Password" required hint="At least 6 characters."><input className="input" type="text" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" /></Field>
+        <div className="field"><label>Email<span className="req" aria-hidden="true"> *</span></label><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email.com" aria-describedby="create-partner-email-status" />{f.email.trim().includes("@") && <div id="create-partner-email-status" className="hint-line" style={{ color: emailCheck.available === false ? "var(--neg)" : emailCheck.available === true ? "var(--pos)" : undefined }}>{emailCheck.checking ? "Checking email availability…" : emailCheck.available === false ? "Email already registered" : emailCheck.available === true ? "Email available" : ""}</div>}</div>
+        <PasswordField label="Password" required hint="At least 6 characters." value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" autoComplete="new-password" />
       </div>
       <div className="grid2">
-        <Field label="District" required><select className="select" value={f.district} onChange={(e) => set("district", e.target.value)}>{TN_DISTRICTS.map((d) => <option key={d}>{d}</option>)}</select></Field>
+        <div className="field"><label>District<span className="req" aria-hidden="true"> *</span></label><SearchableSelect value={f.district} onChange={(value) => set("district", value)} ariaLabel="Partner district" options={TN_DISTRICTS.map((d) => ({ value: d, label: d }))} /></div>
         <Field label="Taluk"><input className="input" value={f.taluk} onChange={(e) => set("taluk", e.target.value)} placeholder="Taluk" /></Field>
       </div>
       <div className="grid2">
@@ -9882,7 +10117,7 @@ function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
       </div>
       <div className="grid2">
         <Field label="College (optional)"><input className="input" value={f.college} onChange={(e) => set("college", e.target.value)} placeholder="College" /></Field>
-        <Field label="Username (optional)"><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="Sign-in username" /></Field>
+        <div className="field"><label>Username (optional)</label><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="Sign-in username" aria-describedby="create-partner-username-status" />{f.username.trim() && <div id="create-partner-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
       </div>
       <Field label="Notes / why joining (optional)"><textarea className="textarea" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field>
       {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
@@ -9924,7 +10159,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   const withActionError = async (fn) => {
     setActionError("");
     try { await fn(); }
-    catch (e) { setActionError(e?.message || "That APN action could not be completed."); }
+    catch (e) { const message = e?.message || "That APN action could not be completed."; setActionError(message); emitToast(message, "error"); }
   };
   const updateProfileStatus = async (partner, active, status) => {
     const { error } = await supabase.from("profiles").update({ active, status }).eq("id", partner.id);
@@ -9965,10 +10200,9 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     if (error) throw new Error(error.message);
     if (data?.error) throw new Error(data.error);
     const at = Date.now();
-    // The service-role function has already removed the related APN rows. Only
-    // remove the visible partner row optimistically here; attempting to replay
-    // protected history deletions through the browser would violate APN RLS.
-    mutateApn((d) => ({ ...d, apn_users: (d.apn_users || []).filter((row) => row.id !== partner.id) }), M(`permanently deleted APN partner "${partner.name}"`, partner.id, { status: partner.status }, { deleted: true, reason }), null);
+    // The service-role function removed only the auth identity. Keep the APN
+    // row as an immutable business-history marker for reports and audit joins.
+    mutateApn((d) => ({ ...d, apn_users: (d.apn_users || []).map((row) => row.id === partner.id ? { ...row, status: "deleted", permanentlyDeleted: true, deleteReason: reason, deletedAt: at, updatedAt: at } : row) }), M(`permanently deleted APN partner "${partner.name}"`, partner.id, { status: partner.status }, { status: "deleted", permanentlyDeleted: true, reason }), timeline(partner, "permanently-deleted", "Login Identity Removed", "APN history preserved; email and username released.", at));
     if (refreshPeople) await refreshPeople();
   });
   const confirmAction = async () => {
@@ -10241,6 +10475,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
 export default function App() {
   const [db, setDb] = useState(null);
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [profile, setProfile] = useState(undefined);  // undefined = loading, null = none
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10302,6 +10537,7 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
+      if (_evt === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       // Record a fresh sign-in time (best-effort; the column may not exist yet).
       if (_evt === "SIGNED_IN" && s && s.user) {
         supabase.from("profiles").update({ last_login: new Date().toISOString() }).eq("id", s.user.id).then(() => {}, () => {});
@@ -10517,22 +10753,17 @@ export default function App() {
   }, [session, loadPeople, mutate]);
 
   // Permanently remove a registered client (a self-signed-up portal account).
-  // Same approach as Manage user: delete the profile row (frees the email), then
-  // best-effort delete their login via the admin-users edge function if deployed.
+  // The edge function owns auth/profile deletion so a failed auth deletion never
+  // leaves the UI claiming that the email is reusable.
   const deleteClientAccount = useCallback(async (person) => {
     if (!person || person.role !== "client") return;
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", person.id);
+      const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
       if (error) throw error;
-    } catch (e) {
-      setSyncError(/(permission|denied|policy|row-level)/i.test((e && e.message) || "")
-        ? "The database is blocking the delete. Run allbee-delete-user.sql once, then try again."
-        : ("Couldn't remove the client: " + ((e && e.message) || "unknown error")));
-      return;
-    }
-    const { error: delErr } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
-    if (delErr) { setSyncError("Client removed from the list, but their login couldn't be deleted, so the email stays reserved. Deploy or repair the admin-users function, then delete again."); return; }
+      if (data?.error) throw new Error(data.error);
+    } catch (e) { setSyncError("Couldn't remove the client: " + ((e && e.message) || "unknown error")); return; }
     mutate((d) => d, { action: `deleted client account "${person.name}"`, module: "Clients" });
+    emitToast("Client deleted; login access and email reservation were removed.", "success");
     if (session) await loadPeople(session.user);
   }, [session, loadPeople, mutate]);
 
@@ -10636,7 +10867,7 @@ export default function App() {
   // open income form prefilled (used by projects / courses / marketing)
   const openIncome = (prefill) => setModal({ type: prefill?.kind === "expense" ? "expense" : "income", initial: prefill, source: prefill?.source });
 
-  const saveShare = (entry, source) => {
+  const saveShare = async (entry, source) => {
     const prev = entry.id ? db.transactions.find((t) => t.id === entry.id) : null;
     const shareChanged = prev && (prev.hajiPct !== entry.hajiPct || prev.alimPct !== entry.alimPct);
     const shareNote = shareChanged ? ` · share ${prev.hajiPct}/${prev.alimPct} → ${entry.hajiPct}/${entry.alimPct}` : "";
@@ -10645,15 +10876,53 @@ export default function App() {
     const companyNote = (entry.kind === "expense" && entry.scope === "company")
       ? ` · company split ${entry.hajiPct}/${entry.alimPct}${entry.shareSource ? ` (from ${fmtPeriod(entry.shareSource)} revenue)` : " — even split, no revenue yet"}`
       : "";
-    mutate((d) => {
-      let next = { ...d };
-      if (entry.id && d.transactions.some((t) => t.id === entry.id)) next.transactions = d.transactions.map((t) => t.id === entry.id ? entry : t);
-      else next.transactions = [...d.transactions, entry];
-      // update linked source status
-      if (source?.kind === "student") next.students = next.students.map((s) => s.id === source.id ? { ...s, paymentStatus: "Paid" } : s);
-      if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: entry.date } : m);
-      return next;
-    }, { action: `${entry.id ? "updated" : "added"} ${entry.kind} ${money(entry.amount)}${entry.client ? " · " + entry.client : ""}${shareNote}${companyNote}`, module: "Accounts" });
+    try {
+      let linkedProject = null;
+      let linkedCollections = null;
+      let savedEntry = entry;
+      if (entry.kind === "income" && entry.apnProjectId) {
+        if (prev?.apnProjectId && prev.apnProjectId !== entry.apnProjectId) throw new Error("Linked APN collections cannot be moved between projects. Edit the APN project instead.");
+        const sourceProject = (db.apn_commission_projects || []).find((p) => p.id === entry.apnProjectId);
+        if (!sourceProject) throw new Error("The selected APN commission project is no longer available.");
+        const priorCollectionId = prev?.apnCollectionId;
+        const existing = (db.apn_revenue_collections || []).filter((row) => row.projectId === sourceProject.id && row.id !== priorCollectionId).map((row) => ({ ...row }));
+        const collection = { id: priorCollectionId || uid(), projectId: sourceProject.id, partnerId: sourceProject.partnerId, receivedAmount: Number(entry.amount) || 0, incentive: 0, remarks: entry.notes || "Finance income receipt", receivedDate: entry.date, commissionStatus: "Pending", createdBy: currentUser, createdAt: prev?.createdAt || Date.now() };
+        linkedCollections = [...existing, collection].sort((a, b) => String(a.receivedDate || a.createdAt).localeCompare(String(b.receivedDate || b.createdAt)));
+        let received = 0; let earned = 0;
+        linkedCollections = linkedCollections.map((row) => {
+          const amount = Number(row.receivedAmount) || 0;
+          if (amount <= 0) throw new Error("APN collection amounts must be greater than zero.");
+          received += amount;
+          const commission = round2(Math.min(Math.max(0, (Number(sourceProject.maximumCommission) || (Number(sourceProject.projectValue) * Number(sourceProject.commissionRate) / 100)) - earned), amount * (Number(sourceProject.commissionRate) || 0) / 100));
+          earned += commission;
+          return { ...row, receivedAmount: amount, commissionGenerated: commission };
+        });
+        if (received > Number(sourceProject.projectValue)) throw new Error("This income exceeds the APN project's remaining value.");
+        const value = Number(sourceProject.projectValue) || 0;
+        const max = round2(value * (Number(sourceProject.commissionRate) || 0) / 100);
+        linkedProject = { ...sourceProject, maximumCommission: max, totalReceived: round2(received), remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, max - earned)), status: apnProjectStatus(sourceProject, received), updatedAt: Date.now() };
+        const { error } = await supabase.rpc("upsert_apn_commission_project", { p_project: linkedProject, p_collections: linkedCollections });
+        if (error) throw new Error(error.message);
+        savedEntry = { ...entry, apnCollectionId: collection.id };
+      }
+      mutate((d) => {
+        let next = { ...d };
+        if (savedEntry.id && d.transactions.some((t) => t.id === savedEntry.id)) next.transactions = d.transactions.map((t) => t.id === savedEntry.id ? savedEntry : t);
+        else next.transactions = [...d.transactions, savedEntry];
+        if (linkedProject) {
+          next.apn_commission_projects = (d.apn_commission_projects || []).map((p) => p.id === linkedProject.id ? linkedProject : p);
+          next.apn_revenue_collections = [...(d.apn_revenue_collections || []).filter((row) => row.projectId !== linkedProject.id), ...linkedCollections];
+        }
+        if (source?.kind === "student") next.students = next.students.map((s) => s.id === source.id ? { ...s, paymentStatus: "Paid" } : s);
+        if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: savedEntry.date } : m);
+        return next;
+      }, { action: `${savedEntry.id ? "updated" : "added"} ${savedEntry.kind} ${money(savedEntry.amount)}${savedEntry.client ? " · " + savedEntry.client : ""}${shareNote}${companyNote}${linkedProject ? " · synced to APN commission" : ""}`, module: "Accounts" });
+      emitToast(linkedProject ? "Income saved and APN commission updated." : "Income saved.", "success");
+      return true;
+    } catch (error) {
+      emitToast(error?.message || "Couldn't save this entry.", "error");
+      return false;
+    }
   };
 
   const saveTask = async (task, fromConcept) => {
@@ -10741,7 +11010,7 @@ export default function App() {
 
   const Loading = ({ note }) => (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} aria-busy="true" aria-live="polite" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-      <style>{CSS}</style>
+      <style>{CSS}</style><ToastHost />
       <div className="loading-screen">
         <div className="loading-card">
           <div className="loading-label"><Hexagon size={20} className="spin" aria-hidden="true" /> <span>{note || "Loading ALLBEE…"}</span></div>
@@ -10757,6 +11026,7 @@ export default function App() {
 
   if (session === undefined) return <Loading />;
   if (!session) return <Lock isDark={isDark} setDark={setIsDark} />;
+  if (passwordRecovery) return <PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />;
   if (profile === undefined) return <Loading note="Signing you in…" />;
   if (profile && profile.active === false && role !== "partner")
     return <Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />;
@@ -10801,6 +11071,7 @@ export default function App() {
   const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
   const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
   const portalClients = team.filter((p) => p.role === "client");
+  const financeApnProjects = (db.apn_commission_projects || []).map((project) => apnProjectSummary(db, project)).filter((project) => project.status !== "Cancelled");
   const unseenAnn = db.announcements.filter((a) => !profile?.notif_seen_at || (a.createdAt || 0) > new Date(profile.notif_seen_at).getTime()).length;
 
   const renderPage = () => {
@@ -10908,7 +11179,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"}>
-        <style>{CSS}</style>
+        <style>{CSS}</style><ToastHost />
 
         {syncError && (
           <div className="banner"><CloudOff size={15} /> Couldn't sync with the server: {syncError}</div>
@@ -10987,7 +11258,7 @@ export default function App() {
         </div>
 
         {/* MODALS */}
-        {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
+        {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
         {modal?.type === "expense" && <ShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
         {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
         {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}

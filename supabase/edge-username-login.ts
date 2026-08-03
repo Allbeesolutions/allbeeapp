@@ -30,22 +30,26 @@ const json = (body: unknown, status = 200) =>
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const { username } = await req.json();
+    const { username, check, kind, exclude } = await req.json();
     if (!username || typeof username !== "string") return json({ error: "username is required." }, 400);
+    const normalized = username.trim().toLowerCase().replace(/\s+/g, "");
 
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data, error } = await admin
-      .from("profiles")
-      .select("email")
-      .ilike("username", username.trim())
-      .maybeSingle();
+    if (check === true) {
+      const rpc = kind === "email" ? "email_available" : "username_available";
+      const params = kind === "email" ? { p_email: normalized, p_exclude: exclude || null } : { p_username: normalized, p_exclude: exclude || null };
+      const { data, error } = await admin.rpc(rpc, params);
+      if (error) return json({ error: error.message }, 500);
+      return json({ available: Boolean(data) });
+    }
+    const { data, error } = await admin.from("profiles").select("email").ilike("username", normalized).maybeSingle();
 
     if (error) return json({ error: error.message }, 500);
     if (!data?.email) return json({ error: "No account with that username." }, 404);
-    return json({ email: data.email });
+    return json({ email: String(data.email).trim().toLowerCase() });
   } catch (e) {
     return json({ error: String(e?.message ?? e) }, 500);
   }

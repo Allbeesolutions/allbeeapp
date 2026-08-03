@@ -136,9 +136,11 @@ Deno.serve(async (req) => {
         return json({ error: "Only a Super Admin can delete an APN partner." }, 403);
       }
 
-      // Preserve the APN row and all business records as an internal archive
-      // before removing the login/profile. A later signup gets a fresh profile.
-      if (["partner", "district_head"].includes(target?.role)) {
+      const targetIsApn = ["partner", "district_head", "state_head"].includes(target?.role);
+      if (targetIsApn && !body.archive) return json({ error: "APN accounts must be archived or permanently deleted by a Super Admin." }, 400);
+      // Archive keeps the profile and auth identity so the email remains
+      // reserved and the account is blocked without destroying history.
+      if (targetIsApn) {
         const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
         if (apn?.data) {
           await admin.from("apn_users").update({
@@ -146,9 +148,12 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", userId);
         }
+        await admin.from("profiles").update({ active: false, approved: false, status: "terminated" }).eq("id", userId);
+        return json({ ok: true, archived: true, emailReusable: false, historyPreserved: true });
       }
 
-      // Remove the login. This frees the email so it can be re-registered.
+      // Remove the login only for non-APN accounts. Auth is first so a failed
+      // deletion never leaves the database claiming that the email is free.
       const { error } = await admin.auth.admin.deleteUser(String(userId));
       // If the auth user was already gone, treat as success (idempotent).
       if (error && !/not found|does not exist/i.test(error.message)) {
@@ -157,6 +162,19 @@ Deno.serve(async (req) => {
       // Also clear the profile row in case it's still there.
       await admin.from("profiles").delete().eq("id", userId);
       return json({ ok: true });
+    }
+
+    if (action === "permanent_delete") {
+      if (callerRole !== "superadmin") return json({ error: "Only a Super Admin may permanently delete an APN account." }, 403);
+      const { userId } = body;
+      if (!userId || userId === caller.id) return json({ error: "A different APN user id is required." }, 400);
+      const { data: target } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
+      if (!["partner", "district_head", "state_head"].includes(target?.role)) return json({ error: "Permanent deletion is reserved for APN accounts." }, 400);
+      const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
+      if (apn?.data) await admin.from("apn_users").update({ data: { ...apn.data, status: "deleted", archived: true, permanentlyDeleted: true, archiveReason: String(body.reason || "Permanent deletion"), deletedAt: Date.now(), deletedBy: caller.id }, updated_at: new Date().toISOString() }).eq("id", userId);
+      const { error } = await admin.auth.admin.deleteUser(String(userId));
+      if (error && !/not found|does not exist/i.test(error.message)) return json({ error: error.message }, 400);
+      return json({ ok: true, permanentlyDeleted: true, emailReusable: true, historyPreserved: true });
     }
 
     return json({ error: `Unknown action: ${action}` }, 400);

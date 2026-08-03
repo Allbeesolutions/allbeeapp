@@ -81,15 +81,33 @@ Deno.serve(async (req) => {
       const { userId } = body;
       if (!userId) return json({ error: "userId is required." }, 400);
       if (userId === user.id) return json({ error: "You can't delete your own account." }, 400);
-      // never delete a partner (superadmin)
       const { data: target } = await admin.from("profiles").select("role").eq("id", userId).single();
       if (target && target.role === "superadmin") return json({ error: "Partners can't be deleted." }, 400);
-      // remove the profile first (frees the unique username), then the auth user
-      // (frees the email so the account can be re-created later).
-      await admin.from("profiles").delete().eq("id", userId);
+      const targetIsApn = ["partner", "district_head", "state_head"].includes(target?.role);
+      if (targetIsApn) {
+        if (!body.archive) return json({ error: "APN accounts must be archived or permanently deleted." }, 400);
+        const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
+        if (apn?.data) await admin.from("apn_users").update({ data: { ...apn.data, status: "deleted", archived: true, archiveReason: String(body.archiveReason || "Account archived"), archivedAt: Date.now(), deletedAt: Date.now(), deletedBy: user.id }, updated_at: new Date().toISOString() }).eq("id", userId);
+        await admin.from("profiles").update({ active: false, approved: false, status: "terminated" }).eq("id", userId);
+        return json({ ok: true, archived: true, emailReusable: false, historyPreserved: true });
+      }
+      // Auth is deleted first; the profile is only cleared after success.
       const { error } = await admin.auth.admin.deleteUser(userId);
       if (error) return json({ error: error.message }, 400);
+      await admin.from("profiles").delete().eq("id", userId);
       return json({ ok: true });
+    }
+
+    if (action === "permanent_delete") {
+      const { userId } = body;
+      if (!userId || userId === user.id) return json({ error: "A different user id is required." }, 400);
+      const { data: target } = await admin.from("profiles").select("role").eq("id", userId).single();
+      if (!target || !["partner", "district_head", "state_head"].includes(target.role)) return json({ error: "Permanent deletion is reserved for APN accounts." }, 400);
+      const { data: apn } = await admin.from("apn_users").select("id,data").eq("id", userId).maybeSingle();
+      if (apn?.data) await admin.from("apn_users").update({ data: { ...apn.data, status: "deleted", archived: true, permanentlyDeleted: true, archiveReason: String(body.reason || "Permanent deletion"), deletedAt: Date.now(), deletedBy: user.id }, updated_at: new Date().toISOString() }).eq("id", userId);
+      const { error } = await admin.auth.admin.deleteUser(userId);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true, permanentlyDeleted: true, emailReusable: true, historyPreserved: true });
     }
 
     return json({ error: "Unknown action." }, 400);
