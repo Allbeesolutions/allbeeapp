@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import {
   LayoutDashboard, Wallet, ArrowDownToLine, ListTodo, TrendingUp, Lightbulb,
   GraduationCap, Megaphone, FolderKanban, ScrollText, Settings as SettingsIcon,
@@ -989,6 +989,10 @@ const CSS = `
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   color:var(--ink); background:var(--bg); min-height:100vh; -webkit-font-smoothing:antialiased; overflow-x:hidden;
 }
+.allbee button, .allbee input, .allbee select, .allbee textarea { font:inherit; }
+.allbee :where(button, a, input, select, textarea, [tabindex="0"]):focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.allbee button { -webkit-tap-highlight-color:transparent; }
+.allbee [aria-busy="true"] { cursor:progress; }
 .allbee[data-theme="dark"] {
   --bg:#0D1117; --surface:#161B22; --surface-2:#1C232C; --ink:#E7EBF1; --muted:#8B95A5;
   --border:#262E39; --primary:#6D7BFF; --primary-soft:#1B2247; --accent:#F2B23C;
@@ -1035,6 +1039,7 @@ const CSS = `
 .iconbtn { width:36px; height:36px; border-radius:9px; border:1px solid var(--border); background:var(--surface);
   display:grid; place-items:center; cursor:pointer; color:var(--ink); transition:.12s; }
 .iconbtn:hover { background:var(--surface-2); }
+.iconbtn:disabled { opacity:.5; cursor:not-allowed; }
 .usermenu { position:relative; display:flex; align-items:center; gap:4px; flex-shrink:0; }
 .topbar-title { flex:1; min-width:0; }
 .topbar-title h2 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -1102,7 +1107,7 @@ const CSS = `
 .split-legend { display:flex; gap:14px; font-size:11px; color:var(--muted); margin-top:6px; }
 .split-legend span { display:flex; align-items:center; gap:5px; }
 
-.btn { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border); background:var(--surface);
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; border:1px solid var(--border); background:var(--surface);
   color:var(--ink); padding:9px 14px; border-radius:9px; font-size:13.5px; font-weight:600; cursor:pointer; transition:.12s; }
 .btn:hover { background:var(--surface-2); }
 .btn.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
@@ -1127,10 +1132,13 @@ const CSS = `
 
 table.tbl { width:100%; border-collapse:collapse; font-size:13.5px; }
 table.tbl th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
-  padding:10px 14px; border-bottom:1px solid var(--border); font-weight:600; }
+  position:sticky; top:0; z-index:1; background:var(--surface); padding:10px 14px; border-bottom:1px solid var(--border); font-weight:600; white-space:nowrap; }
 table.tbl td { padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:middle; }
 table.tbl tr:last-child td { border-bottom:none; }
-table.tbl tr:hover td { background:var(--surface-2); }
+table.tbl tr:hover td, table.tbl tr:focus-within td { background:var(--surface-2); }
+table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-offset:-2px; }
+.table-wrap { max-width:100%; overflow:auto; border-radius:inherit; -webkit-overflow-scrolling:touch; }
+.table-wrap table.tbl { min-width:640px; }
 .num-cell { text-align:right; }
 .pos-txt { color:var(--pos); } .neg-txt { color:var(--neg); }
 
@@ -1142,26 +1150,27 @@ table.tbl tr:hover td { background:var(--surface-2); }
 .item-meta { font-size:12.5px; color:var(--muted); margin-top:3px; display:flex; gap:10px; flex-wrap:wrap; }
 .row-actions { display:flex; gap:4px; opacity:.8; }
 
-.empty { text-align:center; padding:46px 20px; color:var(--muted); }
+.empty { text-align:center; padding:50px 22px; color:var(--muted); }
 .empty .ic { width:54px; height:54px; border-radius:14px; background:var(--surface-2); display:grid; place-items:center; margin:0 auto 14px; }
 .empty h4 { margin:0 0 6px; color:var(--ink); font-size:16px; }
-.empty p { margin:0 0 16px; font-size:13.5px; }
+.empty p { margin:0 auto 18px; max-width:440px; font-size:13.5px; line-height:1.55; }
 
 .overlay { position:fixed; inset:0; background:rgba(10,14,20,.5); backdrop-filter:blur(2px); z-index:100;
   display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; }
-.modal { background:var(--surface); border:1px solid var(--border); border-radius:16px; width:100%; max-width:560px;
+.modal { background:var(--surface); border:1px solid var(--border); border-radius:16px; width:100%; max-width:560px; max-height:calc(100vh - 32px); display:flex; flex-direction:column;
   box-shadow:0 24px 64px rgba(0,0,0,.35); animation:pop .16s ease; }
 @keyframes pop { from { opacity:0; transform:translateY(8px) scale(.99);} to { opacity:1; transform:none; } }
-.modal-head { display:flex; align-items:center; padding:18px 20px; border-bottom:1px solid var(--border); }
+.modal-head { display:flex; align-items:center; gap:8px; padding:18px 20px; border-bottom:1px solid var(--border); flex:none; }
 .modal-head h3 { margin:0; font-size:17px; font-weight:700; }
-.modal-body { padding:20px; display:flex; flex-direction:column; gap:14px; max-height:62vh; overflow-y:auto; }
-.modal-foot { padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; }
+.modal-body { padding:20px; display:flex; flex-direction:column; gap:14px; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.modal-foot { padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; flex:none; background:var(--surface); }
 
 .field label { display:block; font-size:12.5px; font-weight:600; margin-bottom:6px; color:var(--ink); }
 .field .req { color:var(--neg); }
 .input, .select, .textarea { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:9px;
   padding:10px 12px; font-size:14px; color:var(--ink); font-family:inherit; transition:.12s; }
 .input:focus, .select:focus, .textarea:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+.input[aria-invalid="true"], .select[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color:var(--neg); }
 .textarea { resize:vertical; min-height:90px; line-height:1.5; }
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .hint-line { font-size:12px; color:var(--muted); }
@@ -1178,6 +1187,7 @@ table.tbl tr:hover td { background:var(--surface-2); }
 .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
 .search { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border);
   border-radius:9px; padding:0 12px; flex:1; min-width:180px; }
+.search:focus-within { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
 .search input { border:none; background:none; outline:none; padding:10px 0; font-size:14px; color:var(--ink); width:100%; font-family:inherit; }
 .seg { display:flex; gap:2px; background:var(--surface-2); border-radius:9px; padding:3px; }
 .seg button { border:none; background:none; padding:7px 12px; border-radius:7px; font-size:12.5px; cursor:pointer;
@@ -1214,6 +1224,12 @@ table.tbl tr:hover td { background:var(--surface-2); }
 .linkbtn { background:none; border:none; color:var(--primary); font-size:13px; font-weight:600; cursor:pointer; margin-top:14px; }
 .linkbtn:hover { text-decoration:underline; }
 .spin { animation:sp 1s linear infinite; } @keyframes sp { to { transform:rotate(360deg); } }
+.loading-screen { width:min(520px,calc(100% - 32px)); display:grid; gap:18px; }
+.loading-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; box-shadow:var(--shadow); }
+.loading-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:13px; font-weight:600; }
+.skeleton { display:block; background:linear-gradient(90deg,var(--surface-2) 25%,color-mix(in srgb,var(--surface-2) 55%,var(--surface)) 37%,var(--surface-2) 63%); background-size:400% 100%; animation:skeleton-shimmer 1.3s ease infinite; border-radius:8px; }
+.skeleton-line { height:12px; }
+@keyframes skeleton-shimmer { from { background-position:100% 0; } to { background-position:-100% 0; } }
 
 @media (max-width:900px) {
   .layout { grid-template-columns:1fr; }
@@ -1243,6 +1259,17 @@ table.tbl tr:hover td { background:var(--surface-2); }
 @media (max-width:560px) {
   .cards-grid { grid-template-columns:1fr !important; }
   .topbar-title h2 { font-size:14px; }
+  .content { padding:14px 12px 20px; }
+  .page-head { gap:9px; }
+  .page-head .btn.primary { width:100%; }
+  .modal { max-height:calc(100vh - 20px); border-radius:14px; }
+  .overlay { padding:10px; }
+  .modal-head, .modal-body, .modal-foot { padding-left:16px; padding-right:16px; }
+  .modal-foot .btn { flex:1 1 120px; }
+  .table-wrap table.tbl { min-width:580px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .allbee *, .allbee *::before, .allbee *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.001ms !important; }
 }
 
 /* ── Phase 2 additions ─────────────────────────────────────────────────── */
@@ -1521,17 +1548,31 @@ function SplitBar({ h, a, legend = true }) {
 }
 
 function Modal({ title, onClose, children, footer, onMaximize }) {
+  const modalRef = useRef(null);
+  const titleId = useId();
   useEffect(() => {
-    const k = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
+    const previous = document.activeElement;
+    const root = modalRef.current;
+    const focusable = () => Array.from(root?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
+    const first = root?.querySelector("[autofocus]") || focusable()[0];
+    first?.focus();
+    return () => { if (previous && typeof previous.focus === "function") previous.focus(); };
   }, [onClose]);
+  const trapFocus = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+    if (e.key !== "Tab") return;
+    const nodes = Array.from(modalRef.current?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
+    if (!nodes.length) return;
+    const first = nodes[0]; const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true">
-        <div className="modal-head"><h3>{title}</h3><span style={{ flex: 1 }} />
+      <div ref={modalRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} onKeyDown={trapFocus}>
+        <div className="modal-head"><h3 id={titleId}>{title}</h3><span style={{ flex: 1 }} />
           {onMaximize && <button className="iconbtn" onClick={onMaximize} aria-label="Open full page" title="Open full page"><Maximize2 size={16} /></button>}
-          <button className="iconbtn" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="iconbtn" onClick={onClose} aria-label="Close dialog" title="Close dialog"><X size={18} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
@@ -1541,19 +1582,27 @@ function Modal({ title, onClose, children, footer, onMaximize }) {
 }
 
 function Field({ label, required, children, error, hint }) {
+  const id = useId();
+  const hintId = hint ? `${id}-hint` : undefined;
+  const errorId = error ? `${id}-error` : undefined;
+  const control = React.isValidElement(children) ? React.cloneElement(children, {
+    id: children.props.id || id,
+    "aria-invalid": error ? "true" : children.props["aria-invalid"],
+    "aria-describedby": [children.props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined,
+  }) : children;
   return (
     <div className="field">
-      {label && <label>{label}{required && <span className="req"> *</span>}</label>}
-      {children}
-      {hint && !error && <div className="hint-line" style={{ marginTop: 5 }}>{hint}</div>}
-      {error && <div className="field-err"><AlertTriangle size={13} />{error}</div>}
+      {label && <label htmlFor={React.isValidElement(control) ? control.props.id : id}>{label}{required && <span className="req" aria-hidden="true"> *</span>}</label>}
+      {control}
+      {hint && !error && <div id={hintId} className="hint-line" style={{ marginTop: 5 }}>{hint}</div>}
+      {error && <div id={errorId} className="field-err" role="alert"><AlertTriangle size={13} />{error}</div>}
     </div>
   );
 }
 
 function Empty({ icon, title, text, action }) {
   return (
-    <div className="empty">
+    <div className="empty" role="status">
       <div className="ic">{icon}</div>
       <h4>{title}</h4><p>{text}</p>
       {action}
@@ -3451,11 +3500,14 @@ function downloadActivityCsv(rows) {
 }
 
 function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
+  const drawerRef = useRef(null);
   useEffect(() => {
     if (!activity) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const previous = document.activeElement;
+    const drawer = drawerRef.current;
+    const first = drawer?.querySelector("button:not(:disabled), [href], [tabindex]:not([tabindex=\"-1\"])");
+    first?.focus();
+    return () => { if (previous && typeof previous.focus === "function") previous.focus(); };
   }, [activity, onClose]);
   if (!activity) return null;
   const related = activityRelated(db, activity);
@@ -3464,7 +3516,15 @@ function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
   const sequence = timelineRows.length ? timelineRows : [activity];
   return (
     <div className="activity-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="activity-drawer" role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title">
+      <aside ref={drawerRef} className="activity-drawer" role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title" tabIndex={-1} onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+        if (e.key !== "Tab") return;
+        const nodes = Array.from(drawerRef.current?.querySelectorAll("button:not(:disabled), [href], [tabindex]:not([tabindex=\"-1\"])") || []);
+        if (!nodes.length) return;
+        const first = nodes[0]; const last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }}>
         <div className="activity-drawer-head"><div><h3 id="activity-drawer-title">Activity details</h3><div className="hint-line">{activity.description || activity.action || "Activity event"}</div></div><button className="iconbtn" onClick={onClose} aria-label="Close activity details"><X size={18} /></button></div>
         <div className="activity-drawer-body">
           <div className="activity-detail-grid">
@@ -6338,6 +6398,14 @@ function Notifications({ db, mutate, openModal, removeItem, isAdmin, me, profile
   const visible = [...db.notifications].filter((n) => isAdmin || notifVisibleTo(n, profile)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const levelTone = (l) => l === "Urgent" ? "neg" : l === "Important" ? "accent" : "pri";
   const audienceLabel = (a) => { if (!a || a === "all") return "Everyone"; if (a.startsWith("user:")) { const u = (team || []).find((x) => x.id === a.slice(5)); return u ? "Only " + u.name : "One person"; } return (NOTIF_AUDIENCES.find((x) => x[0] === a) || [a, a])[1]; };
+  const senderFor = (n) => {
+    const person = (team || []).find((x) => x.id === n.senderId || x.name === n.by);
+    return {
+      name: n.senderName || n.by || person?.name || "Admin",
+      designation: n.senderDesignation || person?.designation || ROLE_LABEL[person?.role] || "Administrator",
+      avatar: n.senderAvatar || person?.photo_url || "",
+    };
+  };
   const markRead = (n) => { if ((n.reads || []).includes(me.id)) return; mutate((d) => ({ ...d, notifications: d.notifications.map((x) => x.id === n.id ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) } : x) }), null); };
   const del = (n) => removeItem("notifications", n, { name: n.title, audit: `deleted notification "${n.title}"` });
   return (
@@ -6346,17 +6414,20 @@ function Notifications({ db, mutate, openModal, removeItem, isAdmin, me, profile
       {visible.length === 0 ? <div className="card"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text={isAdmin ? "Broadcast an update to everyone, a role, or one person \u2014 with a priority level." : "Notifications from your admins show up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>} /></div>
         : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{visible.map((n) => {
           const seen = (n.reads || []).includes(me.id);
+          const sender = senderFor(n);
           return (
-            <div key={n.id} className="card stat" style={{ borderLeft: `3px solid var(${n.level === "Urgent" ? "--neg" : "--primary"})` }}>
+            <div key={n.id} className="card stat" style={{ borderLeft: `3px solid var(${n.level === "Urgent" ? "--neg" : "--primary"})`, position: "relative" }}>
+              {!seen && !isAdmin && <span aria-label="Unread notification" title="Unread" style={{ position: "absolute", top: 18, right: 18, width: 8, height: 8, borderRadius: "50%", background: "var(--primary)" }} />}
               <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <Avatar name={sender.name} url={sender.avatar} size={34} fontSize={13} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span style={{ fontWeight: 700, fontSize: 15 }}>{n.title}</span><span className={"badge " + levelTone(n.level)}>{n.level || "General"}</span>{!seen && !isAdmin && <span className="badge pri">New</span>}</div>
                   {n.body && <div style={{ marginTop: 6, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{n.body}</div>}
-                  <div className="item-meta" style={{ marginTop: 8 }}><span>{n.by || "Admin"}</span><span>{fmtDateTime(n.createdAt)}</span>{isAdmin && <span><Users size={12} style={{ verticalAlign: -2 }} /> {audienceLabel(n.audience)}</span>}{isAdmin && <span><Check size={12} style={{ verticalAlign: -2 }} /> {(n.reads || []).length} read</span>}</div>
+                  <div className="item-meta" style={{ marginTop: 8 }}><span>{sender.name}</span><span>{sender.designation}</span><span>{fmtDateTime(n.createdAt)}</span>{isAdmin && <span><Users size={12} style={{ verticalAlign: -2 }} /> {audienceLabel(n.audience)}</span>}{isAdmin && <span><Check size={12} style={{ verticalAlign: -2 }} /> {(n.reads || []).length} read</span>}</div>
                   {!isAdmin && !seen && <div style={{ marginTop: 10 }}><button className="btn sm primary" onClick={() => markRead(n)}><Check size={13} />Mark as read</button></div>}
                   {!isAdmin && seen && <div className="hint-line" style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, color: "var(--pos)" }}><BadgeCheck size={13} />Read</div>}
                 </div>
-                {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => del(n)}><Trash2 size={14} /></button></div>}
+                {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} aria-label={`Delete notification ${n.title}`} title="Delete notification" onClick={() => del(n)}><Trash2 size={14} /></button></div>}
               </div>
             </div>
           );
@@ -7605,11 +7676,11 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
 
   return (
     <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cmdk" onKeyDown={onKey}>
+      <div className="cmdk" role="dialog" aria-modal="true" aria-label="Global search" onKeyDown={onKey}>
         <div className="cmdk-input">
-          <Search size={20} color="var(--muted)" />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search modules, people, projects, tasks, notes…" />
-          <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} title="Close"><X size={16} /></button>
+          <Search size={20} color="var(--muted)" aria-hidden="true" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search modules, people, projects, tasks, notes…" aria-label="Search all accessible records" />
+          <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} title="Close search" aria-label="Close search"><X size={16} /></button>
         </div>
         <div className="cmdk-results">
           {results.length === 0 ? (
@@ -8540,7 +8611,7 @@ function APNNotifications({ db, meRow, pid, mutate }) {
           <div key={n.id} className="apn-rowcard">
             {(() => { const sender = apnNotificationSender(n); return <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={sender.name} url={sender.avatar} size={26} fontSize={10} /><div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation}</div></div>{n.level && n.level !== "General" && <span className={"badge " + (n.level === "Urgent" ? "neg" : "accent")}>{n.level}</span>}</div>; })()}
             {n.body && <div style={{ marginTop: 5, fontSize: 14, lineHeight: 1.5, color: "var(--ink)" }}>{n.body}</div>}
-            <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>{fmtDate(n.createdAt)} · {new Date(n.createdAt || 0).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</div>
+            <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>{fmtDateTime(n.createdAt)}</div>
           </div>
         ))}</div>}
     </div>
@@ -8746,13 +8817,13 @@ function APNSearch({ db, meRow, pid, go, onClose }) {
   }, [q, index]);
   return (
     <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cmdk">
-        <div className="cmdk-input"><Search size={20} color="var(--muted)" /><input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads, quotations, materials…" /><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose}><X size={16} /></button></div>
+      <div className="cmdk" role="dialog" aria-modal="true" aria-label="Search APN" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
+        <div className="cmdk-input"><Search size={20} color="var(--muted)" aria-hidden="true" /><input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads, quotations, materials…" aria-label="Search APN records" /><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} aria-label="Close search" title="Close search"><X size={16} /></button></div>
         <div className="cmdk-results">
           {!q.trim() ? <div className="cmdk-empty">Search your leads, quotations, targets, training and materials.</div>
             : results.length === 0 ? <div className="cmdk-empty">No matches for “{q}”.</div>
               : results.map((r) => (
-                <div key={r.id} className="cmdk-item" onMouseDown={(e) => { e.preventDefault(); go(r.tab); onClose(); }}>
+                <div key={r.id} className="cmdk-item" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(r.tab); onClose(); } }} onMouseDown={(e) => { e.preventDefault(); go(r.tab); onClose(); }}>
                   <div className="cmdk-ic"><Search size={15} /></div>
                   <div className="cmdk-main"><div className="cmdk-title"><SearchHighlight text={r.title} q={q} /></div><div className="cmdk-path">{r.sub}</div></div>
                   <span className="tag">{r.module}</span>
@@ -8852,9 +8923,9 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       </nav>
 
       {moreOpen && (
-        <div className="apn-more" onMouseDown={(e) => { if (e.target === e.currentTarget) setMoreOpen(false); }}>
-          <div className="apn-more-sheet">
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}><div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>More</div><button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => setMoreOpen(false)}><X size={16} /></button></div>
+        <div className="apn-more" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setMoreOpen(false); }}>
+          <div className="apn-more-sheet" role="dialog" aria-modal="true" aria-labelledby="apn-more-title">
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}><div id="apn-more-title" style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>More</div><button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => setMoreOpen(false)} aria-label="Close more menu" title="Close more menu"><X size={16} /></button></div>
             <div className="apn-more-grid">
               {moreItems.map(([k, l, ic, badge]) => (
                 <button key={k} className="apn-more-item" style={{ position: "relative" }} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge pri" style={{ position: "absolute", top: 8, right: 8, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{badge}</span>}</button>
@@ -10669,10 +10740,17 @@ export default function App() {
   };
 
   const Loading = ({ note }) => (
-    <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+    <div className="allbee" data-theme={isDark ? "dark" : "light"} aria-busy="true" aria-live="polite" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
       <style>{CSS}</style>
-      <div style={{ color: "var(--muted)", display: "flex", alignItems: "center", gap: 10 }}>
-        <Hexagon size={20} className="spin" /> {note || "Loading ALLBEE…"}
+      <div className="loading-screen">
+        <div className="loading-card">
+          <div className="loading-label"><Hexagon size={20} className="spin" aria-hidden="true" /> <span>{note || "Loading ALLBEE…"}</span></div>
+          <div style={{ display: "grid", gap: 10, marginTop: 20 }} aria-hidden="true">
+            <span className="skeleton skeleton-line" style={{ width: "42%" }} />
+            <span className="skeleton" style={{ height: 76 }} />
+            <span className="skeleton skeleton-line" style={{ width: "68%" }} />
+          </div>
+        </div>
       </div>
     </div>
   );
