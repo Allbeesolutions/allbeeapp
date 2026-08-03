@@ -341,6 +341,33 @@ const TABLES = ["transactions", "withdrawals", "tasks", "projects", "students", 
   // APN — ALLBEE Partner Network (logically separate from employee operations)
   "apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_commission_projects", "apn_revenue_collections", "apn_achievements", "apn_notifications", "apn_documents", "apn_timeline", "apn_warnings", "apn_notes", "apn_activity", "apn_transfer_history", "apn_communications"];
 
+// PR2 referral data is relational and intentionally does not participate in
+// the legacy JSON-row diff writer. Referral mutations go through audited RPCs.
+const REFERRAL_READS = {
+  apn_referral_codes: "partner_id,code,rename_count,created_at,renamed_at,active",
+  apn_referral_relationships: "id,referrer_id,referred_id,referral_code,linked_at,created_at,status,linked_by,disabled_at",
+  apn_referral_earnings: "id,relationship_id,referrer_id,referred_id,source_collection_id,project_id,revenue_amount,referral_percent,referral_amount,status,collection_at,created_at,approved_at,paid_at,snapshot",
+  apn_referral_wallets: "partner_id,pending,approved,withdrawable,paid,lifetime,monthly,updated_at",
+  apn_referral_withdrawals: "id,partner_id,amount,status,requested_at,reviewed_at,reviewed_by,paid_at,note",
+  apn_referral_timeline: "id,partner_id,event_type,title,description,related_id,created_at,created_by",
+  apn_referral_activities: "id,partner_id,actor_id,event_type,title,description,metadata,created_at",
+  apn_referral_monthly_summary: "partner_id,month_start,referral_count,active_count,revenue,earnings,updated_at",
+  apn_referral_analytics_monthly: "partner_id,month_start,conversion_rate,referral_count,active_count,revenue,earnings,updated_at",
+};
+
+async function fetchReferralData() {
+  const out = {};
+  await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
+    const { data, error } = await supabase.from(table).select(columns);
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
 async function fetchAll() {
   const db = emptyDB();
   await Promise.all(TABLES.map(async (t) => {
@@ -357,6 +384,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
+  Object.assign(db, await fetchReferralData());
   return db;
 }
 
@@ -715,6 +743,7 @@ const emptyDB = () => ({
   inhouse: [], payroll: [], teams: [], team_chat: [], testing: [], class_students: [],
   apn_users: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
   apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [],
+  apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -5193,7 +5222,12 @@ function Lock({ isDark, setDark }) {
     const raw = `${window.location.search} ${window.location.hash}`.toLowerCase();
     return /otp_expired|access_denied|invalid.*token|expired.*token/.test(raw) ? "This password reset link is invalid or expired. Request a new reset email and use its latest link." : "";
   }, []);
-  const [apn, setApn] = useState({ mobile: "", dob: "", district: "", taluk: "", city: "", occupation: "", college: "", reason: "", username: "" });
+  const referralFromUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const hashQuery = String(window.location.hash || "").split("?")[1] || "";
+    return new URLSearchParams(`${window.location.search.replace(/^\?/, "")}${hashQuery ? `&${hashQuery}` : ""}`).get("ref")?.trim().toUpperCase() || "";
+  }, []);
+  const [apn, setApn] = useState(() => ({ mobile: "", dob: "", district: "", taluk: "", city: "", occupation: "", college: "", reason: "", username: "", referralCode: referralFromUrl }));
   const usernameCheck = useUsernameAvailability(apn.username);
   const emailCheck = useEmailAvailability(email);
   const upApn = (k, v) => setApn((s) => ({ ...s, [k]: v }));
@@ -5245,7 +5279,7 @@ function Lock({ isDark, setDark }) {
       } else {
         const meta = acctType === "owner" ? { name: who, admin_code: code.trim() }
           : acctType === "client" ? { name: name.trim(), role_intent: "client" }
-          : acctType === "partner" ? { name: name.trim(), role_intent: "partner", apn: { name: name.trim(), mobile: apn.mobile.trim(), dob: apn.dob, district: apn.district, taluk: apn.taluk.trim(), city: apn.city.trim(), occupation: apn.occupation.trim(), college: apn.college.trim(), reason: apn.reason.trim(), username: apn.username.trim().toLowerCase() } }
+          : acctType === "partner" ? { name: name.trim(), role_intent: "partner", apn: { name: name.trim(), mobile: apn.mobile.trim(), dob: apn.dob, district: apn.district, taluk: apn.taluk.trim(), city: apn.city.trim(), occupation: apn.occupation.trim(), college: apn.college.trim(), reason: apn.reason.trim(), username: apn.username.trim().toLowerCase(), referralCode: apn.referralCode.trim().toUpperCase() } }
           : { name: name.trim() };
         const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password: pw, options: { data: meta } });
         if (error) throw error;
@@ -5332,6 +5366,7 @@ function Lock({ isDark, setDark }) {
                   <div className="field"><label>College (optional)</label><input className="input" value={apn.college} onChange={(e) => upApn("college", e.target.value)} placeholder="College" /></div>
                   <div className="field"><label>Username</label><input className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" aria-describedby="signup-username-status" />{apn.username.trim() && <div id="signup-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
                 </div>
+                <div className="field"><label>Referral code <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><input className="input mono" value={apn.referralCode} onChange={(e) => upApn("referralCode", e.target.value.toUpperCase())} placeholder="Enter a partner's code" />{apn.referralCode && <div className="hint-line">The code is linked once your APN profile is created. You may add one later from My Network.</div>}</div>
                 <div className="field"><label>Why do you want to join APN?</label><textarea className="textarea" value={apn.reason} onChange={(e) => upApn("reason", e.target.value)} placeholder="Tell us briefly why you'd like to become a partner…" /></div>
                 <p className="hint-line" style={{ fontSize: 12 }}>APN partners are independent and commission-based — no salary and no joining fee. You must be 18 or older. Applications are approved by an admin.</p>
               </div>
@@ -8392,7 +8427,7 @@ async function ensureApnProfile(user, existingRows) {
     mobile: meta.mobile || "", email: user.email || meta.email || "", dob: meta.dob || "",
     district: meta.district || "", taluk: meta.taluk || "", city: meta.city || "",
     occupation: meta.occupation || "", college: meta.college || "", reason: meta.reason || "",
-    username: (meta.username || "").toLowerCase(),
+    username: (meta.username || "").toLowerCase(), referralCode: (meta.referralCode || "").trim().toUpperCase(),
     status: "pending", role: "partner", unlocked: {}, quizPasses: {}, createdAt: Date.now(),
   };
   const { error } = await supabase.from("apn_users").upsert({ id: user.id, data: row, updated_at: new Date().toISOString() }, { onConflict: "id", ignoreDuplicates: true });
@@ -8715,6 +8750,159 @@ function APNWallet({ db, pid, stats }) {
       </div>
     </div>
   );
+}
+
+/* ── direct referral network (separate from the commission wallet) ─────── */
+const referralCodeFor = (db, pid) => (db.apn_referral_codes || []).find((row) => row.partner_id === pid) || null;
+const referralWalletFor = (db, pid) => (db.apn_referral_wallets || []).find((row) => row.partner_id === pid) || { pending: 0, approved: 0, withdrawable: 0, paid: 0, lifetime: 0, monthly: 0 };
+const referralLinkFor = (code) => {
+  if (!code || typeof window === "undefined") return "";
+  return `${window.location.origin}/apn/register?ref=${encodeURIComponent(code)}`;
+};
+const referralQrFor = (link) => link ? `https://quickchart.io/qr?size=220&text=${encodeURIComponent(link)}` : "";
+
+function APNReferralMetric({ label, value, icon, tone }) {
+  return <APNMetric k={label} v={value} icon={icon} tone={tone} />;
+}
+
+function APNNetwork({ db, meRow, pid, reload }) {
+  const [view, setView] = useState("dashboard");
+  const [network, setNetwork] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [leaderPeriod, setLeaderPeriod] = useState("lifetime");
+  const [codeDraft, setCodeDraft] = useState("");
+  const [codeState, setCodeState] = useState("idle");
+  const [referralDraft, setReferralDraft] = useState("");
+  const [withdrawDraft, setWithdrawDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const codeRow = referralCodeFor(db, pid);
+  const wallet = referralWalletFor(db, pid);
+  const ownRelationship = (db.apn_referral_relationships || []).find((row) => row.referred_id === pid);
+  const link = referralLinkFor(codeRow?.code);
+  const referralRows = network.length ? network : (db.apn_referral_relationships || []).filter((row) => row.referrer_id === pid).map((row) => ({ relationship_id: row.id, referred_id: row.referred_id, referred_name: "APN Partner", referred_apn_id: "—", status: row.status, linked_at: row.linked_at, revenue: 0, earnings: 0 }));
+  const totalReferrals = referralRows.length;
+  const activeReferrals = referralRows.filter((row) => row.status === "active").length;
+  const pendingReferrals = referralRows.filter((row) => (db.apn_users || []).some((u) => u.id === row.referred_id && u.status === "pending")).length;
+
+  const refresh = async () => {
+    const [networkResult, boardResult] = await Promise.all([
+      supabase.rpc("apn_referral_network", { p_partner_id: pid }),
+      supabase.rpc("apn_referral_leaderboard", { p_period: leaderPeriod }),
+    ]);
+    if (!networkResult.error) setNetwork(networkResult.data || []);
+    if (!boardResult.error) setLeaderboard(boardResult.data || []);
+  };
+  useEffect(() => {
+    if (!codeRow && pid) supabase.rpc("apn_referral_ensure_code", { p_partner_id: pid }).then(() => reload?.()).catch(() => {});
+    refresh().catch(() => {});
+  }, [pid, leaderPeriod, codeRow?.code]);
+  useEffect(() => { if (codeRow?.code && !codeDraft) setCodeDraft(codeRow.code); }, [codeRow?.code]);
+  useEffect(() => {
+    const value = codeDraft.trim().toUpperCase();
+    if (!codeRow || codeRow.rename_count >= 1 || !value || value === codeRow.code) { setCodeState(value === codeRow?.code ? "available" : "idle"); return undefined; }
+    if (!/^[A-Z0-9][A-Z0-9_-]{3,19}$/.test(value)) { setCodeState("invalid"); return undefined; }
+    let cancelled = false;
+    setCodeState("checking");
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase.rpc("apn_referral_code_available", { p_code: value, p_exclude_partner: pid });
+      if (!cancelled) setCodeState(error ? "unknown" : data ? "available" : "taken");
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [codeDraft, codeRow?.code, codeRow?.rename_count, pid]);
+
+  const run = async (action, success) => {
+    setBusy(true); setMessage(null);
+    try { await action(); await reload?.(); await refresh(); setMessage({ type: "ok", text: success }); }
+    catch (error) { setMessage({ type: "err", text: error?.message || "The referral action could not be completed." }); }
+    finally { setBusy(false); }
+  };
+  const saveCode = () => run(async () => {
+    const value = codeDraft.trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9_-]{3,19}$/.test(value)) throw new Error("Use 4–20 letters, numbers, hyphens, or underscores.");
+    if (codeState === "taken" || codeState === "checking" || codeState === "unknown") throw new Error("Choose a referral code that can be verified as available.");
+    const { data, error } = await supabase.rpc("apn_referral_rename_code", { p_partner_id: pid, p_new_code: value });
+    if (error) throw error;
+    setCodeDraft(data || value);
+  }, "Referral code updated.");
+  const linkCode = () => run(async () => {
+    const { error } = await supabase.rpc("apn_referral_link_code", { p_partner_id: pid, p_code: referralDraft.trim(), p_source: "manual" });
+    if (error) throw error;
+    setReferralDraft("");
+  }, "Referral relationship linked. Only future collections can earn referral earnings.");
+  const requestWithdrawal = () => run(async () => {
+    const amount = Number(withdrawDraft);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a withdrawal amount greater than zero.");
+    const { error } = await supabase.rpc("apn_referral_request_withdrawal", { p_partner_id: pid, p_amount: amount, p_note: "Requested from My Network." });
+    if (error) throw error;
+    setWithdrawDraft("");
+  }, "Referral withdrawal submitted for review.");
+  const exportNetwork = async () => {
+    await exportRowsToExcel(`allbee-referral-network-${todayISO()}.xlsx`, "Referral Network", [
+      { label: "Referral", value: (row) => row.referred_name || "APN Partner" },
+      { label: "APN ID", value: (row) => row.referred_apn_id || "" },
+      { label: "Status", value: (row) => row.status },
+      { label: "Joined", value: (row) => row.linked_at ? fmtDate(row.linked_at) : "" },
+      { label: "Revenue", value: (row) => row.revenue },
+      { label: "Referral earnings", value: (row) => row.earnings },
+    ], referralRows);
+    setMessage({ type: "ok", text: "Referral network exported." });
+  };
+  const copy = async (value, label) => {
+    if (!value) return;
+    try { await navigator.clipboard?.writeText(value); setMessage({ type: "ok", text: `${label} copied.` }); } catch { setMessage({ type: "err", text: `Could not copy ${label.toLowerCase()}.` }); }
+  };
+  const share = async () => {
+    if (!link) return;
+    if (navigator.share) { try { await navigator.share({ title: "Join ALLBEE APN", text: `Join my APN network with code ${codeRow.code}.`, url: link }); return; } catch { /* cancelled */ } }
+    copy(link, "Referral link");
+  };
+  const earningRows = (db.apn_referral_earnings || []).filter((row) => row.referrer_id === pid);
+  const timelineRows = (db.apn_referral_timeline || []).filter((row) => row.partner_id === pid).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const statusTone = (s) => s === "active" ? "pos" : s === "disabled" ? "neg" : "pri";
+
+  return <div>
+    <div className="apn-section-h" style={{ display: "flex", alignItems: "center", gap: 8 }}><Users size={18} /> My Network</div>
+    <div className="apn-seg-scroll" aria-label="Referral network sections">
+      {[['dashboard', 'Dashboard'], ['referrals', 'Referrals'], ['timeline', 'Timeline'], ['leaderboard', 'Leaderboard']].map(([key, label]) => <button key={key} className={view === key ? "on" : ""} onClick={() => setView(key)}>{label}</button>)}
+    </div>
+    {message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginBottom: 12 }}>{message.text}</div>}
+
+    {view === "dashboard" && <>
+      <div className="apn-rowcard" style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 220 }}><div style={{ fontWeight: 800, fontSize: 16 }}>Your referral identity</div><div className="hint-line" style={{ marginTop: 4 }}>Share your permanent code or link. Direct referrals only; no downstream or recursive earnings.</div>
+            <div style={{ display: "flex", gap: 7, marginTop: 12, flexWrap: "wrap" }}><input className="input mono" style={{ flex: "1 1 160px", maxWidth: 250 }} value={codeDraft} onChange={(e) => { setCodeDraft(e.target.value.toUpperCase()); setCodeState("idle"); }} disabled={!codeRow || codeRow.rename_count >= 1} aria-label="Referral code" /><button className="btn sm" onClick={() => copy(codeRow?.code, "Referral code")}><Copy size={13} />Copy</button>{codeRow && codeRow.rename_count < 1 && <button className="btn sm primary" onClick={saveCode} disabled={busy || !["available", "idle"].includes(codeState)}><Pencil size={13} />Rename once</button>}</div>
+            {codeRow?.rename_count >= 1 && <div className="hint-line" style={{ marginTop: 6 }}>This referral code has used its one allowed rename.</div>}
+            {codeState !== "idle" && <div className="hint-line" style={{ color: ["available"].includes(codeState) ? "var(--pos)" : ["checking", "unknown"].includes(codeState) ? "var(--muted)" : "var(--neg)" }}>{codeState === "checking" ? "Checking code availability…" : codeState === "available" ? "Referral code available." : codeState === "taken" ? "That referral code is already in use." : codeState === "invalid" ? "Use 4–20 letters, numbers, hyphens, or underscores." : "Could not verify code availability."}</div>}
+          </div>
+          {link && <div style={{ textAlign: "center" }}><img src={referralQrFor(link)} alt="QR code for your APN referral link" width="112" height="112" style={{ display: "block", borderRadius: 10, border: "1px solid var(--border)" }} /><button className="btn sm" style={{ marginTop: 7 }} onClick={share}><Send size={13} />Share link</button></div>}
+        </div>
+        <div style={{ display: "flex", gap: 7, marginTop: 12 }}><input className="input mono" value={link} readOnly aria-label="Referral link" /><button className="btn sm" onClick={() => copy(link, "Referral link")}><Copy size={13} /></button><button className="btn sm" onClick={exportNetwork}><Download size={13} />Export</button></div>
+      </div>
+      <div className="apn-metrics" style={{ marginBottom: 12 }}>
+        <APNReferralMetric label="Lifetime earnings" value={money(wallet.lifetime)} icon={<Coins size={13} />} tone="pos" />
+        <APNReferralMetric label="Monthly earnings" value={money(wallet.monthly)} icon={<CalendarDays size={13} />} />
+        <APNReferralMetric label="Pending" value={money(wallet.pending)} icon={<Hourglass size={13} />} />
+        <APNReferralMetric label="Withdrawable" value={money(wallet.withdrawable)} icon={<Wallet size={13} />} tone="accent" />
+        <APNReferralMetric label="Paid" value={money(wallet.paid)} icon={<BadgeCheck size={13} />} tone="pos" />
+        <APNReferralMetric label="Total referrals" value={totalReferrals} icon={<Users size={13} />} />
+        <APNReferralMetric label="Active referrals" value={activeReferrals} icon={<UserCheck size={13} />} tone="pos" />
+        <APNReferralMetric label="Pending referrals" value={pendingReferrals} icon={<UserPlus size={13} />} tone="accent" />
+      </div>
+      <div className="apn-rowcard" style={{ marginBottom: 12 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Link a referral code</div>{ownRelationship ? <div className="hint-line">You are linked to a direct referrer since {fmtDate(ownRelationship.linked_at)}. This relationship cannot be replaced.</div> : <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}><input className="input mono" style={{ flex: "1 1 180px" }} value={referralDraft} onChange={(e) => setReferralDraft(e.target.value.toUpperCase())} placeholder="Enter one referral code" aria-label="Referral code from another partner" /><button className="btn sm primary" onClick={linkCode} disabled={busy || !referralDraft.trim()}><Link2 size={13} />Link code</button></div>}</div>
+      <div className="apn-rowcard"><div style={{ fontWeight: 700, marginBottom: 8 }}>Request referral withdrawal</div><div className="hint-line" style={{ marginBottom: 9 }}>Withdrawable balance: {money(wallet.withdrawable)}. Requests are reviewed by an admin.</div><div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}><input className="input mono" type="number" min="0" step="0.01" value={withdrawDraft} onChange={(e) => setWithdrawDraft(e.target.value)} placeholder="Amount ₹" aria-label="Referral withdrawal amount" /><button className="btn sm primary" onClick={requestWithdrawal} disabled={busy || !withdrawDraft}><Wallet size={13} />Request withdrawal</button></div></div>
+    </>}
+
+    {view === "referrals" && <div className="apn-rowcard" style={{ padding: 0 }}><div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Direct referrals <span className="badge" style={{ marginLeft: 5 }}>{referralRows.length}</span></div>{referralRows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Users size={22} color="var(--muted)" />} title="No direct referrals yet" text="Share your code or link to invite your first partner." action={<button className="btn primary" onClick={() => setView("dashboard")}><Send size={14} />Share invitation</button>} /></div> : referralRows.map((row) => <button key={row.relationship_id} type="button" className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, borderBottom: "1px solid var(--border)", borderRadius: 0, textAlign: "left", boxShadow: "none" }} onClick={() => setDetail(row)}><Avatar name={row.referred_name} size={36} fontSize={14} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{row.referred_name || "APN Partner"}</div><div className="hint-line" style={{ fontSize: 12 }}>{row.referred_apn_id || "APN partner"} · Joined {fmtDate(row.linked_at)}</div></div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><span className={`badge ${statusTone(row.status)}`}>{row.status}</span></div><ChevronRight size={16} color="var(--muted)" /></button>)}</div>}
+
+    {view === "timeline" && <div className="apn-rowcard">{timelineRows.length === 0 ? <Empty icon={<Clock size={22} color="var(--muted)" />} title="No referral activity yet" text="Linking a code, a new referral, earnings, and withdrawals will appear here." /> : <div className="apn-list">{timelineRows.map((row) => <div key={row.id} className="apn-rowcard" style={{ boxShadow: "none", background: "var(--surface-2)" }}><div style={{ display: "flex", gap: 9 }}><div style={{ display: "flex", gap: 9 }}><span className="pos"><Clock size={13} /></span><div><div style={{ fontWeight: 700 }}>{row.title}</div><div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{row.description}</div><div className="hint-line" style={{ fontSize: 11, marginTop: 5 }}>{fmtDateTime(row.created_at)}</div></div></div></div></div>)}</div>}</div>}
+
+    {view === "leaderboard" && <div className="apn-rowcard"><div className="apn-seg-scroll">{[["monthly", "Monthly"], ["yearly", "Yearly"], ["lifetime", "Lifetime"]].map(([key, label]) => <button key={key} className={leaderPeriod === key ? "on" : ""} onClick={() => setLeaderPeriod(key)}>{label}</button>)}</div>{leaderboard.length === 0 ? <Empty icon={<Trophy size={22} color="var(--muted)" />} title="Leaderboard is waiting" text="Referral earnings will appear here after a referred partner's collection is recorded." /> : leaderboard.map((row, index) => <div key={row.partner_id} className="apn-rank"><span className={`pos ${index < 3 ? `g${index + 1}` : ""}`}>{index + 1}</span><Avatar name={row.partner_name} size={28} fontSize={11} /><div style={{ flex: 1, fontWeight: 700 }}>{row.partner_name}{row.partner_id === pid && <span className="badge pri" style={{ marginLeft: 6 }}>You</span>}</div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><div className="hint-line" style={{ fontSize: 11 }}>{row.referral_count} referrals</div></div></div>)}</div>}
+
+    {detail && <Modal title={detail.referred_name || "Referral details"} onClose={() => setDetail(null)} footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}><div className="hint-line" style={{ marginBottom: 10 }}>{detail.referred_apn_id} · Linked {fmtDate(detail.linked_at)}</div><div className="apn-metrics"><APNReferralMetric label="Revenue" value={money(detail.revenue)} icon={<TrendingUp size={13} />} /><APNReferralMetric label="Referral earnings" value={money(detail.earnings)} icon={<Coins size={13} />} tone="pos" /></div><div style={{ marginTop: 14, fontWeight: 700 }}>Referral earnings</div>{earningRows.filter((row) => row.relationship_id === detail.relationship_id).map((row) => <div key={row.id} className="item-meta" style={{ justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--border)" }}><span>{money(row.revenue_amount)} · {row.referral_percent}% snapshot · {fmtDate(row.collection_at)}</span><span className="badge">{row.status}</span></div>)}</Modal>}
+  </div>;
 }
 
 /* ── training + quiz ─────────────────────────────────────────────────── */
@@ -9103,6 +9291,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "home": return <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
       case "wallet": return <APNWallet db={db} pid={pid} stats={stats} />;
+      case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
@@ -9121,6 +9310,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ["quotations", "Quotations", <FileText size={20} color="var(--primary)" />, 0],
     ["documents", "Materials", <BookOpen size={20} color="var(--primary)" />, 0],
     ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
+    ["network", "My Network", <Users size={20} color="var(--primary)" />, 0],
     ["achievements", "Achievements", <Award size={20} color="var(--primary)" />, 0],
     ["leaderboard", "Leaderboard", <Trophy size={20} color="var(--primary)" />, 0],
     ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
@@ -9148,7 +9338,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         {primary.map(([k, l, Icon]) => (
           <button key={k} className={"apn-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
         ))}
-        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
+        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "network", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
           <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
         </button>
       </nav>
@@ -10040,6 +10230,33 @@ function APNAdminLeaderboard({ db }) {
 }
 
 /* ── admin shell ─────────────────────────────────────────────────────── */
+function APNAdminReferrals({ db, isSuper, onRefresh }) {
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const settings = db.apn_referral_settings?.[0] || { enabled: true, default_percent: 1 };
+  const [enabled, setEnabled] = useState(settings.enabled !== false);
+  const [percent, setPercent] = useState(String(settings.default_percent ?? 1));
+  const relationships = (db.apn_referral_relationships || []).slice().sort((a, b) => new Date(b.linked_at) - new Date(a.linked_at));
+  const earnings = db.apn_referral_earnings || [];
+  const withdrawals = db.apn_referral_withdrawals || [];
+  const nameOf = (id) => (db.apn_users || []).find((row) => row.id === id)?.name || id || "—";
+  const filtered = relationships.filter((row) => `${nameOf(row.referrer_id)} ${nameOf(row.referred_id)} ${row.referral_code}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const run = async (action, success) => { setBusy(true); setMessage(null); try { const { error } = await action(); if (error) throw error; await onRefresh?.(); setMessage({ type: "ok", text: success }); } catch (error) { setMessage({ type: "err", text: error?.message || "Referral action failed." }); } finally { setBusy(false); } };
+  const updateEarning = (id, status) => run(() => supabase.rpc("apn_referral_update_earning_status", { p_earning_id: id, p_status: status, p_note: `Admin marked earning ${status}.` }), `Referral earning marked ${status}.`);
+  const updateWithdrawal = (id, status) => run(() => supabase.rpc("apn_referral_set_withdrawal_status", { p_withdrawal_id: id, p_status: status, p_note: `Admin marked withdrawal ${status}.` }), `Referral withdrawal marked ${status}.`);
+  const updateRelationship = (id, status) => run(() => supabase.rpc("apn_referral_set_relationship_status", { p_relationship_id: id, p_status: status }), `Referral relationship ${status}.`);
+  const saveSettings = () => run(() => supabase.rpc("apn_referral_update_settings", { p_enabled: enabled, p_percent: Number(percent) }), "Referral settings saved for future collections.");
+  return <div>
+    {message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginBottom: 12 }}>{message.text}</div>}
+    <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", marginBottom: 14 }}><div className="card stat"><div className="lbl">Relationships</div><div className="num mono">{relationships.length}</div></div><div className="card stat"><div className="lbl">Lifetime earnings</div><div className="num mono">{money(earnings.reduce((s, row) => s + Number(row.referral_amount || 0), 0))}</div></div><div className="card stat"><div className="lbl">Pending earnings</div><div className="num mono">{earnings.filter((row) => row.status === "pending").length}</div></div><div className="card stat"><div className="lbl">Pending withdrawals</div><div className="num mono">{withdrawals.filter((row) => row.status === "pending").length}</div></div></div>
+    {isSuper && <div className="card" style={{ marginBottom: 14 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Referral system settings</div><div className="grid2"><Field label="Default referral %" hint="Future collections only; historical snapshots never change."><input className="input mono" type="number" min="0" max="100" step="0.01" value={percent} onChange={(e) => setPercent(e.target.value)} /></Field><Field label="Status"><label className="perm-item"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />Generate future referral earnings</label></Field></div><button className="btn primary" onClick={saveSettings} disabled={busy}><Check size={14} />Save settings</button></div>}
+    <div className="card" style={{ marginBottom: 14 }}><div className="toolbar" style={{ margin: 0 }}><div className="search" style={{ flex: 1 }}><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search referrer, referred partner, or code…" /></div></div><div style={{ overflowX: "auto", marginTop: 10 }}><table className="tbl"><thead><tr><th>Referrer</th><th>Referred partner</th><th>Code</th><th>Joined</th><th>Status</th><th>Earnings</th><th></th></tr></thead><tbody>{filtered.length === 0 ? <tr><td colSpan="7"><Empty icon={<Users size={20} color="var(--muted)" />} title="No referral relationships" text="Direct referral relationships will appear here after a code is used." /></td></tr> : filtered.map((row) => <tr key={row.id}><td>{nameOf(row.referrer_id)}</td><td>{nameOf(row.referred_id)}</td><td className="mono">{row.referral_code}</td><td>{fmtDate(row.linked_at)}</td><td><span className={`badge ${row.status === "active" ? "pos" : "neg"}`}>{row.status}</span></td><td className="mono">{money(earnings.filter((e) => e.relationship_id === row.id).reduce((s, e) => s + Number(e.referral_amount || 0), 0))}</td><td><button className="btn sm" onClick={() => updateRelationship(row.id, row.status === "active" ? "disabled" : "active")} disabled={busy}>{row.status === "active" ? "Disable" : "Enable"}</button></td></tr>)}</tbody></table></div></div>
+    <div className="card" style={{ marginBottom: 14 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Earnings review</div>{earnings.length === 0 ? <Empty icon={<Coins size={20} color="var(--muted)" />} title="No referral earnings" text="New collections from linked partners create snapshot-based earnings automatically." /> : earnings.slice(0, 50).map((row) => <div key={row.id} className="item-meta" style={{ justifyContent: "space-between", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)" }}><span><b>{nameOf(row.referrer_id)}</b> · {money(row.referral_amount)} · {row.referral_percent}% snapshot · {fmtDate(row.collection_at)}</span><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><span className="badge">{row.status}</span>{row.status === "pending" && <button className="btn sm" onClick={() => updateEarning(row.id, "approved")} disabled={busy}>Approve</button>}{row.status === "approved" && <button className="btn sm primary" onClick={() => updateEarning(row.id, "withdrawable")} disabled={busy}>Make withdrawable</button>}</span></div>)}</div>
+    <div className="card"><div style={{ fontWeight: 700, marginBottom: 8 }}>Withdrawal review</div>{withdrawals.length === 0 ? <Empty icon={<Wallet size={20} color="var(--muted)" />} title="No referral withdrawals" text="Partner withdrawal requests will appear here." /> : withdrawals.map((row) => <div key={row.id} className="item-meta" style={{ justifyContent: "space-between", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)" }}><span><b>{nameOf(row.partner_id)}</b> · {money(row.amount)} · {fmtDate(row.requested_at)}</span><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><span className="badge">{row.status}</span>{row.status === "pending" && <><button className="btn sm" onClick={() => updateWithdrawal(row.id, "approved")} disabled={busy}>Approve</button><button className="btn sm danger" onClick={() => updateWithdrawal(row.id, "rejected")} disabled={busy}>Reject</button></>}{row.status === "approved" && <button className="btn sm primary" onClick={() => updateWithdrawal(row.id, "paid")} disabled={busy}>Mark paid</button>}</span></div>)}</div>
+  </div>;
+}
+
 function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
   const [f, setF] = useState({ name: "", email: "", password: "", mobile: "", apnId: "", district: TN_DISTRICTS[0], taluk: "", city: "", occupation: "", college: "", username: "", reason: "" });
   const usernameCheck = useUsernameAvailability(f.username);
@@ -10125,7 +10342,7 @@ function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
   );
 }
 
-function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, people = [], focusPartnerId, onFocusConsumed, onOpenRelated }) {
+function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, people = [], focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh }) {
   const [tab, setTab] = useState("partners");
   const [modal, setModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
@@ -10412,7 +10629,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     });
   };
 
-  const tabs = [["partners", "Partners"], ["leads", "Leads"], ["commissions", "Commissions"], ["targets", "Targets"], ["content", "Training"], ["docs", "Materials"], ["notify", "Notify"], ["board", "Leaderboard"]];
+  const tabs = [["partners", "Partners"], ["leads", "Leads"], ["commissions", "Commissions"], ["referrals", "Referrals"], ["targets", "Targets"], ["content", "Training"], ["docs", "Materials"], ["notify", "Notify"], ["board", "Leaderboard"]];
 
   return (
     <div className="content">
@@ -10430,6 +10647,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
       {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} />}
+      {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
           : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Target</th><th>Progress</th><th>Acknowledged</th></tr></thead>
@@ -10596,6 +10814,7 @@ export default function App() {
     reload();
     const ch = supabase.channel("allbee-db-sync");
     TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
@@ -11091,7 +11310,7 @@ export default function App() {
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} onActivity={recordActivity} onOpenAPN={() => go("apn")} />;
       case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
-      case "apn": return <APNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} />;
+      case "apn": return <APNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} />;
       case "activity": return <LastSeen team={team} />;
       case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
       case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
