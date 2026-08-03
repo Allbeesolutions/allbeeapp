@@ -274,12 +274,14 @@ const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice
 // record showed up under yesterday and "today's" filter never matched it (which
 // also made the app ask the person to check in again). fmtDate/clockTime/
 // sameMonth all already work in local time, so this keeps everything consistent.
-const todayISO = () => {
-  const d = new Date();
+const localISODate = (value = new Date()) => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
 };
+const todayISO = () => localISODate();
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 function money(n, { sign = false } = {}) {
@@ -7903,7 +7905,7 @@ const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : 
 // Commissions are paid on the 5th of the following month — never immediately.
 function apnPayoutDate(fromISO) {
   const d = fromISO ? new Date(fromISO) : new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 5).toISOString().slice(0, 10);
+  return localISODate(new Date(d.getFullYear(), d.getMonth() + 1, 5));
 }
 
 const APN_TARGET_METRICS = [["leads", "Leads"], ["conversions", "Conversions"], ["website", "Website projects"], ["course", "Course admissions"], ["marketing", "Marketing projects"]];
@@ -7941,7 +7943,7 @@ function apnAttendanceStreak(db, pid) {
   let streak = 0;
   const d = new Date();
   for (let i = 0; i < 400; i++) {
-    const iso = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i).toISOString().slice(0, 10);
+    const iso = localISODate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - i));
     if (days.has(iso)) streak++;
     else if (i === 0) continue; // today not yet checked in — don't break the run
     else break;
@@ -8782,7 +8784,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     </div>
   );
 
-  const eff = profile.active === false ? "suspended" : apnEffectiveStatus(meRow);
+  const eff = meRow.status === "rejected" ? "rejected" : profile.active === false ? "suspended" : apnEffectiveStatus(meRow);
   if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Application received" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) is pending approval from an admin. You'll get full access as soon as it's approved.`} onSignOut={signOut} />;
   if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
   if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} />;
@@ -9308,6 +9310,18 @@ function APNActionMenu({ partner, isSuper, canManage, onAction }) {
   </div>;
 }
 
+function apnPartnerProfileForm(partner, stats, target) {
+  return {
+    name: partner.name || "", username: partner.username || "", email: partner.email || "", mobile: partner.mobile || "",
+    alternateNumber: partner.alternateNumber || "", gender: partner.gender || "", dob: partner.dob || "",
+    country: partner.country || "India", state: partner.state || "Tamil Nadu", district: partner.district || "", taluk: partner.taluk || "",
+    city: partner.city || "", pincode: partner.pincode || "", address: partner.address || "",
+    status: partner.status || "pending", level: apnAdminLevel(partner, stats), target: partner.target ?? target?.goal ?? "",
+    targetMetric: partner.targetMetric || target?.metric || "leads", commissionPct: partner.commissionPct ?? stats.level.rate,
+    attendanceScore: partner.attendanceScore ?? "", notes: partner.notes || partner.reason || "", kycStatus: partner.kycStatus || "Not started",
+  };
+}
+
 function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose, onOpenFullPage }) {
   const stats = apnPartnerStats(db, partner.id);
   const target = apnTargetFor(db, partner.id, partner.targetResetAt);
@@ -9341,18 +9355,17 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
   const timelinePageSize = 8;
   const timelinePages = Math.max(1, Math.ceil(timeline.length / timelinePageSize));
   const visibleTimeline = timeline.slice(timelinePage * timelinePageSize, timelinePage * timelinePageSize + timelinePageSize);
-  const [f, setF] = useState(() => ({
-    name: partner.name || "", username: partner.username || "", email: partner.email || "", mobile: partner.mobile || "",
-    alternateNumber: partner.alternateNumber || "", gender: partner.gender || "", dob: partner.dob || "",
-    country: partner.country || "India", state: partner.state || "Tamil Nadu", district: partner.district || "", taluk: partner.taluk || "",
-    city: partner.city || "", pincode: partner.pincode || "", address: partner.address || "",
-    status: partner.status || "pending", level: apnAdminLevel(partner, stats), target: partner.target ?? target?.goal ?? "",
-    targetMetric: partner.targetMetric || target?.metric || "leads", commissionPct: partner.commissionPct ?? stats.level.rate,
-    attendanceScore: partner.attendanceScore ?? "", notes: partner.notes || partner.reason || "", kycStatus: partner.kycStatus || "Not started",
-  }));
+  const [f, setF] = useState(() => apnPartnerProfileForm(partner, stats, target));
   const canEdit = isSuper && partner.status !== "deleted";
   const [err, setErr] = useState("");
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  useEffect(() => {
+    setF(apnPartnerProfileForm(partner, stats, target));
+    setErr("");
+    setShowAllActivity(initialSection === "activity");
+    setTimelinePage(0);
+    setAuditPage(0);
+  }, [partner.id, partner.updatedAt, target?.id, target?.goal, target?.metric, initialSection]);
   const save = () => {
     if (!f.name.trim()) { setErr("Enter the partner's name."); return; }
     if (!f.email.trim()) { setErr("Enter an email address."); return; }
@@ -9598,8 +9611,10 @@ function APNCommissionEntry({ db, partners, initial, onSave, onClose }) {
     if (!partner || !f.projectName.trim() || !f.clientName.trim()) return setErr("Partner, project name, and client name are required.");
     if (projectValue <= 0) return setErr("Total project value must be greater than ₹0.");
     if (!Number.isFinite(Number(rate)) || Number(rate) < 0 || Number(rate) > 100) return setErr("Commission % must be between 0 and 100.");
+    if ((db.apn_commission_projects || []).some((row) => row.id !== initial?.id && row.partnerId === partner.id && String(row.projectName || row.project || "").trim().toLowerCase() === f.projectName.trim().toLowerCase() && String(row.clientName || "").trim().toLowerCase() === f.clientName.trim().toLowerCase())) return setErr("This partner already has a commission project with that name and client.");
     if (totalReceived > projectValue) return setErr("Collections cannot exceed the total project value.");
-    if (collections.some((row) => Number(row.receivedAmount) < 0 || Number(row.incentive) < 0)) return setErr("Received amounts and incentives cannot be negative.");
+    if (collections.some((row) => String(row.receivedAmount).trim() !== "" && (!Number.isFinite(Number(row.receivedAmount)) || Number(row.receivedAmount) <= 0))) return setErr("Every entered collection must be greater than ₹0.");
+    if (collections.some((row) => String(row.incentive).trim() !== "" && (!Number.isFinite(Number(row.incentive)) || Number(row.incentive) < 0))) return setErr("Incentives cannot be negative.");
     if (previewCollections.some((row) => row.receivedAmount > 0 && !row.receivedDate)) return setErr("Every collection needs a received date.");
     const now = Date.now();
     const project = { id: initial?.id || uid(), partnerId: partner.id, partnerName: partner.name, projectName: f.projectName.trim(), clientName: f.clientName.trim(), category: f.category, projectValue, commissionRate: Number(rate), maximumCommission, totalReceived, totalCommissionPaid: Number(initial?.totalCommissionPaid) || 0, remainingAmount, remainingCommission, status: f.status === "Cancelled" ? "Cancelled" : derivedStatus, remarks: f.remarks.trim(), createdBy: initial?.createdBy || "Admin", createdAt: initial?.createdAt || now, updatedAt: now };
@@ -9980,7 +9995,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     const notification = collectionRows.length
       ? { title: "Revenue collection recorded", body: `${money(project.totalReceived)} received for ${project.projectName}. Commission credited: ${money(project.commissionEarned)}.` }
       : { title: "Commission project created", body: `${project.projectName} was added with a maximum commission of ${money(project.maximumCommission)}.` };
-    mutateApn((d) => ({ ...d, apn_commission_projects: projectRows, apn_revenue_collections: [...(d.apn_revenue_collections || []).filter((row) => !collectionRows.some((next) => next.id === row.id)), ...collectionRows], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ ...notification, audience: `partner:${project.partnerId}`, level: "Important" }))] }), { ...M(`${project.createdAt === project.updatedAt ? "created" : "updated"} APN commission project "${project.projectName}"`, project.partnerId, null, project), entity: "APN Commission Project", entityId: project.id }, [statusEvent, ...collectionEvents]);
+    mutateApn((d) => ({ ...d, apn_commission_projects: projectRows, apn_revenue_collections: [...(d.apn_revenue_collections || []).filter((row) => row.projectId !== project.id), ...collectionRows], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ ...notification, audience: `partner:${project.partnerId}`, level: "Important" }))] }), { ...M(`${project.createdAt === project.updatedAt ? "created" : "updated"} APN commission project "${project.projectName}"`, project.partnerId, null, project), entity: "APN Commission Project", entityId: project.id }, [statusEvent, ...collectionEvents]);
   });
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" }))] }), M(`assigned APN target "${t.title}"`));
   const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));

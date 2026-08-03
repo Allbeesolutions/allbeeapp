@@ -140,28 +140,49 @@ declare
   v_amount numeric;
   v_incentive numeric;
   v_commission numeric;
+  v_collection_ids text[] := array[]::text[];
 begin
   if not public.is_admin() then raise exception 'Only APN administrators may manage commission projects.' using errcode = 'insufficient_privilege'; end if;
   if v_project_id is null or v_partner_id is null or nullif(trim(p_project->>'projectName'),'') is null or nullif(trim(p_project->>'clientName'),'') is null then raise exception 'Partner, project name, client name, and project id are required.' using errcode = 'check_violation'; end if;
   if v_project_value <= 0 or v_rate < 0 or v_rate > 100 then raise exception 'Project value must be positive and commission rate must be between 0 and 100.' using errcode = 'check_violation'; end if;
-  insert into public.apn_commission_projects (id, data, updated_at) values (v_project_id, p_project, now()) on conflict (id) do update set data = excluded.data, updated_at = now();
-  select coalesce(sum(received_amount), 0), coalesce(sum(commission_generated), 0) into v_received, v_earned from public.apn_revenue_collections where project_id = v_project_id;
-  if v_received > v_project_value then raise exception 'Existing collections exceed the project value.' using errcode = 'check_violation'; end if;
-  if v_earned > v_max then raise exception 'Existing collections exceed the maximum commission.' using errcode = 'check_violation'; end if;
+  if jsonb_typeof(coalesce(p_collections, '[]'::jsonb)) <> 'array' then raise exception 'Collections must be a JSON array.' using errcode = 'check_violation'; end if;
+  if not exists (select 1 from public.apn_users u where u.id = v_partner_id and coalesce(u.data->>'status', 'pending') = 'active') then raise exception 'Commission projects require an active APN partner.' using errcode = 'check_violation'; end if;
+  if exists (
+    select 1 from public.apn_commission_projects p
+    where p.id <> v_project_id
+      and coalesce(p.partner_id, p.data->>'partnerId') = v_partner_id
+      and lower(trim(coalesce(p.project_name, p.data->>'projectName', p.data->>'project', ''))) = lower(trim(p_project->>'projectName'))
+      and lower(trim(coalesce(p.client_name, p.data->>'clientName', ''))) = lower(trim(p_project->>'clientName'))
+  ) then raise exception 'This partner already has a commission project with that name and client.' using errcode = 'unique_violation'; end if;
+  if exists (select 1 from public.apn_commission_projects p where p.id = v_project_id and coalesce(p.partner_id, p.data->>'partnerId') is not null and coalesce(p.partner_id, p.data->>'partnerId') <> v_partner_id) then raise exception 'A commission project cannot be reassigned to another partner.' using errcode = 'check_violation'; end if;
   for item in select value from jsonb_array_elements(coalesce(p_collections, '[]'::jsonb)) loop
     v_id := nullif(item->>'id','');
     if v_id is null then raise exception 'Each collection requires an id.' using errcode = 'check_violation'; end if;
+    if v_id = any(v_collection_ids) then raise exception 'Duplicate collection id in the request.' using errcode = 'unique_violation'; end if;
+    v_collection_ids := array_append(v_collection_ids, v_id);
+  end loop;
+  insert into public.apn_commission_projects (id, data, updated_at) values (v_project_id, p_project, now()) on conflict (id) do update set data = excluded.data, updated_at = now();
+  delete from public.apn_revenue_collections where project_id = v_project_id and not (id = any(v_collection_ids));
+  v_received := 0;
+  v_earned := 0;
+  for item in select value from jsonb_array_elements(coalesce(p_collections, '[]'::jsonb)) loop
+    v_id := nullif(item->>'id','');
     if exists (select 1 from public.apn_revenue_collections where id = v_id) then
       if exists (select 1 from public.apn_revenue_collections where id = v_id and project_id <> v_project_id) then raise exception 'Collection id is already assigned to another project.' using errcode = 'unique_violation'; end if;
-      continue;
     end if;
     v_amount := coalesce(nullif(item->>'receivedAmount','')::numeric, 0);
-    v_incentive := greatest(0, coalesce(nullif(item->>'incentive','')::numeric, 0));
     if v_amount <= 0 then raise exception 'Received amount must be greater than zero.' using errcode = 'check_violation'; end if;
+    if nullif(trim(coalesce(item->>'incentive','')), '') is not null and (item->>'incentive')::numeric < 0 then raise exception 'Incentives cannot be negative.' using errcode = 'check_violation'; end if;
+    v_incentive := coalesce(nullif(item->>'incentive','')::numeric, 0);
     if v_received + v_amount > v_project_value then raise exception 'A collection cannot exceed the remaining project value.' using errcode = 'check_violation'; end if;
     v_commission := least(greatest(0, v_max - v_earned), round(v_amount * v_rate / 100, 2));
+    if nullif(trim(coalesce(item->>'commissionGenerated','')), '') is not null and ((item->>'commissionGenerated')::numeric < 0 or (item->>'commissionGenerated')::numeric > v_commission) then raise exception 'Commission cannot exceed the calculated maximum.' using errcode = 'check_violation'; end if;
     item := item || jsonb_build_object('projectId', v_project_id, 'partnerId', v_partner_id, 'receivedAmount', v_amount, 'commissionGenerated', v_commission, 'incentive', v_incentive, 'commissionStatus', coalesce(item->>'commissionStatus','Pending'), 'createdBy', coalesce(item->>'createdBy', public.current_name()), 'createdAt', coalesce(item->>'createdAt', (extract(epoch from now()) * 1000)::bigint::text));
-    insert into public.apn_revenue_collections (id, data, updated_at) values (v_id, item, now());
+    if exists (select 1 from public.apn_revenue_collections where id = v_id) then
+      update public.apn_revenue_collections set data = item, updated_at = now() where id = v_id;
+    else
+      insert into public.apn_revenue_collections (id, data, updated_at) values (v_id, item, now());
+    end if;
     v_received := v_received + v_amount;
     v_earned := v_earned + v_commission;
   end loop;
