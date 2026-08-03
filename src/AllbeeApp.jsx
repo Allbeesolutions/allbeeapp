@@ -355,9 +355,37 @@ const REFERRAL_READS = {
   apn_referral_analytics_monthly: "partner_id,month_start,conversion_rate,referral_count,active_count,revenue,earnings,updated_at",
 };
 
+// PR3 withdrawal and settlement data is normalized and changed only through
+// transactional RPCs. It deliberately stays outside the legacy JSON diff writer.
+const WITHDRAWAL_READS = {
+  apn_withdrawal_bank_accounts: "id,partner_id,account_holder,bank_name,account_number,ifsc,upi_id,branch,verification_status,active,created_at,updated_at",
+  apn_withdrawal_wallets: "partner_id,wallet_type,pending,approved,withdrawable,locked,paid,lifetime,monthly,today,total_requested,total_approved,total_rejected,total_processing,last_paid_at,next_settlement_date,updated_at",
+  apn_withdrawal_requests: "id,partner_id,wallet_type,requested_amount,approved_amount,preferred_method,bank_account_id,bank_snapshot,status,reason,notes,review_reason,requested_at,reviewed_at,reviewed_by,processing_at,paid_at,cancelled_at,expires_at,batch_id,settlement_reference,updated_at",
+  apn_withdrawal_status_history: "id,request_id,from_status,to_status,amount,reason,notes,actor_id,actor_name,actor_role,created_at",
+  apn_withdrawal_settlements: "id,request_id,batch_id,partner_id,wallet_type,amount,payment_method,payment_reference,paid_at,paid_by,receipt_snapshot",
+  apn_withdrawal_batches: "id,batch_code,frequency,status,scheduled_for,created_by,created_at,processed_at,notes",
+  apn_wallet_transactions: "id,partner_id,wallet_type,request_id,entry_type,amount,balance_effect,description,metadata,created_at,created_by",
+  apn_withdrawal_finance_transactions: "id,request_id,settlement_id,partner_id,wallet_type,transaction_type,amount,reference,created_at,created_by,metadata",
+  apn_withdrawal_audit: "id,request_id,partner_id,action,actor_id,metadata,created_at",
+  apn_withdrawal_exports: "id,exported_by,format,filters,row_count,created_at",
+};
+
 async function fetchReferralData() {
   const out = {};
   await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
+    const { data, error } = await supabase.from(table).select(columns);
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
+async function fetchWithdrawalData() {
+  const out = {};
+  await Promise.all(Object.entries(WITHDRAWAL_READS).map(async ([table, columns]) => {
     const { data, error } = await supabase.from(table).select(columns);
     if (error) {
       if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
@@ -384,7 +412,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData());
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData());
   return db;
 }
 
@@ -744,6 +772,7 @@ const emptyDB = () => ({
   apn_users: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
   apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [],
   apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
+  apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -8752,6 +8781,84 @@ function APNWallet({ db, pid, stats }) {
   );
 }
 
+/* ── PR3 withdrawal & settlement center ─────────────────────────────── */
+const APN_WITHDRAWAL_TYPES = [
+  ["commission", "Commission"], ["referral", "Referral"], ["incentive", "Incentive"],
+];
+const apnWithdrawalWalletFor = (db, pid, type) => (db.apn_withdrawal_wallets || []).find((row) => row.partner_id === pid && row.wallet_type === type) || { wallet_type: type, pending: 0, approved: 0, withdrawable: 0, locked: 0, paid: 0, lifetime: 0, monthly: 0, today: 0, total_requested: 0, total_approved: 0, total_rejected: 0, total_processing: 0 };
+const apnWithdrawalTone = (status) => ({ pending: "pri", under_review: "accent", approved: "pos", processing: "accent", paid: "pos", rejected: "neg", cancelled: "neg", expired: "neg" }[status] || "");
+const apnWithdrawalLabel = (status) => String(status || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const apnWalletLabel = (type) => APN_WITHDRAWAL_TYPES.find(([key]) => key === type)?.[1] || type;
+const apnRequestAmount = (row) => Number(row.approved_amount ?? row.requested_amount) || 0;
+
+function APNWithdrawalRequestModal({ db, pid, onClose, onDone }) {
+  const account = (db.apn_withdrawal_bank_accounts || []).find((row) => row.partner_id === pid && row.active);
+  const [walletType, setWalletType] = useState("commission");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState(account?.upi_id ? "upi" : "bank_transfer");
+  const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const wallet = apnWithdrawalWalletFor(db, pid, walletType);
+  const value = Number(amount) || 0;
+  const max = Number(wallet.withdrawable) || 0;
+  const valid = value > 0 && value <= max && !!account;
+  const submit = async () => {
+    setError("");
+    if (!account) return setError("Add payout details in your profile before requesting a withdrawal.");
+    if (!valid) return setError(value <= 0 ? "Enter an amount above ₹0." : `The request cannot exceed ${money(max)}.`);
+    setBusy(true);
+    try {
+      const { error: rpcError } = await supabase.rpc("apn_request_withdrawal", { p_wallet_type: walletType, p_amount: value, p_preferred_method: method, p_reason: reason.trim() || null, p_notes: notes.trim() || null });
+      if (rpcError) throw rpcError;
+      emitToast("Withdrawal request submitted.", "success");
+      await onDone?.(); onClose();
+    } catch (err) { setError(err?.message || "Couldn’t submit the withdrawal."); }
+    finally { setBusy(false); }
+  };
+  return <Modal title="Request withdrawal" onClose={onClose}
+    footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={submit} disabled={!valid || busy}><ArrowDownToLine size={15} />{busy ? "Submitting…" : "Request withdrawal"}</button></>}>
+    <div className="banner" style={{ margin: "0 0 12px" }}><LockIcon size={15} />Funds are locked immediately when you submit this request, so they cannot be requested twice.</div>
+    <Field label="Wallet type" required><select className="select" value={walletType} onChange={(e) => { setWalletType(e.target.value); setAmount(""); }}>
+      {APN_WITHDRAWAL_TYPES.map(([key, label]) => <option key={key} value={key}>{label} · available {money(apnWithdrawalWalletFor(db, pid, key).withdrawable)}</option>)}
+    </select></Field>
+    <div className="calc-box"><div className="calc-row"><span>Withdrawable {apnWalletLabel(walletType)}</span><b className="mono">{money(max)}</b></div><div className="calc-row"><span>Currently locked</span><b className="mono">{money(wallet.locked)}</b></div></div>
+    <Field label="Amount" required error={amount && value <= 0 ? "Enter an amount above ₹0." : value > max ? `Maximum available is ${money(max)}.` : ""}>
+      <div style={{ display: "flex", gap: 7 }}><input className="input mono" style={{ flex: 1 }} type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /><button type="button" className="btn sm" onClick={() => setAmount(String(max))} disabled={max <= 0}>Max</button></div>
+    </Field>
+    <Field label="Preferred method" required><div className="seg"><button type="button" className={method === "upi" ? "on" : ""} onClick={() => setMethod("upi")} disabled={!account?.upi_id}>UPI</button><button type="button" className={method === "bank_transfer" ? "on" : ""} onClick={() => setMethod("bank_transfer")} disabled={!account?.account_number}>Bank transfer</button></div></Field>
+    {account && <div className="hint-line" style={{ marginTop: -5, marginBottom: 10 }}>{method === "upi" ? `UPI: ${account.upi_id}` : `${account.bank_name || "Bank"} · ••••${String(account.account_number || "").slice(-4)}`} · verification {account.verification_status}</div>}
+    <Field label="Reason"><input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional reason" /></Field>
+    <Field label="Notes"><textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional settlement note" /></Field>
+    {error && <div className="auth-msg err"><AlertTriangle size={14} />{error}</div>}
+  </Modal>;
+}
+
+function APNWithdrawalCenter({ db, pid, goProfile, reload }) {
+  const [modal, setModal] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const wallets = APN_WITHDRAWAL_TYPES.map(([type]) => apnWithdrawalWalletFor(db, pid, type));
+  const requests = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid).slice().sort((a, b) => new Date(b.requested_at) - new Date(a.requested_at));
+  const open = requests.filter((row) => ["pending", "under_review", "approved", "processing"].includes(row.status));
+  const history = (db.apn_withdrawal_status_history || []).filter((row) => row.request_id === detail?.id).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const totalWithdrawable = wallets.reduce((sum, row) => sum + (Number(row.withdrawable) || 0), 0);
+  const nextDate = wallets.find((row) => row.next_settlement_date)?.next_settlement_date;
+  const cancel = async (request) => {
+    try { const { error } = await supabase.rpc("apn_cancel_withdrawal", { p_request_id: request.id, p_reason: "Cancelled by partner." }); if (error) throw error; emitToast("Withdrawal cancelled and wallet unlocked.", "success"); await reload?.(); }
+    catch (err) { emitToast(err?.message || "Couldn’t cancel the withdrawal.", "error"); }
+  };
+  return <div>
+    <div className="apn-section-h" style={{ display: "flex", alignItems: "center", gap: 8 }}><Wallet size={18} /> Withdrawal Center</div>
+    <div className="apn-rowcard" style={{ marginBottom: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><div style={{ flex: 1, minWidth: 180 }}><div className="hint-line">Current withdrawable balance</div><div className="mono" style={{ fontSize: 24, fontWeight: 800 }}>{money(totalWithdrawable)}</div><div className="hint-line" style={{ marginTop: 4 }}>Next settlement: {nextDate ? fmtDate(nextDate) : "Calculated after first eligible earning"}</div></div><button className="btn" onClick={goProfile}><Building2 size={15} />Payout details</button><button className="btn primary" onClick={() => setModal({ type: "request" })}><ArrowDownToLine size={15} />Request withdrawal</button></div></div>
+    <div className="apn-metrics" style={{ marginBottom: 12 }}>{wallets.map((row) => <React.Fragment key={row.wallet_type}><APNMetric k={`${apnWalletLabel(row.wallet_type)} available`} v={money(row.withdrawable)} icon={<Wallet size={13} />} tone="accent" /><APNMetric k={`${apnWalletLabel(row.wallet_type)} locked`} v={money(row.locked)} icon={<LockIcon size={13} />} /><APNMetric k={`${apnWalletLabel(row.wallet_type)} paid`} v={money(row.paid)} icon={<BadgeCheck size={13} />} tone="pos" /></React.Fragment>)}</div>
+    <div className="apn-rowcard" style={{ marginBottom: 12 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Settlement summary</div><div className="apn-metrics" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))" }}><APNMetric k="Open requests" v={open.length} icon={<Hourglass size={13} />} /><APNMetric k="Lifetime withdrawn" v={money(wallets.reduce((s, row) => s + (Number(row.paid) || 0), 0))} icon={<Banknote size={13} />} tone="pos" /><APNMetric k="Total requested" v={money(wallets.reduce((s, row) => s + (Number(row.total_requested) || 0), 0))} icon={<ArrowDownToLine size={13} />} /><APNMetric k="Processing" v={money(wallets.reduce((s, row) => s + (Number(row.total_processing) || 0), 0))} icon={<RefreshCw size={13} />} /></div></div>
+    <div className="apn-rowcard" style={{ padding: 0 }}><div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Withdrawal history</div>{requests.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<ArrowDownToLine size={22} color="var(--muted)" />} title="No withdrawal requests" text="Add payout details, then request an eligible commission, referral, or incentive balance." action={<button className="btn primary" onClick={() => setModal({ type: "request" })}><ArrowDownToLine size={14} />Request withdrawal</button>} /></div> : requests.map((row) => <div key={row.id} className="apn-rowcard" style={{ border: 0, borderBottom: "1px solid var(--border)", borderRadius: 0, boxShadow: "none", display: "flex", gap: 9, alignItems: "center" }}><button type="button" onClick={() => setDetail(row)} style={{ background: "none", border: 0, padding: 0, textAlign: "left", cursor: "pointer", flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{apnWalletLabel(row.wallet_type)} · {money(apnRequestAmount(row))}</div><div className="hint-line" style={{ fontSize: 12 }}>{fmtDateTime(row.requested_at)} · {row.preferred_method === "upi" ? "UPI" : "Bank transfer"}</div></button><span className={`badge ${apnWithdrawalTone(row.status)}`}>{apnWithdrawalLabel(row.status)}</span>{row.status === "pending" && <button className="iconbtn" style={{ width: 30, height: 30 }} title="Cancel withdrawal" aria-label="Cancel withdrawal" onClick={() => cancel(row)}><X size={14} /></button>}</div>)}</div>
+    {modal?.type === "request" && <APNWithdrawalRequestModal db={db} pid={pid} onClose={() => setModal(null)} onDone={reload} />}
+    {detail && <Modal title={`${apnWalletLabel(detail.wallet_type)} withdrawal`} onClose={() => setDetail(null)} footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}><div className="calc-box"><div className="calc-row"><span>Amount</span><b className="mono">{money(apnRequestAmount(detail))}</b></div><div className="calc-row"><span>Status</span><span className={`badge ${apnWithdrawalTone(detail.status)}`}>{apnWithdrawalLabel(detail.status)}</span></div><div className="calc-row"><span>Method</span><span>{detail.preferred_method === "upi" ? "UPI" : "Bank transfer"}</span></div></div><div style={{ fontWeight: 700, marginTop: 14, marginBottom: 8 }}>Status timeline</div>{history.map((item) => <div key={item.id} style={{ display: "flex", gap: 9, padding: "9px 0", borderBottom: "1px solid var(--border)" }}><CheckCircle2 size={15} color="var(--primary)" /><div><div style={{ fontWeight: 600 }}>{apnWithdrawalLabel(item.to_status)}</div><div className="hint-line" style={{ fontSize: 12 }}>{item.actor_name} · {fmtDateTime(item.created_at)}</div>{item.reason && <div className="hint-line" style={{ fontSize: 12 }}>{item.reason}</div>}</div></div>)}</Modal>}
+  </div>;
+}
+
 /* ── direct referral network (separate from the commission wallet) ─────── */
 const referralCodeFor = (db, pid) => (db.apn_referral_codes || []).find((row) => row.partner_id === pid) || null;
 const referralWalletFor = (db, pid) => (db.apn_referral_wallets || []).find((row) => row.partner_id === pid) || { pending: 0, approved: 0, withdrawable: 0, paid: 0, lifetime: 0, monthly: 0 };
@@ -8765,7 +8872,7 @@ function APNReferralMetric({ label, value, icon, tone }) {
   return <APNMetric k={label} v={value} icon={icon} tone={tone} />;
 }
 
-function APNNetwork({ db, meRow, pid, reload }) {
+function APNNetwork({ db, meRow, pid, reload, onOpenWithdrawals }) {
   const [view, setView] = useState("dashboard");
   const [network, setNetwork] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -8773,7 +8880,6 @@ function APNNetwork({ db, meRow, pid, reload }) {
   const [codeDraft, setCodeDraft] = useState("");
   const [codeState, setCodeState] = useState("idle");
   const [referralDraft, setReferralDraft] = useState("");
-  const [withdrawDraft, setWithdrawDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -8831,13 +8937,6 @@ function APNNetwork({ db, meRow, pid, reload }) {
     if (error) throw error;
     setReferralDraft("");
   }, "Referral relationship linked. Only future collections can earn referral earnings.");
-  const requestWithdrawal = () => run(async () => {
-    const amount = Number(withdrawDraft);
-    if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a withdrawal amount greater than zero.");
-    const { error } = await supabase.rpc("apn_referral_request_withdrawal", { p_partner_id: pid, p_amount: amount, p_note: "Requested from My Network." });
-    if (error) throw error;
-    setWithdrawDraft("");
-  }, "Referral withdrawal submitted for review.");
   const exportNetwork = async () => {
     await exportRowsToExcel(`allbee-referral-network-${todayISO()}.xlsx`, "Referral Network", [
       { label: "Referral", value: (row) => row.referred_name || "APN Partner" },
@@ -8892,7 +8991,7 @@ function APNNetwork({ db, meRow, pid, reload }) {
         <APNReferralMetric label="Pending referrals" value={pendingReferrals} icon={<UserPlus size={13} />} tone="accent" />
       </div>
       <div className="apn-rowcard" style={{ marginBottom: 12 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Link a referral code</div>{ownRelationship ? <div className="hint-line">You are linked to a direct referrer since {fmtDate(ownRelationship.linked_at)}. This relationship cannot be replaced.</div> : <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}><input className="input mono" style={{ flex: "1 1 180px" }} value={referralDraft} onChange={(e) => setReferralDraft(e.target.value.toUpperCase())} placeholder="Enter one referral code" aria-label="Referral code from another partner" /><button className="btn sm primary" onClick={linkCode} disabled={busy || !referralDraft.trim()}><Link2 size={13} />Link code</button></div>}</div>
-      <div className="apn-rowcard"><div style={{ fontWeight: 700, marginBottom: 8 }}>Request referral withdrawal</div><div className="hint-line" style={{ marginBottom: 9 }}>Withdrawable balance: {money(wallet.withdrawable)}. Requests are reviewed by an admin.</div><div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}><input className="input mono" type="number" min="0" step="0.01" value={withdrawDraft} onChange={(e) => setWithdrawDraft(e.target.value)} placeholder="Amount ₹" aria-label="Referral withdrawal amount" /><button className="btn sm primary" onClick={requestWithdrawal} disabled={busy || !withdrawDraft}><Wallet size={13} />Request withdrawal</button></div></div>
+      <div className="apn-rowcard"><div style={{ fontWeight: 700, marginBottom: 8 }}>Referral withdrawals</div><div className="hint-line" style={{ marginBottom: 9 }}>Withdrawable balance: {money(wallet.withdrawable)}. New requests use the secure Withdrawal Center, which locks the balance and keeps one settlement history for every wallet.</div><button className="btn sm primary" onClick={onOpenWithdrawals}><Wallet size={13} />Open Withdrawal Center</button></div>
     </>}
 
     {view === "referrals" && <div className="apn-rowcard" style={{ padding: 0 }}><div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Direct referrals <span className="badge" style={{ marginLeft: 5 }}>{referralRows.length}</span></div>{referralRows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Users size={22} color="var(--muted)" />} title="No direct referrals yet" text="Share your code or link to invite your first partner." action={<button className="btn primary" onClick={() => setView("dashboard")}><Send size={14} />Share invitation</button>} /></div> : referralRows.map((row) => <button key={row.relationship_id} type="button" className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, borderBottom: "1px solid var(--border)", borderRadius: 0, textAlign: "left", boxShadow: "none" }} onClick={() => setDetail(row)}><Avatar name={row.referred_name} size={36} fontSize={14} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{row.referred_name || "APN Partner"}</div><div className="hint-line" style={{ fontSize: 12 }}>{row.referred_apn_id || "APN partner"} · Joined {fmtDate(row.linked_at)}</div></div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><span className={`badge ${statusTone(row.status)}`}>{row.status}</span></div><ChevronRight size={16} color="var(--muted)" /></button>)}</div>}
@@ -9116,7 +9215,28 @@ function APNDistrict({ db, meRow, mutate }) {
 }
 
 /* ── profile ─────────────────────────────────────────────────────────── */
-function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut }) {
+function APNBankDetails({ db, pid, reload }) {
+  const existing = (db.apn_withdrawal_bank_accounts || []).find((row) => row.partner_id === pid);
+  const [f, setF] = useState(() => ({ accountHolder: existing?.account_holder || "", bankName: existing?.bank_name || "", accountNumber: existing?.account_number || "", confirmAccountNumber: existing?.account_number || "", ifsc: existing?.ifsc || "", upiId: existing?.upi_id || "", branch: existing?.branch || "" }));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  useEffect(() => setF({ accountHolder: existing?.account_holder || "", bankName: existing?.bank_name || "", accountNumber: existing?.account_number || "", confirmAccountNumber: existing?.account_number || "", ifsc: existing?.ifsc || "", upiId: existing?.upi_id || "", branch: existing?.branch || "" }), [existing?.id, existing?.updated_at]);
+  const set = (key, value) => { setMessage(null); setF((prev) => ({ ...prev, [key]: value })); };
+  const save = async () => {
+    setMessage(null);
+    if (f.accountNumber && f.accountNumber !== f.confirmAccountNumber) return setMessage({ type: "err", text: "Account number confirmation does not match." });
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("apn_upsert_withdrawal_bank_account", { p_partner_id: pid, p_account_holder: f.accountHolder.trim() || null, p_bank_name: f.bankName.trim() || null, p_account_number: f.accountNumber.trim() || null, p_confirm_account_number: f.confirmAccountNumber.trim() || null, p_ifsc: f.ifsc.trim() || null, p_upi_id: f.upiId.trim() || null, p_branch: f.branch.trim() || null });
+      if (error) throw error;
+      setMessage({ type: "ok", text: "Payout details saved. Verification is pending." }); await reload?.();
+    } catch (err) { setMessage({ type: "err", text: err?.message || "Couldn’t save payout details." }); }
+    finally { setBusy(false); }
+  };
+  return <div className="apn-rowcard" style={{ marginTop: 14 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}><Building2 size={16} color="var(--primary)" /><div style={{ fontWeight: 800, flex: 1 }}>Bank details</div>{existing && <span className={`badge ${existing.verification_status === "verified" ? "pos" : existing.verification_status === "rejected" ? "neg" : "pri"}`}>{existing.verification_status}</span>}</div><div className="hint-line" style={{ marginBottom: 12 }}>Use either UPI or complete bank-transfer details. Every change is recorded in the financial audit log.</div><div className="grid2"><Field label="Account holder"><input className="input" value={f.accountHolder} onChange={(e) => set("accountHolder", e.target.value)} /></Field><Field label="Bank name"><input className="input" value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field></div><div className="grid2"><Field label="Account number"><input className="input mono" inputMode="numeric" value={f.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} /></Field><Field label="Confirm account number"><input className="input mono" inputMode="numeric" value={f.confirmAccountNumber} onChange={(e) => set("confirmAccountNumber", e.target.value)} /></Field></div><div className="grid2"><Field label="IFSC"><input className="input mono" value={f.ifsc} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} /></Field><Field label="Branch"><input className="input" value={f.branch} onChange={(e) => set("branch", e.target.value)} /></Field></div><Field label="UPI ID"><input className="input" value={f.upiId} onChange={(e) => set("upiId", e.target.value.toLowerCase())} placeholder="name@bank" /></Field><div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save payout details"}</button></div>{message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginTop: 10 }}>{message.text}</div>}</div>;
+}
+
+function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut, reload }) {
   const [f, setF] = useState(() => ({
     name: meRow.name || "", username: meRow.username || profile?.username || "", email: meRow.email || profile?.email || sessionEmail || "", mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "",
     address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", photoUrl: apnAvatarUrl(meRow, profile),
@@ -9209,6 +9329,7 @@ function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut
           ["APN ID", apnIdFor(meRow)], ["Current level", `${stats.level.name} (Level ${stats.level.key})`], ["Commission rate", stats.level.rate + "%"],
         ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}><span className="hint-line">{label}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{value || "—"}</span></div>)}
       </div>
+      <APNBankDetails db={db} pid={meRow.id} reload={reload} />
       <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
     </div>
   );
@@ -9285,13 +9406,15 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const go = (t) => { setTab(t); setMoreOpen(false); };
   const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id)).length;
   const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
+  const withdrawalOpenCount = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid && ["pending", "under_review", "approved", "processing"].includes(row.status)).length;
 
   const section = () => {
     switch (tab) {
       case "home": return <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
       case "wallet": return <APNWallet db={db} pid={pid} stats={stats} />;
-      case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} />;
+      case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} />;
+      case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
@@ -9300,7 +9423,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
       case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
-      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} />;
+      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} />;
       default: return null;
     }
   };
@@ -9311,6 +9434,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ["documents", "Materials", <BookOpen size={20} color="var(--primary)" />, 0],
     ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
     ["network", "My Network", <Users size={20} color="var(--primary)" />, 0],
+    ["withdrawals", "Withdrawal Center", <Wallet size={20} color="var(--primary)" />, withdrawalOpenCount],
     ["achievements", "Achievements", <Award size={20} color="var(--primary)" />, 0],
     ["leaderboard", "Leaderboard", <Trophy size={20} color="var(--primary)" />, 0],
     ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
@@ -9338,7 +9462,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         {primary.map(([k, l, Icon]) => (
           <button key={k} className={"apn-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
         ))}
-        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "network", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
+        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "network", "withdrawals", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
           <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
         </button>
       </nav>
@@ -10257,6 +10381,66 @@ function APNAdminReferrals({ db, isSuper, onRefresh }) {
   </div>;
 }
 
+function APNWithdrawalApprovalModal({ request, onClose, onSave }) {
+  const [amount, setAmount] = useState(String(request.requested_amount || ""));
+  const [reason, setReason] = useState("");
+  const value = Number(amount) || 0;
+  const valid = value > 0 && value <= Number(request.requested_amount || 0);
+  return <Modal title="Approve withdrawal" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={() => onSave(value, reason)}>Approve {money(value)}</button></>}><div className="calc-box"><div className="calc-row"><span>Requested</span><b className="mono">{money(request.requested_amount)}</b></div><div className="calc-row"><span>Wallet</span><b>{apnWalletLabel(request.wallet_type)}</b></div></div><Field label="Approved amount" required error={amount && !valid ? "Amount must be above ₹0 and no more than the request." : ""}><input className="input mono" type="number" min="0" max={request.requested_amount} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field><Field label="Approval note"><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note for the partner" /></Field>{valid && value < Number(request.requested_amount || 0) && <div className="banner" style={{ margin: 0 }}><UnlockIcon size={15} />{money(Number(request.requested_amount) - value)} will be released back to the wallet.</div>}</Modal>;
+}
+
+function APNAdminWithdrawals({ db, isSuper, onRefresh }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [selected, setSelected] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [approval, setApproval] = useState(null);
+  const people = (id) => (db.apn_users || []).find((row) => row.id === id)?.name || "APN Partner";
+  const rows = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    const list = (db.apn_withdrawal_requests || []).filter((row) => status === "all" || row.status === status).filter((row) => !term || `${people(row.partner_id)} ${row.wallet_type} ${row.preferred_method} ${row.status} ${row.settlement_reference || ""}`.toLowerCase().includes(term));
+    return list.sort((a, b) => sort === "amount" ? apnRequestAmount(b) - apnRequestAmount(a) : sort === "oldest" ? new Date(a.requested_at) - new Date(b.requested_at) : new Date(b.requested_at) - new Date(a.requested_at));
+  }, [db.apn_withdrawal_requests, db.apn_users, query, status, sort]);
+  const wallets = db.apn_withdrawal_wallets || [];
+  const run = async (action, success) => { setBusy(true); setMessage(null); try { await action(); await onRefresh?.(); setMessage({ type: "ok", text: success }); } catch (err) { setMessage({ type: "err", text: err?.message || "Withdrawal action failed." }); } finally { setBusy(false); } };
+  const review = (row, action, opts = {}) => run(async () => { const { error } = await supabase.rpc("apn_withdrawal_review", { p_request_id: row.id, p_action: action, p_approved_amount: opts.amount ?? null, p_reason: opts.reason || null, p_notes: opts.notes || null, p_batch_id: opts.batchId || null }); if (error) throw error; }, `Withdrawal ${apnWithdrawalLabel(action).toLowerCase()}.`);
+  const toggle = (id) => setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const createBatch = (frequency) => run(async () => { const { data, error } = await supabase.rpc("apn_create_withdrawal_batch", { p_frequency: frequency, p_scheduled_for: todayISO(), p_notes: `${frequency} APN settlement batch` }); if (error) throw error; setMessage({ type: "ok", text: `${data?.batchCode || "Settlement batch"} created with ${data?.requests || 0} approved request(s).` }); }, "Settlement batch created.");
+  const exportRows = async () => run(async () => {
+    await exportRowsToExcel(`allbee-apn-withdrawals-${todayISO()}.xlsx`, "APN Withdrawals", [
+      { label: "Requested", value: (row) => fmtDateTime(row.requested_at) }, { label: "Partner", value: (row) => people(row.partner_id) }, { label: "Wallet", value: (row) => apnWalletLabel(row.wallet_type) }, { label: "Requested amount", value: (row) => row.requested_amount }, { label: "Approved amount", value: (row) => row.approved_amount || "" }, { label: "Method", value: (row) => row.preferred_method }, { label: "Status", value: (row) => apnWithdrawalLabel(row.status) }, { label: "Reference", value: (row) => row.settlement_reference || "" },
+    ], rows);
+    const { error } = await supabase.rpc("apn_log_withdrawal_export", { p_format: "xlsx", p_filters: { status, query }, p_row_count: rows.length }); if (error) throw error;
+  }, "Withdrawal report exported.");
+  const exportCsv = async () => run(async () => {
+    const escape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csvRows = [["Requested", "Partner", "Wallet", "Requested amount", "Approved amount", "Method", "Status", "Reference"], ...rows.map((row) => [fmtDateTime(row.requested_at), people(row.partner_id), apnWalletLabel(row.wallet_type), row.requested_amount, row.approved_amount || "", row.preferred_method, apnWithdrawalLabel(row.status), row.settlement_reference || ""])];
+    const blob = new Blob(["\ufeff" + csvRows.map((row) => row.map(escape).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `allbee-apn-withdrawals-${todayISO()}.csv`; link.click(); URL.revokeObjectURL(url);
+    const { error } = await supabase.rpc("apn_log_withdrawal_export", { p_format: "csv", p_filters: { status, query }, p_row_count: rows.length }); if (error) throw error;
+  }, "Withdrawal CSV exported.");
+  const bulk = (action) => run(async () => {
+    const chosen = rows.filter((row) => selected.has(row.id));
+    if (!chosen.length) throw new Error("Select at least one withdrawal.");
+    for (const row of chosen) {
+      if ((action === "under_review" && row.status !== "pending") || (action === "processing" && row.status !== "approved")) continue;
+      const { error } = await supabase.rpc("apn_withdrawal_review", { p_request_id: row.id, p_action: action, p_approved_amount: null, p_reason: `Bulk ${apnWithdrawalLabel(action).toLowerCase()}.`, p_notes: null, p_batch_id: null });
+      if (error) throw error;
+    }
+    setSelected(new Set());
+  }, "Bulk withdrawal action completed.");
+  const openCount = rows.filter((row) => ["pending", "under_review", "approved", "processing"].includes(row.status)).length;
+  return <div>
+    {message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginBottom: 12 }}>{message.text}</div>}
+    <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", marginBottom: 14 }}><div className="card stat"><div className="lbl">Open queue</div><div className="num mono">{openCount}</div></div><div className="card stat"><div className="lbl">Locked funds</div><div className="num mono">{money(wallets.reduce((sum, row) => sum + (Number(row.locked) || 0), 0))}</div></div><div className="card stat"><div className="lbl">Processing</div><div className="num mono">{money(wallets.reduce((sum, row) => sum + (Number(row.total_processing) || 0), 0))}</div></div><div className="card stat"><div className="lbl">Paid</div><div className="num mono pos-txt">{money(wallets.reduce((sum, row) => sum + (Number(row.paid) || 0), 0))}</div></div></div>
+    <div className="card" style={{ marginBottom: 14 }}><div className="toolbar" style={{ margin: 0, alignItems: "center" }}><div className="search" style={{ flex: 1 }}><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, wallet, payout method…" /></div><select className="select" style={{ width: "auto" }} value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">All statuses</option>{["pending","under_review","approved","processing","paid","rejected","cancelled","expired"].map((value) => <option key={value} value={value}>{apnWithdrawalLabel(value)}</option>)}</select><select className="select" style={{ width: "auto" }} value={sort} onChange={(e) => setSort(e.target.value)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="amount">Amount</option></select></div><div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 10 }}><button className="btn sm" onClick={exportCsv} disabled={busy}><Download size={13} />CSV</button><button className="btn sm" onClick={exportRows} disabled={busy}><Sheet size={13} />Excel</button><button className="btn sm" onClick={() => createBatch("daily")} disabled={busy}>Daily batch</button><button className="btn sm" onClick={() => createBatch("weekly")} disabled={busy}>Weekly batch</button><button className="btn sm" onClick={() => createBatch("monthly")} disabled={busy}>Monthly batch</button>{selected.size > 0 && <><button className="btn sm" onClick={() => bulk("under_review")} disabled={busy}>Review selected</button><button className="btn sm primary" onClick={() => bulk("processing")} disabled={busy}>Process selected</button></>}</div></div>
+    <div className="card"><div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th><input type="checkbox" aria-label="Select all visible withdrawals" checked={rows.length > 0 && rows.every((row) => selected.has(row.id))} onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((row) => row.id)) : new Set())} /></th><th>Partner</th><th>Wallet</th><th className="num-cell">Amount</th><th>Method</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan="8"><Empty icon={<Wallet size={22} color="var(--muted)" />} title="No withdrawal requests" text="Partner settlement requests will appear here in real time." /></td></tr> : rows.map((row) => <tr key={row.id}><td><input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)} aria-label={`Select withdrawal from ${people(row.partner_id)}`} /></td><td><b>{people(row.partner_id)}</b><div className="hint-line" style={{ fontSize: 11 }}>{row.bank_snapshot?.verificationStatus || "pending"} payout details</div></td><td>{apnWalletLabel(row.wallet_type)}</td><td className="num-cell mono">{money(apnRequestAmount(row))}{row.approved_amount && Number(row.approved_amount) !== Number(row.requested_amount) && <div className="hint-line" style={{ fontSize: 10 }}>requested {money(row.requested_amount)}</div>}</td><td>{row.preferred_method === "upi" ? "UPI" : "Bank transfer"}</td><td className="mono" style={{ fontSize: 12 }}>{fmtDateTime(row.requested_at)}</td><td><span className={`badge ${apnWithdrawalTone(row.status)}`}>{apnWithdrawalLabel(row.status)}</span></td><td><div className="row-actions">{row.status === "pending" && <button className="btn sm" onClick={() => review(row, "under_review")} disabled={busy}>Review</button>}{["pending","under_review"].includes(row.status) && <button className="btn sm primary" onClick={() => setApproval(row)} disabled={busy}>Approve</button>}{["pending","under_review","approved"].includes(row.status) && <button className="btn sm danger" onClick={() => review(row, "rejected", { reason: "Rejected by settlement reviewer." })} disabled={busy}>Reject</button>}{row.status === "approved" && <button className="btn sm primary" onClick={() => review(row, "processing")} disabled={busy}>Process</button>}{row.status === "processing" && <button className="btn sm primary" onClick={() => review(row, "paid", { notes: `APN settlement ${todayISO()}` })} disabled={busy}>Mark paid</button>}{isSuper && ["rejected","cancelled","expired"].includes(row.status) && <button className="btn sm" onClick={() => run(async () => { const { error } = await supabase.rpc("apn_reopen_withdrawal", { p_request_id: row.id, p_reason: "Super Admin reopened request." }); if (error) throw error; }, "Withdrawal reopened.")} disabled={busy}>Reopen</button>}{isSuper && ["pending","under_review","approved"].includes(row.status) && <button className="iconbtn" style={{ width: 30, height: 30 }} title="Unlock wallet" aria-label="Unlock wallet" onClick={() => run(async () => { const { error } = await supabase.rpc("apn_unlock_withdrawal_wallet", { p_request_id: row.id, p_reason: "Super Admin wallet unlock." }); if (error) throw error; }, "Wallet unlocked.")} disabled={busy}><UnlockIcon size={14} /></button>}</div></td></tr>)}</tbody></table></div></div>
+    {approval && <APNWithdrawalApprovalModal request={approval} onClose={() => setApproval(null)} onSave={(amount, reason) => { setApproval(null); review(approval, "approved", { amount, reason }); }} />}
+  </div>;
+}
+
 function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
   const [f, setF] = useState({ name: "", email: "", password: "", mobile: "", apnId: "", district: TN_DISTRICTS[0], taluk: "", city: "", occupation: "", college: "", username: "", reason: "" });
   const usernameCheck = useUsernameAvailability(f.username);
@@ -10629,7 +10813,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     });
   };
 
-  const tabs = [["partners", "Partners"], ["leads", "Leads"], ["commissions", "Commissions"], ["referrals", "Referrals"], ["targets", "Targets"], ["content", "Training"], ["docs", "Materials"], ["notify", "Notify"], ["board", "Leaderboard"]];
+  const tabs = [["partners", "Partners"], ["leads", "Leads"], ["commissions", "Commissions"], ["withdrawals", "Withdrawals"], ["referrals", "Referrals"], ["targets", "Targets"], ["content", "Training"], ["docs", "Materials"], ["notify", "Notify"], ["board", "Leaderboard"]];
 
   return (
     <div className="content">
@@ -10647,6 +10831,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
       {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} />}
+      {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
@@ -10815,6 +11000,7 @@ export default function App() {
     const ch = supabase.channel("allbee-db-sync");
     TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
