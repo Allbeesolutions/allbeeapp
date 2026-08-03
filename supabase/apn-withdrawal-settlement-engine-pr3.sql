@@ -458,6 +458,7 @@ begin
   if exists (select 1 from public.apn_withdrawal_requests where partner_id = v_partner and wallet_type = p_wallet_type and status in ('pending','under_review','approved','processing') and requested_amount = v_amount) then raise exception 'An identical withdrawal is already being processed.' using errcode = 'unique_violation'; end if;
   perform public.apn_withdrawal_refresh_wallet(v_partner);
   select * into v_wallet from public.apn_withdrawal_wallets where partner_id = v_partner and wallet_type = p_wallet_type for update;
+  if exists (select 1 from public.apn_withdrawal_requests where partner_id = v_partner and wallet_type = p_wallet_type and status in ('pending','under_review','approved','processing') and requested_amount = v_amount) then raise exception 'An identical withdrawal is already being processed.' using errcode = 'unique_violation'; end if;
   if coalesce(v_wallet.withdrawable, 0) < v_amount then raise exception 'The request exceeds your withdrawable %s balance.', p_wallet_type using errcode = 'check_violation'; end if;
   insert into public.apn_withdrawal_requests (partner_id, wallet_type, requested_amount, preferred_method, bank_account_id, bank_snapshot, reason, notes, expires_at)
   values (v_partner, p_wallet_type, v_amount, p_preferred_method, v_bank.id,
