@@ -1689,6 +1689,33 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-seg-scroll button { white-space:nowrap; border:1px solid var(--border); background:var(--surface); border-radius:999px; padding:7px 13px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer; flex:none; }
 .apn-seg-scroll button.on { background:var(--primary); color:#fff; border-color:var(--primary); }
 @media (min-width:720px){ .apn-metrics { grid-template-columns:repeat(4,1fr); } }
+.web-ai-fab { position:fixed; right:20px; bottom:20px; z-index:80; display:inline-flex; align-items:center; gap:9px; min-height:48px; padding:0 16px; border:0; border-radius:999px; background:var(--primary); color:#fff; font-weight:750; cursor:pointer; box-shadow:0 10px 30px rgba(46,59,143,.32); }
+.web-ai-fab:hover { transform:translateY(-1px); box-shadow:0 12px 34px rgba(46,59,143,.4); }
+.web-ai-panel { position:fixed; right:20px; bottom:78px; z-index:81; width:min(430px,calc(100vw - 24px)); height:min(680px,calc(100vh - 100px)); display:flex; flex-direction:column; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:20px; box-shadow:0 18px 60px rgba(12,18,32,.24); }
+.web-ai-head { display:flex; align-items:center; gap:10px; padding:15px 16px; color:#fff; background:linear-gradient(135deg,var(--primary),#4756c8); }
+.web-ai-head .web-ai-avatar { width:36px; height:36px; flex:none; display:grid; place-items:center; border-radius:12px; background:rgba(255,255,255,.16); }
+.web-ai-messages { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:12px; background:var(--bg); }
+.web-ai-bubble { max-width:86%; padding:10px 12px; border-radius:14px; line-height:1.45; font-size:13.5px; white-space:pre-wrap; }
+.web-ai-bubble.assistant { align-self:flex-start; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-top-left-radius:5px; }
+.web-ai-bubble.user { align-self:flex-end; color:#fff; background:var(--primary); border-top-right-radius:5px; }
+.web-ai-time { margin-top:4px; color:var(--muted); font-size:10.5px; }
+.web-ai-quick { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.web-ai-quick button { border:1px solid var(--primary); border-radius:999px; padding:7px 10px; background:var(--primary-soft); color:var(--primary); font-size:12px; cursor:pointer; }
+.web-ai-quick button:hover { background:var(--primary); color:#fff; }
+.web-ai-progress { height:4px; background:rgba(255,255,255,.2); }
+.web-ai-progress > i { display:block; height:100%; background:#fff; transition:width .25s ease; }
+.web-ai-composer { display:flex; align-items:flex-end; gap:8px; padding:11px; border-top:1px solid var(--border); background:var(--surface); }
+.web-ai-composer textarea { flex:1; min-height:42px; max-height:96px; resize:none; }
+.web-ai-estimate { margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); }
+.web-ai-estimate strong { display:block; font-size:18px; margin-top:3px; }
+.web-ai-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.web-ai-actions .btn { flex:1 1 130px; justify-content:center; }
+.web-ai-typing { display:inline-flex; gap:4px; align-items:center; }
+.web-ai-typing i { width:5px; height:5px; border-radius:50%; background:var(--muted); animation:web-ai-dot 1s infinite ease-in-out; }
+.web-ai-typing i:nth-child(2) { animation-delay:.12s; } .web-ai-typing i:nth-child(3) { animation-delay:.24s; }
+@keyframes web-ai-dot { 0%,60%,100% { opacity:.3; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
+@media (max-width:600px) { .web-ai-fab { right:14px; bottom:14px; width:52px; height:52px; padding:0; justify-content:center; border-radius:50%; } .web-ai-fab span { display:none; } .web-ai-panel { right:12px; bottom:74px; width:calc(100vw - 24px); height:min(690px,calc(100vh - 88px)); border-radius:18px; } }
+@media (prefers-reduced-motion:reduce) { .web-ai-fab:hover { transform:none; } .web-ai-progress > i, .web-ai-typing i { animation:none; transition:none; } }
 `;
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -5308,6 +5335,109 @@ function PasswordRecovery({ isDark, onComplete }) {
   </div>;
 }
 
+function WebSalesConsultant() {
+  const [open, setOpen] = useState(false);
+  const [sessionId, setSessionId] = useState(() => {
+    try { return localStorage.getItem("allbee-web-ai-session") || ""; } catch { return ""; }
+  });
+  const [payload, setPayload] = useState(null);
+  const [config, setConfig] = useState({ enabled: true, welcome_message: "Hi — I’m AllBee AI. I can help you explore the right business solution.", pricing_visibility: true });
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const endRef = useRef(null);
+  const inputRef = useRef(null);
+  const sessionRef = useRef(sessionId);
+  const referral = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const hash = String(window.location.hash || "").split("?")[1] || "";
+    return new URLSearchParams(`${window.location.search.replace(/^\?/, "")}${hash ? `&${hash}` : ""}`).get("ref")?.trim().toUpperCase() || "";
+  }, []);
+  const messages = payload?.messages || [];
+  const state = payload?.state || {};
+  const estimate = payload?.estimate;
+  const completed = payload?.status === "completed";
+  const disabled = payload?.status === "disabled";
+  const progress = Math.min(100, Math.max(0, Math.round((Number(state.step || 0) / Math.max(1, Number(state.total_questions || 10))) * 100)));
+
+  const applyPayload = (data) => {
+    if (data && typeof data === "object") {
+      setPayload(data);
+      if (data.config) setConfig(data.config);
+      if (data.session_id) setSessionId(data.session_id);
+    }
+  };
+  const start = useCallback(async () => {
+    let id = sessionRef.current;
+    if (!id) { id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : uid(); sessionRef.current = id; setSessionId(id); }
+    setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_ai_start", { p_session_id: id, p_ref: referral || null });
+      if (rpcError) throw new Error(rpcError.message);
+      applyPayload(data);
+      try { localStorage.setItem("allbee-web-ai-session", id); } catch { /* storage can be unavailable */ }
+    } catch (e) { setError(e.message || "The consultant is temporarily unavailable. Please contact the AllBee team."); }
+    finally { setBusy(false); }
+  }, [referral]);
+  useEffect(() => { if (open && !payload && config.enabled !== false) start(); }, [open, payload, config.enabled, start]);
+  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 80); }, [open, payload?.messages?.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length, busy]);
+  const send = async (value) => {
+    const text = String(value ?? draft).trim();
+    if (!text || busy || completed || !sessionId) return;
+    setDraft(""); setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_ai_message", { p_session_id: sessionId, p_message: text, p_client_event_id: uid(), p_honeypot: "" });
+      if (rpcError) throw new Error(rpcError.message);
+      applyPayload(data);
+    } catch (e) { setError(e.message || "I couldn’t process that. Please try again."); }
+    finally { setBusy(false); }
+  };
+  const endConversation = async () => {
+    if (!sessionId || completed) return;
+    setBusy(true);
+    try { const { data, error: rpcError } = await supabase.rpc("web_ai_abandon", { p_session_id: sessionId }); if (rpcError) throw new Error(rpcError.message); applyPayload(data); }
+    catch (e) { setError(e.message || "Unable to end this conversation."); }
+    finally { setBusy(false); }
+  };
+  const estimateText = () => {
+    if (!estimate) return "Your estimate will appear here after we capture your requirements.";
+    if (estimate.known === false) return `${estimate.disclaimer || "A tailored estimate needs a technical discussion."} ${estimate.next_step || "Our team will follow up."}`;
+    return `${estimate.service_label || "Solution"}: ${money(estimate.estimated_cost)}${estimate.disclaimer ? `\n${estimate.disclaimer}` : ""}`;
+  };
+  const saveDraft = () => {
+    try { localStorage.setItem("allbee-web-ai-draft", JSON.stringify({ sessionId, payload, savedAt: new Date().toISOString() })); emitToast("Conversation saved on this device.", "success"); }
+    catch { emitToast("This browser could not save the draft.", "error"); }
+  };
+  const shareEstimate = (channel) => {
+    const body = `AllBee AI estimate\n${estimateText()}\n\nWe’ll confirm the final scope after a technical discussion.`;
+    if (channel === "email") window.location.href = `mailto:${config.fallback_contact || ""}?subject=${encodeURIComponent("AllBee project estimate")}&body=${encodeURIComponent(body)}`;
+    if (channel === "whatsapp") window.open(`https://wa.me/?text=${encodeURIComponent(body)}`, "_blank", "noopener,noreferrer");
+  };
+  const downloadEstimate = () => {
+    const esc = (v) => String(v || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const html = `<html><head><title>AllBee estimate</title><style>body{font:16px Arial;padding:40px;color:#161a20}h1{color:#2e3b8f}pre{white-space:pre-wrap;line-height:1.6}</style></head><body><h1>ALLBEE SOLUTIONS</h1><h2>Project estimate</h2><pre>${esc(estimateText())}</pre><p>Final pricing is confirmed after technical review.</p></body></html>`;
+    const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `allbee-estimate-${todayISO()}.html`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  if (!config.enabled && !open) return null;
+  return <>
+    {!open && <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Talk to AllBee AI"><Sparkles size={18} /><span>Talk to AllBee AI</span></button>}
+    {open && <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI sales consultant">
+      <header className="web-ai-head"><div className="web-ai-avatar"><Sparkles size={18} /></div><div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>AllBee AI</div><div style={{ fontSize: 11, opacity: .82 }}>Business solution consultant</div></div><button className="iconbtn" style={{ color: "#fff", borderColor: "rgba(255,255,255,.35)" }} onClick={() => setOpen(false)} aria-label="Close AllBee AI"><X size={17} /></button></header>
+      <div className="web-ai-progress" aria-label={`Consultation progress ${progress}%`}><i style={{ width: `${progress}%` }} /></div>
+      <div className="web-ai-messages" aria-live="polite">
+        {!messages.length && !busy && <div className="web-ai-bubble assistant">{disabled ? "The website consultant is currently offline. Please use the contact options on this page and our team will help you." : config.welcome_message}</div>}
+        {messages.map((m, index) => <div key={`${m.id || index}-${m.created_at || ""}`} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "92%" }}><div className={`web-ai-bubble ${m.role === "user" ? "user" : "assistant"}`}>{m.content}</div><div className="web-ai-time" style={{ textAlign: m.role === "user" ? "right" : "left" }}>{m.created_at ? fmtDateTime(m.created_at) : "Now"}{m.role === "assistant" && m.metadata?.quick_replies?.length > 0 && !completed && <div className="web-ai-quick">{m.metadata.quick_replies.map((reply) => <button key={reply} onClick={() => send(reply)} disabled={busy}>{reply}</button>)}</div>}</div></div>)}
+        {busy && <div className="web-ai-bubble assistant web-ai-typing" aria-label="AllBee AI is typing"><i /><i /><i /></div>}
+        {error && <div className="auth-msg err" role="alert"><AlertTriangle size={14} />{error}</div>}
+        {completed && <div className="web-ai-estimate"><div className="hint-line">Estimate</div><strong>{estimate?.known === false ? "Custom consultation" : money(estimate?.estimated_cost)}</strong><div style={{ marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{estimateText()}</div><div className="web-ai-actions"><button className="btn sm" onClick={downloadEstimate}><Download size={13} />Download</button><button className="btn sm" onClick={() => shareEstimate("email")}><Mail size={13} />Email</button><button className="btn sm" onClick={() => shareEstimate("whatsapp")}><MessageCircle size={13} />WhatsApp</button><button className="btn sm" onClick={saveDraft}><Check size={13} />Save draft</button></div></div>}
+        <div ref={endRef} />
+      </div>
+      <div className="web-ai-composer">{completed || disabled ? <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => { setPayload(null); sessionRef.current = ""; setSessionId(""); try { localStorage.removeItem("allbee-web-ai-session"); } catch {} }}>{disabled ? "Try again" : "Start another consultation"}</button> : <><textarea ref={inputRef} className="textarea" value={draft} onChange={(e) => setDraft(e.target.value.slice(0, 500))} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Type your answer…" aria-label="Your answer" disabled={busy || !payload} /><button className="btn primary" onClick={() => send()} disabled={busy || !draft.trim() || !payload} aria-label="Send message"><Send size={16} /></button><button className="btn" onClick={endConversation} disabled={busy || !payload} aria-label="End consultation">End</button></>}</div>
+    </section>}
+  </>;
+}
+
 function Lock({ isDark, setDark }) {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [entry, setEntry] = useState("choose"); // choose | form  (the two-button gate)
@@ -5530,6 +5660,7 @@ function Lock({ isDark, setDark }) {
           {isDark ? <Sun size={15} /> : <Moon size={15} />} {isDark ? "Light" : "Dark"} mode
         </button>
       </div>
+      <WebSalesConsultant />
     </div>
   );
 }
@@ -6077,6 +6208,7 @@ function AIIntelligenceCenter({ db, go, openModal, reload }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [settings, setSettings] = useState({ enabled: true, sensitivity: "balanced", forecast_period: 90, prediction_model: "deterministic-v1" });
+  const [webSettings, setWebSettings] = useState({ enabled: true, welcome_message: "Hi — I’m AllBee AI. I can help you explore the right business solution.", business_hours: "Monday–Saturday, 9:00 AM–6:00 PM IST", fallback_contact: "", max_conversation_length: 18, pricing_visibility: true });
   const [reportType, setReportType] = useState("sales");
   const [reportFormat, setReportFormat] = useState("json");
 
@@ -6087,6 +6219,10 @@ function AIIntelligenceCenter({ db, go, openModal, reload }) {
       if (rpcError) throw new Error(rpcError.message);
       setSnapshot(data || {});
       if (data?.settings) setSettings(data.settings);
+      try {
+        const { data: webConfig, error: webError } = await supabase.rpc("web_ai_config");
+        if (!webError && webConfig) setWebSettings((current) => ({ ...current, ...webConfig }));
+      } catch { /* PR-Web migration may not be installed in older environments */ }
     } catch (e) { setError(e.message || "Unable to load intelligence data."); }
     finally { setBusy(false); }
   }, []);
@@ -6118,6 +6254,15 @@ function AIIntelligenceCenter({ db, go, openModal, reload }) {
       if (rpcError) throw new Error(rpcError.message);
       setSettings(data || settings); await load(); emitToast("AI settings saved.", "success");
     } catch (e) { setError(e.message || "Settings could not be saved."); }
+    finally { setBusy(false); }
+  };
+  const saveWebSettings = async () => {
+    setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("web_ai_save_settings", { p_patch: { enabled: !!webSettings.enabled, welcome_message: webSettings.welcome_message, business_hours: webSettings.business_hours, fallback_contact: webSettings.fallback_contact, max_conversation_length: Number(webSettings.max_conversation_length), pricing_visibility: !!webSettings.pricing_visibility } });
+      if (rpcError) throw new Error(rpcError.message);
+      setWebSettings((current) => ({ ...current, ...(data || {}) })); emitToast("Website consultant settings saved.", "success");
+    } catch (e) { setError(e.message || "Website consultant settings could not be saved."); }
     finally { setBusy(false); }
   };
   const openCommand = (label) => {
@@ -6192,7 +6337,7 @@ function AIIntelligenceCenter({ db, go, openModal, reload }) {
         {tab === "finance" && <div className="cards-grid" style={{ gridTemplateColumns: "1.35fr 1fr", alignItems: "start" }}><div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Revenue and profit forecast</div><div className="item-meta">Three-month rolling deterministic forecast.</div></div><TrendingUp size={16} color="var(--primary)" /></div><div className="table-wrap"><table className="tbl"><thead><tr><th>Month</th><th>Revenue</th><th>Expenses</th><th>Profit</th><th>Forecast</th><th>Pending revenue</th></tr></thead><tbody>{forecasts.map((f) => <tr key={f.month_start}><td className="mono">{fmtDate(f.month_start)}</td><td className="mono">{money(f.revenue)}</td><td className="mono">{money(f.expenses)}</td><td className="mono">{money(f.profit)}</td><td className="mono">{money(f.forecast_revenue)}</td><td className="mono">{money(f.pending_revenue)}</td></tr>)}</tbody></table></div></div><div className="card"><div className="item-title">CEO outlook</div><div className="item-meta" style={{ marginTop: 5 }}>Revenue forecast {money(h.forecast_revenue)} · Profit forecast {money(h.forecast_profit)}</div><div className="calc-box" style={{ marginTop: 14 }}><div className="calc-row"><span>Collections</span><b className="mono">{money(forecasts.at(-1)?.collections)}</b></div><div className="calc-row"><span>Outstanding</span><b className="mono">{money(forecasts.at(-1)?.pending_revenue)}</b></div><div className="calc-row"><span>Profitability</span><b className="mono">{Number(h.profitability || 0).toFixed(1)}%</b></div></div></div></div>}
         {tab === "search" && <div className="card"><form className="toolbar" onSubmit={search} style={{ marginBottom: 10 }}><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Try: today's revenue, pending withdrawals, top partner, lost leads, Chennai" aria-label="Natural language business search" /></div><button className="btn primary" type="submit" disabled={busy}><Search size={14} />Search</button></form>{results.length ? results.map((r) => <button className="item-row" key={`${r.result_type}-${r.result_id}`} style={{ width: "100%", textAlign: "left", border: 0, background: "transparent", cursor: "pointer" }} onClick={() => go(r.route)}><div className="item-main"><div className="item-title">{r.title}</div><div className="item-meta">{r.subtitle || r.result_type}</div></div>{r.value && <span className="badge pri">{r.value}</span>}<ArrowRight size={15} color="var(--muted)" /></button>) : <Empty icon={<Search size={22} />} title="Ask the business" text="Search revenue, withdrawals, earnings, partners, leads, employees, or locations using plain language." />}</div>}
         {tab === "reports" && <div className="cards-grid" style={{ gridTemplateColumns: "1fr 1fr", alignItems: "start" }}><div className="card"><div className="item-title">Generate AI report</div><div className="item-meta" style={{ margin: "5px 0 14px" }}>Reports use the deterministic snapshot and remain available in AI history.</div><Field label="Report"><select className="select" value={reportType} onChange={(e) => setReportType(e.target.value)}><option value="sales">Sales report</option><option value="finance">Finance report</option><option value="crm">CRM report</option><option value="employee">Employee report</option><option value="partner">Partner report</option></select></Field><Field label="Format"><select className="select" value={reportFormat} onChange={(e) => setReportFormat(e.target.value)}><option value="json">JSON</option><option value="pdf">PDF</option><option value="xlsx">Excel</option></select></Field><button className="btn primary" onClick={generateReport} disabled={busy}><FileText size={15} />Generate report</button></div><div className="card"><div className="item-title">AI timeline</div><div className="item-meta" style={{ margin: "5px 0 14px" }}>Generate a daily, weekly, or monthly operating summary.</div><div className="row-actions"><button className="btn" onClick={() => generateTimeline("daily")} disabled={busy}>Daily</button><button className="btn" onClick={() => generateTimeline("weekly")} disabled={busy}>Weekly</button><button className="btn" onClick={() => generateTimeline("monthly")} disabled={busy}>Monthly</button></div><div style={{ marginTop: 18 }}>{(db.ai_history || []).slice(0, 5).map((x) => <div className="item-row" key={x.id}><div className="item-main"><div className="item-title">{x.period} summary</div><div className="item-meta">{x.summary}</div></div><span className="hint-line">{fmtDate(x.created_at)}</span></div>)}</div></div></div>}
-        {tab === "settings" && <div className="card" style={{ maxWidth: 720 }}><div className="item-title">Intelligence settings</div><div className="item-meta" style={{ margin: "5px 0 16px" }}>Controls deterministic analysis only. External AI providers are not connected.</div><Field label="Enable AI intelligence"><label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={!!settings.enabled} onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })} />Enable deterministic insights, alerts and forecasts</label></Field><Field label="Sensitivity"><select className="select" value={settings.sensitivity || "balanced"} onChange={(e) => setSettings({ ...settings, sensitivity: e.target.value })}><option value="conservative">Conservative</option><option value="balanced">Balanced</option><option value="sensitive">Sensitive</option></select></Field><Field label="Forecast period"><select className="select" value={settings.forecast_period || 90} onChange={(e) => setSettings({ ...settings, forecast_period: Number(e.target.value) })}><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option></select></Field><Field label="Prediction model"><input className="input" value={settings.prediction_model || "deterministic-v1"} onChange={(e) => setSettings({ ...settings, prediction_model: e.target.value })} /></Field><button className="btn primary" onClick={saveSettings} disabled={busy}><Check size={15} />Save settings</button></div>}
+        {tab === "settings" && <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", alignItems: "start" }}><div className="card"><div className="item-title">Intelligence settings</div><div className="item-meta" style={{ margin: "5px 0 16px" }}>Controls deterministic analysis only. External AI providers are not connected.</div><Field label="Enable AI intelligence"><label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={!!settings.enabled} onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })} />Enable deterministic insights, alerts and forecasts</label></Field><Field label="Sensitivity"><select className="select" value={settings.sensitivity || "balanced"} onChange={(e) => setSettings({ ...settings, sensitivity: e.target.value })}><option value="conservative">Conservative</option><option value="balanced">Balanced</option><option value="sensitive">Sensitive</option></select></Field><Field label="Forecast period"><select className="select" value={settings.forecast_period || 90} onChange={(e) => setSettings({ ...settings, forecast_period: Number(e.target.value) })}><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option></select></Field><Field label="Prediction model"><input className="input" value={settings.prediction_model || "deterministic-v1"} onChange={(e) => setSettings({ ...settings, prediction_model: e.target.value })} /></Field><button className="btn primary" onClick={saveSettings} disabled={busy}><Check size={15} />Save settings</button></div><div className="card"><div className="item-title">Website AI sales consultant</div><div className="item-meta" style={{ margin: "5px 0 16px" }}>Configure the public AllBee AI assistant. Pricing remains sourced from the official rules in the database.</div><Field label="Enable website consultant"><label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={!!webSettings.enabled} onChange={(e) => setWebSettings({ ...webSettings, enabled: e.target.checked })} />Show “Talk to AllBee AI” on the public sign-in screen</label></Field><Field label="Welcome message"><textarea className="textarea" value={webSettings.welcome_message || ""} onChange={(e) => setWebSettings({ ...webSettings, welcome_message: e.target.value.slice(0, 500) })} /></Field><Field label="Business hours"><input className="input" value={webSettings.business_hours || ""} onChange={(e) => setWebSettings({ ...webSettings, business_hours: e.target.value.slice(0, 120) })} /></Field><Field label="Fallback contact" hint="Shown as the email destination for estimate sharing."><input className="input" value={webSettings.fallback_contact || ""} onChange={(e) => setWebSettings({ ...webSettings, fallback_contact: e.target.value.slice(0, 160) })} placeholder="sales@allbee.in" /></Field><Field label="Conversation limit"><select className="select" value={webSettings.max_conversation_length || 18} onChange={(e) => setWebSettings({ ...webSettings, max_conversation_length: Number(e.target.value) })}><option value="12">12 turns</option><option value="18">18 turns</option><option value="24">24 turns</option><option value="36">36 turns</option></select></Field><Field label="Official pricing"><label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={!!webSettings.pricing_visibility} onChange={(e) => setWebSettings({ ...webSettings, pricing_visibility: e.target.checked })} />Show official estimate amounts when available</label></Field><button className="btn primary" onClick={saveWebSettings} disabled={busy}><Check size={15} />Save website AI settings</button></div></div>}
       </>}
     </div>
   );
