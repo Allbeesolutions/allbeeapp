@@ -3942,10 +3942,26 @@ function AllbeeAI({ db, config, me, role, isAdmin, go }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(-1);
+  const [knowledgeContext, setKnowledgeContext] = useState("");
   const scroller = useRef(null);
   const boxRef = useRef(null);
 
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, busy]);
+  useEffect(() => {
+    if (!configured) return;
+    let alive = true;
+    Promise.all([
+      supabase.rpc("knowledge_get_pricing", { p_service: "website" }),
+      supabase.rpc("knowledge_get_pricing", { p_service: "marketing" }),
+      supabase.rpc("knowledge_get_pricing", { p_service: "course" }),
+      supabase.rpc("knowledge_search", { p_query: "", p_limit: 12 }),
+    ]).then((responses) => {
+      if (!alive) return;
+      const [website, marketing, course, search] = responses.map((r) => r.data).map((value) => value || {});
+      setKnowledgeContext(JSON.stringify({ pricing: { website, marketing, course }, knowledge: Array.isArray(search) ? search : [] }));
+    }).catch(() => { if (alive) setKnowledgeContext(""); });
+    return () => { alive = false; };
+  }, [configured]);
 
   const system = useMemo(() => {
     const co = company.name || "ALLBEE Solutions";
@@ -3957,9 +3973,12 @@ function AllbeeAI({ db, config, me, role, isAdmin, go }) {
       `The app has these modules: ${features}`,
       `When drafting a quotation or anything with money, use Indian Rupees (₹) and show a clear itemised list with a subtotal and total. Keep a professional, friendly tone suited to an Indian small business.`,
       `Be concise and practical. If you need a detail (client name, budget, scope), ask a short question first. Never invent client data — only use what's in the snapshot below or what the user tells you.`,
+      `
+CENTRAL PRICING AND KNOWLEDGE CATALOG (read-only; use this instead of remembered or hardcoded prices):
+${knowledgeContext || "The catalog is still loading; say that pricing must be confirmed from the Pricing & Knowledge Center."}`,
       `\nCURRENT WORKSPACE SNAPSHOT (read-only, newest first, may be partial):\n${buildAIContext(db, company)}`,
     ].join("\n");
-  }, [db, company, me, role]);
+  }, [db, company, me, role, knowledgeContext]);
 
   const send = async (text) => {
     const content = (text != null ? text : input).trim();
@@ -5226,6 +5245,7 @@ const NAV = [
   ["dashboard", "Dashboard", LayoutDashboard, "everyone"],
   ["assistant", "ALLBEE AI", Sparkles, "everyone"],
   ["ai-center", "AI Intelligence", Sparkles, "insight"],
+  ["knowledge-engine", "Pricing & Knowledge", BookOpen, "admin"],
   ["tasks", "Tasks", ListTodo, "work"],
   ["attendance", "Attendance", UserCheck, "work"],
   ["leave", "Leave", Plane, "leave"],
@@ -5286,7 +5306,7 @@ const NAV_CATEGORY = {
   leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
   announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
-  team: "admin", "team-leads": "admin", apn: "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
+  team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
   profile: "personal", terms: "personal",
 };
 const navCategoryOf = (k) => NAV_CATEGORY[k] || "personal";
@@ -6343,6 +6363,70 @@ function AIIntelligenceCenter({ db, go, openModal, reload }) {
   );
 }
 
+function PricingKnowledgeCenter({ isAdmin }) {
+  const tabs = [["services", "Services"], ["packages", "Packages"], ["pricing", "Pricing"], ["hosting", "Hosting"], ["maintenance", "AMC"], ["faq", "FAQs"], ["policies", "Policies"], ["discounts", "Discounts"], ["integrations", "Integrations"], ["knowledge", "Knowledge"]];
+  const [tab, setTab] = useState("services");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState({ items: [], total: 0, page_size: 25 });
+  const [summary, setSummary] = useState(null);
+  const [editor, setEditor] = useState(null);
+  const [editorText, setEditorText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setBusy(true); setError("");
+    try {
+      const [{ data: list, error: listError }, { data: counts, error: countError }] = await Promise.all([
+        supabase.rpc("knowledge_admin_list", { p_entity: tab, p_search: query, p_page: page, p_page_size: 25 }),
+        supabase.rpc("knowledge_admin_summary"),
+      ]);
+      if (listError) throw new Error(listError.message);
+      if (countError) throw new Error(countError.message);
+      setData(list || { items: [], total: 0, page_size: 25 }); setSummary(counts || {});
+    } catch (e) { setError(e.message || "Knowledge catalog could not be loaded."); }
+    finally { setBusy(false); }
+  }, [isAdmin, page, query, tab]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [tab, query]);
+  const openEditor = (row) => { setEditor(row || { entity: tab }); setEditorText(JSON.stringify(row || {}, null, 2)); };
+  const save = async () => {
+    let payload;
+    try { payload = JSON.parse(editorText); } catch { setError("Enter valid JSON before saving."); return; }
+    setBusy(true); setError("");
+    try { const { error: saveError } = await supabase.rpc("knowledge_admin_save", { p_entity: tab, p_payload: payload }); if (saveError) throw new Error(saveError.message); setEditor(null); await load(); emitToast("Knowledge catalog saved.", "success"); }
+    catch (e) { setError(e.message || "Knowledge catalog could not be saved."); }
+    finally { setBusy(false); }
+  };
+  const archive = async (row) => {
+    setBusy(true); setError("");
+    try { const { error: archiveError } = await supabase.rpc("knowledge_admin_save", { p_entity: tab, p_payload: { ...row, active: row.active === false, reason: `${row.active === false ? "Restored" : "Archived"} ${row.name || row.title || row.label || row.slug || "catalog record"}.` } }); if (archiveError) throw new Error(archiveError.message); await load(); }
+    catch (e) { setError(e.message || "Catalog status could not be changed."); }
+    finally { setBusy(false); }
+  };
+  const exportRows = async () => {
+    const { data: rows, error: exportError } = await supabase.rpc("knowledge_export", { p_entity: tab, p_search: query });
+    if (exportError) { setError(exportError.message); return; }
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) { emitToast("There are no records to export.", "info"); return; }
+    const keys = Array.from(new Set(list.flatMap((row) => Object.keys(row))));
+    await exportRowsToExcel(`allbee-knowledge-${tab}-${todayISO()}.xlsx`, tab, keys.map((key) => ({ label: key, value: (row) => typeof row[key] === "object" ? JSON.stringify(row[key]) : row[key] ?? "" })), list);
+  };
+  if (!isAdmin) return <div className="content"><div className="card"><Empty icon={<ShieldAlert size={22} />} title="Admin access required" text="The Pricing & Knowledge Center is restricted to administrators." /></div></div>;
+  const pages = Math.max(1, Math.ceil((data.total || 0) / (data.page_size || 25)));
+  const labelOf = (row) => row.name || row.title || row.question || row.label || row.slug || "Untitled";
+  return <div className="content">
+    <div className="page-head"><div><h3><BookOpen size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Pricing & Knowledge Center</h3><div className="hint-line">One maintained source for pricing, service definitions, delivery guidance, FAQs and AI knowledge.</div></div><span className="spacer" /><button className="btn" onClick={exportRows} disabled={busy}><Download size={14} />Export</button><button className="btn primary" onClick={() => openEditor()}><Plus size={15} />New record</button></div>
+    {error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}<button className="iconbtn" style={{ marginLeft: "auto", width: 26, height: 26 }} onClick={() => setError("")} aria-label="Dismiss knowledge error"><X size={14} /></button></div>}
+    <div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Services", "services"], ["Packages", "packages"], ["Price points", "pricing"], ["FAQs", "faq"], ["Knowledge articles", "knowledge"]].map(([label, key]) => <button key={key} className="card stat" style={{ textAlign: "left", border: 0, cursor: "pointer" }} onClick={() => { setTab(key); setPage(1); }}><div className="lbl"><BookOpen size={14} />{label}</div><div className="num mono">{summary?.[key] ?? "—"}</div></button>)}</div>
+    <div className="seg" style={{ marginBottom: 12, overflowX: "auto" }}>{tabs.map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => { setTab(key); setPage(1); }}>{label}</button>)}</div>
+    <div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${tabs.find((x) => x[0] === tab)?.[1].toLowerCase() || "knowledge"}…`} aria-label="Search knowledge catalog" /></div><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button></div>
+    <div className="card"><div className="hint-line" style={{ padding: "0 0 10px" }}>{data.total || 0} records · {busy ? "Loading…" : "DB-backed catalog"}</div>{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Name</th><th>Identifier</th><th>Status</th><th>Details</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id || row.slug}><td><b>{labelOf(row)}</b><div className="hint-line">{row.description || row.answer || row.body || ""}</div></td><td className="mono">{row.slug || row.id || "—"}</td><td><span className={`badge ${row.active === false || row.published === false ? "neg" : "pos"}`}>{row.active === false ? "Archived" : row.published === false ? "Draft" : "Active"}</span></td><td>{row.amount != null ? money(row.amount) : row.billing_model || row.category || row.service_slug || "—"}</td><td><div className="row-actions"><button className="btn sm" onClick={() => openEditor(row)}><Pencil size={13} />Edit</button><button className="btn sm" onClick={() => archive(row)} disabled={busy}>{row.active === false ? "Restore" : "Archive"}</button></div></td></tr>)}</tbody></table></div> : <Empty icon={<BookOpen size={22} />} title={query ? "No matching knowledge" : "No records yet"} text="Create a catalog record or adjust the search to continue." action={!query && <button className="btn primary" onClick={() => openEditor()}><Plus size={15} />Create record</button>} />}{pages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {page} of {pages}</span><button className="btn sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Next</button></div>}</div>
+    {editor && <Modal title={`${editor.id ? "Edit" : "New"} ${tabs.find((x) => x[0] === tab)?.[1] || "record"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save record</button></>}><p className="hint-line">Edit the normalized record as JSON. Changes are versioned and audited transactionally.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={editorText} onChange={(e) => setEditorText(e.target.value)} aria-label="Knowledge record JSON" /></Modal>}
+  </div>;
+}
+
 function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
   const [tab, setTab] = useState("overview");
   const [query, setQuery] = useState("");
@@ -6356,6 +6440,8 @@ function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
   const [leadForm, setLeadForm] = useState({ customer_name: "", company: "", mobile: "", email: "", source: "Manual Entry", project_category: "Website", expected_budget: "", expected_closing_date: "", priority: "Medium", district: "", state: "Tamil Nadu", remarks: "", tags: "" });
   const [followForm, setFollowForm] = useState({ follow_up_date: todayISO(), follow_up_time: "10:00", priority: "Medium", notes: "", next_follow_up: "" });
   const [quoteForm, setQuoteForm] = useState({ title: "", service_type: "Website", description: "", quantity: "1", unit_price: "", discount: "0", gst: "18", validity_until: "" });
+  const [quotePricing, setQuotePricing] = useState(null);
+  const [quotePricingBusy, setQuotePricingBusy] = useState(false);
   const [revenueForm, setRevenueForm] = useState({ amount: "", received_at: todayISO(), incentive: "0", remarks: "" });
   const leads = db.crm_leads || [];
   const followUps = db.crm_follow_ups || [];
@@ -6364,6 +6450,17 @@ function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
   const revenue = db.crm_revenue_collections || [];
   const partners = (db.apn_users || []).filter((p) => p.status === "active");
   const employees = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.active !== false);
+  useEffect(() => {
+    let alive = true;
+    setQuotePricingBusy(true);
+    supabase.rpc("knowledge_get_pricing", { p_service: quoteForm.service_type }).then(({ data }) => {
+      if (!alive) return;
+      setQuotePricing(data || null);
+      setQuotePricingBusy(false);
+      if (data?.base != null) setQuoteForm((current) => current.unit_price === "" ? { ...current, unit_price: String(data.base), description: current.description || data.baseLabel || "" } : current);
+    }).catch(() => { if (alive) setQuotePricingBusy(false); });
+    return () => { alive = false; };
+  }, [quoteForm.service_type]);
   const dashboard = useMemo(() => {
     const active = leads.filter((l) => !["Won", "Lost", "Cancelled", "Converted", "Closed"].includes(l.status));
     const won = leads.filter((l) => ["Won", "Converted", "Closed"].includes(l.status));
@@ -6390,7 +6487,7 @@ function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
   const addFollowUp = async () => { if (!selected) return; await call("crm_add_follow_up", { p_lead_id: selected.id, p_payload: followForm }); setModal(null); };
   const createQuote = async () => {
     if (!selected || !quoteForm.title.trim()) { setError("Select a lead and add a quotation title."); return; }
-    await call("crm_create_quotation", { p_lead_id: selected.id, p_payload: { service_type: quoteForm.service_type, title: quoteForm.title, discount: Number(quoteForm.discount || 0), gst: Number(quoteForm.gst || 0), validity_until: quoteForm.validity_until || null, items: [{ description: quoteForm.description || quoteForm.title, quantity: Number(quoteForm.quantity || 1), unit_price: Number(quoteForm.unit_price || 0) }] } });
+    await call("crm_create_quotation", { p_lead_id: selected.id, p_payload: { service_type: quoteForm.service_type, title: quoteForm.title, discount: Number(quoteForm.discount || 0), gst: Number(quoteForm.gst || 0), validity_until: quoteForm.validity_until || null, pricing_source: "knowledge_engine", items: [{ description: quoteForm.description || quoteForm.title, quantity: Number(quoteForm.quantity || 1), unit_price: Number(quoteForm.unit_price || quotePricing?.base || 0) }] } });
     setModal(null);
   };
   const recordRevenue = async () => { if (!selected?.project_id || Number(revenueForm.amount) <= 0) { setError("Select a converted lead and enter a positive collection."); return; } await call("crm_record_revenue", { p_project_id: selected.project_id, p_amount: Number(revenueForm.amount), p_received_at: revenueForm.received_at, p_incentive: Number(revenueForm.incentive || 0), p_remarks: revenueForm.remarks || null }); setModal(null); };
@@ -6422,7 +6519,7 @@ function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
       {selected && <div className="card" style={{ marginTop: 16 }}><div className="item-row"><div className="item-main"><div className="item-title">{selected.customer_name} <span className="badge pri" style={{ marginLeft: 6 }}>{selected.lead_number}</span></div><div className="item-meta">{selected.company || "No company"} · {selected.status} · {selected.source}</div></div><ContactButtons person={{ name: selected.customer_name, mobile: selected.mobile, email: selected.email }} compact /><button className="iconbtn" onClick={() => setSelected(null)} aria-label="Close lead details"><X size={15} /></button></div><div className="item-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}><div className="item-main"><div className="hint-line">{selected.address || selected.location || "No address"}{selected.district ? ` · ${selected.district}` : ""}{selected.state ? ` · ${selected.state}` : ""}</div><div className="item-meta">Budget {money(selected.expected_budget)} · Score {selected.lead_score}/100 · Priority {selected.priority}</div></div><div className="row-actions"><button className="btn sm" onClick={() => setModal("follow")}><CalendarClock size={13} />Schedule follow-up</button><button className="btn sm" onClick={() => setModal("quote")}><FileText size={13} />Create quotation</button>{selected.project_id && <button className="btn sm primary" onClick={() => setModal("revenue")}><Coins size={13} />Record revenue</button>}</div></div><div className="activity-timeline" style={{ padding: "0 16px 16px" }}>{activityFor(selected.id).map((a) => <div className="activity-timeline-item" key={a.id}><div className="activity-timeline-dot" /><div><div style={{ fontWeight: 600 }}>{a.title}</div><div className="hint-line">{a.description} · {fmtDate(a.created_at)} · {a.actor_name || "System"}</div></div></div>)}</div></div>}
       {modal === "lead" && <Modal title="Create CRM lead" onClose={() => setModal(null)} onMaximize={() => {}} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={saveLead}>{busy ? "Saving…" : "Create lead"}</button></>}><div className="grid2"><Field label="Customer name" required><input className="input" autoFocus value={leadForm.customer_name} onChange={(e) => setLeadForm({ ...leadForm, customer_name: e.target.value })} /></Field><Field label="Company"><input className="input" value={leadForm.company} onChange={(e) => setLeadForm({ ...leadForm, company: e.target.value })} /></Field><Field label="Mobile"><input className="input" value={leadForm.mobile} onChange={(e) => setLeadForm({ ...leadForm, mobile: e.target.value })} /></Field><Field label="Email"><input className="input" type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} /></Field><Field label="Lead source"><select className="select" value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}>{["Website","WhatsApp","Instagram","Facebook","Walk-in","Phone Call","Referral","Existing Client","APN Referral","Employee Referral","Manual Entry"].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Project category"><select className="select" value={leadForm.project_category} onChange={(e) => setLeadForm({ ...leadForm, project_category: e.target.value })}>{["Website","Mobile App","Software","Marketing","Training","AMC","Custom Services"].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Expected budget"><input className="input" type="number" min="0" value={leadForm.expected_budget} onChange={(e) => setLeadForm({ ...leadForm, expected_budget: e.target.value })} /></Field><Field label="Expected closing date"><input className="input" type="date" value={leadForm.expected_closing_date} onChange={(e) => setLeadForm({ ...leadForm, expected_closing_date: e.target.value })} /></Field><Field label="Priority"><select className="select" value={leadForm.priority} onChange={(e) => setLeadForm({ ...leadForm, priority: e.target.value })}>{PRIORITIES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="District"><input className="input" value={leadForm.district} onChange={(e) => setLeadForm({ ...leadForm, district: e.target.value })} /></Field></div><Field label="Remarks"><textarea className="textarea" value={leadForm.remarks} onChange={(e) => setLeadForm({ ...leadForm, remarks: e.target.value })} /></Field><Field label="Tags" hint="Comma-separated"><input className="input" value={leadForm.tags} onChange={(e) => setLeadForm({ ...leadForm, tags: e.target.value })} placeholder="website, hot, referral" /></Field></Modal>}
       {modal === "follow" && <Modal title={`Schedule follow-up · ${selected?.customer_name || "Lead"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={addFollowUp}>Schedule</button></>}><div className="grid2"><Field label="Date" required><input className="input" type="date" value={followForm.follow_up_date} onChange={(e) => setFollowForm({ ...followForm, follow_up_date: e.target.value })} /></Field><Field label="Time"><input className="input" type="time" value={followForm.follow_up_time} onChange={(e) => setFollowForm({ ...followForm, follow_up_time: e.target.value })} /></Field><Field label="Priority"><select className="select" value={followForm.priority} onChange={(e) => setFollowForm({ ...followForm, priority: e.target.value })}>{PRIORITIES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Next follow-up"><input className="input" type="date" value={followForm.next_follow_up} onChange={(e) => setFollowForm({ ...followForm, next_follow_up: e.target.value })} /></Field></div><Field label="Notes"><textarea className="textarea" value={followForm.notes} onChange={(e) => setFollowForm({ ...followForm, notes: e.target.value })} autoFocus /></Field></Modal>}
-      {modal === "quote" && <Modal title={`Create quotation · ${selected?.customer_name || "Lead"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={createQuote}>Create quotation</button></>}><div className="grid2"><Field label="Title" required><input className="input" autoFocus value={quoteForm.title} onChange={(e) => setQuoteForm({ ...quoteForm, title: e.target.value })} placeholder="Website development proposal" /></Field><Field label="Service"><select className="select" value={quoteForm.service_type} onChange={(e) => setQuoteForm({ ...quoteForm, service_type: e.target.value })}>{["Website","Mobile App","Software","Marketing","Training","AMC","Custom Services"].map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Item description"><input className="input" value={quoteForm.description} onChange={(e) => setQuoteForm({ ...quoteForm, description: e.target.value })} /></Field><Field label="Quantity"><input className="input" type="number" min="1" value={quoteForm.quantity} onChange={(e) => setQuoteForm({ ...quoteForm, quantity: e.target.value })} /></Field><Field label="Unit price"><input className="input" type="number" min="0" value={quoteForm.unit_price} onChange={(e) => setQuoteForm({ ...quoteForm, unit_price: e.target.value })} /></Field><Field label="Discount"><input className="input" type="number" min="0" value={quoteForm.discount} onChange={(e) => setQuoteForm({ ...quoteForm, discount: e.target.value })} /></Field><Field label="GST %"><input className="input" type="number" min="0" value={quoteForm.gst} onChange={(e) => setQuoteForm({ ...quoteForm, gst: e.target.value })} /></Field><Field label="Validity"><input className="input" type="date" value={quoteForm.validity_until} onChange={(e) => setQuoteForm({ ...quoteForm, validity_until: e.target.value })} /></Field></div></Modal>}
+      {modal === "quote" && <Modal title={`Create quotation · ${selected?.customer_name || "Lead"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={createQuote}>Create quotation</button></>}><div className="grid2"><Field label="Title" required><input className="input" autoFocus value={quoteForm.title} onChange={(e) => setQuoteForm({ ...quoteForm, title: e.target.value })} placeholder="Website development proposal" /></Field><Field label="Service"><select className="select" value={quoteForm.service_type} onChange={(e) => setQuoteForm({ ...quoteForm, service_type: e.target.value })}>{["Website","Mobile App","Software","Marketing","Training","AMC","Custom Services"].map((x) => <option key={x}>{x}</option>)}</select>{quotePricingBusy ? <div className="hint-line">Loading official pricing…</div> : <div className="hint-line">{quotePricing?.base != null ? `Official starting price: ${money(quotePricing.base)}` : "Custom quotation — confirm after scope review."}</div>}</Field><Field label="Item description"><input className="input" value={quoteForm.description} onChange={(e) => setQuoteForm({ ...quoteForm, description: e.target.value })} /></Field><Field label="Quantity"><input className="input" type="number" min="1" value={quoteForm.quantity} onChange={(e) => setQuoteForm({ ...quoteForm, quantity: e.target.value })} /></Field><Field label="Unit price"><input className="input" type="number" min="0" value={quoteForm.unit_price} onChange={(e) => setQuoteForm({ ...quoteForm, unit_price: e.target.value })} /></Field><Field label="Discount"><input className="input" type="number" min="0" value={quoteForm.discount} onChange={(e) => setQuoteForm({ ...quoteForm, discount: e.target.value })} /></Field><Field label="GST %"><input className="input" type="number" min="0" value={quoteForm.gst} onChange={(e) => setQuoteForm({ ...quoteForm, gst: e.target.value })} /></Field><Field label="Validity"><input className="input" type="date" value={quoteForm.validity_until} onChange={(e) => setQuoteForm({ ...quoteForm, validity_until: e.target.value })} /></Field></div></Modal>}
       {modal === "revenue" && <Modal title={`Record revenue · ${selected?.customer_name || "Project"}`} onClose={() => setModal(null)} footer={<><button className="btn" onClick={() => setModal(null)}>Cancel</button><button className="btn primary" disabled={busy} onClick={recordRevenue}>Record collection</button></>}><div className="grid2"><Field label="Amount" required><input className="input" type="number" min="0.01" autoFocus value={revenueForm.amount} onChange={(e) => setRevenueForm({ ...revenueForm, amount: e.target.value })} /></Field><Field label="Received date"><input className="input" type="date" value={revenueForm.received_at} onChange={(e) => setRevenueForm({ ...revenueForm, received_at: e.target.value })} /></Field><Field label="Incentive"><input className="input" type="number" min="0" value={revenueForm.incentive} onChange={(e) => setRevenueForm({ ...revenueForm, incentive: e.target.value })} /></Field></div><Field label="Remarks"><textarea className="textarea" value={revenueForm.remarks} onChange={(e) => setRevenueForm({ ...revenueForm, remarks: e.target.value })} /></Field><div className="hint-line">This creates the CRM collection and automatically links finance, APN commission, direct referral earnings, timeline, audit, and notifications.</div></Modal>}
     </div>
   );
@@ -8725,13 +8822,6 @@ function apnPayoutDate(fromISO) {
 const APN_TARGET_METRICS = [["leads", "Leads"], ["conversions", "Conversions"], ["website", "Website projects"], ["course", "Course admissions"], ["marketing", "Marketing projects"]];
 const apnMetricLabel = (m) => (APN_TARGET_METRICS.find((x) => x[0] === m)?.[1]) || "Leads";
 
-// Approximate quotation pricing — a starting point the partner can edit.
-const APN_PRICE = {
-  website: { base: 15000, baseLabel: "Website (starter)", options: [["ecommerce", "E-commerce store", 12000], ["seo", "SEO setup", 5000], ["extra", "Extra pages / sections", 4000], ["maintenance", "Annual maintenance", 6000]] },
-  marketing: { base: 8000, baseLabel: "Digital marketing (monthly)", options: [["ads", "Paid ad management", 5000], ["content", "Content creation", 4000], ["social", "Social media handling", 3000]] },
-  course: { base: 5000, baseLabel: "Course admission", options: [["advanced", "Advanced module", 3000], ["certification", "Certification", 1500]] },
-};
-
 /* ── partner lookups ─────────────────────────────────────────────────── */
 const apnMe = (db, pid) => (db.apn_users || []).find((u) => u.id === pid) || null;
 const apnAvatarUrl = (partner, profile) => partner?.profilePicture || partner?.photo_url || partner?.photoUrl || profile?.photo_url || "";
@@ -9127,14 +9217,25 @@ function apnPrintQuote(q, meRow) {
 }
 function APNQuoteForm({ meRow, initial, onSave, onClose }) {
   const [service, setService] = useState(initial?.service || "website");
-  const price = APN_PRICE[service];
+  const [price, setPrice] = useState(null);
+  const [priceBusy, setPriceBusy] = useState(true);
   const [clientName, setClientName] = useState(initial?.clientName || "");
   const [requirements, setRequirements] = useState(initial?.requirements || "");
   const [items, setItems] = useState(initial?.items || null);
-  // reset line items when the service changes (unless editing an existing quote)
-  const base = items || [{ id: uid(), label: price.baseLabel, amount: price.base }];
-  const setBase = items ? setItems : (v) => setItems(v);
-  React.useEffect(() => { if (!initial) setItems([{ id: uid(), label: APN_PRICE[service].baseLabel, amount: APN_PRICE[service].base }]); }, [service]); // eslint-disable-line
+  React.useEffect(() => {
+    let alive = true;
+    setPriceBusy(true);
+    supabase.rpc("knowledge_get_pricing", { p_service: service }).then(({ data, error }) => {
+      if (!alive) return;
+      setPrice(error ? { base: null, baseLabel: "Custom quotation", options: [], customQuote: true } : (data || { base: null, baseLabel: "Custom quotation", options: [], customQuote: true }));
+      setPriceBusy(false);
+    });
+    return () => { alive = false; };
+  }, [service]);
+  React.useEffect(() => {
+    if (!initial && price && !priceBusy) setItems(price.base == null ? [] : [{ id: uid(), label: price.baseLabel || "Base service", amount: Number(price.base) || 0 }]);
+  }, [initial, price, priceBusy]);
+  const base = items || (price?.base == null ? [] : [{ id: uid(), label: price.baseLabel || "Base service", amount: Number(price.base) || 0 }]);
   const list = items || base;
   const total = list.reduce((s, it) => s + (Number(it.amount) || 0), 0);
   const addOpt = (label, amount) => setItems((prev) => [...(prev || base), { id: uid(), label, amount }]);
@@ -9153,8 +9254,8 @@ function APNQuoteForm({ meRow, initial, onSave, onClose }) {
         <Field label="Service"><select className="select" value={service} onChange={(e) => setService(e.target.value)} disabled={!!initial?.id}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
       </div>
       <Field label="Requirements"><textarea className="textarea" value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="What does the client need?" /></Field>
-      <Field label="Add-ons" hint="Tap to add — you can edit every line below.">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{price.options.map(([k, label, amt]) => <button key={k} type="button" className="preset" onClick={() => addOpt(label, amt)}>+ {label} (₹{amt.toLocaleString("en-IN")})</button>)}</div>
+      <Field label="Add-ons" hint={priceBusy ? "Loading official pricing…" : price?.customQuote ? "This service is quoted after scope review." : "Tap to add an official add-on — you can edit every line below."}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{(price?.options || []).map((option) => <button key={option.key} type="button" className="preset" disabled={priceBusy} onClick={() => addOpt(option.label, Number(option.amount) || 0)}>+ {option.label} {option.amount != null ? `(₹${Number(option.amount).toLocaleString("en-IN")})` : "(custom quote)"}</button>)}</div>
       </Field>
       <Field label="Quotation lines">
         <div className="apn-list">{list.map((it) => (
@@ -11942,6 +12043,7 @@ export default function App() {
       case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} />;
       case "assistant": return <AllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} />;
       case "ai-center": return <AIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} />;
+      case "knowledge-engine": return <PricingKnowledgeCenter isAdmin={isAdmin} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
