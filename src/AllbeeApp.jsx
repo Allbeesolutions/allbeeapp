@@ -1708,6 +1708,17 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .web-ai-summary div { min-width:0; display:flex; flex-direction:column; gap:2px; }
 .web-ai-summary span { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
 .web-ai-summary b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.proposal-preview { display:grid; gap:12px; max-height:70vh; overflow:auto; padding-right:3px; }
+.proposal-preview-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); }
+.proposal-preview-section { padding:12px 14px; border:1px solid var(--border); border-radius:10px; }
+.proposal-portal-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-bottom:14px; }
+.proposal-portal-summary > div { display:grid; gap:4px; }
+.proposal-portal-summary strong { font-size:18px; }
+.proposal-portal-sections { display:grid; gap:8px; }
+.proposal-portal-sections section { padding:8px 0 14px; border-bottom:1px solid var(--border); }
+.proposal-portal-sections section:last-child { border-bottom:0; }
+.proposal-portal-sections h2 { font-size:17px; margin:0 0 6px; }
+@media (max-width: 680px) { .proposal-portal-summary { grid-template-columns:1fr; } .proposal-preview-head { flex-direction:column; } }
 .web-ai-composer { display:flex; align-items:flex-end; gap:8px; padding:11px; border-top:1px solid var(--border); background:var(--surface); }
 .web-ai-composer textarea { flex:1; min-height:42px; max-height:96px; resize:none; }
 .web-ai-estimate { margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); }
@@ -5251,6 +5262,7 @@ const NAV = [
   ["ai-center", "AI Intelligence", Sparkles, "insight"],
   ["knowledge-engine", "Pricing & Knowledge", BookOpen, "admin"],
   ["requirement-builder", "Requirement Builder", MessageCircle, "admin"],
+  ["proposal-center", "Proposal Center", FileText, "admin"],
   ["tasks", "Tasks", ListTodo, "work"],
   ["attendance", "Attendance", UserCheck, "work"],
   ["leave", "Leave", Plane, "leave"],
@@ -5311,7 +5323,7 @@ const NAV_CATEGORY = {
   leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
   announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
-  team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", "requirement-builder": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
+  team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", "requirement-builder": "admin", "proposal-center": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
   profile: "personal", terms: "personal",
 };
 const navCategoryOf = (k) => NAV_CATEGORY[k] || "personal";
@@ -5380,6 +5392,7 @@ function WebSalesConsultant() {
   }, []);
   const messages = payload?.messages || [];
   const state = payload?.state || {};
+  const proposalToken = state?.proposal?.public_token || "";
   const estimate = payload?.estimate;
   const summary = payload?.summary || {};
   const completed = payload?.status === "completed";
@@ -5457,7 +5470,7 @@ function WebSalesConsultant() {
         {messages.map((m, index) => <div key={`${m.id || index}-${m.created_at || ""}`} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "92%" }}><div className={`web-ai-bubble ${m.role === "user" ? "user" : "assistant"}`}>{m.content}</div><div className="web-ai-time" style={{ textAlign: m.role === "user" ? "right" : "left" }}>{m.created_at ? fmtDateTime(m.created_at) : "Now"}{m.role === "assistant" && m.metadata?.quick_replies?.length > 0 && !completed && <div className="web-ai-quick">{m.metadata.quick_replies.map((reply) => <button key={reply} onClick={() => send(reply)} disabled={busy}>{reply}</button>)}</div>}</div></div>)}
         {busy && <div className="web-ai-bubble assistant web-ai-typing" aria-label="AllBee AI is typing"><i /><i /><i /></div>}
         {error && <div className="auth-msg err" role="alert"><AlertTriangle size={14} />{error}</div>}
-        {completed && <div className="web-ai-estimate"><div className="hint-line">Estimate</div><strong>{estimate?.known === false ? "Custom consultation" : money(estimate?.estimated_cost)}</strong><div style={{ marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{estimateText()}</div><div className="web-ai-actions"><button className="btn sm" onClick={downloadEstimate}><Download size={13} />Download</button><button className="btn sm" onClick={() => shareEstimate("email")}><Mail size={13} />Email</button><button className="btn sm" onClick={() => shareEstimate("whatsapp")}><MessageCircle size={13} />WhatsApp</button><button className="btn sm" onClick={saveDraft}><Check size={13} />Save draft</button></div></div>}
+        {completed && <div className="web-ai-estimate"><div className="hint-line">Estimate</div><strong>{estimate?.known === false ? "Custom consultation" : money(estimate?.estimated_cost)}</strong><div style={{ marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{estimateText()}</div><div className="web-ai-actions">{proposalToken && <button className="btn sm primary" onClick={() => window.open(`${window.location.origin}${window.location.pathname}#/proposal/${proposalToken}`, "_blank", "noopener,noreferrer")}><FileText size={13} />View proposal</button>}<button className="btn sm" onClick={downloadEstimate}><Download size={13} />Download</button><button className="btn sm" onClick={() => shareEstimate("email")}><Mail size={13} />Email</button><button className="btn sm" onClick={() => shareEstimate("whatsapp")}><MessageCircle size={13} />WhatsApp</button><button className="btn sm" onClick={saveDraft}><Check size={13} />Save draft</button></div></div>}
         <div ref={endRef} />
       </div>
       <div className="web-ai-composer">{completed || disabled ? <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => { setPayload(null); sessionRef.current = ""; setSessionId(""); try { localStorage.removeItem("allbee-web-ai-session"); } catch {} }}>{disabled ? "Try again" : "Start another consultation"}</button> : <><textarea ref={inputRef} className="textarea" value={draft} onChange={(e) => setDraft(e.target.value.slice(0, 500))} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Type your answer…" aria-label="Your answer" disabled={busy || !payload} /><button className="btn primary" onClick={() => send()} disabled={busy || !draft.trim() || !payload} aria-label="Send message"><Send size={16} /></button><button className="btn" onClick={endConversation} disabled={busy || !payload} aria-label="End consultation">End</button></>}</div>
@@ -6456,6 +6469,80 @@ function RequirementBuilder({ isAdmin }) {
   const save = async () => { let payload; try { payload = JSON.parse(text); } catch { setError("Enter valid JSON."); return; } setBusy(true); try { const { error: saveError } = await supabase.rpc("web_requirement_admin_save", { p_entity: tab === "questions" ? "questions" : "rules", p_payload: payload }); if (saveError) throw new Error(saveError.message); setEditor(null); await load(); emitToast("Requirement builder record saved.", "success"); } catch (e) { setError(e.message || "Could not save the requirement builder record."); } finally { setBusy(false); } };
   if (!isAdmin) return <div className="content"><div className="card"><Empty icon={<ShieldAlert size={22} />} title="Admin access required" text="Requirement Builder is restricted to administrators." /></div></div>;
   return <div className="content"><div className="page-head"><div><h3><MessageCircle size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Requirement Builder</h3><div className="hint-line">Configure adaptive questions and rules without changing the conversation engine.</div></div><span className="spacer" /><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button>{tab !== "analytics" && <button className="btn primary" onClick={() => { setEditor({}); setText(JSON.stringify(tab === "questions" ? { prompt: "", question_key: "", question_type: "text", choices: [], active: true, sort_order: 0 } : { question_id: "", condition_key: "service", operator: "equals", condition_value: "", action: "show", active: true }, null, 2)); }}><Plus size={15} />Add</button>}</div>{error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}</div>}<div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Sessions",summary?.sessions],["Active",summary?.active],["Completed",summary?.completed],["Abandoned",summary?.abandoned],["Average completion",`${summary?.average_completion || 0}%`]].map(([label,value]) => <div className="card stat" key={label}><div className="lbl"><Activity size={14} />{label}</div><div className="num mono">{value ?? "—"}</div></div>)}</div><div className="seg" style={{ marginBottom: 12 }}>{tabs.map(([key,label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</div><div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search questions, rules, or events…" aria-label="Search requirement builder" /></div></div><div className="card">{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Record</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id}><td><b>{row.prompt || row.question_slug || row.event || "Record"}</b><div className="hint-line mono">{row.slug || row.id}</div></td><td>{row.condition_key ? `${row.condition_key} ${row.operator} ${row.condition_value}` : row.completion_percent != null ? `${row.completion_percent}% · ${row.service_slug || "—"}` : row.question_type || "—"}</td><td><span className={`badge ${row.active === false ? "neg" : "pos"}`}>{row.active === false ? "Disabled" : "Active"}</span></td><td>{tab !== "analytics" && <button className="btn sm" onClick={() => { setEditor(row); setText(JSON.stringify(row, null, 2)); }}><Pencil size={13} />Edit</button>}</td></tr>)}</tbody></table></div> : <Empty icon={<MessageCircle size={22} />} title="No records" text="Add a configurable question or rule, or wait for conversations to generate analytics." />}</div>{editor && <Modal title={`Edit ${tab === "questions" ? "question" : "rule"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save</button></>}><p className="hint-line">Changes are applied transactionally, audited, and picked up by active conversations on their next response.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Requirement builder JSON" /></Modal>}</div>;
+}
+
+function proposalSectionDisplay(section) {
+  const c = section?.content || {};
+  if (c.text) return c.text;
+  if (c.items && Array.isArray(c.items)) return c.items.map((x) => typeof x === "string" ? x : (x.label || x.name || x.title || x.description || JSON.stringify(x))).filter(Boolean).join("\n");
+  if (c.estimate) return c.estimate.estimated_cost != null ? `Estimated value: ${money(c.estimate.estimated_cost)}` : (c.estimate.disclaimer || "Custom quotation");
+  return Object.entries(c).filter(([, value]) => value != null && value !== "").map(([key, value]) => `${key.replace(/_/g, " ")}: ${typeof value === "object" ? JSON.stringify(value) : value}`).join("\n");
+}
+function escapeProposalHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function printProposalDocument(detail) {
+  const p = detail?.proposal || detail;
+  const sections = detail?.sections || [];
+  const w = window.open("", "_blank");
+  if (!w) return;
+  const body = sections.filter((s) => s.enabled !== false).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((s) => `<section><h2>${escapeProposalHtml(s.name)}</h2><div class="section-body">${escapeProposalHtml(proposalSectionDisplay(s)).replace(/\n/g, "<br>")}</div></section>`).join("");
+  w.document.write(`<!doctype html><html><head><title>${escapeProposalHtml(p.proposal_number || "Proposal")}</title><style>@page{margin:18mm}body{font-family:Arial,sans-serif;color:#172033;max-width:820px;margin:auto;line-height:1.5}header{border-bottom:3px solid #2e3b8f;padding-bottom:16px;margin-bottom:24px}h1{color:#2e3b8f;margin:0}h2{font-size:18px;color:#2e3b8f;border-bottom:1px solid #dfe4ee;padding-bottom:6px;margin-top:26px}.muted{color:#687386;font-size:12px}.section-body{white-space:normal}.summary{background:#f5f7fb;border:1px solid #dfe4ee;border-radius:10px;padding:14px;margin-top:16px}.total{font-size:20px;font-weight:800;color:#15245f}</style></head><body><header><h1>ALLBEE SOLUTIONS</h1><div class="muted">Enterprise business proposal · ${escapeProposalHtml(p.proposal_number || "")}</div><h3>${escapeProposalHtml(p.proposal_title || "Business proposal")}</h3><div class="muted">Prepared for ${escapeProposalHtml(p.customer_name || "Customer")} · Version ${escapeProposalHtml(p.current_version || 1)}</div></header><div class="summary"><b>Proposal value</b><div class="total">${money(p.grand_total || 0)}</div><div class="muted">Pricing mode: ${escapeProposalHtml(p.pricing_mode || "estimated")} · Status: ${escapeProposalHtml(p.status || "draft")}</div></div>${body}<footer class="muted" style="margin-top:36px;border-top:1px solid #dfe4ee;padding-top:10px">Generated from the approved AllBee knowledge and requirement engines.</footer><script>window.onload=function(){window.print()}</script></body></html>`);
+  w.document.close();
+}
+
+function ProposalCenter({ isAdmin }) {
+  const [tab, setTab] = useState("proposals");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [data, setData] = useState({ items: [], total: 0 });
+  const [summary, setSummary] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [sections, setSections] = useState([]);
+  const [editor, setEditor] = useState(null);
+  const [editorText, setEditorText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setBusy(true); setError("");
+    try {
+      const [{ data: list, error: listError }, { data: counts, error: summaryError }] = await Promise.all([
+        supabase.rpc("proposal_admin_list", { p_search: query, p_status: status, p_limit: 100, p_offset: 0 }),
+        supabase.rpc("proposal_admin_summary"),
+      ]);
+      if (listError) throw new Error(listError.message);
+      if (summaryError) throw new Error(summaryError.message);
+      setData(list || { items: [], total: 0 }); setSummary(counts || {});
+      if (tab === "sections") { const { data: defs, error: defError } = await supabase.from("proposal_section_definitions").select("*").order("sort_order"); if (defError) throw new Error(defError.message); setSections(defs || []); }
+    } catch (e) { setError(e.message || "Proposal Center could not load."); }
+    finally { setBusy(false); }
+  }, [isAdmin, query, status, tab]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const ch = supabase.channel("proposal-center").on("postgres_changes", { event: "*", schema: "public", table: "proposals" }, load).on("postgres_changes", { event: "*", schema: "public", table: "proposal_versions" }, load).on("postgres_changes", { event: "*", schema: "public", table: "proposal_analytics" }, load).on("postgres_changes", { event: "*", schema: "public", table: "proposal_section_definitions" }, load).subscribe(); return () => supabase.removeChannel(ch); }, [load]);
+  const openProposal = async (id) => { setBusy(true); setError(""); try { const { data: detail, error: rpcError } = await supabase.rpc("proposal_get", { p_proposal_id: id }); if (rpcError) throw new Error(rpcError.message); setSelected(detail); } catch (e) { setError(e.message || "Proposal could not load."); } finally { setBusy(false); } };
+  const action = async (name, comment = "") => { if (!selected?.proposal?.id) return; setBusy(true); setError(""); try { const { data: detail, error: rpcError } = await supabase.rpc("proposal_record_action", { p_proposal_id: selected.proposal.id, p_action: name, p_comment: comment, p_token: null, p_signer_name: null, p_signer_email: null, p_signature: null }); if (rpcError) throw new Error(rpcError.message); setSelected(detail); await load(); emitToast(`Proposal ${name.replace(/_/g, " ")}.`, "success"); } catch (e) { setError(e.message || "Proposal action failed."); } finally { setBusy(false); } };
+  const share = async () => { if (!selected?.proposal?.id) return; setBusy(true); try { const { data: link, error: rpcError } = await supabase.rpc("proposal_regenerate_public_link", { p_proposal_id: selected.proposal.id }); if (rpcError) throw new Error(rpcError.message); const url = `${window.location.origin}${window.location.pathname}#/proposal/${link.public_token}`; await navigator.clipboard?.writeText(url); emitToast("Customer proposal link copied.", "success"); } catch (e) { setError(e.message || "Could not create proposal link."); } finally { setBusy(false); } };
+  const saveSection = async () => { let payload; try { payload = JSON.parse(editorText); } catch { setError("Enter valid JSON."); return; } setBusy(true); try { const { error: rpcError } = await supabase.rpc("proposal_save_section_definition", { p_payload: payload }); if (rpcError) throw new Error(rpcError.message); setEditor(null); await load(); emitToast("Proposal section saved.", "success"); } catch (e) { setError(e.message || "Section could not save."); } finally { setBusy(false); } };
+  if (!isAdmin) return <div className="content"><div className="card"><Empty icon={<ShieldAlert size={22} />} title="Admin access required" text="Proposal Center is restricted to administrators." /></div></div>;
+  return <div className="content">
+    <div className="page-head"><div><h3><FileText size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Proposal Center</h3><div className="hint-line">Enterprise proposals generated from completed requirements and the approved knowledge catalog.</div></div><span className="spacer" /><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button></div>
+    {error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}</div>}
+    <div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Created", summary?.created], ["Viewed", summary?.viewed], ["Approved", summary?.approved], ["Avg value", summary?.average_value != null ? money(summary.average_value) : "—"], ["Conversion", `${summary?.conversion_rate || 0}%`]].map(([label, value]) => <div className="card stat" key={label}><div className="lbl"><FileText size={14} />{label}</div><div className="num mono">{value ?? "—"}</div></div>)}</div>
+    <div className="seg" style={{ marginBottom: 12 }}>{[["proposals", "Proposals"], ["sections", "Section Builder"], ["analytics", "Analytics"]].map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</div>
+    {tab === "proposals" && <><div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search proposal, customer, service…" aria-label="Search proposals" /></div><select className="select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter proposals by status"><option value="">All statuses</option>{["draft", "sent", "viewed", "revision_requested", "approved", "rejected", "converted"].map((x) => <option key={x} value={x}>{x.replace(/_/g, " ")}</option>)}</select></div><div className="card">{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Proposal</th><th>Customer</th><th>Status</th><th>Value</th><th>Version</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id}><td><button className="linkbtn" onClick={() => openProposal(row.id)}><b>{row.proposal_number}</b></button><div className="hint-line">{row.proposal_title}</div></td><td>{row.customer_name || "—"}<div className="hint-line">{row.service_slug || "—"}</div></td><td><span className={`badge ${["approved", "converted"].includes(row.status) ? "pos" : row.status === "rejected" ? "neg" : "pri"}`}>{row.status}</span></td><td className="mono">{money(row.grand_total || 0)}</td><td>V{row.current_version}</td><td><button className="btn sm" onClick={() => openProposal(row.id)}><Eye size={13} />Open</button></td></tr>)}</tbody></table></div> : <Empty icon={<FileText size={22} />} title="No proposals yet" text="Complete a Requirement Discovery conversation to generate the first proposal." />}</div></>}
+    {tab === "sections" && <div className="card"><div className="hint-line" style={{ marginBottom: 10 }}>Template sections are modular and database-configured. Disable or rename a section without changing proposal generation.</div>{sections.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Section</th><th>Type</th><th>Order</th><th>Status</th><th></th></tr></thead><tbody>{sections.map((row) => <tr key={row.id}><td><b>{row.name}</b><div className="hint-line mono">{row.section_key}</div></td><td>{row.section_type}</td><td>{row.sort_order}</td><td><span className={`badge ${row.enabled ? "pos" : "neg"}`}>{row.enabled ? "Enabled" : "Archived"}</span></td><td><button className="btn sm" onClick={() => { setEditor(row); setEditorText(JSON.stringify(row, null, 2)); }}><Pencil size={13} />Edit</button></td></tr>)}</tbody></table></div> : <Empty icon={<FileText size={22} />} title="No section definitions" text="The proposal template has no active sections." />}</div>}
+    {tab === "analytics" && <div className="card"><div className="hint-line">Tracked proposal events include creation, views, downloads, shares, approvals, rejections, and revision requests.</div><div className="cards-grid" style={{ marginTop: 14 }}>{Object.entries(summary || {}).filter(([k]) => !["average_value", "conversion_rate"].includes(k)).map(([key, value]) => <div className="card stat" key={key}><div className="lbl"><Activity size={14} />{key.replace(/_/g, " ")}</div><div className="num mono">{value ?? 0}</div></div>)}</div></div>}
+    {selected && <Modal title={`${selected.proposal?.proposal_number || "Proposal"} · V${selected.proposal?.current_version || 1}`} onClose={() => setSelected(null)} footer={<><button className="btn" onClick={() => printProposalDocument(selected)}><Download size={14} />Print / PDF</button><button className="btn" onClick={share}><Copy size={14} />Customer link</button><span className="spacer" /><button className="btn" onClick={() => action("revision_requested")} disabled={busy}>Request revision</button><button className="btn primary" onClick={() => action("sent")} disabled={busy}><Send size={14} />Send proposal</button></>}><div className="proposal-preview"><div className="proposal-preview-head"><div><div className="hint-line">{selected.proposal?.service_slug || "Business solution"}</div><h2 style={{ margin: "4px 0" }}>{selected.proposal?.proposal_title}</h2><div className="hint-line">Prepared for {selected.proposal?.customer_name || "Customer"} · {selected.proposal?.pricing_mode || "estimated"}</div></div><strong className="mono">{money(selected.proposal?.grand_total || 0)}</strong></div>{(selected.sections || []).map((section) => <div className="proposal-preview-section" key={section.id}><b>{section.name}</b><div className="hint-line" style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{proposalSectionDisplay(section) || "—"}</div></div>)}</div></Modal>}
+    {editor && <Modal title="Edit proposal section" onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={saveSection} disabled={busy}><Check size={14} />Save section</button></>}><p className="hint-line">Section definitions are stored in the proposal template catalog and applied to future versions.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={editorText} onChange={(e) => setEditorText(e.target.value)} aria-label="Proposal section JSON" /></Modal>}
+  </div>;
+}
+
+function ProposalPortal({ token, isDark }) {
+  const [detail, setDetail] = useState(null); const [comment, setComment] = useState(""); const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [signature, setSignature] = useState(""); const [busy, setBusy] = useState(true); const [error, setError] = useState("");
+  const load = useCallback(async () => { setBusy(true); setError(""); try { const { data, error: rpcError } = await supabase.rpc("proposal_public_get", { p_token: token }); if (rpcError) throw new Error(rpcError.message); setDetail(data); } catch (e) { setError(e.message || "This proposal link is invalid or expired."); } finally { setBusy(false); } }, [token]);
+  useEffect(() => { load(); }, [load]);
+  const act = async (action) => { setBusy(true); setError(""); try { const { data, error: rpcError } = await supabase.rpc("proposal_public_action", { p_token: token, p_action: action, p_comment: comment, p_signer_name: name, p_signer_email: email, p_signature: signature }); if (rpcError) throw new Error(rpcError.message); setDetail(data); setComment(""); emitToast(`Proposal ${action.replace(/_/g, " ")}.`, "success"); } catch (e) { setError(e.message || "The proposal action could not be completed."); } finally { setBusy(false); } };
+  const p = detail?.proposal;
+    return <div className="allbee" data-theme={isDark ? "dark" : "light"}><style>{CSS}</style><ToastHost /><main className="portal-shell" style={{ maxWidth: 980, margin: "0 auto", padding: "28px 18px 60px" }}>{busy && !detail ? <div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "42%" }} /><div className="skeleton" style={{ height: 180, marginTop: 14 }} /></div> : error ? <div className="card"><Empty icon={<AlertTriangle size={22} />} title="Proposal unavailable" text={error} /></div> : <><div className="page-head"><div><div className="hint-line">ALLBEE SOLUTIONS · Enterprise proposal</div><h1 style={{ margin: "5px 0" }}>{p?.proposal_title}</h1><div className="hint-line">{p?.proposal_number} · Version {p?.current_version || 1} · Prepared for {p?.customer_name}</div></div><button className="btn" onClick={() => printProposalDocument(detail)}><Download size={14} />Print / PDF</button></div><div className="card proposal-portal-summary"><div><span className="hint-line">Proposal value</span><strong className="mono">{money(p?.grand_total || 0)}</strong></div><div><span className="hint-line">Pricing</span><strong>{p?.pricing_mode || "estimated"}</strong></div><div><span className="hint-line">Status</span><strong>{p?.status}</strong></div></div><div className="card proposal-portal-sections">{(detail?.sections || []).filter((s) => s.enabled !== false).map((section) => <section key={section.id}><h2>{section.name}</h2><p style={{ whiteSpace: "pre-wrap" }}>{proposalSectionDisplay(section) || "—"}</p></section>)}</div>{!["converted", "approved", "rejected"].includes(p?.status) && <div className="card"><h3>Respond to this proposal</h3><div className="grid2"><Field label="Your name" required><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></Field><Field label="Email"><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field></div><Field label="Comment or question"><textarea className="textarea" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Ask a question or request a change…" /></Field><Field label="Signature for approval" hint="Type your name or approved signature text."><input className="input" value={signature} onChange={(e) => setSignature(e.target.value)} /></Field><div className="row-actions" style={{ justifyContent: "flex-end", marginTop: 12 }}><button className="btn" onClick={() => act("question")} disabled={busy || !comment.trim()}><MessageCircle size={14} />Ask question</button><button className="btn" onClick={() => act("revision_requested")} disabled={busy}><RefreshCw size={14} />Request revision</button><button className="btn danger" onClick={() => act("rejected")} disabled={busy}>Reject</button><button className="btn primary" onClick={() => act("approved")} disabled={busy || !name.trim() || !signature.trim()}><CheckCircle2 size={14} />Approve proposal</button></div></div>}</>}</main></div>;
 }
 
 function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
@@ -11481,6 +11568,12 @@ export default function App() {
   const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
   const [navSort, setNavSort] = useState(() => { try { return localStorage.getItem("allbee_navsort") || "category"; } catch { return "category"; } });
   const dragNavRef = useRef(null);
+  const publicProposalToken = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const query = new URLSearchParams(window.location.search || "").get("proposal");
+    const raw = String(window.location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/");
+    return query || (raw[0] === "proposal" && raw[1] ? decodeURIComponent(raw[1]) : "");
+  }, []);
 
   const currentUser = profile?.name || null;
   const role = profile?.role;
@@ -12011,6 +12104,7 @@ export default function App() {
     </div>
   );
 
+  if (publicProposalToken) return <ProposalPortal token={publicProposalToken} isDark={isDark} />;
   if (session === undefined) return <Loading />;
   if (!session) return <Lock isDark={isDark} setDark={setIsDark} />;
   if (passwordRecovery) return <PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />;
@@ -12076,6 +12170,7 @@ export default function App() {
       case "ai-center": return <AIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} />;
       case "knowledge-engine": return <PricingKnowledgeCenter isAdmin={isAdmin} />;
       case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
+      case "proposal-center": return <ProposalCenter isAdmin={isAdmin} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
