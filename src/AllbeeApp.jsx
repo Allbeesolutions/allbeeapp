@@ -387,6 +387,19 @@ const CRM_READS = {
   crm_audit: "id,lead_id,project_id,quotation_id,action,actor_id,actor_name,metadata,created_at",
 };
 
+// PR5 deterministic intelligence records. Dashboard calculations are returned
+// by the admin-only ai_get_dashboard RPC; these tables provide realtime alerts,
+// recommendations, history, cached snapshots, and generated report metadata.
+const AI_READS = {
+  ai_settings: "id,enabled,sensitivity,forecast_period,prediction_model,updated_by,updated_at",
+  ai_insights: "id,category,severity,title,message,recommendation,entity_type,entity_id,score,metadata,status,generated_by,created_at,updated_at,last_seen_at",
+  ai_predictions: "id,prediction_type,entity_id,value,confidence,explanation,factors,generated_at",
+  ai_cache: "key,payload,generated_at,expires_at",
+  ai_history: "id,period,summary,metrics,created_by,created_at",
+  ai_recommendations: "id,category,title,description,impact,priority,entity_type,entity_id,action_route,metadata,status,created_at,updated_at",
+  ai_reports: "id,report_type,format,title,payload,generated_by,created_at",
+};
+
 async function fetchReferralData() {
   const out = {};
   await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
@@ -426,6 +439,20 @@ async function fetchCRMData() {
   return out;
 }
 
+async function fetchAIData() {
+  const out = {};
+  await Promise.all(Object.entries(AI_READS).map(async ([table, columns]) => {
+    const orderColumn = table === "ai_settings" ? "updated_at" : "created_at";
+    const { data, error } = await supabase.from(table).select(columns).order(orderColumn, { ascending: false });
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
 async function fetchAll() {
   const db = emptyDB();
   await Promise.all(TABLES.map(async (t) => {
@@ -442,7 +469,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData());
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData());
   return db;
 }
 
@@ -804,6 +831,7 @@ const emptyDB = () => ({
   apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
   crm_clients: [], crm_leads: [], crm_lead_assignments: [], crm_follow_ups: [], crm_quotations: [], crm_quotation_versions: [], crm_projects: [], crm_revenue_collections: [], crm_activities: [], crm_files: [], crm_reminders: [], crm_audit: [],
+  ai_settings: [], ai_insights: [], ai_predictions: [], ai_cache: [], ai_history: [], ai_recommendations: [], ai_reports: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -1284,6 +1312,15 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .crm-kanban-card { margin:8px; padding:11px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); cursor:grab; }
 .crm-kanban-card:active { cursor:grabbing; }
 .crm-kanban-card:hover { border-color:var(--primary); }
+.ai-health-grid { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:12px; }
+.ai-score-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.ai-score-bar { height:7px; border-radius:8px; overflow:hidden; background:var(--surface-2); }
+.ai-score-bar > i { display:block; height:100%; border-radius:8px; background:linear-gradient(90deg,var(--primary),#6477e8); }
+.ai-command-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.ai-command { display:flex; align-items:center; gap:8px; padding:10px 11px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--ink); cursor:pointer; font:inherit; text-align:left; }
+.ai-command:hover { border-color:var(--primary); background:var(--primary-soft); }
+.ai-alert { border-left:4px solid var(--primary); }
+.ai-alert.high { border-left-color:var(--neg); } .ai-alert.medium { border-left-color:var(--accent); }
 .search { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border);
   border-radius:9px; padding:0 12px; flex:1; min-width:180px; }
 .search:focus-within { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
@@ -1357,6 +1394,8 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 }
 @media (max-width:560px) {
   .cards-grid { grid-template-columns:1fr !important; }
+  .ai-health-grid, .ai-score-grid { grid-template-columns:1fr 1fr; }
+  .ai-command-grid { grid-template-columns:1fr 1fr; }
   .topbar-title h2 { font-size:14px; }
   .content { padding:14px 12px 20px; }
   .page-head { gap:9px; }
@@ -5159,6 +5198,7 @@ class ErrorBoundary extends React.Component {
 const NAV = [
   ["dashboard", "Dashboard", LayoutDashboard, "everyone"],
   ["assistant", "ALLBEE AI", Sparkles, "everyone"],
+  ["ai-center", "AI Intelligence", Sparkles, "insight"],
   ["tasks", "Tasks", ListTodo, "work"],
   ["attendance", "Attendance", UserCheck, "work"],
   ["leave", "Leave", Plane, "leave"],
@@ -5214,7 +5254,7 @@ const NAV_CATEGORIES = [
   ["personal", "Personal"],
 ];
 const NAV_CATEGORY = {
-  dashboard: "overview", notifications: "overview", myteam: "overview", assistant: "overview",
+  dashboard: "overview", notifications: "overview", myteam: "overview", assistant: "overview", "ai-center": "overview",
   tasks: "work", attendance: "work", leave: "work", updates: "work", progress: "work", chat: "work",
   leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
@@ -6027,6 +6067,135 @@ function AnnouncementForm({ initial, onSave, onClose }) {
 function LoadMore({ shown, total, onMore }) {
   if (shown >= total) return null;
   return <div style={{ textAlign: "center", padding: "14px 0" }}><button className="btn" onClick={onMore}>Show more ({total - shown} more)</button></div>;
+}
+
+function AIIntelligenceCenter({ db, go, openModal, reload }) {
+  const [snapshot, setSnapshot] = useState(null);
+  const [tab, setTab] = useState("overview");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [settings, setSettings] = useState({ enabled: true, sensitivity: "balanced", forecast_period: 90, prediction_model: "deterministic-v1" });
+  const [reportType, setReportType] = useState("sales");
+  const [reportFormat, setReportFormat] = useState("json");
+
+  const load = useCallback(async () => {
+    setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("ai_get_dashboard");
+      if (rpcError) throw new Error(rpcError.message);
+      setSnapshot(data || {});
+      if (data?.settings) setSettings(data.settings);
+    } catch (e) { setError(e.message || "Unable to load intelligence data."); }
+    finally { setBusy(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const refresh = async () => {
+    setBusy(true); setError("");
+    try {
+      const { error: rpcError } = await supabase.rpc("ai_refresh_insights");
+      if (rpcError) throw new Error(rpcError.message);
+      await load(); await reload?.(); emitToast("AI intelligence refreshed.", "success");
+    } catch (e) { setError(e.message || "Refresh failed."); setBusy(false); }
+  };
+  const search = async (e) => {
+    e?.preventDefault();
+    if (!query.trim()) { setResults([]); return; }
+    setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("ai_natural_language_search", { p_query: query.trim() });
+      if (rpcError) throw new Error(rpcError.message);
+      setResults(data || []); setTab("search");
+    } catch (e) { setError(e.message || "Search failed."); }
+    finally { setBusy(false); }
+  };
+  const saveSettings = async () => {
+    setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("ai_save_settings", { p_enabled: !!settings.enabled, p_sensitivity: settings.sensitivity, p_forecast_period: Number(settings.forecast_period), p_prediction_model: settings.prediction_model });
+      if (rpcError) throw new Error(rpcError.message);
+      setSettings(data || settings); await load(); emitToast("AI settings saved.", "success");
+    } catch (e) { setError(e.message || "Settings could not be saved."); }
+    finally { setBusy(false); }
+  };
+  const openCommand = (label) => {
+    if (label === "Open CRM") return go("leads");
+    if (label === "Open Finance") return go("accounts");
+    if (label === "Open APN") return go("apn");
+    if (label === "Search Partner") return go("apn");
+    if (label === "Search Employee") return go("team");
+    if (label === "Create Lead") return openModal({ type: "lead" });
+    if (label === "Create Quotation") return openModal({ type: "quotation" });
+    if (label === "Create Project") return openModal({ type: "project" });
+    if (label === "Open Client") return go("clients");
+  };
+  const generateReport = async () => {
+    setBusy(true); setError("");
+    try {
+      const { data, error: rpcError } = await supabase.rpc("ai_generate_report", { p_report_type: reportType, p_format: reportFormat });
+      if (rpcError) throw new Error(rpcError.message);
+      const payload = data?.payload || {};
+      if (reportFormat === "json") {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `allbee-ai-${reportType}-${todayISO()}.json`; link.click(); URL.revokeObjectURL(url);
+      } else if (reportFormat === "xlsx") {
+        const rows = (payload.leadScores || []).map((x) => ({ type: "Lead", name: x.customer_name, score: x.ai_lead_score, probability: x.win_probability, risk: x.lost_risk, action: x.next_action }));
+        await exportRowsToExcel(`allbee-ai-${reportType}-${todayISO()}.xlsx`, "AI report", [{ label: "Type", value: (x) => x.type }, { label: "Name", value: (x) => x.name }, { label: "Score", value: (x) => x.score }, { label: "Win probability", value: (x) => x.probability }, { label: "Lost risk", value: (x) => x.risk }, { label: "Next action", value: (x) => x.action }], rows.length ? rows : [{ type: "Summary", name: data?.title || "AI report", score: payload.health?.company_health || 0, probability: "", risk: "", action: "See report payload" }]);
+      } else {
+        const health = payload.health || {};
+        await exportRowsToPDF(`allbee-ai-${reportType}-${todayISO()}.pdf`, `ALLBEE — ${data?.title || "AI report"}`, `Deterministic intelligence · ${fmtDateTime(Date.now())}`, [{ label: "Metric", value: (x) => x.metric }, { label: "Value", value: (x) => x.value }], Object.entries(health).map(([metric, value]) => ({ metric, value })));
+      }
+      await load(); emitToast(`${data?.title || "AI report"} generated.`, "success");
+    } catch (e) { setError(e.message || "Report generation failed."); }
+    finally { setBusy(false); }
+  };
+  const generateTimeline = async (period) => {
+    setBusy(true); setError("");
+    try { const { data, error: rpcError } = await supabase.rpc("ai_generate_timeline", { p_period: period }); if (rpcError) throw new Error(rpcError.message); await load(); emitToast(data?.summary || "AI timeline generated.", "success"); }
+    catch (e) { setError(e.message || "Timeline generation failed."); }
+    finally { setBusy(false); }
+  };
+
+  const h = snapshot?.health || {};
+  const leads = snapshot?.lead_scores || [];
+  const partners = snapshot?.partner_scores || [];
+  const employees = snapshot?.employee_scores || [];
+  const forecasts = snapshot?.forecasts || [];
+  const insights = snapshot?.insights || [];
+  const recommendations = snapshot?.recommendations || [];
+  const healthCards = [["Company health", h.company_health, GaugeCircle], ["Sales health", h.sales_health, TrendingUp], ["Finance health", h.finance_health, Coins], ["Employee health", h.employee_health, Users], ["APN health", h.apn_health, UserCheck], ["CRM health", h.crm_health, Target], ["Profitability", `${Number(h.profitability || 0).toFixed(1)}%`, Wallet], ["Risk score", h.risk_score, ShieldAlert], ["Growth score", h.growth_score, TrendingUp]];
+  const topLeads = leads.slice(0, 8);
+  const topPartners = partners.slice(0, 8);
+  const topEmployees = employees.slice(0, 8);
+  const commands = ["Open CRM", "Open Finance", "Open APN", "Create Lead", "Create Quotation", "Create Project", "Open Client", "Search Partner", "Search Employee"];
+  const tabs = [["overview", "Overview"], ["leads", "Lead AI"], ["partners", "Partner AI"], ["employees", "Employee AI"], ["finance", "Finance AI"], ["search", "Natural search"], ["reports", "Reports"], ["settings", "Settings"]];
+  return (
+    <div className="content">
+      <div className="page-head"><div><h3>AI Intelligence Center</h3><div className="hint-line">Deterministic business intelligence across CRM, finance, employees, APN, revenue, risk and growth.</div></div><span className="spacer" /><button className="btn" onClick={refresh} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} />Refresh intelligence</button></div>
+      {error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}<button className="iconbtn" style={{ marginLeft: "auto", width: 26, height: 26 }} onClick={() => setError("")} aria-label="Dismiss AI error"><X size={14} /></button></div>}
+      {!snapshot ? <div className="cards-grid"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "38%" }} /><div className="skeleton" style={{ height: 90, marginTop: 12 }} /></div><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "55%" }} /><div className="skeleton" style={{ height: 90, marginTop: 12 }} /></div></div> : <>
+        <div className="card" style={{ marginBottom: 14, background: "linear-gradient(135deg,var(--surface),var(--surface-2))" }}><div className="item-row" style={{ padding: 0, alignItems: "flex-start" }}><div className="item-main"><div className="item-title" style={{ fontSize: 18 }}><Sparkles size={18} color="var(--primary)" style={{ verticalAlign: -3, marginRight: 7 }} />Company intelligence at a glance</div><div className="item-meta">Scores are explainable rules over current ERP data. No external AI provider is called.</div></div><span className={`badge ${settings.enabled ? "pos" : "neg"}`}>{settings.enabled ? "Enabled" : "Disabled"}</span></div></div>
+        <div className="seg" style={{ marginBottom: 16, overflowX: "auto" }}>{tabs.map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}{key === "search" && results.length > 0 ? ` · ${results.length}` : ""}</button>)}</div>
+        {tab === "overview" && <>
+          <div className="ai-health-grid" style={{ marginBottom: 14 }}>{healthCards.map(([label, value, Icon]) => <div className="card stat" key={label}><div className="lbl"><Icon size={14} />{label}</div><div className="num mono">{typeof value === "number" ? value : (value || "—")}</div>{typeof value === "number" && <div className="ai-score-bar" style={{ marginTop: 9 }}><i style={{ width: `${Math.max(0,Math.min(100,value))}%` }} /></div>}</div>)}</div>
+          <div className="cards-grid" style={{ gridTemplateColumns: "1.3fr 1fr", alignItems: "start" }}>
+            <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Today's AI alerts</div><div className="item-meta">Risk signals generated from live ERP records.</div></div><AlertTriangle size={16} color="var(--accent)" /></div>{insights.length ? insights.slice(0, 6).map((i) => <div className={`item-row ai-alert ${(i.severity || "").toLowerCase()}`} key={i.id}><div className="item-main"><div className="item-title">{i.title} <span className={`badge ${i.severity === "High" || i.severity === "Urgent" ? "neg" : i.severity === "Medium" ? "accent" : "pri"}`} style={{ marginLeft: 6 }}>{i.severity}</span></div><div className="item-meta">{i.message}</div>{i.recommendation && <div className="hint-line" style={{ marginTop: 5 }}><Lightbulb size={12} style={{ verticalAlign: -2 }} /> {i.recommendation}</div>}</div></div>) : <Empty icon={<CheckCircle2 size={22} />} title="No active alerts" text="The deterministic engine has not found a current high-priority signal." />}</div>
+            <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Business recommendations</div><div className="item-meta">Actionable operating guidance.</div></div><Lightbulb size={16} color="var(--accent)" /></div>{recommendations.slice(0, 5).map((r) => <div className="item-row" key={r.id}><div className="item-main"><div className="item-title">{r.title}</div><div className="item-meta">{r.description}</div></div><span className={`badge ${r.priority === "High" || r.priority === "Urgent" ? "neg" : "accent"}`}>{r.priority}</span></div>)}{!recommendations.length && <Empty icon={<Lightbulb size={22} />} title="Recommendations will appear here" text="Refresh intelligence after CRM or finance activity changes." />}</div>
+          </div>
+          <div className="card" style={{ marginTop: 14 }}><div className="item-row"><div className="item-main"><div className="item-title">AI command bar</div><div className="item-meta">Use these shortcuts to move from insight to action.</div></div><span className="tag">Ctrl K for global search</span></div><div className="ai-command-grid">{commands.map((label) => <button className="ai-command" key={label} onClick={() => openCommand(label)}><ArrowRight size={14} color="var(--primary)" />{label}</button>)}</div></div>
+        </>}
+        {tab === "leads" && <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Lead AI scoring</div><div className="item-meta">Budget, timeline, follow-up, source, customer and partner history.</div></div><span className="badge pri">{leads.length} scored</span></div>{topLeads.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Lead</th><th>Score</th><th>Win probability</th><th>Lost risk</th><th>Reason</th><th>Next action</th></tr></thead><tbody>{topLeads.map((l) => <tr key={l.id}><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => go("leads")}>{l.customer_name}</button><div className="hint-line">{l.lead_number} · {l.status}</div></td><td><b className="mono">{l.ai_lead_score}</b>/100<div className="ai-score-bar" style={{ width: 90, marginTop: 5 }}><i style={{ width: `${l.ai_lead_score}%` }} /></div></td><td className="mono">{l.win_probability}%</td><td className="mono" style={{ color: l.lost_risk >= 60 ? "var(--neg)" : "var(--ink)" }}>{l.lost_risk}%</td><td className="hint-line">{l.reasons || "—"}</td><td><span className="badge accent">{l.next_action}</span></td></tr>)}</tbody></table></div> : <Empty icon={<Target size={22} />} title="No normalized CRM leads" text="Create leads in Leads & pipeline to activate deterministic scoring." />}</div>}
+        {tab === "partners" && <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">APN partner intelligence</div><div className="item-meta">Performance, growth, health, conversion, referrals and withdrawal risk.</div></div><span className="badge accent">{partners.length} partners</span></div>{topPartners.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Partner</th><th>Performance</th><th>Growth</th><th>Health</th><th>Conversion</th><th>Revenue</th><th>Risk</th></tr></thead><tbody>{topPartners.map((p) => <tr key={p.partner_id}><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => go("apn")}>{p.partner_name}</button><div className="hint-line">{p.district} · {p.lead_count} leads</div></td><td className="mono">{p.performance_score}</td><td className="mono">{p.growth_score}</td><td className="mono">{p.health_score}</td><td>{p.conversion_pct}%<div className="hint-line">Follow-up {p.followup_pct}%</div></td><td className="mono">{money(p.revenue)}</td><td><span className={`badge ${p.risk_score >= 50 ? "neg" : p.risk_score >= 25 ? "accent" : "pos"}`}>{p.risk_score}</span></td></tr>)}</tbody></table></div> : <Empty icon={<Users size={22} />} title="No APN partner data" text="Active APN partners will receive deterministic health and growth scores." />}</div>}
+        {tab === "employees" && <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Employee intelligence</div><div className="item-meta">Task completion, revenue, conversion, response activity and attendance.</div></div><span className="badge pri">{employees.length} employees</span></div>{topEmployees.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Employee</th><th>Score</th><th>Tasks</th><th>Lead conversion</th><th>Revenue</th><th>Summary</th></tr></thead><tbody>{topEmployees.map((e) => <tr key={e.employee_id}><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => go("team")}>{e.name}</button><div className="hint-line">{e.designation || ROLE_LABEL[e.role] || e.role}</div></td><td className="mono">{e.performance_score}/100</td><td>{e.completed_tasks}/{e.task_count}<div className="hint-line">{e.task_completion_pct}% complete</div></td><td>{e.converted_leads}/{e.assigned_leads}<div className="hint-line">{e.lead_conversion_pct}%</div></td><td className="mono">{money(e.revenue)}</td><td className="hint-line">{e.performance_summary}</td></tr>)}</tbody></table></div> : <Empty icon={<Users size={22} />} title="No employee activity data" text="Assigned tasks and CRM ownership will appear here." />}</div>}
+        {tab === "finance" && <div className="cards-grid" style={{ gridTemplateColumns: "1.35fr 1fr", alignItems: "start" }}><div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Revenue and profit forecast</div><div className="item-meta">Three-month rolling deterministic forecast.</div></div><TrendingUp size={16} color="var(--primary)" /></div><div className="table-wrap"><table className="tbl"><thead><tr><th>Month</th><th>Revenue</th><th>Expenses</th><th>Profit</th><th>Forecast</th><th>Pending revenue</th></tr></thead><tbody>{forecasts.map((f) => <tr key={f.month_start}><td className="mono">{fmtDate(f.month_start)}</td><td className="mono">{money(f.revenue)}</td><td className="mono">{money(f.expenses)}</td><td className="mono">{money(f.profit)}</td><td className="mono">{money(f.forecast_revenue)}</td><td className="mono">{money(f.pending_revenue)}</td></tr>)}</tbody></table></div></div><div className="card"><div className="item-title">CEO outlook</div><div className="item-meta" style={{ marginTop: 5 }}>Revenue forecast {money(h.forecast_revenue)} · Profit forecast {money(h.forecast_profit)}</div><div className="calc-box" style={{ marginTop: 14 }}><div className="calc-row"><span>Collections</span><b className="mono">{money(forecasts.at(-1)?.collections)}</b></div><div className="calc-row"><span>Outstanding</span><b className="mono">{money(forecasts.at(-1)?.pending_revenue)}</b></div><div className="calc-row"><span>Profitability</span><b className="mono">{Number(h.profitability || 0).toFixed(1)}%</b></div></div></div></div>}
+        {tab === "search" && <div className="card"><form className="toolbar" onSubmit={search} style={{ marginBottom: 10 }}><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Try: today's revenue, pending withdrawals, top partner, lost leads, Chennai" aria-label="Natural language business search" /></div><button className="btn primary" type="submit" disabled={busy}><Search size={14} />Search</button></form>{results.length ? results.map((r) => <button className="item-row" key={`${r.result_type}-${r.result_id}`} style={{ width: "100%", textAlign: "left", border: 0, background: "transparent", cursor: "pointer" }} onClick={() => go(r.route)}><div className="item-main"><div className="item-title">{r.title}</div><div className="item-meta">{r.subtitle || r.result_type}</div></div>{r.value && <span className="badge pri">{r.value}</span>}<ArrowRight size={15} color="var(--muted)" /></button>) : <Empty icon={<Search size={22} />} title="Ask the business" text="Search revenue, withdrawals, earnings, partners, leads, employees, or locations using plain language." />}</div>}
+        {tab === "reports" && <div className="cards-grid" style={{ gridTemplateColumns: "1fr 1fr", alignItems: "start" }}><div className="card"><div className="item-title">Generate AI report</div><div className="item-meta" style={{ margin: "5px 0 14px" }}>Reports use the deterministic snapshot and remain available in AI history.</div><Field label="Report"><select className="select" value={reportType} onChange={(e) => setReportType(e.target.value)}><option value="sales">Sales report</option><option value="finance">Finance report</option><option value="crm">CRM report</option><option value="employee">Employee report</option><option value="partner">Partner report</option></select></Field><Field label="Format"><select className="select" value={reportFormat} onChange={(e) => setReportFormat(e.target.value)}><option value="json">JSON</option><option value="pdf">PDF</option><option value="xlsx">Excel</option></select></Field><button className="btn primary" onClick={generateReport} disabled={busy}><FileText size={15} />Generate report</button></div><div className="card"><div className="item-title">AI timeline</div><div className="item-meta" style={{ margin: "5px 0 14px" }}>Generate a daily, weekly, or monthly operating summary.</div><div className="row-actions"><button className="btn" onClick={() => generateTimeline("daily")} disabled={busy}>Daily</button><button className="btn" onClick={() => generateTimeline("weekly")} disabled={busy}>Weekly</button><button className="btn" onClick={() => generateTimeline("monthly")} disabled={busy}>Monthly</button></div><div style={{ marginTop: 18 }}>{(db.ai_history || []).slice(0, 5).map((x) => <div className="item-row" key={x.id}><div className="item-main"><div className="item-title">{x.period} summary</div><div className="item-meta">{x.summary}</div></div><span className="hint-line">{fmtDate(x.created_at)}</span></div>)}</div></div></div>}
+        {tab === "settings" && <div className="card" style={{ maxWidth: 720 }}><div className="item-title">Intelligence settings</div><div className="item-meta" style={{ margin: "5px 0 16px" }}>Controls deterministic analysis only. External AI providers are not connected.</div><Field label="Enable AI intelligence"><label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={!!settings.enabled} onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })} />Enable deterministic insights, alerts and forecasts</label></Field><Field label="Sensitivity"><select className="select" value={settings.sensitivity || "balanced"} onChange={(e) => setSettings({ ...settings, sensitivity: e.target.value })}><option value="conservative">Conservative</option><option value="balanced">Balanced</option><option value="sensitive">Sensitive</option></select></Field><Field label="Forecast period"><select className="select" value={settings.forecast_period || 90} onChange={(e) => setSettings({ ...settings, forecast_period: Number(e.target.value) })}><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option></select></Field><Field label="Prediction model"><input className="input" value={settings.prediction_model || "deterministic-v1"} onChange={(e) => setSettings({ ...settings, prediction_model: e.target.value })} /></Field><button className="btn primary" onClick={saveSettings} disabled={busy}><Check size={15} />Save settings</button></div>}
+      </>}
+    </div>
+  );
 }
 
 function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
@@ -8002,7 +8171,7 @@ const SEARCH_SOURCES = [
   { coll: "notifications", route: "notifications", label: "Notifications", title: (x) => x.title, date: (x) => msToISO(x.createdAt), filter: (x, c) => notifVisibleTo(x, c.profile) },
 ];
 
-function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask, onClose }) {
+function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask, openModal, onClose }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef(null);
@@ -8019,6 +8188,11 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
     for (const [key, label, , tag] of NAV) {
       if (!allow.has(key)) continue;
       out.push({ id: "nav:" + key, module: "Navigation", route: key, title: label, sub: "", user: "", dateISO: "", path: `Home > ${label}`, text: (label + " " + key).toLowerCase(), navTask: null });
+    }
+    if (isAdmin) {
+      [["Open CRM", "leads"], ["Open Finance", "accounts"], ["Open APN", "apn"], ["Create Lead", "lead"], ["Create Quotation", "quotation"], ["Create Project", "project"], ["Open Client", "clients"], ["Search Partner", "apn"], ["Search Employee", "team"]].forEach(([title, command]) => {
+        out.push({ id: "ai-command:" + command + ":" + title, module: "AI commands", route: command === "lead" || command === "quotation" || command === "project" ? "ai-center" : command, title, sub: "Command bar", user: "", dateISO: "", path: `AI command > ${title}`, text: (title + " command ai").toLowerCase(), command });
+      });
     }
     // people
     if (allow.has("team")) {
@@ -8069,7 +8243,15 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
   useEffect(() => { setSel(0); }, [q]);
   const curSel = Math.min(sel, Math.max(0, results.length - 1));
 
-  const openRec = (r) => { if (!r) return; onClose(); if (r.navTask) openTask(r.navTask); else go(r.route); };
+  const openRec = (r) => {
+    if (!r) return;
+    onClose();
+    if (r.navTask) return openTask(r.navTask);
+    if (r.command === "lead") return openModal?.({ type: "lead" });
+    if (r.command === "quotation") return openModal?.({ type: "quotation" });
+    if (r.command === "project") return openModal?.({ type: "project" });
+    return go(r.route);
+  };
   const onKey = (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
@@ -11123,6 +11305,7 @@ export default function App() {
     Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    Object.keys(AI_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
@@ -11613,6 +11796,7 @@ export default function App() {
           : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} onOpenActivity={setActivityDetail} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
       case "tasks": return <Tasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} />;
       case "assistant": return <AllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} />;
+      case "ai-center": return <AIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
@@ -11822,7 +12006,7 @@ export default function App() {
 
         {activityDetail && <ActivityDetailsDrawer activity={activityDetail} db={db} isSuper={isSuper} onClose={() => setActivityDetail(null)} onRelated={openActivityRelated} />}
 
-        {searchOpen && <GlobalSearch db={db} team={team} profile={profile} role={role} me={me} allowedRoutes={[...allowedRoutes]} go={go} openTask={openTask} onClose={() => setSearchOpen(false)} />}
+        {searchOpen && <GlobalSearch db={db} team={team} profile={profile} role={role} me={me} allowedRoutes={[...allowedRoutes]} go={go} openTask={openTask} openModal={openModal} onClose={() => setSearchOpen(false)} />}
       </div>
     </ErrorBoundary>
   );
