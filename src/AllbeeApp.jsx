@@ -1704,6 +1704,10 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .web-ai-quick button:hover { background:var(--primary); color:#fff; }
 .web-ai-progress { height:4px; background:rgba(255,255,255,.2); }
 .web-ai-progress > i { display:block; height:100%; background:#fff; transition:width .25s ease; }
+.web-ai-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px 14px; background:var(--surface-2); border-bottom:1px solid var(--border); }
+.web-ai-summary div { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.web-ai-summary span { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
+.web-ai-summary b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
 .web-ai-composer { display:flex; align-items:flex-end; gap:8px; padding:11px; border-top:1px solid var(--border); background:var(--surface); }
 .web-ai-composer textarea { flex:1; min-height:42px; max-height:96px; resize:none; }
 .web-ai-estimate { margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); }
@@ -5246,6 +5250,7 @@ const NAV = [
   ["assistant", "ALLBEE AI", Sparkles, "everyone"],
   ["ai-center", "AI Intelligence", Sparkles, "insight"],
   ["knowledge-engine", "Pricing & Knowledge", BookOpen, "admin"],
+  ["requirement-builder", "Requirement Builder", MessageCircle, "admin"],
   ["tasks", "Tasks", ListTodo, "work"],
   ["attendance", "Attendance", UserCheck, "work"],
   ["leave", "Leave", Plane, "leave"],
@@ -5306,7 +5311,7 @@ const NAV_CATEGORY = {
   leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
   announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
-  team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
+  team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", "requirement-builder": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
   profile: "personal", terms: "personal",
 };
 const navCategoryOf = (k) => NAV_CATEGORY[k] || "personal";
@@ -5376,9 +5381,10 @@ function WebSalesConsultant() {
   const messages = payload?.messages || [];
   const state = payload?.state || {};
   const estimate = payload?.estimate;
+  const summary = payload?.summary || {};
   const completed = payload?.status === "completed";
   const disabled = payload?.status === "disabled";
-  const progress = Math.min(100, Math.max(0, Math.round((Number(state.step || 0) / Math.max(1, Number(state.total_questions || 10))) * 100)));
+  const progress = Number.isFinite(Number(summary.progress)) ? Number(summary.progress) : Math.min(100, Math.max(0, Math.round((Number(state.step || 0) / Math.max(1, Number(state.total_questions || 10))) * 100)));
 
   const applyPayload = (data) => {
     if (data && typeof data === "object") {
@@ -5425,8 +5431,8 @@ function WebSalesConsultant() {
     if (estimate.known === false) return `${estimate.disclaimer || "A tailored estimate needs a technical discussion."} ${estimate.next_step || "Our team will follow up."}`;
     return `${estimate.service_label || "Solution"}: ${money(estimate.estimated_cost)}${estimate.disclaimer ? `\n${estimate.disclaimer}` : ""}`;
   };
-  const saveDraft = () => {
-    try { localStorage.setItem("allbee-web-ai-draft", JSON.stringify({ sessionId, payload, savedAt: new Date().toISOString() })); emitToast("Conversation saved on this device.", "success"); }
+  const saveDraft = async () => {
+    try { await supabase.rpc("web_requirement_save_draft", { p_session_id: sessionId, p_draft: { payload, savedAt: new Date().toISOString() } }); localStorage.setItem("allbee-web-ai-draft", JSON.stringify({ sessionId, payload, savedAt: new Date().toISOString() })); emitToast("Conversation saved. You can resume this draft later.", "success"); }
     catch { emitToast("This browser could not save the draft.", "error"); }
   };
   const shareEstimate = (channel) => {
@@ -5445,6 +5451,7 @@ function WebSalesConsultant() {
     {open && <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI sales consultant">
       <header className="web-ai-head"><div className="web-ai-avatar"><Sparkles size={18} /></div><div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>AllBee AI</div><div style={{ fontSize: 11, opacity: .82 }}>Business solution consultant</div></div><button className="iconbtn" style={{ color: "#fff", borderColor: "rgba(255,255,255,.35)" }} onClick={() => setOpen(false)} aria-label="Close AllBee AI"><X size={17} /></button></header>
       <div className="web-ai-progress" aria-label={`Consultation progress ${progress}%`}><i style={{ width: `${progress}%` }} /></div>
+      <div className="web-ai-summary" aria-label="Live requirement summary"><div><span>Business</span><b>{summary.businessType || "Discovering…"}</b></div><div><span>Features</span><b>{Array.isArray(summary.selectedFeatures) ? summary.selectedFeatures.slice(0, 2).join(", ") || "Discovering…" : summary.selectedFeatures || "Discovering…"}</b></div><div><span>Package</span><b>{summary.recommendedPackage || "To be recommended"}</b></div><div><span>Timeline</span><b>{summary.estimatedTimeline || "To be confirmed"}</b></div>{summary.estimatedCost != null && <div><span>Estimate</span><b>{money(summary.estimatedCost)}</b></div>}<div><span>Progress</span><b>{progress}%</b></div></div>
       <div className="web-ai-messages" aria-live="polite">
         {!messages.length && !busy && <div className="web-ai-bubble assistant">{disabled ? "The website consultant is currently offline. Please use the contact options on this page and our team will help you." : config.welcome_message}</div>}
         {messages.map((m, index) => <div key={`${m.id || index}-${m.created_at || ""}`} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "92%" }}><div className={`web-ai-bubble ${m.role === "user" ? "user" : "assistant"}`}>{m.content}</div><div className="web-ai-time" style={{ textAlign: m.role === "user" ? "right" : "left" }}>{m.created_at ? fmtDateTime(m.created_at) : "Now"}{m.role === "assistant" && m.metadata?.quick_replies?.length > 0 && !completed && <div className="web-ai-quick">{m.metadata.quick_replies.map((reply) => <button key={reply} onClick={() => send(reply)} disabled={busy}>{reply}</button>)}</div>}</div></div>)}
@@ -6425,6 +6432,30 @@ function PricingKnowledgeCenter({ isAdmin }) {
     <div className="card"><div className="hint-line" style={{ padding: "0 0 10px" }}>{data.total || 0} records · {busy ? "Loading…" : "DB-backed catalog"}</div>{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Name</th><th>Identifier</th><th>Status</th><th>Details</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id || row.slug}><td><b>{labelOf(row)}</b><div className="hint-line">{row.description || row.answer || row.body || ""}</div></td><td className="mono">{row.slug || row.id || "—"}</td><td><span className={`badge ${row.active === false || row.published === false ? "neg" : "pos"}`}>{row.active === false ? "Archived" : row.published === false ? "Draft" : "Active"}</span></td><td>{row.amount != null ? money(row.amount) : row.billing_model || row.category || row.service_slug || "—"}</td><td><div className="row-actions"><button className="btn sm" onClick={() => openEditor(row)}><Pencil size={13} />Edit</button><button className="btn sm" onClick={() => archive(row)} disabled={busy}>{row.active === false ? "Restore" : "Archive"}</button></div></td></tr>)}</tbody></table></div> : <Empty icon={<BookOpen size={22} />} title={query ? "No matching knowledge" : "No records yet"} text="Create a catalog record or adjust the search to continue." action={!query && <button className="btn primary" onClick={() => openEditor()}><Plus size={15} />Create record</button>} />}{pages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {page} of {pages}</span><button className="btn sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Next</button></div>}</div>
     {editor && <Modal title={`${editor.id ? "Edit" : "New"} ${tabs.find((x) => x[0] === tab)?.[1] || "record"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save record</button></>}><p className="hint-line">Edit the normalized record as JSON. Changes are versioned and audited transactionally.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={editorText} onChange={(e) => setEditorText(e.target.value)} aria-label="Knowledge record JSON" /></Modal>}
   </div>;
+}
+
+function RequirementBuilder({ isAdmin }) {
+  const tabs = [["questions", "Question library"], ["rules", "Conditional rules"], ["analytics", "Completion analytics"]];
+  const [tab, setTab] = useState("questions");
+  const [query, setQuery] = useState("");
+  const [data, setData] = useState({ items: [], total: 0, page_size: 25 });
+  const [summary, setSummary] = useState(null);
+  const [editor, setEditor] = useState(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setBusy(true); setError("");
+    try { const [{ data: list, error: listError }, { data: counts, error: summaryError }] = await Promise.all([supabase.rpc("web_requirement_admin_list", { p_entity: tab, p_search: query, p_page: 1, p_page_size: 50 }), supabase.rpc("web_requirement_admin_summary")]); if (listError) throw new Error(listError.message); if (summaryError) throw new Error(summaryError.message); setData(list || { items: [], total: 0, page_size: 50 }); setSummary(counts || {}); }
+    catch (e) { setError(e.message || "Requirement builder could not load."); }
+    finally { setBusy(false); }
+  }, [isAdmin, query, tab]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const channel = supabase.channel("web-requirement-builder").on("postgres_changes", { event: "*", schema: "public", table: "web_requirement_questions" }, load).on("postgres_changes", { event: "*", schema: "public", table: "web_requirement_question_rules" }, load).subscribe(); return () => { supabase.removeChannel(channel); }; }, [load]);
+  const save = async () => { let payload; try { payload = JSON.parse(text); } catch { setError("Enter valid JSON."); return; } setBusy(true); try { const { error: saveError } = await supabase.rpc("web_requirement_admin_save", { p_entity: tab === "questions" ? "questions" : "rules", p_payload: payload }); if (saveError) throw new Error(saveError.message); setEditor(null); await load(); emitToast("Requirement builder record saved.", "success"); } catch (e) { setError(e.message || "Could not save the requirement builder record."); } finally { setBusy(false); } };
+  if (!isAdmin) return <div className="content"><div className="card"><Empty icon={<ShieldAlert size={22} />} title="Admin access required" text="Requirement Builder is restricted to administrators." /></div></div>;
+  return <div className="content"><div className="page-head"><div><h3><MessageCircle size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Requirement Builder</h3><div className="hint-line">Configure adaptive questions and rules without changing the conversation engine.</div></div><span className="spacer" /><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button>{tab !== "analytics" && <button className="btn primary" onClick={() => { setEditor({}); setText(JSON.stringify(tab === "questions" ? { prompt: "", question_key: "", question_type: "text", choices: [], active: true, sort_order: 0 } : { question_id: "", condition_key: "service", operator: "equals", condition_value: "", action: "show", active: true }, null, 2)); }}><Plus size={15} />Add</button>}</div>{error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}</div>}<div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Sessions",summary?.sessions],["Active",summary?.active],["Completed",summary?.completed],["Abandoned",summary?.abandoned],["Average completion",`${summary?.average_completion || 0}%`]].map(([label,value]) => <div className="card stat" key={label}><div className="lbl"><Activity size={14} />{label}</div><div className="num mono">{value ?? "—"}</div></div>)}</div><div className="seg" style={{ marginBottom: 12 }}>{tabs.map(([key,label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</div><div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search questions, rules, or events…" aria-label="Search requirement builder" /></div></div><div className="card">{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Record</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id}><td><b>{row.prompt || row.question_slug || row.event || "Record"}</b><div className="hint-line mono">{row.slug || row.id}</div></td><td>{row.condition_key ? `${row.condition_key} ${row.operator} ${row.condition_value}` : row.completion_percent != null ? `${row.completion_percent}% · ${row.service_slug || "—"}` : row.question_type || "—"}</td><td><span className={`badge ${row.active === false ? "neg" : "pos"}`}>{row.active === false ? "Disabled" : "Active"}</span></td><td>{tab !== "analytics" && <button className="btn sm" onClick={() => { setEditor(row); setText(JSON.stringify(row, null, 2)); }}><Pencil size={13} />Edit</button>}</td></tr>)}</tbody></table></div> : <Empty icon={<MessageCircle size={22} />} title="No records" text="Add a configurable question or rule, or wait for conversations to generate analytics." />}</div>{editor && <Modal title={`Edit ${tab === "questions" ? "question" : "rule"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save</button></>}><p className="hint-line">Changes are applied transactionally, audited, and picked up by active conversations on their next response.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Requirement builder JSON" /></Modal>}</div>;
 }
 
 function EnterpriseCRM({ db, team = [], me, isAdmin, reload }) {
@@ -12044,6 +12075,7 @@ export default function App() {
       case "assistant": return <AllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} />;
       case "ai-center": return <AIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} />;
       case "knowledge-engine": return <PricingKnowledgeCenter isAdmin={isAdmin} />;
+      case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
       case "attendance": return <Attendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} />;
       case "leave": return <Leave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} />;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
