@@ -1247,6 +1247,7 @@ const CSS = `
 .badge.neg { background:var(--neg-soft); color:var(--neg); }
 .badge.pri { background:var(--primary-soft); color:var(--primary); }
 .badge.accent { background:rgba(234,164,23,.16); color:var(--accent); }
+.action-badge { min-width:18px; padding:2px 6px; background:var(--neg); color:#fff; font-size:10px; line-height:16px; text-align:center; }
 
 table.tbl { width:100%; border-collapse:collapse; font-size:13.5px; }
 table.tbl th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
@@ -1769,18 +1770,32 @@ function ToastHost() {
     window.addEventListener("allbee-toast", onToast);
     return () => window.removeEventListener("allbee-toast", onToast);
   }, []);
-  useEffect(() => {
-    const timers = items.filter((item) => item.duration > 0).map((item) => setTimeout(() => setItems((current) => current.filter((x) => x.id !== item.id)), item.duration));
-    return () => timers.forEach(clearTimeout);
-  }, [items]);
-  return <div className="toast-viewport" aria-live="polite" aria-atomic="false">{items.map((item) => {
-    const Icon = item.type === "success" ? Check : item.type === "warning" || item.type === "error" ? AlertTriangle : Bell;
-    return <div key={item.id} className={`toast ${item.type}`} role={item.type === "error" ? "alert" : "status"}>
-      <Icon className="toast-icon" size={17} aria-hidden="true" />
-      <div className="toast-body">{item.message}</div>
-      <button type="button" className="toast-close" aria-label="Dismiss notification" onClick={() => setItems((current) => current.filter((x) => x.id !== item.id))}><X size={15} /></button>
-    </div>;
-  })}</div>;
+  return <div className="toast-viewport" aria-live="polite" aria-atomic="false">{items.map((item) => <ToastCard key={item.id} item={item} onDismiss={() => setItems((current) => current.filter((x) => x.id !== item.id))} />)}</div>;
+}
+
+function ToastCard({ item, onDismiss }) {
+  const timerRef = useRef(null);
+  const remainingRef = useRef(item.duration);
+  const startedRef = useRef(0);
+  const schedule = () => {
+    if (remainingRef.current <= 0 || item.duration <= 0) return;
+    startedRef.current = Date.now();
+    timerRef.current = setTimeout(onDismiss, remainingRef.current);
+  };
+  useEffect(() => { schedule(); return () => clearTimeout(timerRef.current); }, [item.id]);
+  const pause = () => {
+    if (!timerRef.current) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+    remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startedRef.current));
+  };
+  const resume = () => { if (!timerRef.current) schedule(); };
+  const Icon = item.type === "success" ? Check : item.type === "warning" || item.type === "error" ? AlertTriangle : Bell;
+  return <div className={`toast ${item.type}`} role={item.type === "error" ? "alert" : "status"} onMouseEnter={pause} onMouseLeave={resume}>
+    <Icon className="toast-icon" size={17} aria-hidden="true" />
+    <div className="toast-body">{item.message}</div>
+    <button type="button" className="toast-close" aria-label="Dismiss notification" onClick={onDismiss}><X size={15} /></button>
+  </div>;
 }
 
 function SearchableSelect({ options = [], value, onChange, placeholder = "Choose…", disabled = false, ariaLabel, id }) {
@@ -2024,19 +2039,33 @@ function Avatar({ name, url, size = 26, fontSize, style }) {
 /* ══════════════════════════════════════════════════════════════════════
    FORMS
 ══════════════════════════════════════════════════════════════════════ */
-function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProjects = [] }) {
+function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProjects = [], apnPartners = [] }) {
   const isIncome = kind === "income";
+  const initialProject = initial?.apnProjectId ? apnProjects.find((project) => project.id === initial.apnProjectId) : null;
   const [f, setF] = useState(() => {
-    const base = { client: "", project: "", amount: "", date: todayISO(), category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "", ...initial };
+    const base = { client: "", project: "", amount: "", date: todayISO(), category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "", incomeSource: initial?.incomeSource || (initial?.apnProjectId ? "apn" : "normal"), apnProjectId: initial?.apnProjectId || "", apnPartnerId: initialProject?.partnerId || "", apnProjectName: initialProject?.projectName || "", apnClientName: initialProject?.clientName || "", apnProjectValue: initialProject?.projectValue || "", apnCommissionRate: initialProject?.commissionRate ?? "", ...initial };
     // New expenses default to the shared "company" bucket; legacy edits stay
     // manual ("project") so historical splits are never silently rewritten.
     if (!isIncome) base.scope = initial?.scope || (initial?.id ? "project" : "company");
     return base;
   });
+  const [apnCollections, setApnCollections] = useState(() => {
+    const existing = initial?.apnProjectId ? (db?.apn_revenue_collections || []).filter((row) => row.projectId === initial.apnProjectId) : [];
+    return existing.length ? existing.map((row) => ({ ...row })) : [{ id: initial?.apnCollectionId || uid(), receivedAmount: initial?.amount || "", incentive: "", remarks: initial?.notes || "", receivedDate: initial?.date || todayISO() }];
+  });
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setSplit = (h) => setF((s) => ({ ...s, hajiPct: h, alimPct: 100 - h }));
+  const isAPNIncome = isIncome && f.incomeSource === "apn";
+  const apnPartner = apnPartners.find((partner) => partner.id === f.apnPartnerId);
+  const apnRelationship = (db?.apn_referral_relationships || []).find((relationship) => relationship.referred_id === f.apnPartnerId && relationship.status === "active");
+  const apnReferrer = apnPartners.find((partner) => partner.id === apnRelationship?.referrer_id);
+  const setApnCollection = (id, key, value) => setApnCollections((rows) => rows.map((row) => row.id === id ? { ...row, [key]: value } : row));
+  const apnTotal = round2(apnCollections.reduce((sum, row) => sum + Math.max(0, Number(row.receivedAmount) || 0), 0));
+  const apnProjectValue = Number(f.apnProjectValue) || 0;
+  const apnRate = Number(f.apnCommissionRate) || 0;
+  const apnMax = round2(apnProjectValue * apnRate / 100);
 
   // Company expenses derive their split from the previous valid revenue month.
   const isCompany = !isIncome && f.scope === "company";
@@ -2045,21 +2074,24 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
     if (isCompany) setF((s) => (Number(s.hajiPct) === plan.haji && Number(s.alimPct) === plan.alim ? s : { ...s, hajiPct: plan.haji, alimPct: plan.alim }));
   }, [isCompany, plan.haji, plan.alim]);
 
-  const amt = Number(f.amount) || 0;
+  const amt = isAPNIncome ? apnTotal : Number(f.amount) || 0;
   const sum = (Number(f.hajiPct) || 0) + (Number(f.alimPct) || 0);
   const splitOK = sum === 100;
-  const valid = amt > 0 && (isCompany || splitOK) && f.date;
+  const valid = amt > 0 && (isCompany || splitOK) && f.date && (!isAPNIncome || (apnPartner && f.apnProjectName?.trim() && f.apnClientName?.trim() && String(f.apnProjectValue).trim() !== "" && String(f.apnCommissionRate).trim() !== "" && apnProjectValue > 0 && apnRate >= 0 && apnRate <= 100 && apnTotal <= apnProjectValue && apnCollections.every((row) => Number(row.receivedAmount) > 0 && row.receivedDate)));
   const hShare = round2((amt * (Number(f.hajiPct) || 0)) / 100);
   const aShare = round2((amt * (Number(f.alimPct) || 0)) / 100);
 
   const save = async () => {
     setTouched(true);
     if (!valid) return;
+    if (isAPNIncome && apnCollections.some((row) => !Number.isFinite(Number(row.receivedAmount)) || Number(row.receivedAmount) <= 0)) return;
+    if (isAPNIncome && apnCollections.some((row) => !Number.isFinite(Number(row.incentive || 0)) || Number(row.incentive || 0) < 0)) return;
     const payload = {
       ...initial, id: initial?.id || uid(), kind, client: f.client.trim(), project: f.project.trim(),
       amount: amt, date: f.date, category: f.category, hajiPct: Number(f.hajiPct), alimPct: Number(f.alimPct),
       notes: f.notes.trim(), apnProjectId: isIncome ? (f.apnProjectId || null) : null, createdAt: initial?.createdAt || Date.now(),
     };
+    if (isAPNIncome) Object.assign(payload, { client: f.apnClientName.trim(), project: f.apnProjectName.trim(), amount: apnTotal, date: apnCollections[0]?.receivedDate || f.date, incomeSource: "apn", apnProjectId: f.apnProjectId || uid(), apnPartnerId: f.apnPartnerId, apnProjectName: f.apnProjectName.trim(), apnClientName: f.apnClientName.trim(), apnProjectValue, apnCommissionRate: apnRate, apnCollections: apnCollections.map((row) => ({ ...row, receivedAmount: Number(row.receivedAmount), incentive: Number(row.incentive || 0), remarks: String(row.remarks || "").trim() })) });
     if (!isIncome) { payload.scope = f.scope; payload.shareSource = isCompany ? (plan.fallback ? null : plan.sourcePeriod) : null; }
     setSaving(true);
     try { const result = await onSave(payload); if (result !== false) onClose(); }
@@ -2070,16 +2102,24 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
     <Modal title={(initial?.id ? "Edit " : "Add ") + (isIncome ? "income" : "expense")} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" onClick={save} disabled={!valid || saving}><Check size={16} />{saving ? "Saving…" : isIncome ? "Add income" : "Add expense"}</button></>}>
+      {isIncome && <Field label="Income source" required><div className="seg" style={{ display: "inline-flex" }}><button type="button" className={f.incomeSource !== "apn" ? "on" : ""} onClick={() => setF((state) => ({ ...state, incomeSource: "normal", apnProjectId: "" }))}>Normal income</button><button type="button" className={f.incomeSource === "apn" ? "on" : ""} onClick={() => up("incomeSource", "apn")}>APN commission project</button></div></Field>}
+      {isAPNIncome ? <>
+        <div className="grid2"><Field label="Partner" required><SearchableSelect value={f.apnPartnerId} onChange={(value) => up("apnPartnerId", value)} disabled={!!initial?.apnProjectId} ariaLabel="APN income partner" options={apnPartners.map((partner) => ({ value: partner.id, label: partner.name, meta: apnIdFor(partner) }))} /></Field><Field label="Referral"><SearchableSelect value={apnRelationship?.referrer_id || ""} disabled ariaLabel="Direct referral partner" options={[{ value: "", label: apnReferrer ? apnReferrer.name : "No direct referral" }, ...(apnReferrer ? [{ value: apnReferrer.id, label: apnReferrer.name, meta: "Direct referral" }] : [])]} /></Field></div>
+        <div className="grid2"><Field label="Project name" required><input className="input" value={f.apnProjectName} onChange={(e) => up("apnProjectName", e.target.value)} placeholder="Website redesign" /></Field><Field label="Client name" required><input className="input" value={f.apnClientName} onChange={(e) => up("apnClientName", e.target.value)} placeholder="Client" /></Field></div>
+        <div className="grid2"><Field label="Project value" required><input className="input mono" type="number" min="0" value={f.apnProjectValue} onChange={(e) => up("apnProjectValue", e.target.value)} placeholder="100000" /></Field><Field label="Commission %" required><input className="input mono" type="number" min="0" max="100" value={f.apnCommissionRate} onChange={(e) => up("apnCommissionRate", e.target.value)} placeholder="10" /></Field></div>
+        <div className="calc-box"><div className="calc-row"><span>Maximum commission</span><b className="mono">{money(apnMax)}</b></div><div className="calc-row"><span>New collections</span><b className="mono">{money(apnTotal)}</b></div><div className="calc-row"><span>Status</span><span className={"badge " + (apnTotal >= apnProjectValue && apnProjectValue > 0 ? "pos" : "accent")}>{apnTotal >= apnProjectValue && apnProjectValue > 0 ? "Completed" : "Processing"}</span></div></div>
+        <div className="apn-section-head" style={{ marginTop: 12 }}><h4 style={{ margin: 0 }}>Collections</h4><button className="btn sm" type="button" onClick={() => setApnCollections((rows) => [...rows, { id: uid(), receivedAmount: "", incentive: "", remarks: "", receivedDate: todayISO() }])}><Plus size={13} />Add collection</button></div>
+        <div className="apn-list">{apnCollections.map((row, index) => <div className="apn-rowcard" key={row.id} style={{ padding: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><b style={{ flex: 1 }}>Collection {index + 1}</b>{apnCollections.length > 1 && <button className="iconbtn" type="button" style={{ width: 28, height: 28 }} aria-label={`Remove collection ${index + 1}`} onClick={() => setApnCollections((rows) => rows.filter((item) => item.id !== row.id))}><Trash2 size={13} /></button>}</div><div className="grid2"><Field label="Received amount" required><input className="input mono" type="number" min="0" value={row.receivedAmount} onChange={(e) => setApnCollection(row.id, "receivedAmount", e.target.value)} placeholder="50000" /></Field><Field label="Received date" required><input className="input" type="date" value={row.receivedDate || ""} onChange={(e) => setApnCollection(row.id, "receivedDate", e.target.value)} /></Field></div><div className="grid2"><Field label="Incentive"><input className="input mono" type="number" min="0" value={row.incentive} onChange={(e) => setApnCollection(row.id, "incentive", e.target.value)} placeholder="0" /></Field><Field label="Remarks"><input className="input" value={row.remarks || ""} onChange={(e) => setApnCollection(row.id, "remarks", e.target.value)} placeholder="Payment reference or note" /></Field></div></div>)}</div>
+      </> : <>
+        <div className="grid2"><Field label="Client name"><input className="input" value={f.client} onChange={(e) => up("client", e.target.value)} placeholder="e.g. Sun Textiles" /></Field>
+          <Field label={isIncome ? "Project / source" : "Project (optional)"}><input className="input" value={f.project} onChange={(e) => up("project", e.target.value)} placeholder={isIncome ? "Website redesign" : "Tied to a project?"} /></Field></div>
+        {isIncome && apnProjects.length > 0 && <div className="field"><label>APN collection link <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><SearchableSelect value={f.apnProjectId || ""} onChange={(value) => up("apnProjectId", value)} ariaLabel="Link income to an APN commission project" options={[{ value: "", label: "No APN link" }, ...apnProjects.map((p) => ({ value: p.id, label: `${p.projectName} · ${p.clientName}`, meta: `${money(p.remainingAmount)} remaining · ${p.partnerName || "Partner"}` }))]} /><div className="hint-line" style={{ marginTop: 5 }}>Links this income receipt to the selected APN collection. The APN engine remains the source for commission calculations.</div></div>}
+      </>}
       <div className="grid2">
-        <Field label="Client name"><input className="input" value={f.client} onChange={(e) => up("client", e.target.value)} placeholder="e.g. Sun Textiles" /></Field>
-        <Field label={isIncome ? "Project / source" : "Project (optional)"}><input className="input" value={f.project} onChange={(e) => up("project", e.target.value)} placeholder={isIncome ? "Website redesign" : "Tied to a project?"} /></Field>
-      </div>
-      {isIncome && apnProjects.length > 0 && <div className="field"><label>APN collection link <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><SearchableSelect value={f.apnProjectId || ""} onChange={(value) => up("apnProjectId", value)} ariaLabel="Link income to an APN commission project" options={[{ value: "", label: "No APN link" }, ...apnProjects.map((p) => ({ value: p.id, label: `${p.projectName} · ${p.clientName}`, meta: `${money(p.remainingAmount)} remaining · ${p.partnerName || "Partner"}` }))]} /><div className="hint-line" style={{ marginTop: 5 }}>Links this income receipt to the selected APN collection. The APN engine remains the source for commission calculations.</div></div>}
-      <div className="grid2">
-        <Field label={isIncome ? "Income amount" : "Expense amount"} required error={touched && amt <= 0 ? "Enter an amount above ₹0" : ""}>
-          <input className="input mono" type="number" min="0" value={f.amount} onChange={(e) => up("amount", e.target.value)} placeholder="10000" />
+        <Field label={isAPNIncome ? "Total income amount" : isIncome ? "Income amount" : "Expense amount"} required error={touched && amt <= 0 ? "Enter an amount above ₹0" : ""}>
+          <input className="input mono" type="number" min="0" value={isAPNIncome ? apnTotal : f.amount} onChange={(e) => up("amount", e.target.value)} placeholder="10000" readOnly={isAPNIncome} />
         </Field>
-        <Field label="Date" required><input className="input" type="date" value={f.date} onChange={(e) => up("date", e.target.value)} /></Field>
+        <Field label={isAPNIncome ? "Posting date" : "Date"} required><input className="input" type="date" value={isAPNIncome ? (apnCollections[0]?.receivedDate || f.date) : f.date} onChange={(e) => up("date", e.target.value)} readOnly={isAPNIncome} /></Field>
       </div>
       {!isIncome && (
         <Field label="Expense type" hint={isCompany ? "Company costs are shared automatically from your revenue split." : "Project & client costs keep their own manual split."}>
@@ -10118,7 +10158,8 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={reload} />
         <button className="iconbtn" style={{ width: 34, height: 34 }} onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
-        <button className="iconbtn" style={{ width: 34, height: 34, position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unreadNotif}</span>}</button>
+        <button className="iconbtn" style={{ width: 34, height: 34, position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
+        <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
       <div className="apn-body">{section()}</div>
@@ -10140,7 +10181,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
             <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}><div id="apn-more-title" style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>More</div><button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => setMoreOpen(false)} aria-label="Close more menu" title="Close more menu"><X size={16} /></button></div>
             <div className="apn-more-grid">
               {moreItems.map(([k, l, ic, badge]) => (
-                <button key={k} className="apn-more-item" style={{ position: "relative" }} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge pri" style={{ position: "absolute", top: 8, right: 8, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{badge}</span>}</button>
+                <button key={k} className="apn-more-item" style={{ position: "relative" }} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge action-badge" style={{ position: "absolute", top: 8, right: 8 }}>{badge > 99 ? "99+" : badge}</span>}</button>
               ))}
             </div>
           </div>
@@ -10920,7 +10961,7 @@ function APNCommissionEntry({ db, partners, initial, onSave, onClose }) {
   </Modal>;
 }
 
-function APNAdminCommissions({ db, setCommStatus, openProject }) {
+function APNAdminCommissions({ db, setCommStatus, openProject, onDelete }) {
   const [view, setView] = useState("all");
   const projects = apnCommissionProjectsOf(db).map((project) => apnProjectSummary(db, project)).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
   const legacy = (db.apn_commissions || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -10935,7 +10976,7 @@ function APNAdminCommissions({ db, setCommStatus, openProject }) {
       <div className="card" style={{ marginBottom: 14 }}>
         <div className="apn-section-head"><h4 style={{ margin: 0 }}>Commission projects</h4><span className="hint-line">{projectList.length} project{projectList.length === 1 ? "" : "s"}</span></div>
         {projectList.length === 0 ? <Empty icon={<Coins size={22} color="var(--muted)" />} title="No commission projects" text="Create a project, then record each client payment as it arrives." />
-          : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Project / client</th><th className="num-cell">Value</th><th className="num-cell">Received</th><th className="num-cell">Commission</th><th>Collections</th><th>Status</th><th></th></tr></thead><tbody>{projectList.map((project) => <tr key={project.id}><td>{partnerName(project.partnerId)}</td><td><div style={{ fontWeight: 600 }}>{project.projectName}</div><div className="hint-line" style={{ fontSize: 11 }}>{project.clientName} · {project.category || "—"}</div></td><td className="num-cell mono">{money(project.projectValue)}</td><td className="num-cell mono">{money(project.totalReceived)}<div className="hint-line" style={{ fontSize: 11 }}>remaining {money(project.remainingAmount)}</div></td><td className="num-cell mono"><b>{money(project.commissionEarned)}</b><div className="hint-line" style={{ fontSize: 11 }}>{project.commissionRate}% · pending {money(project.remainingCommission)}</div></td><td className="mono">{project.collections.length}</td><td><span className={"badge " + (project.status === "Completed" ? "pos" : project.status === "Cancelled" ? "neg" : project.status === "Processing" ? "accent" : "")}>{project.status}</span></td><td><button className="btn sm" onClick={() => openProject(project)}><Pencil size={13} />Manage</button></td></tr>)}</tbody></table></div>}
+          : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Project / client</th><th className="num-cell">Value</th><th className="num-cell">Received</th><th className="num-cell">Commission</th><th>Collections</th><th>Status</th><th></th></tr></thead><tbody>{projectList.map((project) => <tr key={project.id}><td>{partnerName(project.partnerId)}</td><td><div style={{ fontWeight: 600 }}>{project.projectName}</div><div className="hint-line" style={{ fontSize: 11 }}>{project.clientName} · {project.category || "—"}</div></td><td className="num-cell mono">{money(project.projectValue)}</td><td className="num-cell mono">{money(project.totalReceived)}<div className="hint-line" style={{ fontSize: 11 }}>remaining {money(project.remainingAmount)}</div></td><td className="num-cell mono"><b>{money(project.commissionEarned)}</b><div className="hint-line" style={{ fontSize: 11 }}>{project.commissionRate}% · pending {money(project.remainingCommission)}</div></td><td className="mono">{project.collections.length}</td><td><span className={"badge " + (project.status === "Completed" ? "pos" : project.status === "Cancelled" ? "neg" : project.status === "Processing" ? "accent" : "")}>{project.status}</span></td><td><div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}><button className="btn sm" onClick={() => openProject(project)}><Pencil size={13} />Manage</button>{onDelete && <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => onDelete(project)} aria-label={`Delete commission project ${project.projectName}`} title="Delete commission project"><Trash2 size={14} /></button>}</div></td></tr>)}</tbody></table></div>}
       </div>
       {legacyList.length > 0 && <div className="card"><div className="apn-section-head"><h4 style={{ margin: 0 }}>Legacy commission entries</h4><span className="hint-line">Existing APN commission records remain supported.</span></div><div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Project</th><th className="num-cell">Amount</th><th>Payout</th><th>Status</th></tr></thead><tbody>{legacyList.map((c) => <tr key={c.id}><td>{partnerName(c.partnerId)}{c.kind === "district" && <span className="badge" style={{ marginLeft: 5 }}>District 1%</span>}</td><td>{c.project}<div className="hint-line" style={{ fontSize: 11 }}>{money(c.revenue)} · {c.rate}%</div></td><td className="num-cell mono" style={{ fontWeight: 700 }}>{money(c.amount)}</td><td className="mono" style={{ fontSize: 12 }}>{fmtDate(c.payoutDate)}</td><td><select className="select" style={{ width: "auto", padding: "4px 6px" }} value={c.status} onChange={(e) => setCommStatus(c, e.target.value)}>{APN_COMM_STATUS.map((s) => <option key={s}>{s}</option>)}</select></td></tr>)}</tbody></table></div></div>}
     </div>
@@ -11368,7 +11409,20 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     const notification = collectionRows.length
       ? { title: "Revenue collection recorded", body: `${money(project.totalReceived)} received for ${project.projectName}. Commission credited: ${money(project.commissionEarned)}.` }
       : { title: "Commission project created", body: `${project.projectName} was added with a maximum commission of ${money(project.maximumCommission)}.` };
-    mutateApn((d) => ({ ...d, apn_commission_projects: projectRows, apn_revenue_collections: [...(d.apn_revenue_collections || []).filter((row) => row.projectId !== project.id), ...collectionRows], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ ...notification, audience: `partner:${project.partnerId}`, level: "Important" }))] }), { ...M(`${project.createdAt === project.updatedAt ? "created" : "updated"} APN commission project "${project.projectName}"`, project.partnerId, null, project), entity: "APN Commission Project", entityId: project.id }, [statusEvent, ...collectionEvents]);
+    mutateApn((d) => ({ ...d, apn_commission_projects: projectRows, apn_revenue_collections: [...(d.apn_revenue_collections || []).filter((row) => row.projectId !== project.id), ...collectionRows], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ ...notification, metadata: { projectId: project.id }, audience: `partner:${project.partnerId}`, level: "Important" }))] }), { ...M(`${project.createdAt === project.updatedAt ? "created" : "updated"} APN commission project "${project.projectName}"`, project.partnerId, null, project), entity: "APN Commission Project", entityId: project.id }, [statusEvent, ...collectionEvents]);
+  });
+  const deleteCommissionProject = (project) => withActionError(async () => {
+    if (!isSuper) throw new Error("Only a Super Admin can delete commission projects.");
+    const { error } = await supabase.rpc("delete_apn_commission_project", { p_project_id: project.id });
+    if (error) throw new Error(error.message);
+    mutate((d) => ({ ...d,
+      apn_commission_projects: (d.apn_commission_projects || []).filter((row) => row.id !== project.id),
+      apn_revenue_collections: (d.apn_revenue_collections || []).filter((row) => row.projectId !== project.id),
+      transactions: (d.transactions || []).filter((row) => row.apnProjectId !== project.id),
+      apn_notifications: (d.apn_notifications || []).filter((row) => row.metadata?.projectId !== project.id),
+      apn_timeline: (d.apn_timeline || []).filter((row) => !String(row.id || "").includes(`commission-project:${project.id}`) && !String(row.id || "").includes(`commission-project-completed:${project.id}`)),
+    }), { ...M(`deleted APN commission project "${project.projectName}"`, project.partnerId, project, null), entity: "APN Commission Project", entityId: project.id });
+    emitToast("Commission project deleted.", "success");
   });
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" }))] }), M(`assigned APN target "${t.title}"`));
   const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));
@@ -11497,7 +11551,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={(project) => setModal({ type: "confirm", title: "Delete this commission project?", body: "This action cannot be undone.", confirmLabel: "Delete project", onConfirm: () => deleteCommissionProject(project) })} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
@@ -11957,6 +12011,31 @@ export default function App() {
       ? ` · company split ${entry.hajiPct}/${entry.alimPct}${entry.shareSource ? ` (from ${fmtPeriod(entry.shareSource)} revenue)` : " — even split, no revenue yet"}`
       : "";
     try {
+      const existingApnProject = entry.apnProjectId && (db.apn_commission_projects || []).find((row) => row.id === entry.apnProjectId);
+      if (entry.kind === "income" && entry.incomeSource === "apn" && !existingApnProject) {
+        const partner = (db.apn_users || []).find((row) => row.id === entry.apnPartnerId && row.status === "active");
+        if (!partner) throw new Error("Select an active APN partner.");
+        const collections = (entry.apnCollections || []).map((row) => ({ ...row, projectId: entry.apnProjectId, partnerId: partner.id, receivedAmount: Number(row.receivedAmount) || 0, incentive: Number(row.incentive || 0), receivedDate: row.receivedDate || entry.date, createdBy: row.createdBy || currentUser, createdAt: row.createdAt || Date.now(), commissionStatus: row.commissionStatus || "Pending" }));
+        let received = 0; let earned = 0;
+        const value = Number(entry.apnProjectValue) || 0;
+        const rate = Number(entry.apnCommissionRate) || 0;
+        const maximum = round2(value * rate / 100);
+        const normalizedCollections = collections.map((row) => {
+          if (row.receivedAmount <= 0) throw new Error("Collection amounts must be greater than zero.");
+          if (row.incentive < 0) throw new Error("Incentives cannot be negative.");
+          received += row.receivedAmount;
+          if (received > value) throw new Error("Collections cannot exceed the APN project value.");
+          const commissionGenerated = round2(Math.min(Math.max(0, maximum - earned), row.receivedAmount * rate / 100));
+          earned += commissionGenerated;
+          return { ...row, commissionGenerated };
+        });
+        const project = { id: entry.apnProjectId, partnerId: partner.id, partnerName: partner.name, projectName: entry.apnProjectName.trim(), clientName: entry.apnClientName.trim(), category: entry.category || "website", projectValue: value, commissionRate: rate, maximumCommission: maximum, totalReceived: round2(received), totalCommissionPaid: 0, remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, maximum - earned)), status: received >= value ? "Completed" : "Processing", remarks: entry.notes || "Finance income receipt", createdBy: currentUser, createdAt: entry.createdAt || Date.now(), updatedAt: Date.now() };
+        const { error } = await supabase.rpc("create_apn_income_transaction", { p_transaction: { ...entry, amount: round2(received), apnProjectId: project.id, apnCollectionIds: normalizedCollections.map((row) => row.id) }, p_project: project, p_collections: normalizedCollections });
+        if (error) throw new Error(error.message);
+        await reload();
+        emitToast("Income recorded and APN commission project created.", "success");
+        return true;
+      }
       let linkedProject = null;
       let linkedCollections = null;
       let savedEntry = entry;
@@ -12147,13 +12226,29 @@ export default function App() {
     taskDetailId ? (detailTask ? detailTask.title : "Task") :
     NAV.find((n) => n[0] === safeRoute)?.[1] || "";
   const myPending = db.tasks.filter((t) => t.status !== "Completed" && (isAdmin || isTaskAssignee(t, me))).length;
-  const apnPendingCount = isAdmin ? (db.apn_users || []).filter((u) => u.status === "pending").length : 0;
-  const pendingLeave = isAdmin ? db.leave.filter((l) => l.status === "Pending").length : 0;
   const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
   const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
   const portalClients = team.filter((p) => p.role === "client");
   const financeApnProjects = (db.apn_commission_projects || []).map((project) => apnProjectSummary(db, project)).filter((project) => project.status !== "Cancelled");
   const unseenAnn = db.announcements.filter((a) => !profile?.notif_seen_at || (a.createdAt || 0) > new Date(profile.notif_seen_at).getTime()).length;
+  const financeApnPartners = (db.apn_users || []).filter((partner) => partner.status === "active");
+  const actionCounts = (() => {
+    const pending = (value) => ["pending", "Pending", "under_review", "processing", "Pending approval"].includes(value);
+    const apnApprovals = (db.apn_users || []).filter((row) => row.status === "pending").length;
+    const apnWithdrawals = (db.apn_withdrawal_requests || []).filter((row) => pending(row.status)).length;
+    const apnCommissionApprovals = (db.apn_revenue_collections || []).filter((row) => pending(row.commissionStatus)).length + (db.apn_commissions || []).filter((row) => pending(row.status)).length;
+    const apnReferrals = (db.apn_referral_relationships || []).filter((row) => row.status === "active" && (db.apn_users || []).some((partner) => partner.id === row.referred_id && partner.status === "pending")).length;
+    const apnTraining = (db.apn_training || []).filter((row) => pending(row.status || row.approvalStatus)).length;
+    const apnMaterials = (db.apn_documents || []).filter((row) => pending(row.status || row.approvalStatus)).length;
+    const crmQuotations = (db.crm_quotations || []).filter((row) => pending(row.approval_status || row.status)).length + (db.quotations || []).filter((row) => pending(row.approvalStatus || row.status)).length;
+    const crmFollowUps = (db.crm_follow_ups || []).filter((row) => pending(row.status)).length;
+    const financeSettlements = (db.apn_withdrawal_batches || []).filter((row) => pending(row.status)).length + apnWithdrawals;
+    const taskApprovals = (db.tasks || []).filter((row) => pending(row.approvalStatus || row.status)).length;
+    const leave = (db.leave || []).filter((row) => row.status === "Pending").length;
+    const clientOnboarding = (team || []).filter((row) => row.role === "client" && row.approved === false).length + (db.clients || []).filter((row) => pending(row.status || row.onboardingStatus)).length;
+    const attendance = (db.attendance || []).filter((row) => pending(row.approvalStatus || row.status)).length;
+    return { apn: apnApprovals + apnWithdrawals + apnCommissionApprovals + apnReferrals + apnTraining + apnMaterials, apnApprovals, apnWithdrawals, apnCommissionApprovals, apnReferrals, apnTraining, apnMaterials, crm: crmQuotations + crmFollowUps, crmQuotations, crmFollowUps, finance: financeSettlements, tasks: myPending + taskApprovals, leave, clients: clientOnboarding, attendance, notifications: unreadNotifs };
+  })();
 
   const renderPage = () => {
     // full-page detail views take precedence over the tab routes
@@ -12238,13 +12333,18 @@ export default function App() {
   const sortedNav = visibleNav.slice().sort((a, b) => navRank(a[0]) - navRank(b[0]));
   const favNav = sortedNav.filter((n) => favSet.has(n[0]));
   const restNav = sortedNav.filter((n) => !favSet.has(n[0]));
+  const countLabel = (count) => count > 99 ? "99+" : count;
   const navBadge = (key) => (
     <>
-      {key === "tasks" && myPending > 0 && <span className="badge pri">{myPending}</span>}
-      {key === "leave" && pendingLeave > 0 && <span className="badge pri">{pendingLeave}</span>}
-      {key === "notifications" && unreadNotifs > 0 && <span className="badge pri">{unreadNotifs}</span>}
-      {key === "chat" && unreadChat > 0 && <span className="badge pri">{unreadChat}</span>}
-      {key === "apn" && apnPendingCount > 0 && <span className="badge pri" aria-label={`${apnPendingCount} pending APN registration${apnPendingCount === 1 ? "" : "s"}`}>{apnPendingCount}</span>}
+      {key === "tasks" && actionCounts.tasks > 0 && <span className="badge action-badge" aria-label={`${actionCounts.tasks} task action${actionCounts.tasks === 1 ? "" : "s"} required`}>{countLabel(actionCounts.tasks)}</span>}
+      {key === "leave" && actionCounts.leave > 0 && <span className="badge action-badge">{countLabel(actionCounts.leave)}</span>}
+      {key === "notifications" && actionCounts.notifications > 0 && <span className="badge action-badge">{countLabel(actionCounts.notifications)}</span>}
+      {key === "chat" && unreadChat > 0 && <span className="badge action-badge">{countLabel(unreadChat)}</span>}
+      {key === "apn" && actionCounts.apn > 0 && <span className="badge action-badge" aria-label={`${actionCounts.apn} APN action${actionCounts.apn === 1 ? "" : "s"} required`}>{countLabel(actionCounts.apn)}</span>}
+      {(key === "leads" || key === "quotations") && actionCounts.crm > 0 && <span className="badge action-badge">{countLabel(actionCounts.crm)}</span>}
+      {key === "accounts" && actionCounts.finance > 0 && <span className="badge action-badge">{countLabel(actionCounts.finance)}</span>}
+      {key === "clients" && actionCounts.clients > 0 && <span className="badge action-badge">{countLabel(actionCounts.clients)}</span>}
+      {key === "attendance" && actionCounts.attendance > 0 && <span className="badge action-badge">{countLabel(actionCounts.attendance)}</span>}
       {key === "activity" && isSuper && inactiveCount > 0 && <span className="badge neg">{inactiveCount}</span>}
     </>
   );
@@ -12343,7 +12443,7 @@ export default function App() {
         </div>
 
         {/* MODALS */}
-        {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
+        {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
         {modal?.type === "expense" && <ShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
         {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
         {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}
