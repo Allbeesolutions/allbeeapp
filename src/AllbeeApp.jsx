@@ -1123,7 +1123,7 @@ const CSS = `
   background:var(--surface); border-right:1px solid var(--border); padding:18px 14px;
   display:flex; flex-direction:column; gap:4px; position:sticky; top:0; height:100vh; overflow-y:auto;
 }
-.brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
+.brand { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; cursor:pointer; }
 .brand-badge { width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--accent),#d98c00);
   display:grid; place-items:center; color:#fff; box-shadow:0 4px 12px rgba(234,164,23,.35); }
 .brand h1 { font-size:16px; margin:0; letter-spacing:.3px; font-weight:800; }
@@ -1414,6 +1414,7 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 /* ── Phase 2 additions ─────────────────────────────────────────────────── */
 /* logo */
 .brand-logo { height:30px; width:auto; display:block; }
+.brand-logo-button { display:inline-flex; align-items:center; border:0; padding:0; background:transparent; cursor:pointer; }
 .lock-logo { height:64px; width:auto; margin:0 auto 16px; display:block; }
 .brand-mini { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
 
@@ -1996,7 +1997,7 @@ function Confirm({ title, body, confirmLabel = "Delete", onConfirm, onClose, dan
         <button className={"btn " + (danger ? "primary" : "primary")} style={danger ? { background: "var(--neg)", borderColor: "var(--neg)" } : {}}
           onClick={confirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
       </>}>
-      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.55 }}>{body}</p>
+      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.55, whiteSpace: "pre-line" }}>{body}</p>
     </Modal>
   );
 }
@@ -2074,12 +2075,13 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
   const setSplit = (h) => setF((s) => ({ ...s, hajiPct: h, alimPct: 100 - h }));
   const isAPNIncome = isIncome && f.incomeSource === "apn";
   const apnPartner = apnPartners.find((partner) => partner.id === f.apnPartnerId);
+  const derivedApnRate = apnPartner ? apnRateForPrior(apnPartnerStats(db, apnPartner.id).completed) : 0;
   const apnRelationship = (db?.apn_referral_relationships || []).find((relationship) => relationship.referred_id === f.apnPartnerId && relationship.status === "active");
   const apnReferrer = apnPartners.find((partner) => partner.id === apnRelationship?.referrer_id);
   const setApnCollection = (id, key, value) => setApnCollections((rows) => rows.map((row) => row.id === id ? { ...row, [key]: value } : row));
   const apnTotal = round2(apnCollections.reduce((sum, row) => sum + Math.max(0, Number(row.receivedAmount) || 0), 0));
   const apnProjectValue = Number(f.apnProjectValue) || 0;
-  const apnRate = Number(f.apnCommissionRate) || 0;
+  const apnRate = String(f.apnCommissionRate).trim() === "" ? derivedApnRate : Number(f.apnCommissionRate) || 0;
   const apnMax = round2(apnProjectValue * apnRate / 100);
 
   // Company expenses derive their split from the previous valid revenue month.
@@ -2092,7 +2094,7 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
   const amt = isAPNIncome ? apnTotal : Number(f.amount) || 0;
   const sum = (Number(f.hajiPct) || 0) + (Number(f.alimPct) || 0);
   const splitOK = sum === 100;
-  const valid = amt > 0 && (isCompany || splitOK) && f.date && (!isAPNIncome || (apnPartner && f.apnProjectName?.trim() && f.apnClientName?.trim() && String(f.apnProjectValue).trim() !== "" && String(f.apnCommissionRate).trim() !== "" && apnProjectValue > 0 && apnRate >= 0 && apnRate <= 100 && apnTotal <= apnProjectValue && apnCollections.every((row) => Number(row.receivedAmount) > 0 && row.receivedDate)));
+  const valid = amt > 0 && (isCompany || splitOK) && f.date && (!isAPNIncome || (apnPartner && f.apnProjectName?.trim() && f.apnClientName?.trim() && String(f.apnProjectValue).trim() !== "" && apnProjectValue > 0 && Number.isFinite(apnRate) && apnRate >= 0 && apnRate <= 100 && apnTotal <= apnProjectValue && apnCollections.every((row) => Number(row.receivedAmount) > 0 && row.receivedDate)));
   const hShare = round2((amt * (Number(f.hajiPct) || 0)) / 100);
   const aShare = round2((amt * (Number(f.alimPct) || 0)) / 100);
 
@@ -2121,7 +2123,7 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
       {isAPNIncome ? <>
         <div className="grid2"><Field label="Partner" required><SearchableSelect value={f.apnPartnerId} onChange={(value) => up("apnPartnerId", value)} disabled={!!initial?.apnProjectId} ariaLabel="APN income partner" options={apnPartners.map((partner) => ({ value: partner.id, label: partner.name, meta: apnIdFor(partner) }))} /></Field><Field label="Referral"><SearchableSelect value={apnRelationship?.referrer_id || ""} disabled ariaLabel="Direct referral partner" options={[{ value: "", label: apnReferrer ? apnReferrer.name : "No direct referral" }, ...(apnReferrer ? [{ value: apnReferrer.id, label: apnReferrer.name, meta: "Direct referral" }] : [])]} /></Field></div>
         <div className="grid2"><Field label="Project name" required><input className="input" value={f.apnProjectName} onChange={(e) => up("apnProjectName", e.target.value)} placeholder="Website redesign" /></Field><Field label="Client name" required><input className="input" value={f.apnClientName} onChange={(e) => up("apnClientName", e.target.value)} placeholder="Client" /></Field></div>
-        <div className="grid2"><Field label="Project value" required><input className="input mono" type="number" min="0" value={f.apnProjectValue} onChange={(e) => up("apnProjectValue", e.target.value)} placeholder="100000" /></Field><Field label="Commission %" required><input className="input mono" type="number" min="0" max="100" value={f.apnCommissionRate} onChange={(e) => up("apnCommissionRate", e.target.value)} placeholder="10" /></Field></div>
+        <div className="grid2"><Field label="Project value" required><input className="input mono" type="number" min="0" value={f.apnProjectValue} onChange={(e) => up("apnProjectValue", e.target.value)} placeholder="100000" /></Field><Field label="Commission %" required hint="Defaults to the partner's current progression rate."><input className="input mono" type="number" min="0" max="100" value={f.apnCommissionRate} onChange={(e) => up("apnCommissionRate", e.target.value)} placeholder={String(derivedApnRate)} /></Field></div>
         <div className="calc-box"><div className="calc-row"><span>Maximum commission</span><b className="mono">{money(apnMax)}</b></div><div className="calc-row"><span>New collections</span><b className="mono">{money(apnTotal)}</b></div><div className="calc-row"><span>Status</span><span className={"badge " + (apnTotal >= apnProjectValue && apnProjectValue > 0 ? "pos" : "accent")}>{apnTotal >= apnProjectValue && apnProjectValue > 0 ? "Completed" : "Processing"}</span></div></div>
         <div className="apn-section-head" style={{ marginTop: 12 }}><h4 style={{ margin: 0 }}>Collections</h4><button className="btn sm" type="button" onClick={() => setApnCollections((rows) => [...rows, { id: uid(), receivedAmount: "", incentive: "", remarks: "", receivedDate: todayISO() }])}><Plus size={13} />Add collection</button></div>
         <div className="apn-list">{apnCollections.map((row, index) => <div className="apn-rowcard" key={row.id} style={{ padding: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><b style={{ flex: 1 }}>Collection {index + 1}</b>{apnCollections.length > 1 && <button className="iconbtn" type="button" style={{ width: 28, height: 28 }} aria-label={`Remove collection ${index + 1}`} onClick={() => setApnCollections((rows) => rows.filter((item) => item.id !== row.id))}><Trash2 size={13} /></button>}</div><div className="grid2"><Field label="Received amount" required><input className="input mono" type="number" min="0" value={row.receivedAmount} onChange={(e) => setApnCollection(row.id, "receivedAmount", e.target.value)} placeholder="50000" /></Field><Field label="Received date" required><input className="input" type="date" value={row.receivedDate || ""} onChange={(e) => setApnCollection(row.id, "receivedDate", e.target.value)} /></Field></div><div className="grid2"><Field label="Incentive"><input className="input mono" type="number" min="0" value={row.incentive} onChange={(e) => setApnCollection(row.id, "incentive", e.target.value)} placeholder="0" /></Field><Field label="Remarks"><input className="input" value={row.remarks || ""} onChange={(e) => setApnCollection(row.id, "remarks", e.target.value)} placeholder="Payment reference or note" /></Field></div></div>)}</div>
@@ -8749,13 +8751,14 @@ const TN_DISTRICTS = ["Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cudd
 const APN_SERVICES = [["website", "Website Development"], ["marketing", "Digital Marketing"], ["course", "Course Admission"]];
 const APN_SERVICE_LABEL = { website: "Website", marketing: "Digital marketing", course: "Course" };
 
-// Partner levels — commission rate is a function of completed projects.
-const APN_LEVELS = [
-  { key: 0, name: "Trainee Partner", rate: 10, min: 0 },
-  { key: 1, name: "Active Partner", rate: 15, min: 1 },
-  { key: 2, name: "Growth Partner", rate: 20, min: 50 },
-  { key: 3, name: "Elite Partner", rate: 25, min: 100 },
-];
+// Single source of truth for APN progression: project 1 earns 10%, projects
+// 2–9 earn 15%, and project 10 onward earns 20%.
+const APN_COMMISSION_RULES = Object.freeze([
+  Object.freeze({ key: 0, name: "Trainee Partner", rate: 10, minProject: 1, maxProject: 1 }),
+  Object.freeze({ key: 1, name: "Active Partner", rate: 15, minProject: 2, maxProject: 9 }),
+  Object.freeze({ key: 2, name: "Growth Partner", rate: 20, minProject: 10, maxProject: Infinity }),
+]);
+const APN_LEVELS = APN_COMMISSION_RULES;
 const APN_ADMIN_LEVELS = ["Trainee", "Partner", "Senior Partner", "District Head", "State Head"];
 const APN_ADMIN_STATUSES = ["pending", "active", "inactive", "suspended", "deleted"];
 const APN_PERCENT_MIN = 0;
@@ -8934,19 +8937,19 @@ function apnRiskIndicators(db, partner, profile) {
 }
 const apnLevelForCompleted = (n) => {
   const c = Number(n) || 0;
-  if (c >= 100) return APN_LEVELS[3];
-  if (c >= 50) return APN_LEVELS[2];
-  if (c >= 1) return APN_LEVELS[1];
-  return APN_LEVELS[0];
+  return apnCommissionRuleForProject(c + 1);
 };
-// Rate for the NEXT project a partner completes (prior completions decide level),
-// so the first paid project earns Trainee 10%, the 2nd–49th earn Active 15%, etc.
-const apnRateForPrior = (prior) => apnLevelForCompleted(Number(prior) || 0).rate;
+const apnCommissionRuleForProject = (projectNumber) => {
+  const number = Math.max(1, Number(projectNumber) || 1);
+  return APN_COMMISSION_RULES.find((rule) => number >= rule.minProject && number <= rule.maxProject) || APN_COMMISSION_RULES[APN_COMMISSION_RULES.length - 1];
+};
+// Rate for the next project; prior completions determine its project number.
+const apnRateForPrior = (prior) => apnCommissionRuleForProject((Number(prior) || 0) + 1).rate;
 const apnNextLevel = (n) => {
   const c = Number(n) || 0;
-  if (c >= 100) return null;
-  const next = c >= 50 ? APN_LEVELS[3] : c >= 1 ? APN_LEVELS[2] : APN_LEVELS[1];
-  return { next, remaining: Math.max(0, next.min - c), pct: Math.min(100, Math.round((c / next.min) * 100)) };
+  if (c >= 10) return null;
+  const next = c < 2 ? APN_COMMISSION_RULES[1] : APN_COMMISSION_RULES[2];
+  return { next, remaining: Math.max(0, next.minProject - c), pct: Math.min(100, Math.round((c / next.minProject) * 100)) };
 };
 
 const APN_LEAD_STATUS = ["Submitted", "Approved", "Duplicate", "Invalid", "Fake", "Quotation Sent", "Converted", "Lost"];
@@ -9109,13 +9112,29 @@ function apnNotifVisible(n, meRow) {
   return true;
 }
 
+const APN_ACTION_PENDING_STATUSES = new Set(["pending", "under_review", "pending approval", "needs_publish", "unpublished", "draft"]);
+const apnActionPending = (value) => APN_ACTION_PENDING_STATUSES.has(String(value || "").trim().toLowerCase());
+function apnAdminActionCounts(db, viewerId) {
+  const partners = (db.apn_users || []).filter((row) => row.status === "pending").length;
+  const commissions = (db.apn_revenue_collections || []).filter((row) => apnActionPending(row.commissionStatus || row.status)).length
+    + (db.apn_commissions || []).filter((row) => apnActionPending(row.status)).length;
+  const withdrawals = (db.apn_withdrawal_requests || []).filter((row) => apnActionPending(row.status)).length
+    + (db.apn_withdrawal_batches || []).filter((row) => apnActionPending(row.status)).length;
+  const targets = (db.apn_targets || []).filter((row) => row.acknowledged === false).length;
+  const training = (db.apn_training || []).filter((row) => apnActionPending(row.status || row.approvalStatus)).length
+    + (db.apn_quizzes || []).filter((row) => apnActionPending(row.status || row.approvalStatus)).length;
+  const materials = (db.apn_documents || []).filter((row) => row.published === false || apnActionPending(row.status || row.approvalStatus || row.publishStatus)).length;
+  const notify = (db.apn_notifications || []).filter((row) => !(row.reads || []).includes(viewerId)).length;
+  return { partners, commissions, withdrawals, targets, training, materials, notify, total: partners + commissions + withdrawals + targets + training + materials + notify };
+}
+
 /* ── commission generation (partner rate + 1% district-head override) ─── */
 function apnBuildCommissions(d, lead) {
   const rows = [];
   const pid = lead.partnerId;
   const partner = (d.apn_users || []).find((u) => u.id === pid);
-  const prior = (d.apn_leads || []).filter((l) => l.partnerId === pid && l.projectCompleted && l.id !== lead.id).length;
-  const rate = partner?.commissionPct != null && partner.commissionPct !== "" ? Number(partner.commissionPct) : apnRateForPrior(prior);
+  const prior = apnPartnerStats({ ...d, apn_leads: (d.apn_leads || []).filter((row) => row.id !== lead.id) }, pid).completed;
+  const rate = apnRateForPrior(prior);
   const revenue = Number(lead.revenue) || 0;
   const project = lead.business || lead.clientName || "Project";
   rows.push({ id: uid(), partnerId: pid, kind: "partner", leadId: lead.id, project, clientName: lead.clientName, service: lead.service, revenue, rate, amount: round2((revenue * rate) / 100), status: "Pending", createdAt: Date.now(), payoutDate: apnPayoutDate() });
@@ -9239,7 +9258,7 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
             <div className="bar"><i style={{ width: next.pct + "%" }} /></div>
             <div style={{ fontSize: 12, opacity: .9, marginTop: 7 }}>{next.remaining} more completed project{next.remaining === 1 ? "" : "s"} to reach {next.next.name} ({next.next.rate}%)</div>
           </>
-        ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Top level reached — Elite Partner 👑</div>}
+        ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Highest commission level achieved (20%)</div>}
       </div>
 
       <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} /></div>
@@ -10138,7 +10157,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
       <header className="apn-top">
-        <img className="brand-logo" src={LOGO_ICON} alt="APN" />
+        <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><img className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={reload} />
         <button className="iconbtn" style={{ width: 34, height: 34 }} onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
@@ -10625,7 +10644,7 @@ function apnPartnerProfileForm(partner, stats, target) {
     country: partner.country || "India", state: partner.state || "Tamil Nadu", district: partner.district || "", taluk: partner.taluk || "",
     city: partner.city || "", pincode: partner.pincode || "", address: partner.address || "",
     status: partner.status || "pending", level: apnAdminLevel(partner, stats), target: partner.target ?? target?.goal ?? "",
-    targetMetric: partner.targetMetric || target?.metric || "leads", commissionPct: partner.commissionPct ?? stats.level.rate,
+    targetMetric: partner.targetMetric || target?.metric || "leads", commissionPct: stats.level.rate,
     attendanceScore: partner.attendanceScore ?? "", notes: partner.notes || partner.reason || "", kycStatus: partner.kycStatus || "Not started",
   };
 }
@@ -10757,7 +10776,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
         <Field label="Level"><select className="select" value={f.level} onChange={(e) => set("level", e.target.value)} disabled={!canEdit}>{APN_ADMIN_LEVELS.map((s) => <option key={s}>{s}</option>)}</select></Field>
         <Field label="Target"><input className="input" type="number" min="0" value={f.target} onChange={(e) => set("target", e.target.value)} disabled={!canEdit} /></Field>
         <Field label="Target metric"><select className="select" value={f.targetMetric} onChange={(e) => set("targetMetric", e.target.value)} disabled={!canEdit}>{APN_TARGET_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-        <Field label="Commission %"><input className="input" type="number" min="0" max="100" value={f.commissionPct} onChange={(e) => set("commissionPct", e.target.value)} disabled={!canEdit} /></Field>
+        <Field label="Commission rate (progression)"><input className="input" type="number" min="0" max="100" value={f.commissionPct} readOnly disabled /></Field>
         <Field label="Attendance score"><input className="input" type="number" min="0" max="100" value={f.attendanceScore} onChange={(e) => set("attendanceScore", e.target.value)} disabled={!canEdit} placeholder={String(apnAttendanceScore(db, partner.id))} /></Field>
         <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} disabled={!canEdit} /></Field>
       </div><div className="apn-profile-stats" style={{ marginTop: 12 }}>
@@ -10896,7 +10915,7 @@ function APNCommissionEntry({ db, partners, initial, onSave, onClose }) {
   const setCollection = (id, key, value) => setCollections((prev) => prev.map((row) => row.id === id ? { ...row, [key]: value } : row));
   const partner = partners.find((p) => p.id === f.partnerId);
   const stats = partner ? apnPartnerStats(db, partner.id) : null;
-  const derivedRate = partner ? (partner.commissionPct != null && partner.commissionPct !== "" ? Number(partner.commissionPct) : apnRateForPrior(stats.completed)) : 0;
+  const derivedRate = partner ? apnRateForPrior(stats.completed) : 0;
   const rate = f.commissionRate === "" ? derivedRate : Number(f.commissionRate);
   const projectValue = Number(f.projectValue) || 0;
   const maximumCommission = round2((projectValue * (Number(rate) || 0)) / 100);
@@ -11512,7 +11531,8 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     });
   };
 
-  const tabs = [["partners", "Partners"], ["leads", "Leads"], ["commissions", "Commissions"], ["withdrawals", "Withdrawals"], ["referrals", "Referrals"], ["targets", "Targets"], ["content", "Training"], ["docs", "Materials"], ["notify", "Notify"], ["board", "Leaderboard"]];
+  const actionBadges = apnAdminActionCounts(db, currentUserId);
+  const tabs = [["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.training], ["docs", "Materials", actionBadges.materials], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
 
   return (
     <div className="content">
@@ -11523,13 +11543,13 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
         {tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
         {tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
       </div>
-      <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</div>
+      <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l, badge]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}{badge > 0 && <ActionBadge count={badge} label={`${l.toLowerCase()} action`} />}</button>)}</div>
 
       {actionError && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{actionError}</div>}
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={isSuper ? (project) => setModal({ type: "confirm", title: "Delete this commission project?", body: "This action cannot be undone.", confirmLabel: "Delete project", onConfirm: () => deleteCommissionProject(project) }) : undefined} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={isSuper ? (project) => { const partnerName = (db.apn_users || []).find((row) => row.id === project.partnerId)?.name || "—"; setModal({ type: "confirm", title: "Delete Commission Project?", body: `Partner: ${partnerName}\nProject: ${project.projectName || "—"}\nCommission: ${money(project.commissionEarned)}\n\nThis action cannot be undone.`, confirmLabel: "Delete", onConfirm: () => deleteCommissionProject(project) }); } : undefined} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
@@ -12212,12 +12232,12 @@ export default function App() {
   const financeApnPartners = (db.apn_users || []).filter((partner) => partner.status === "active");
   const actionCounts = (() => {
     const pending = (value) => ["pending", "Pending", "under_review", "processing", "Pending approval"].includes(value);
-    const apnApprovals = (db.apn_users || []).filter((row) => row.status === "pending").length;
-    const apnWithdrawals = (db.apn_withdrawal_requests || []).filter((row) => pending(row.status)).length;
-    const apnCommissionApprovals = (db.apn_revenue_collections || []).filter((row) => pending(row.commissionStatus)).length + (db.apn_commissions || []).filter((row) => pending(row.status)).length;
-    const apnReferrals = (db.apn_referral_relationships || []).filter((row) => row.status === "active" && (db.apn_users || []).some((partner) => partner.id === row.referred_id && partner.status === "pending")).length;
-    const apnTraining = (db.apn_training || []).filter((row) => pending(row.status || row.approvalStatus)).length;
-    const apnMaterials = (db.apn_documents || []).filter((row) => pending(row.status || row.approvalStatus)).length;
+    const apnActions = apnAdminActionCounts(db, profile?.id);
+    const apnApprovals = apnActions.partners;
+    const apnWithdrawals = apnActions.withdrawals;
+    const apnCommissionApprovals = apnActions.commissions;
+    const apnTraining = apnActions.training;
+    const apnMaterials = apnActions.materials;
     const crmQuotations = (db.crm_quotations || []).filter((row) => pending(row.approval_status || row.status)).length + (db.quotations || []).filter((row) => pending(row.approvalStatus || row.status)).length;
     const crmFollowUps = (db.crm_follow_ups || []).filter((row) => pending(row.status)).length;
     const financeSettlements = (db.apn_withdrawal_batches || []).filter((row) => pending(row.status)).length + apnWithdrawals;
@@ -12225,7 +12245,7 @@ export default function App() {
     const leave = (db.leave || []).filter((row) => row.status === "Pending").length;
     const clientOnboarding = (team || []).filter((row) => row.role === "client" && row.approved === false).length + (db.clients || []).filter((row) => pending(row.status || row.onboardingStatus)).length;
     const attendance = (db.attendance || []).filter((row) => pending(row.approvalStatus || row.status)).length;
-    return { apn: apnApprovals + apnWithdrawals + apnCommissionApprovals + apnReferrals + apnTraining + apnMaterials, apnApprovals, apnWithdrawals, apnCommissionApprovals, apnReferrals, apnTraining, apnMaterials, crm: crmQuotations + crmFollowUps, crmQuotations, crmFollowUps, finance: financeSettlements, tasks: myPending + taskApprovals, leave, clients: clientOnboarding, attendance, notifications: unreadNotifs };
+    return { apn: apnActions.total, apnApprovals, apnWithdrawals, apnCommissionApprovals, apnTraining, apnMaterials, crm: crmQuotations + crmFollowUps, crmQuotations, crmFollowUps, finance: financeSettlements, tasks: myPending + taskApprovals, leave, clients: clientOnboarding, attendance, notifications: unreadNotifs };
   })();
 
   const renderPage = () => {
@@ -12350,7 +12370,7 @@ export default function App() {
         <div className="layout">
           {menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />}
           <aside className="sidebar">
-            <div className="brand">
+            <div className="brand" role="button" tabIndex={0} aria-label="Go to Home Dashboard" title="Go to Home Dashboard" onClick={() => go("dashboard")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("dashboard"); } }}>
               <img className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
               <div><h1>ALLBEE</h1><p>Solutions</p></div>
             </div>
