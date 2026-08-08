@@ -1798,6 +1798,12 @@ function ToastCard({ item, onDismiss }) {
   </div>;
 }
 
+function ActionBadge({ count, label = "action" }) {
+  if (!count) return null;
+  const display = count > 99 ? "99+" : count;
+  return <span className="badge action-badge" aria-label={`${count} ${label}${count === 1 ? "" : "s"} required`}>{display}</span>;
+}
+
 function SearchableSelect({ options = [], value, onChange, placeholder = "Choose…", disabled = false, ariaLabel, id }) {
   const rootRef = useRef(null);
   const searchRef = useRef(null);
@@ -1974,12 +1980,21 @@ function Empty({ icon, title, text, action }) {
 }
 
 function Confirm({ title, body, confirmLabel = "Delete", onConfirm, onClose, danger = true }) {
+  const [busy, setBusy] = useState(false);
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await onConfirm?.();
+      if (result !== false) onClose();
+    } finally { setBusy(false); }
+  };
   return (
     <Modal title={title} onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className={"btn " + (danger ? "primary" : "primary")} style={danger ? { background: "var(--neg)", borderColor: "var(--neg)" } : {}}
-          onClick={() => { onConfirm(); onClose(); }}>{confirmLabel}</button>
+          onClick={confirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
       </>}>
       <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.55 }}>{body}</p>
     </Modal>
@@ -5568,29 +5583,10 @@ function Lock({ isDark, setDark }) {
     setBusy(true);
     try {
       if (mode === "signin") {
-        let loginEmail = email.trim().toLowerCase();
-        if (!loginEmail.includes("@")) {
-          // Username path: resolve the username to its account email so we can
-          // sign in. Tries a SQL function first (no edge function needed — just
-          // run allbee-username-login.sql once), then falls back to the
-          // username-login edge function if that's what's deployed.
-          const uname = loginEmail.toLowerCase();
-          let resolved = "";
-          try {
-            const { data, error } = await supabase.rpc("username_to_email", { p_username: uname });
-            if (!error && data) resolved = typeof data === "string" ? data : (data.email || "");
-          } catch { /* RPC not installed — try the edge function next */ }
-          if (!resolved) {
-            try {
-              const { data, error } = await supabase.functions.invoke("username-login", { body: { username: uname } });
-              if (!error && data && data.email) resolved = data.email;
-            } catch { /* neither available */ }
-          }
-          if (!resolved) throw new Error("We couldn't find that username. Check it, or sign in with your email instead.");
-          loginEmail = resolved;
-        }
-        const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: pw });
-        if (error) throw error;
+        const { data, error } = await supabase.functions.invoke("username-login", { body: { action: "sign_in", identifier: email, password: pw } });
+        if (error || !data?.session?.access_token || !data?.session?.refresh_token) throw new Error("Invalid login credentials.");
+        const { error: sessionError } = await supabase.auth.setSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+        if (sessionError) throw sessionError;
       } else {
         const meta = acctType === "owner" ? { name: who, admin_code: code.trim() }
           : acctType === "client" ? { name: name.trim(), role_intent: "client" }
@@ -5615,18 +5611,11 @@ function Lock({ isDark, setDark }) {
   };
   const requestReset = async () => {
     setErr(""); setNotice("");
-    let resetEmail = email.trim().toLowerCase();
-    if (!resetEmail.includes("@")) {
-      try {
-        const { data, error } = await supabase.rpc("username_to_email", { p_username: resetEmail });
-        if (!error && data) resetEmail = typeof data === "string" ? data : (data.email || "");
-      } catch { /* fall through to the helpful validation below */ }
-    }
-    if (!resetEmail || !resetEmail.includes("@")) { setErr("Enter your email address or a username with an account email before resetting your password."); return; }
+    if (!email.trim()) { setErr("Enter your email address, username, or APN ID before resetting your password."); return; }
     setResetBusy(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: `${window.location.origin}${window.location.pathname}` });
-      if (error) throw error;
+      const { data, error } = await supabase.functions.invoke("username-login", { body: { action: "request_reset", identifier: email, redirectTo: `${window.location.origin}${window.location.pathname}` } });
+      if (error || data?.error) throw error || new Error(data.error);
       setNotice("Password reset email sent. Check your inbox for the secure reset link.");
       emitToast("Password reset email sent.", "success");
     } catch (e) { setErr(e?.message || "Password reset failed. Please try again."); emitToast("Password reset failed. Please try again.", "error"); }
@@ -8730,13 +8719,8 @@ const apnLeadId = (n) => "APN-L-" + String(n).padStart(4, "0");
 const APN_RESERVED_NUMBERS = new Set([2, 3]);
 const APN_MIN_DYNAMIC_NUMBER = 6;
 function apnNumberOf(value) { return Number(String(value || "").replace(/\D/g, "")) || 0; }
-const APN_FIXED_ID_BY_KEY = { hajiapn: 1, "mohamed maqdoom ahmed": 4, sana: 5 };
-function apnIdentityKey(partner) {
-  return String(partner?.username || partner?.name || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
 function apnIdFor(partner) {
-  const fixed = APN_FIXED_ID_BY_KEY[apnIdentityKey(partner)];
-  return fixed ? apnPadId(fixed) : (partner?.apnId || "—");
+  return partner?.apnId || "—";
 }
 function normalizeManualApnId(value) {
   const raw = String(value || "").trim().toUpperCase();
@@ -10855,7 +10839,7 @@ function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal,
         <div className="card"><div className="k"><ShieldCheck size={14} /> State heads</div><div className="v mono">{counts.stateHeads}</div></div>
       </div>
       <div className="toolbar"><div className="search" style={{ flex: 1, maxWidth: 560 }}><Search size={16} color="var(--muted)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, username, APN ID, phone, email, tags, timeline, warnings, notes, documents…" /></div></div>
-      <div className="apn-seg-scroll">{[["all", "All"], ["active", "Active"], ["pending", "Pending"], ["inactive", "Inactive"], ["heads", "District Heads"], ["state_heads", "State Heads"], ...(isSuper ? [["archived", "Archived Partners"]] : [])].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => changeView(k)}>{l}</button>)}</div>
+      <div className="apn-seg-scroll">{[["all", "All"], ["active", "Active"], ["pending", "Pending"], ["inactive", "Inactive"], ["heads", "District Heads"], ["state_heads", "State Heads"], ...(isSuper ? [["archived", "Archived Partners"]] : [])].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => changeView(k)}>{l}{k === "pending" && <ActionBadge count={counts.pending} label="pending partner action" />}</button>)}</div>
       {selectedPartners.length > 0 && <div className="toolbar" style={{ marginTop: 0 }}><span className="hint-line">{selectedPartners.length} selected</span><span className="spacer" /><select className="select" style={{ width: "auto" }} defaultValue="" onChange={(e) => { if (e.target.value) { act.bulk(e.target.value, selectedPartners); e.target.value = ""; } }}><option value="">Bulk actions…</option><option>Activate</option><option>Deactivate</option><option>Suspend</option><option>Transfer District</option><option>Assign District Head</option><option>Export</option><option>Delete</option><option>Send Notification</option></select><button className="btn sm" onClick={() => setSelected(new Set())}>Clear</button></div>}
       <div className="card">
         {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No partners here" text="Applications and partners show up in these tabs." action={canManage ? <button className="btn primary" onClick={() => openModal({ type: "apnCreatePartner" })}><Plus size={16} />Add partner</button> : undefined} />
@@ -11267,8 +11251,8 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   }, [focusPartnerId]);
   const withActionError = async (fn) => {
     setActionError("");
-    try { await fn(); }
-    catch (e) { const message = e?.message || "That APN action could not be completed."; setActionError(message); emitToast(message, "error"); }
+    try { await fn(); return true; }
+    catch (e) { const message = e?.message || "That APN action could not be completed."; setActionError(message); emitToast(message, "error"); return false; }
   };
   const updateProfileStatus = async (partner, active, status) => {
     const { error } = await supabase.from("profiles").update({ active, status }).eq("id", partner.id);
@@ -11415,13 +11399,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     if (!isSuper) throw new Error("Only a Super Admin can delete commission projects.");
     const { error } = await supabase.rpc("delete_apn_commission_project", { p_project_id: project.id });
     if (error) throw new Error(error.message);
-    mutate((d) => ({ ...d,
-      apn_commission_projects: (d.apn_commission_projects || []).filter((row) => row.id !== project.id),
-      apn_revenue_collections: (d.apn_revenue_collections || []).filter((row) => row.projectId !== project.id),
-      transactions: (d.transactions || []).filter((row) => row.apnProjectId !== project.id),
-      apn_notifications: (d.apn_notifications || []).filter((row) => row.metadata?.projectId !== project.id),
-      apn_timeline: (d.apn_timeline || []).filter((row) => !String(row.id || "").includes(`commission-project:${project.id}`) && !String(row.id || "").includes(`commission-project-completed:${project.id}`)),
-    }), { ...M(`deleted APN commission project "${project.projectName}"`, project.partnerId, project, null), entity: "APN Commission Project", entityId: project.id });
+    await onRefresh?.();
     emitToast("Commission project deleted.", "success");
   });
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" }))] }), M(`assigned APN target "${t.title}"`));
@@ -11551,7 +11529,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={(project) => setModal({ type: "confirm", title: "Delete this commission project?", body: "This action cannot be undone.", confirmLabel: "Delete project", onConfirm: () => deleteCommissionProject(project) })} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={isSuper ? (project) => setModal({ type: "confirm", title: "Delete this commission project?", body: "This action cannot be undone.", confirmLabel: "Delete project", onConfirm: () => deleteCommissionProject(project) }) : undefined} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
@@ -12333,18 +12311,17 @@ export default function App() {
   const sortedNav = visibleNav.slice().sort((a, b) => navRank(a[0]) - navRank(b[0]));
   const favNav = sortedNav.filter((n) => favSet.has(n[0]));
   const restNav = sortedNav.filter((n) => !favSet.has(n[0]));
-  const countLabel = (count) => count > 99 ? "99+" : count;
   const navBadge = (key) => (
     <>
-      {key === "tasks" && actionCounts.tasks > 0 && <span className="badge action-badge" aria-label={`${actionCounts.tasks} task action${actionCounts.tasks === 1 ? "" : "s"} required`}>{countLabel(actionCounts.tasks)}</span>}
-      {key === "leave" && actionCounts.leave > 0 && <span className="badge action-badge">{countLabel(actionCounts.leave)}</span>}
-      {key === "notifications" && actionCounts.notifications > 0 && <span className="badge action-badge">{countLabel(actionCounts.notifications)}</span>}
-      {key === "chat" && unreadChat > 0 && <span className="badge action-badge">{countLabel(unreadChat)}</span>}
-      {key === "apn" && actionCounts.apn > 0 && <span className="badge action-badge" aria-label={`${actionCounts.apn} APN action${actionCounts.apn === 1 ? "" : "s"} required`}>{countLabel(actionCounts.apn)}</span>}
-      {(key === "leads" || key === "quotations") && actionCounts.crm > 0 && <span className="badge action-badge">{countLabel(actionCounts.crm)}</span>}
-      {key === "accounts" && actionCounts.finance > 0 && <span className="badge action-badge">{countLabel(actionCounts.finance)}</span>}
-      {key === "clients" && actionCounts.clients > 0 && <span className="badge action-badge">{countLabel(actionCounts.clients)}</span>}
-      {key === "attendance" && actionCounts.attendance > 0 && <span className="badge action-badge">{countLabel(actionCounts.attendance)}</span>}
+      {key === "tasks" && <ActionBadge count={actionCounts.tasks} label="task action" />}
+      {key === "leave" && <ActionBadge count={actionCounts.leave} label="leave action" />}
+      {key === "notifications" && <ActionBadge count={actionCounts.notifications} label="notification" />}
+      {key === "chat" && <ActionBadge count={unreadChat} label="unread chat" />}
+      {key === "apn" && <ActionBadge count={actionCounts.apn} label="APN action" />}
+      {(key === "leads" || key === "quotations") && <ActionBadge count={actionCounts.crm} label="CRM action" />}
+      {key === "accounts" && <ActionBadge count={actionCounts.finance} label="finance action" />}
+      {key === "clients" && <ActionBadge count={actionCounts.clients} label="client action" />}
+      {key === "attendance" && <ActionBadge count={actionCounts.attendance} label="attendance action" />}
       {key === "activity" && isSuper && inactiveCount > 0 && <span className="badge neg">{inactiveCount}</span>}
     </>
   );
