@@ -355,6 +355,20 @@ const REFERRAL_READS = {
   apn_referral_analytics_monthly: "partner_id,month_start,conversion_rate,referral_count,active_count,revenue,earnings,updated_at",
 };
 
+// APN admin action badges use a per-user watermark. The source records remain
+// unchanged; opening a tab only marks the current admin's action stream seen.
+const APN_ACTION_BADGE_MAP = Object.freeze([
+  Object.freeze({ actionType: "partner_pending", tab: "partners", label: "Partners" }),
+  Object.freeze({ actionType: "commission_pending", tab: "commissions", label: "Commissions" }),
+  Object.freeze({ actionType: "withdrawal_pending", tab: "withdrawals", label: "Withdrawals" }),
+  Object.freeze({ actionType: "referral_pending", tab: "referrals", label: "Referrals" }),
+  Object.freeze({ actionType: "target_action", tab: "targets", label: "Targets" }),
+  Object.freeze({ actionType: "training_action", tab: "content", label: "Training" }),
+  Object.freeze({ actionType: "material_action", tab: "docs", label: "Materials" }),
+  Object.freeze({ actionType: "notification_unread", tab: "notify", label: "Notify" }),
+]);
+const APN_ACTION_BADGE_READS = "user_id,action_type,seen_at";
+
 // PR3 withdrawal and settlement data is normalized and changed only through
 // transactional RPCs. It deliberately stays outside the legacy JSON diff writer.
 const WITHDRAWAL_READS = {
@@ -413,6 +427,15 @@ async function fetchReferralData() {
   return out;
 }
 
+async function fetchApnActionBadgeReads() {
+  const { data, error } = await supabase.from("apn_action_badge_reads").select(APN_ACTION_BADGE_READS);
+  if (error) {
+    if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) return [];
+    throw new Error(`Loading APN action badge read state: ${error.message}`);
+  }
+  return data || [];
+}
+
 async function fetchWithdrawalData() {
   const out = {};
   await Promise.all(Object.entries(WITHDRAWAL_READS).map(async ([table, columns]) => {
@@ -469,7 +492,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData());
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
   return db;
 }
 
@@ -827,7 +850,7 @@ const emptyDB = () => ({
   notifications: [], invoices: [], resignations: [], prompts: [], sheets: [],
   inhouse: [], payroll: [], teams: [], team_chat: [], testing: [], class_students: [],
   apn_users: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
-  apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [],
+  apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [], apn_action_badge_reads: [],
   apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
   crm_clients: [], crm_leads: [], crm_lead_assignments: [], crm_follow_ups: [], crm_quotations: [], crm_quotation_versions: [], crm_projects: [], crm_revenue_collections: [], crm_activities: [], crm_files: [], crm_reminders: [], crm_audit: [],
@@ -1982,6 +2005,7 @@ function Empty({ icon, title, text, action }) {
 
 function Confirm({ title, body, confirmLabel = "Delete", onConfirm, onClose, danger = true }) {
   const [busy, setBusy] = useState(false);
+  const close = () => { if (!busy) onClose?.(); };
   const confirm = async () => {
     if (busy) return;
     setBusy(true);
@@ -1991,9 +2015,9 @@ function Confirm({ title, body, confirmLabel = "Delete", onConfirm, onClose, dan
     } finally { setBusy(false); }
   };
   return (
-    <Modal title={title} onClose={onClose}
+    <Modal title={title} onClose={close}
       footer={<>
-        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn" onClick={close} disabled={busy}>Cancel</button>
         <button className={"btn " + (danger ? "primary" : "primary")} style={danger ? { background: "var(--neg)", borderColor: "var(--neg)" } : {}}
           onClick={confirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
       </>}>
@@ -9114,18 +9138,38 @@ function apnNotifVisible(n, meRow) {
 
 const APN_ACTION_PENDING_STATUSES = new Set(["pending", "under_review", "pending approval", "needs_publish", "unpublished", "draft"]);
 const apnActionPending = (value) => APN_ACTION_PENDING_STATUSES.has(String(value || "").trim().toLowerCase());
+const apnActionRowTime = (row) => {
+  const value = row?.updatedAt ?? row?.createdAt ?? row?.updated_at ?? row?.created_at ?? row?.requested_at ?? row?.linked_at ?? row?.issuedAt ?? row?.uploadedAt;
+  const text = String(value || "");
+  const time = typeof value === "number" || /^\d{10,}$/.test(text) ? Number(value) : Date.parse(text);
+  return Number.isFinite(time) ? time : 0;
+};
+const apnActionReadTime = (db, viewerId, actionType) => {
+  const row = (db.apn_action_badge_reads || []).find((item) => item.user_id === viewerId && item.action_type === actionType);
+  const time = row?.seen_at ? Date.parse(row.seen_at) : 0;
+  return Number.isFinite(time) ? time : 0;
+};
+const apnUnseenActionCount = (rows, predicate, readAt) => (rows || []).filter((row) => predicate(row) && apnActionRowTime(row) > readAt).length;
 function apnAdminActionCounts(db, viewerId) {
-  const partners = (db.apn_users || []).filter((row) => row.status === "pending").length;
-  const commissions = (db.apn_revenue_collections || []).filter((row) => apnActionPending(row.commissionStatus || row.status)).length
-    + (db.apn_commissions || []).filter((row) => apnActionPending(row.status)).length;
-  const withdrawals = (db.apn_withdrawal_requests || []).filter((row) => apnActionPending(row.status)).length
-    + (db.apn_withdrawal_batches || []).filter((row) => apnActionPending(row.status)).length;
-  const targets = (db.apn_targets || []).filter((row) => row.acknowledged === false).length;
-  const training = (db.apn_training || []).filter((row) => apnActionPending(row.status || row.approvalStatus)).length
-    + (db.apn_quizzes || []).filter((row) => apnActionPending(row.status || row.approvalStatus)).length;
-  const materials = (db.apn_documents || []).filter((row) => row.published === false || apnActionPending(row.status || row.approvalStatus || row.publishStatus)).length;
-  const notify = (db.apn_notifications || []).filter((row) => !(row.reads || []).includes(viewerId)).length;
-  return { partners, commissions, withdrawals, targets, training, materials, notify, total: partners + commissions + withdrawals + targets + training + materials + notify };
+  const counts = {
+    partner_pending: apnUnseenActionCount(db.apn_users, (row) => row.status === "pending", apnActionReadTime(db, viewerId, "partner_pending")),
+    commission_pending: apnUnseenActionCount([...(db.apn_revenue_collections || []), ...(db.apn_commissions || [])], (row) => apnActionPending(row.commissionStatus || row.status), apnActionReadTime(db, viewerId, "commission_pending")),
+    withdrawal_pending: apnUnseenActionCount([...(db.apn_withdrawal_requests || []), ...(db.apn_withdrawal_batches || [])], (row) => apnActionPending(row.status), apnActionReadTime(db, viewerId, "withdrawal_pending")),
+    referral_pending: apnUnseenActionCount(db.apn_referral_earnings, (row) => row.status === "pending", apnActionReadTime(db, viewerId, "referral_pending")),
+    target_action: apnUnseenActionCount(db.apn_targets, (row) => row.acknowledged === false, apnActionReadTime(db, viewerId, "target_action")),
+    training_action: apnUnseenActionCount([...(db.apn_training || []), ...(db.apn_quizzes || [])], (row) => apnActionPending(row.status || row.approvalStatus), apnActionReadTime(db, viewerId, "training_action")),
+    material_action: apnUnseenActionCount(db.apn_documents, (row) => row.published === false || apnActionPending(row.status || row.approvalStatus || row.publishStatus), apnActionReadTime(db, viewerId, "material_action")),
+    notification_unread: apnUnseenActionCount(db.apn_notifications, () => true, apnActionReadTime(db, viewerId, "notification_unread")),
+  };
+  const result = Object.fromEntries(APN_ACTION_BADGE_MAP.map(({ actionType, tab }) => [tab, counts[actionType] || 0]));
+  return {
+    ...counts,
+    ...result,
+    training: counts.training_action,
+    materials: counts.material_action,
+    notify: counts.notification_unread,
+    total: Object.values(counts).reduce((sum, value) => sum + value, 0),
+  };
 }
 
 /* ── commission generation (partner rate + 1% district-head override) ─── */
@@ -11237,7 +11281,7 @@ function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
   );
 }
 
-function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, people = [], focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh }) {
+function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, people = [], focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen }) {
   const [tab, setTab] = useState("partners");
   const [modal, setModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
@@ -11416,10 +11460,18 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   });
   const deleteCommissionProject = (project) => withActionError(async () => {
     if (!isSuper) throw new Error("Only a Super Admin can delete commission projects.");
-    const { error } = await supabase.rpc("delete_apn_commission_project", { p_project_id: project.id });
-    if (error) throw new Error(error.message);
-    await onRefresh?.();
-    emitToast("Commission project deleted.", "success");
+    try {
+      const { data, error } = await supabase.rpc("delete_apn_commission_project", { p_project_id: project.id });
+      if (error) throw new Error(error.message);
+      if (!data?.deleted) throw new Error("The production delete operation did not confirm deletion.");
+      onCommissionDeleted?.(project);
+      // The RPC is the source of truth. A transient refresh failure must not
+      // turn a successful deletion into a false failure or leave the dialog up.
+      try { await onRefresh?.(); } catch (refreshError) { console.warn("APN commission refresh after delete failed", refreshError); }
+      emitToast("Commission project deleted.", "success");
+    } catch (error) {
+      throw new Error(`Unable to delete commission project: ${error?.message || "The production operation failed."}`);
+    }
   });
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" }))] }), M(`assigned APN target "${t.title}"`));
   const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));
@@ -11532,7 +11584,12 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   };
 
   const actionBadges = apnAdminActionCounts(db, currentUserId);
-  const tabs = [["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.training], ["docs", "Materials", actionBadges.materials], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
+  const tabs = [["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
+  const selectTab = (nextTab) => {
+    setTab(nextTab);
+    const action = APN_ACTION_BADGE_MAP.find((item) => item.tab === nextTab);
+    if (action) onActionBadgeSeen?.(action.actionType);
+  };
 
   return (
     <div className="content">
@@ -11543,13 +11600,13 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
         {tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
         {tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
       </div>
-      <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l, badge]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}{badge > 0 && <ActionBadge count={badge} label={`${l.toLowerCase()} action`} />}</button>)}</div>
+      <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l, badge]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => selectTab(k)}>{l}{badge > 0 && <ActionBadge count={badge} label={`${l.toLowerCase()} action`} />}</button>)}</div>
 
       {actionError && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{actionError}</div>}
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={isSuper ? (project) => { const partnerName = (db.apn_users || []).find((row) => row.id === project.partnerId)?.name || "—"; setModal({ type: "confirm", title: "Delete Commission Project?", body: `Partner: ${partnerName}\nProject: ${project.projectName || "—"}\nCommission: ${money(project.commissionEarned)}\n\nThis action cannot be undone.`, confirmLabel: "Delete", onConfirm: () => deleteCommissionProject(project) }); } : undefined} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={isSuper ? (project) => { const partnerName = (db.apn_users || []).find((row) => row.id === project.partnerId)?.name || "—"; setModal({ type: "confirm", title: "Delete Commission Project?", body: `Partner:\n${partnerName}\n\nProject:\n${project.projectName || "—"}\n\nCommission:\n${money(project.commissionEarned)}\n\nStatus:\n${project.status || "—"}\n\nWarning:\nThis will permanently remove the commission project and its dependent operational records. Audit history remains immutable.`, confirmLabel: "Delete", onConfirm: () => deleteCommissionProject(project) }); } : undefined} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
@@ -11717,6 +11774,40 @@ export default function App() {
     finally { setLoading(false); }
   }, []);
 
+  const markApnActionBadgeSeen = useCallback(async (actionType) => {
+    if (!profile?.id || !APN_ACTION_BADGE_MAP.some((item) => item.actionType === actionType)) return;
+    const seenAt = new Date().toISOString();
+    setDb((prev) => {
+      if (!prev) return prev;
+      const withoutCurrent = (prev.apn_action_badge_reads || []).filter((row) => !(row.user_id === profile.id && row.action_type === actionType));
+      return { ...prev, apn_action_badge_reads: [...withoutCurrent, { user_id: profile.id, action_type: actionType, seen_at: seenAt }] };
+    });
+    const { error } = await supabase.rpc("mark_apn_action_badge_seen", { p_action_type: actionType });
+    if (error) {
+      setSyncError(error.message || "Could not save APN badge read state.");
+      await reload();
+    }
+  }, [profile?.id, reload]);
+
+  const handleCommissionDeleted = useCallback((project) => {
+    setDb((prev) => {
+      if (!prev) return prev;
+      const crmProjectIds = new Set((prev.crm_projects || []).filter((row) => row.apn_project_id === project.id).map((row) => row.id));
+      return {
+        ...prev,
+        apn_commission_projects: (prev.apn_commission_projects || []).filter((row) => row.id !== project.id),
+        apn_revenue_collections: (prev.apn_revenue_collections || []).filter((row) => row.projectId !== project.id),
+        apn_referral_earnings: (prev.apn_referral_earnings || []).filter((row) => row.project_id !== project.id),
+        transactions: (prev.transactions || []).filter((row) => row.apnProjectId !== project.id),
+        crm_revenue_collections: (prev.crm_revenue_collections || []).filter((row) => !crmProjectIds.has(row.project_id)),
+        crm_projects: (prev.crm_projects || []).map((row) => crmProjectIds.has(row.id) ? { ...row, apn_project_id: null } : row),
+        apn_notifications: (prev.apn_notifications || []).filter((row) => row.metadata?.projectId !== project.id),
+        notifications: (prev.notifications || []).filter((row) => row.metadata?.projectId !== project.id),
+        apn_timeline: (prev.apn_timeline || []).filter((row) => row.relatedId !== project.id),
+      };
+    });
+  }, []);
+
   // ── load data + live sync while signed in ─────────────────────────────
   useEffect(() => {
     if (!session) { setDb(null); setLoading(false); return; }
@@ -11728,6 +11819,7 @@ export default function App() {
     Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(AI_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, reload);
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
@@ -12269,7 +12361,7 @@ export default function App() {
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} onActivity={recordActivity} onOpenAPN={() => go("apn")} />;
       case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
-      case "apn": return <APNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} />;
+      case "apn": return <APNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen} />;
       case "activity": return <LastSeen team={team} />;
       case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
       case "staff-salary": return <StaffSalary db={db} team={team} mutate={mutate} me={me} />;
