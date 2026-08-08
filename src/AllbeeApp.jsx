@@ -10950,7 +10950,7 @@ function APNAdminLeads({ db, openModal }) {
     </div>
   );
 }
-function APNCommissionEntry({ db, partners, initial, onSave, onClose }) {
+function APNCommissionEntry({ db, partners, initial, onSave, onClose, onDelete }) {
   const existingCollections = initial ? apnRevenueCollectionsOf(db, initial.id) : [];
   const [f, setF] = useState(() => ({ partnerId: initial?.partnerId || partners[0]?.id || "", projectName: initial?.projectName || initial?.project || "", clientName: initial?.clientName || "", projectValue: initial?.projectValue ?? initial?.revenue ?? "", commissionRate: initial?.commissionRate ?? initial?.rate ?? "", category: initial?.category || initial?.service || "website", remarks: initial?.remarks || "", status: initial?.status || "Pending" }));
   const [collections, setCollections] = useState(() => existingCollections.length ? existingCollections.map((row) => ({ ...row })) : [{ id: uid(), receivedAmount: "", incentive: "", remarks: "", receivedDate: todayISO() }]);
@@ -11005,6 +11005,7 @@ function APNCommissionEntry({ db, partners, initial, onSave, onClose }) {
     <div className="apn-list">{collections.map((row, index) => <div className="apn-rowcard" key={row.id} style={{ padding: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><b style={{ flex: 1 }}>Collection {index + 1}</b>{collections.length > 1 && <button className="iconbtn" type="button" style={{ width: 28, height: 28 }} aria-label={`Remove collection ${index + 1}`} onClick={() => setCollections((prev) => prev.filter((x) => x.id !== row.id))}><Trash2 size={13} /></button>}</div><div className="grid2"><Field label="Received amount"><input className="input mono" type="number" min="0" value={row.receivedAmount} onChange={(e) => setCollection(row.id, "receivedAmount", e.target.value)} placeholder="50000" /></Field><Field label="Received date"><input className="input" type="date" value={row.receivedDate || ""} onChange={(e) => setCollection(row.id, "receivedDate", e.target.value)} /></Field></div><div className="grid2"><Field label="Incentive"><input className="input mono" type="number" min="0" value={row.incentive} onChange={(e) => setCollection(row.id, "incentive", e.target.value)} placeholder="0" /></Field><div className="apn-profile-kv"><span>Commission generated</span><b className="mono pos-txt">{money(previewCollections[index]?.commissionGenerated || 0)}</b></div></div><Field label="Remarks"><input className="input" value={row.remarks || ""} onChange={(e) => setCollection(row.id, "remarks", e.target.value)} placeholder="Payment reference or note" /></Field></div>)}</div>
     {err && <div className="auth-msg err" style={{ marginTop: 10 }}>{err}</div>}
     <div className="calc-box" style={{ marginTop: 12 }}><div className="calc-row"><span>Project value</span><b className="mono">{money(projectValue)}</b></div><div className="calc-row"><span>Received</span><b className="mono">{money(totalReceived)}</b></div><div className="calc-row"><span>Remaining</span><b className="mono">{money(remainingAmount)}</b></div><div className="calc-row"><span>Commission rate</span><b>{Number(rate) || 0}%</b></div><div className="calc-row"><span>Commission earned</span><b className="mono pos-txt">{money(commissionEarned)}</b></div><div className="calc-row"><span>Pending commission</span><b className="mono">{money(remainingCommission)}</b></div><div className="calc-row"><span>Total incentives</span><b className="mono">{money(totalIncentives)}</b></div><div className="calc-row"><span>Final payout</span><b className="mono pos-txt">{money(commissionEarned + totalIncentives)}</b></div><div className="calc-row"><span>Status</span><span className="badge pri">{f.status === "Cancelled" ? "CANCELLED" : derivedStatus.toUpperCase()}</span></div></div>
+    {initial?.id && onDelete && <div className="banner" style={{ marginTop: 14, borderColor: "var(--neg)", alignItems: "flex-start" }}><div style={{ flex: 1 }}><b>Danger Zone</b><div className="hint-line" style={{ marginTop: 4 }}>Permanently remove this commission project and removable dependent records.</div></div><button className="btn" type="button" style={{ color: "var(--neg)", borderColor: "var(--neg)" }} onClick={() => onDelete(initial)}><Trash2 size={14} />Delete commission project</button></div>}
   </Modal>;
 }
 
@@ -11461,18 +11462,28 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   const deleteCommissionProject = (project) => withActionError(async () => {
     if (!isSuper) throw new Error("Only a Super Admin can delete commission projects.");
     try {
-      const { data, error } = await supabase.rpc("delete_apn_commission_project", { p_project_id: project.id });
+      const { data, error } = await supabase.rpc("apn_delete_commission_project", { p_project_id: project.id });
       if (error) throw new Error(error.message);
       if (!data?.deleted) throw new Error("The production delete operation did not confirm deletion.");
       onCommissionDeleted?.(project);
       // The RPC is the source of truth. A transient refresh failure must not
       // turn a successful deletion into a false failure or leave the dialog up.
       try { await onRefresh?.(); } catch (refreshError) { console.warn("APN commission refresh after delete failed", refreshError); }
-      emitToast("Commission project deleted.", "success");
+      emitToast("Commission project deleted successfully.", "success");
     } catch (error) {
       throw new Error(`Unable to delete commission project: ${error?.message || "The production operation failed."}`);
     }
   });
+  const requestCommissionDelete = (project) => {
+    const partnerName = (db.apn_users || []).find((row) => row.id === project.partnerId)?.name || project.partnerName || "—";
+    setModal({
+      type: "confirm",
+      title: "Delete commission project?",
+      body: `Partner: ${partnerName}\nProject: ${project.projectName || "—"}\nValue: ${money(project.projectValue)}\nReceived: ${money(project.totalReceived)}\nCommission: ${money(project.commissionEarned)}\nStatus: ${project.status || "—"}\n\nThis action cannot be undone.`,
+      confirmLabel: "Delete permanently",
+      onConfirm: () => deleteCommissionProject(project),
+    });
+  };
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" }))] }), M(`assigned APN target "${t.title}"`));
   const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));
   const sendNotif = (n) => mutate((d) => ({ ...d, apn_notifications: [...(d.apn_notifications || []), withSender(n)] }), M(`sent APN notification "${n.title}"`));
@@ -11606,7 +11617,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project })} onDelete={isSuper ? (project) => { const partnerName = (db.apn_users || []).find((row) => row.id === project.partnerId)?.name || "—"; setModal({ type: "confirm", title: "Delete Commission Project?", body: `Partner:\n${partnerName}\n\nProject:\n${project.projectName || "—"}\n\nCommission:\n${money(project.commissionEarned)}\n\nStatus:\n${project.status || "—"}\n\nWarning:\nThis will permanently remove the commission project and its dependent operational records. Audit history remains immutable.`, confirmLabel: "Delete", onConfirm: () => deleteCommissionProject(project) }); } : undefined} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
@@ -11637,7 +11648,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {modal?.type === "apnCommunication" && <APNCommunicationForm partner={modal.partner} onClose={() => setModal(null)} onSave={(value) => saveCommunication(modal.partner, value)} />}
       {modal?.type === "apnBulk" && <APNBulkForm action={modal.action} partners={modal.partners} onClose={() => setModal(null)} onSave={(values) => executeBulk(modal.action, modal.partners, values)} />}
       {modal?.type === "apnCreatePartner" && <APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} onClose={() => setModal(null)} />}
-      {modal?.type === "apnCommissionEntry" && <APNCommissionEntry db={db} initial={modal.initial} partners={[...new Map([...(partners.filter((p) => apnEffectiveStatus(p) === "active")), ...((db.apn_users || []).filter((p) => p.id === modal.initial?.partnerId))].map((p) => [p.id, p])).values()]} onSave={saveCommissionProject} onClose={() => setModal(null)} />}
+      {modal?.type === "apnCommissionEntry" && <APNCommissionEntry db={db} initial={modal.initial} partners={[...new Map([...(partners.filter((p) => apnEffectiveStatus(p) === "active")), ...((db.apn_users || []).filter((p) => p.id === modal.initial?.partnerId))].map((p) => [p.id, p])).values()]} onSave={saveCommissionProject} onClose={() => setModal(null)} onDelete={modal.onDelete} />}
       {modal?.type === "apnLeadManage" && <APNLeadManage lead={modal.lead} onSave={saveLead} onClose={() => setModal(null)} />}
       {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} onSave={saveTarget} onClose={() => setModal(null)} />}
       {modal?.type === "apnTraining" && <APNTrainingForm initial={modal.initial} onSave={(r) => saveRow("apn_training", r, `${modal.initial ? "updated" : "added"} APN lesson "${r.title}"`)} onClose={() => setModal(null)} />}
@@ -11798,8 +11809,6 @@ export default function App() {
         apn_commission_projects: (prev.apn_commission_projects || []).filter((row) => row.id !== project.id),
         apn_revenue_collections: (prev.apn_revenue_collections || []).filter((row) => row.projectId !== project.id),
         apn_referral_earnings: (prev.apn_referral_earnings || []).filter((row) => row.project_id !== project.id),
-        transactions: (prev.transactions || []).filter((row) => row.apnProjectId !== project.id),
-        crm_revenue_collections: (prev.crm_revenue_collections || []).filter((row) => !crmProjectIds.has(row.project_id)),
         crm_projects: (prev.crm_projects || []).map((row) => crmProjectIds.has(row.id) ? { ...row, apn_project_id: null } : row),
         apn_notifications: (prev.apn_notifications || []).filter((row) => row.metadata?.projectId !== project.id),
         notifications: (prev.notifications || []).filter((row) => row.metadata?.projectId !== project.id),
