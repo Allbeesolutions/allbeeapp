@@ -675,6 +675,18 @@ function maskPhone(p) {
   if (digits.length < 5) return "***";
   return "****" + digits.slice(-4);
 }
+// Conservative free-text sanitizer for the AI snapshot: masks emails and
+// plausible phone numbers (10+ digits, with optional separators) inside any
+// note/description field. Everything else is preserved for business meaning.
+function scrubText(v) {
+  const s = String(v ?? "");
+  if (!s) return s;
+  let out = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, maskEmail);
+  return out.replace(/\+?\d[\d\s().-]{7,}\d/g, (token) => {
+    const digits = (token.match(/\d/g) || []).join("");
+    return digits.length >= 10 ? "****" + digits.slice(-4) : token;
+  });
+}
 // A compact, bounded snapshot of the workspace so the assistant can answer
 // questions and draft quotations/replies grounded in real ALLBEE data.
 function buildAIContext(db, company) {
@@ -687,18 +699,18 @@ function buildAIContext(db, company) {
   const clients = cap(db.clients, 40);
   if (clients.length) {
     L.push(`\nCLIENTS (${db.clients.length} total, newest first):`);
-    clients.forEach((c) => L.push(`- ${c.name}${c.company ? " (" + c.company + ")" : ""} · ${c.status || "—"}${c.phone ? " · " + maskPhone(c.phone) : ""}${c.email ? " · " + maskEmail(c.email) : ""}${c.value ? " · deal " + money(c.value) : ""}${c.notes ? " · " + String(c.notes).slice(0, 80) : ""}`));
+    clients.forEach((c) => L.push(`- ${c.name}${c.company ? " (" + c.company + ")" : ""} · ${c.status || "—"}${c.phone ? " · " + maskPhone(c.phone) : ""}${c.email ? " · " + maskEmail(c.email) : ""}${c.value ? " · deal " + money(c.value) : ""}${c.notes ? " · " + scrubText(String(c.notes)).slice(0, 80) : ""}`));
   }
   const leads = cap(db.leads, 40);
   if (leads.length) {
     L.push(`\nLEADS (${db.leads.length}):`);
-    leads.forEach((x) => L.push(`- ${x.name}${x.company ? " (" + x.company + ")" : ""} · service ${x.service || "—"} · stage ${x.stage || "—"}${x.value ? " · est " + money(x.value) : ""}${x.leadOwner ? " · owner " + x.leadOwner : ""}${x.phone ? " · " + maskPhone(x.phone) : ""}${x.notes ? " · " + String(x.notes).slice(0, 80) : ""}`));
+    leads.forEach((x) => L.push(`- ${x.name}${x.company ? " (" + x.company + ")" : ""} · service ${x.service || "—"} · stage ${x.stage || "—"}${x.value ? " · est " + money(x.value) : ""}${x.leadOwner ? " · owner " + x.leadOwner : ""}${x.phone ? " · " + maskPhone(x.phone) : ""}${x.notes ? " · " + scrubText(String(x.notes)).slice(0, 80) : ""}`));
   }
   const quotes = cap(db.quotations, 30);
   if (quotes.length) {
     L.push(`\nQUOTATIONS (${db.quotations.length}):`);
     quotes.forEach((q) => {
-      const items = (q.items || []).map((it) => `${it.desc || "item"} x${it.qty || 1} @ ${money(it.rate || 0)}`).join("; ");
+      const items = (q.items || []).map((it) => `${scrubText(it.desc || "item").slice(0, 60)} x${it.qty || 1} @ ${money(it.rate || 0)}`).join("; ");
       L.push(`- ${q.client || "—"}${q.title ? " · " + q.title : ""} · ${q.status || "Draft"} · total ${money(q.total || 0)}${items ? " · items: " + items.slice(0, 180) : ""}`);
     });
   }
@@ -730,7 +742,7 @@ function buildAIContext(db, company) {
   if (db.inhouse?.length) counts.push(`in-house projects ${db.inhouse.length}`);
   if (db.planned?.length) counts.push(`planned expenses ${db.planned.length}`);
   if (counts.length) L.push(`\nOTHER COUNTS: ${counts.join(" · ")}`);
-  L.push(`\nNOTE: Client/lead phone numbers and emails in this snapshot are masked for privacy; ask the user for a full contact when one is needed.`);
+  L.push(`\nNOTE: Client/lead phone numbers and emails in this snapshot are masked; free-text notes and item descriptions are scrubbed for contact details. Ask the user for a full contact when one is needed.`);
 
   let out = L.join("\n");
   if (out.length > 12000) out = out.slice(0, 12000) + "\n…(snapshot truncated)";
