@@ -2110,23 +2110,31 @@ function Avatar({ name, url, size = 26, fontSize, style }) {
 ══════════════════════════════════════════════════════════════════════ */
 function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProjects = [], apnPartners = [] }) {
   const isIncome = kind === "income";
-  const initialProject = initial?.apnProjectId ? apnProjects.find((project) => project.id === initial.apnProjectId) : null;
+  // An income whose transaction already carries APN attribution (stored on the
+  // row itself, so even an orphan APN income without a local project row is
+  // recognised and can be edited/repaired).
+  const editingApn = isIncome && !!initial?.apnProjectId;
+  const initialProject = editingApn ? apnProjects.find((project) => project.id === initial.apnProjectId) : null;
   const [f, setF] = useState(() => {
-    const base = { client: "", project: "", amount: "", date: todayISO(), category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "", incomeSource: initial?.incomeSource || (initial?.apnProjectId ? "apn" : "normal"), apnProjectId: initial?.apnProjectId || "", apnPartnerId: initialProject?.partnerId || "", apnProjectName: initialProject?.projectName || "", apnClientName: initialProject?.clientName || "", apnProjectValue: initialProject?.projectValue || "", apnCommissionRate: initialProject?.commissionRate ?? "", ...initial };
+    const base = { client: "", project: "", amount: "", date: todayISO(), category: isIncome ? "Project" : "Office Rent", hajiPct: 50, alimPct: 50, notes: "", apnProjectId: initial?.apnProjectId || "", apnPartnerId: initialProject?.partnerId || initial?.apnPartnerId || "", apnProjectName: initialProject?.projectName || initial?.apnProjectName || "", apnClientName: initialProject?.clientName || initial?.apnClientName || "", apnProjectValue: initialProject?.projectValue ?? initial?.apnProjectValue ?? "", apnCommissionRate: initialProject?.commissionRate ?? initial?.apnCommissionRate ?? "", ...initial };
     // New expenses default to the shared "company" bucket; legacy edits stay
     // manual ("project") so historical splits are never silently rewritten.
     if (!isIncome) base.scope = initial?.scope || (initial?.id ? "project" : "company");
     return base;
   });
   const [apnCollections, setApnCollections] = useState(() => {
-    const existing = initial?.apnProjectId ? (db?.apn_revenue_collections || []).filter((row) => row.projectId === initial.apnProjectId) : [];
-    return existing.length ? existing.map((row) => ({ ...row })) : [{ id: initial?.apnCollectionId || uid(), receivedAmount: initial?.amount || "", incentive: "", remarks: initial?.notes || "", receivedDate: initial?.date || todayISO() }];
+    const existing = editingApn ? (db?.apn_revenue_collections || []).filter((row) => row.projectId === initial.apnProjectId) : [];
+    if (existing.length) return existing.map((row) => ({ ...row }));
+    // New APN posting or converting an existing plain income: seed one
+    // collection with the entry's own amount so a conversion stays neutral.
+    return [{ id: initial?.apnCollectionId || uid(), receivedAmount: initial?.amount ?? "", incentive: "", remarks: initial?.notes || "", receivedDate: initial?.date || todayISO() }];
   });
+  const [apnAttribution, setApnAttribution] = useState(() => isIncome && !!initial?.apnProjectId);
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setSplit = (h) => setF((s) => ({ ...s, hajiPct: h, alimPct: 100 - h }));
-  const isAPNIncome = isIncome && f.incomeSource === "apn";
+  const isAPNIncome = isIncome && apnAttribution;
   const apnPartner = apnPartners.find((partner) => partner.id === f.apnPartnerId);
   const derivedApnRate = apnPartner ? apnRateForPrior(apnPartnerStats(db, apnPartner.id).completed) : 0;
   const apnRelationship = (db?.apn_referral_relationships || []).find((relationship) => relationship.referred_id === f.apnPartnerId && relationship.status === "active");
@@ -2146,6 +2154,27 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
     }
     return round2(earned);
   })();
+  // Attaching to an existing project (new posting or conversion) reads the
+  // project's own value/rate — only a brand-new project or an anchored edit
+  // (the income already posts to it) may change them.
+  const apnFieldLocked = !!f.apnProjectId && !editingApn;
+  // Picking an existing commission project pre-fills its identity so the RPC
+  // attaches instead of creating a duplicate.
+  const onPickProject = (value) => {
+    if (value === f.apnProjectId) return;
+    const picked = apnProjects.find((project) => project.id === value);
+    setF((state) => ({
+      ...state,
+      apnProjectId: value,
+      apnProjectName: picked?.projectName ?? state.apnProjectName,
+      apnClientName: picked?.clientName ?? state.apnClientName,
+      apnProjectValue: picked?.projectValue ?? state.apnProjectValue,
+      apnCommissionRate: picked?.commissionRate ?? state.apnCommissionRate,
+    }));
+  };
+  // Attribution off removes the APN flags from the payload (detach on an
+  // existing APN income — the snapshot below is kept so it can be re-enabled).
+  const setAttribution = (on) => setApnAttribution(on);
 
   // Company expenses derive their split from the previous valid revenue month.
   const isCompany = !isIncome && f.scope === "company";
@@ -2167,11 +2196,15 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
     if (isAPNIncome && apnCollections.some((row) => !Number.isFinite(Number(row.receivedAmount)) || Number(row.receivedAmount) <= 0)) return;
     if (isAPNIncome && apnCollections.some((row) => !Number.isFinite(Number(row.incentive || 0)) || Number(row.incentive || 0) < 0)) return;
     const payload = {
-      ...initial, id: initial?.id || uid(), kind, client: f.client.trim(), project: f.project.trim(),
-      amount: amt, date: f.date, category: f.category, hajiPct: Number(f.hajiPct), alimPct: Number(f.alimPct),
-      notes: f.notes.trim(), apnProjectId: isIncome ? (f.apnProjectId || null) : null, createdAt: initial?.createdAt || Date.now(),
+      ...initial, id: initial?.id || uid(), kind, client: isAPNIncome ? f.apnClientName.trim() : f.client.trim(),
+      project: isAPNIncome ? f.apnProjectName.trim() : f.project.trim(),
+      amount: amt, date: isAPNIncome ? (apnCollections[0]?.receivedDate || f.date) : f.date,
+      category: f.category, hajiPct: Number(f.hajiPct), alimPct: Number(f.alimPct),
+      notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now(),
+      incomeSource: isIncome ? (isAPNIncome ? "apn" : "normal") : undefined,
+      apnProjectId: isAPNIncome ? (f.apnProjectId || null) : null,
     };
-    if (isAPNIncome) Object.assign(payload, { client: f.apnClientName.trim(), project: f.apnProjectName.trim(), amount: apnTotal, date: apnCollections[0]?.receivedDate || f.date, incomeSource: "apn", apnProjectId: f.apnProjectId || uid(), apnPartnerId: f.apnPartnerId, apnProjectName: f.apnProjectName.trim(), apnClientName: f.apnClientName.trim(), apnProjectValue, apnCommissionRate: apnRate, apnCollections: apnCollections.map((row) => ({ ...row, receivedAmount: Number(row.receivedAmount), incentive: Number(row.incentive || 0), remarks: String(row.remarks || "").trim() })) });
+    if (isAPNIncome) Object.assign(payload, { apnPartnerId: f.apnPartnerId, apnProjectName: f.apnProjectName.trim(), apnClientName: f.apnClientName.trim(), apnProjectValue, apnCommissionRate: apnRate, apnCollections: apnCollections.map((row) => ({ ...row, receivedAmount: Number(row.receivedAmount), incentive: Number(row.incentive || 0), remarks: String(row.remarks || "").trim() })) });
     if (!isIncome) { payload.scope = f.scope; payload.shareSource = isCompany ? (plan.fallback ? null : plan.sourcePeriod) : null; }
     setSaving(true);
     try { const result = await onSave(payload); if (result !== false) onClose(); }
@@ -2182,20 +2215,19 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
     <Modal title={(initial?.id ? "Edit " : "Add ") + (isIncome ? "income" : "expense")} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" onClick={save} disabled={!valid || saving}><Check size={16} />{saving ? "Saving…" : isIncome ? "Add income" : "Add expense"}</button></>}>
-      {isIncome && <Field label="Income source" required><div className="seg" style={{ display: "inline-flex" }}><button type="button" className={f.incomeSource !== "apn" ? "on" : ""} onClick={() => setF((state) => ({ ...state, incomeSource: "normal", apnProjectId: "" }))}>Normal income</button><button type="button" className={f.incomeSource === "apn" ? "on" : ""} onClick={() => up("incomeSource", "apn")}>APN commission project</button></div></Field>}
-      {isAPNIncome ? <>
-        <div className="grid2"><Field label="Partner" required><SearchableSelect value={f.apnPartnerId} onChange={(value) => up("apnPartnerId", value)} disabled={!!initial?.apnProjectId} ariaLabel="APN income partner" options={apnPartners.map((partner) => ({ value: partner.id, label: partner.name, meta: apnIdFor(partner) }))} /></Field><Field label="Referral"><SearchableSelect value={apnRelationship?.referrer_id || ""} disabled ariaLabel="Direct referral partner" options={[{ value: "", label: apnReferrer ? apnReferrer.name : "No direct referral" }, ...(apnReferrer ? [{ value: apnReferrer.id, label: apnReferrer.name, meta: "Direct referral" }] : [])]} /></Field></div>
-        <div className="grid2"><Field label="Project name" required><input className="input" value={f.apnProjectName} onChange={(e) => up("apnProjectName", e.target.value)} placeholder="Website redesign" /></Field><Field label="Client name" required><input className="input" value={f.apnClientName} onChange={(e) => up("apnClientName", e.target.value)} placeholder="Client" /></Field></div>
-        <div className="grid2"><Field label="Project value" required><input className="input mono" type="number" min="0" value={f.apnProjectValue} onChange={(e) => up("apnProjectValue", e.target.value)} placeholder="100000" /></Field><Field label="Commission %" required hint="Defaults to the partner's current progression rate."><input className="input mono" type="number" min="0" max="100" value={f.apnCommissionRate} onChange={(e) => up("apnCommissionRate", e.target.value)} placeholder={String(derivedApnRate)} /></Field></div>
-        <div className="calc-box"><div className="calc-row"><span>Maximum commission</span><b className="mono">{money(apnMax)}</b></div><div className="calc-row"><span>New collections</span><b className="mono">{money(apnTotal)}</b></div><div className="calc-row"><span>Commission expense (auto)</span><b className="mono">{money(apnCommissionPreview)}</b></div><div className="calc-row"><span>Status</span><span className={"badge " + (apnTotal >= apnProjectValue && apnProjectValue > 0 ? "pos" : "accent")}>{apnTotal >= apnProjectValue && apnProjectValue > 0 ? "Completed" : "Processing"}</span></div></div>
-        <div className="hint-line" style={{ marginTop: 6 }}>Posting records a matching <b>APN Commission</b> expense in Share & accounts automatically, split like this income. If the project already exists, this entry attaches to it instead of creating a duplicate.</div>
+      {isIncome && <div className="apn-section-head" style={{ margin: "14px 0 10px" }}><h4 style={{ margin: 0 }}>APN attribution <span className="hint-line" style={{ fontWeight: 400 }}>(optional)</span></h4><button className="btn sm" type="button" onClick={() => setAttribution(!apnAttribution)}>{isAPNIncome ? <><X size={13} />Remove attribution</> : <><Link2 size={13} />Add APN attribution</>}</button></div>}
+      {isAPNIncome && <>
+        <div className="grid2"><Field label="Partner" required><SearchableSelect value={f.apnPartnerId} onChange={(value) => up("apnPartnerId", value)} disabled={!!editingApn} ariaLabel="APN income partner" options={apnPartners.map((partner) => ({ value: partner.id, label: partner.name, meta: apnIdFor(partner) }))} /></Field><Field label="Referral"><SearchableSelect value={apnRelationship?.referrer_id || ""} disabled ariaLabel="Direct referral partner" options={[{ value: "", label: apnReferrer ? apnReferrer.name : "No direct referral" }, ...(apnReferrer ? [{ value: apnReferrer.id, label: apnReferrer.name, meta: "Direct referral" }] : [])]} /></Field></div>
+        <div className="grid2"><Field label="Commission project" required hint={editingApn ? "This income is anchored to its own project — the APN link cannot be moved." : "Pick an existing project to attach this income to it, or start a new commission."}><SearchableSelect value={f.apnProjectId || ""} onChange={onPickProject} disabled={!!editingApn} ariaLabel="APN commission project" options={[{ value: "", label: "New commission project" }, ...(editingApn ? [{ value: initial.apnProjectId, label: initialProject ? `${initialProject.projectName} · ${initialProject.clientName}` : `${initial?.apnProjectName || "Orphan project"} · ${initial?.apnClientName || "Unknown client"}`, meta: initialProject ? "Anchored to this project" : "Project row missing — recreated on save" }] : []), ...apnProjects.filter((project) => !initialProject || project.id !== initialProject.id).map((project) => { const linked = apnFinancePostedFor(db, project.id); return { value: project.id, label: `${project.projectName} · ${project.clientName}`, meta: `${linked.posted ? "Posted to finance · " : ""}${money(project.remainingAmount)} remaining · ${project.partnerName || "Partner"}` }; })]} /></Field><Field label="Posting status">{(f.apnProjectId ? (apnFinancePostedFor(db, f.apnProjectId).posted ? <span className="badge pos" style={{ marginTop: 12 }}>Posted to finance</span> : apnFinancePostedFor(db, f.apnProjectId).expense ? <span className="badge accent" style={{ marginTop: 12 }}>Linked APN expense</span> : <span className="badge accent" style={{ marginTop: 12 }}>Not posted yet</span>) : <span className="hint-line" style={{ marginTop: 16 }}>Created when you save.</span>)}</Field></div>
+        <div className="grid2"><Field label="Project name" required hint={apnFieldLocked ? "Project identity comes from the selected commission project." : undefined}><input className="input" value={f.apnProjectName} onChange={(e) => up("apnProjectName", e.target.value)} readOnly={apnFieldLocked} placeholder="Website redesign" /></Field><Field label="Client name" required hint={apnFieldLocked ? "Comes from the selected commission project." : undefined}><input className="input" value={f.apnClientName} onChange={(e) => up("apnClientName", e.target.value)} readOnly={apnFieldLocked} placeholder="Client" /></Field></div>
+        <div className="grid2"><Field label="Project value" required hint={apnFieldLocked ? "The project owns its value — edit it in the APN module." : (editingApn && initialProject ? "On record for this project — the APN project keeps these numbers." : undefined)}><input className="input mono" type="number" min="0" value={f.apnProjectValue} onChange={(e) => up("apnProjectValue", e.target.value)} readOnly={apnFieldLocked} placeholder="100000" /></Field><Field label="Commission %" required hint={apnFieldLocked ? "Comes from the selected project." : (editingApn && initialProject ? "On record for this project — rate changes belong in the APN module." : "Defaults to the partner's current progression rate.")}><input className="input mono" type="number" min="0" max="100" value={f.apnCommissionRate} onChange={(e) => up("apnCommissionRate", e.target.value)} readOnly={apnFieldLocked} placeholder={String(derivedApnRate)} /></Field></div>
+        <div className="calc-box"><div className="calc-row"><span>Maximum commission</span><b className="mono">{money(apnMax)}</b></div><div className="calc-row"><span>{editingApn ? "Total collections" : "New collections"}</span><b className="mono">{money(apnTotal)}</b></div><div className="calc-row"><span>Commission expense (auto)</span><b className="mono">{money(apnCommissionPreview)}</b></div><div className="calc-row"><span>Status</span><span className={"badge " + (apnTotal >= apnProjectValue && apnProjectValue > 0 ? "pos" : "accent")}>{apnTotal >= apnProjectValue && apnProjectValue > 0 ? "Completed" : "Processing"}</span></div></div>
+        <div className="hint-line" style={{ marginTop: 6 }}>{editingApn ? "Saving replaces this income's collections and recalculates the matching APN Commission expense — both stay in sync with Share & accounts." : <>Posting records a matching <b>APN Commission</b> expense in Share & accounts automatically, split like this income. If the project already exists, this entry attaches to it instead of creating a duplicate.</>}</div>
         <div className="apn-section-head" style={{ marginTop: 12 }}><h4 style={{ margin: 0 }}>Collections</h4><button className="btn sm" type="button" onClick={() => setApnCollections((rows) => [...rows, { id: uid(), receivedAmount: "", incentive: "", remarks: "", receivedDate: todayISO() }])}><Plus size={13} />Add collection</button></div>
         <div className="apn-list">{apnCollections.map((row, index) => <div className="apn-rowcard" key={row.id} style={{ padding: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><b style={{ flex: 1 }}>Collection {index + 1}</b>{apnCollections.length > 1 && <button className="iconbtn" type="button" style={{ width: 28, height: 28 }} aria-label={`Remove collection ${index + 1}`} onClick={() => setApnCollections((rows) => rows.filter((item) => item.id !== row.id))}><Trash2 size={13} /></button>}</div><div className="grid2"><Field label="Received amount" required><input className="input mono" type="number" min="0" value={row.receivedAmount} onChange={(e) => setApnCollection(row.id, "receivedAmount", e.target.value)} placeholder="50000" /></Field><Field label="Received date" required><input className="input" type="date" value={row.receivedDate || ""} onChange={(e) => setApnCollection(row.id, "receivedDate", e.target.value)} /></Field></div><div className="grid2"><Field label="Incentive"><input className="input mono" type="number" min="0" value={row.incentive} onChange={(e) => setApnCollection(row.id, "incentive", e.target.value)} placeholder="0" /></Field><Field label="Remarks"><input className="input" value={row.remarks || ""} onChange={(e) => setApnCollection(row.id, "remarks", e.target.value)} placeholder="Payment reference or note" /></Field></div></div>)}</div>
-      </> : <>
-        <div className="grid2"><Field label="Client name"><input className="input" value={f.client} onChange={(e) => up("client", e.target.value)} placeholder="e.g. Sun Textiles" /></Field>
-          <Field label={isIncome ? "Project / source" : "Project (optional)"}><input className="input" value={f.project} onChange={(e) => up("project", e.target.value)} placeholder={isIncome ? "Website redesign" : "Tied to a project?"} /></Field></div>
-        {isIncome && apnProjects.length > 0 && <div className="field"><label>APN collection link <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><SearchableSelect value={f.apnProjectId || ""} onChange={(value) => up("apnProjectId", value)} ariaLabel="Link income to an APN commission project" options={[{ value: "", label: "No APN link" }, ...apnProjects.map((p) => { const linked = apnFinancePostedFor(db, p.id); return { value: p.id, label: `${p.projectName} · ${p.clientName}`, meta: `${linked.posted ? "Posted to finance · " : ""}${money(p.remainingAmount)} remaining · ${p.partnerName || "Partner"}` }; })]} /><div className="hint-line" style={{ marginTop: 5 }}>Links this income receipt to the selected APN collection. A project already posted to finance rejects further postings — edit the original entry instead. The APN engine remains the source for commission calculations.</div></div>}
       </>}
+      <div className="grid2"><Field label="Client name" hint={isAPNIncome ? "Derived from APN attribution." : undefined}><input className="input" value={isAPNIncome ? f.apnClientName : f.client} onChange={(e) => up("client", e.target.value)} readOnly={isAPNIncome} placeholder="e.g. Sun Textiles" /></Field>
+        <Field label={isIncome ? "Project / source" : "Project (optional)"} hint={isAPNIncome ? "Derived from APN attribution." : undefined}><input className="input" value={isAPNIncome ? f.apnProjectName : f.project} onChange={(e) => up("project", e.target.value)} readOnly={isAPNIncome} placeholder={isIncome ? "Website redesign" : "Tied to a project?"} /></Field></div>
       <div className="grid2">
         <Field label={isAPNIncome ? "Total income amount" : isIncome ? "Income amount" : "Expense amount"} required error={touched && amt <= 0 ? "Enter an amount above ₹0" : ""}>
           <input className="input mono" type="number" min="0" value={isAPNIncome ? apnTotal : f.amount} onChange={(e) => up("amount", e.target.value)} placeholder="10000" readOnly={isAPNIncome} />
@@ -12170,8 +12202,19 @@ export default function App() {
       ? ` · company split ${entry.hajiPct}/${entry.alimPct}${entry.shareSource ? ` (from ${fmtPeriod(entry.shareSource)} revenue)` : " — even split, no revenue yet"}`
       : "";
     try {
+      // Mode routing for APN-attributed incomes:
+      //   edit    — the income already posts to its project (anchors on it,
+      //             collections replaced wholesale, expense recomputed).
+      //   convert — a normal income gains APN attribution; it keeps its own id.
+      //   create  — brand-new posting, possibly attached through the RPC's
+      //             canonical partner+name+client resolution.
+      // Only a NEW income linked to an ALREADY-EXISTING project takes the local
+      // attach path at the bottom; everything else goes through the RPC so the
+      // income id is never mistaken for an unwanted duplicate.
+      const apnEditing = !!prev?.id && !!prev?.apnProjectId;
       const existingApnProject = entry.apnProjectId && (db.apn_commission_projects || []).find((row) => row.id === entry.apnProjectId);
-      if (entry.kind === "income" && entry.incomeSource === "apn" && !existingApnProject) {
+      if (entry.kind === "income" && entry.incomeSource === "apn" && (apnEditing || !!prev?.id || !existingApnProject)) {
+        const pMode = apnEditing ? "edit" : (prev?.id ? "convert" : "create");
         const partner = (db.apn_users || []).find((row) => row.id === entry.apnPartnerId && row.status === "active");
         if (!partner) throw new Error("Select an active APN partner.");
         const collections = (entry.apnCollections || []).map((row) => ({ ...row, projectId: entry.apnProjectId, partnerId: partner.id, receivedAmount: Number(row.receivedAmount) || 0, incentive: Number(row.incentive || 0), receivedDate: row.receivedDate || entry.date, createdBy: row.createdBy || currentUser, createdAt: row.createdAt || Date.now(), commissionStatus: row.commissionStatus || "Pending" }));
@@ -12189,124 +12232,78 @@ export default function App() {
           return { ...row, commissionGenerated };
         });
         const project = { id: entry.apnProjectId, partnerId: partner.id, partnerName: partner.name, projectName: entry.apnProjectName.trim(), clientName: entry.apnClientName.trim(), category: entry.category || "website", projectValue: value, commissionRate: rate, maximumCommission: maximum, totalReceived: round2(received), totalCommissionPaid: 0, remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, maximum - earned)), status: received >= value ? "Completed" : "Processing", remarks: entry.notes || "Finance income receipt", createdBy: currentUser, createdAt: entry.createdAt || Date.now(), updatedAt: Date.now() };
-        // Preflight the canonical DB state: the same partner+project+client may
-        // already exist under a different id (APN module on another device).
+        // Preflight the canonical DB state (create/convert only — an edit anchors
+        // on its own project and the RPC itself refuses collisions): the same
+        // partner+project+client may already exist under a different id (APN
+        // module on another device).
         let canonicalProjectId = null;
         let alreadyPostedIncome = null;
-        try {
-          const { data: state, error: stateError } = await supabase.rpc("get_apn_commission_state", { p_partner_id: partner.id, p_project_name: entry.apnProjectName.trim(), p_client_name: entry.apnClientName.trim() });
-          if (!stateError && state?.project?.id) {
-            canonicalProjectId = state.project.id;
-            alreadyPostedIncome = state.financeIncome || null;
-          }
-        } catch { /* best effort — the RPC itself guards duplicates */ }
+        if (pMode !== "edit") {
+          try {
+            const { data: state, error: stateError } = await supabase.rpc("get_apn_commission_state", { p_partner_id: partner.id, p_project_name: entry.apnProjectName.trim(), p_client_name: entry.apnClientName.trim() });
+            if (!stateError && state?.project?.id) {
+              canonicalProjectId = state.project.id;
+              alreadyPostedIncome = state.financeIncome || null;
+            }
+          } catch { /* best effort — the RPC itself guards duplicates */ }
+        }
         if (alreadyPostedIncome) {
           await reload().catch(() => {});
           throw new Error(`This project's commission was already posted to finance on ${fmtDate(alreadyPostedIncome.data?.date)} (${money(alreadyPostedIncome.data?.amount)} income). Fresh data was loaded — review it in Share & accounts.`);
         }
         const postProjectId = canonicalProjectId || project.id;
-        const { error } = await supabase.rpc("create_apn_income_transaction", { p_transaction: { ...entry, amount: round2(received), apnProjectId: postProjectId, apnCollectionIds: normalizedCollections.map((row) => row.id) }, p_project: { ...project, id: postProjectId }, p_collections: normalizedCollections });
+        const { error } = await supabase.rpc("create_apn_income_transaction", { p_transaction: { ...entry, amount: round2(received), apnProjectId: postProjectId, apnCollectionIds: normalizedCollections.map((row) => row.id) }, p_project: { ...project, id: postProjectId }, p_collections: normalizedCollections, p_mode: pMode });
         if (error) {
           if (/already exists/i.test(error.message)) await reload().catch(() => {});
           throw new Error(`${error.message}${/already exists/i.test(error.message) ? " Fresh data was loaded — check the APN project and Share & accounts." : ""}`);
         }
         await reload();
-        emitToast(canonicalProjectId ? "Income recorded and attached to the existing APN commission project." : "Income recorded and APN commission project created with matching commission expense.", "success");
+        emitToast(pMode === "edit" ? "APN commission income updated — collections and matching commission expense recalculated." : canonicalProjectId ? "Income recorded and attached to the existing APN commission project." : "Income recorded and APN commission project created with matching commission expense.", "success");
         return true;
       }
-      let linkedProject = null;
-      let linkedCollections = null;
       let savedEntry = entry;
-      let linkedExpense = null;
-      if (entry.kind === "income" && entry.apnProjectId) {
-        if (prev?.apnProjectId && prev.apnProjectId !== entry.apnProjectId) throw new Error("Linked APN collections cannot be moved between projects. Edit the APN project instead.");
+      // NEW income against an already-registered APN project (converts and edits
+      // route through the RPC above): post atomically via mode 'create' so the
+      // commission expense is recorded exactly once.
+      if (entry.kind === "income" && entry.apnProjectId && !prev?.id) {
         const sourceProject = (db.apn_commission_projects || []).find((p) => p.id === entry.apnProjectId);
         if (!sourceProject) throw new Error("The selected APN commission project is no longer available.");
-        const priorCollectionId = prev?.apnCollectionId || (Array.isArray(prev?.apnCollectionIds) && prev.apnCollectionIds.length ? prev.apnCollectionIds[0] : null);
-        // Collections owned by the finance posting itself — an edited income
-        // replaces them with a single row totalling the entry amount.
-        const ownedCollectionIds = (prev && Array.isArray(prev.apnCollectionIds) && prev.apnCollectionIds.length) ? [...new Set(prev.apnCollectionIds)] : (priorCollectionId ? [priorCollectionId] : []);
-        const existing = (db.apn_revenue_collections || []).filter((row) => row.projectId === sourceProject.id && !ownedCollectionIds.includes(row.id)).map((row) => ({ ...row }));
-        const collection = { id: ownedCollectionIds[0] || uid(), projectId: sourceProject.id, partnerId: sourceProject.partnerId, receivedAmount: Number(entry.amount) || 0, incentive: 0, remarks: entry.notes || "Finance income receipt", receivedDate: entry.date, commissionStatus: "Pending", createdBy: currentUser, createdAt: prev?.createdAt || Date.now() };
-        linkedCollections = [...existing, collection].sort((a, b) => String(a.receivedDate || a.createdAt).localeCompare(String(b.receivedDate || b.createdAt)));
+        const alreadyPosted = (db.transactions || []).find((t) => t.kind === "income" && t.apnProjectId === sourceProject.id);
+        if (alreadyPosted) throw new Error(`This project's income was already posted to finance on ${fmtDate(alreadyPosted.date)} (${money(alreadyPosted.amount)}). Edit that entry instead.`);
+        const existing = (db.apn_revenue_collections || []).filter((row) => row.projectId === sourceProject.id).map((row) => ({ ...row }));
+        const collection = { id: uid(), projectId: sourceProject.id, partnerId: sourceProject.partnerId, receivedAmount: Number(entry.amount) || 0, incentive: 0, remarks: entry.notes || "Finance income receipt", receivedDate: entry.date, commissionStatus: "Pending", createdBy: currentUser, createdAt: entry.createdAt || Date.now() };
+        const linkedCollections = [...existing, collection].sort((a, b) => String(a.receivedDate || a.createdAt).localeCompare(String(b.receivedDate || b.createdAt)));
         let received = 0; let earned = 0;
-        let entryCommission = 0;
-        linkedCollections = linkedCollections.map((row) => {
+        const normalized = linkedCollections.map((row) => {
           const amount = Number(row.receivedAmount) || 0;
           if (amount <= 0) throw new Error("APN collection amounts must be greater than zero.");
           received += amount;
           const commission = round2(Math.min(Math.max(0, (Number(sourceProject.maximumCommission) || (Number(sourceProject.projectValue) * Number(sourceProject.commissionRate) / 100)) - earned), amount * (Number(sourceProject.commissionRate) || 0) / 100));
           earned += commission;
-          if (row.id === collection.id) entryCommission = commission;
           return { ...row, receivedAmount: amount, commissionGenerated: commission };
         });
         if (received > Number(sourceProject.projectValue)) throw new Error("This income exceeds the APN project's remaining value.");
         const value = Number(sourceProject.projectValue) || 0;
         const max = round2(value * (Number(sourceProject.commissionRate) || 0) / 100);
-        linkedProject = { ...sourceProject, maximumCommission: max, totalReceived: round2(received), remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, max - earned)), status: apnProjectStatus(sourceProject, received), updatedAt: Date.now() };
-        if (prev?.apnProjectId && prev.apnProjectId === entry.apnProjectId) {
-          // EDIT of an already-posted income: the APN project owns the numbers,
-          // so keep upserting it; the commission expense is synced client-side.
-          const { error } = await supabase.rpc("upsert_apn_commission_project", { p_project: linkedProject, p_collections: linkedCollections });
-          if (error) throw new Error(error.message);
-          savedEntry = { ...entry, apnCollectionId: collection.id };
-          const expenseId = "apn-expense:" + savedEntry.id;
-          const existingExpense = (db.transactions || []).find((x) => x.id === expenseId || x.apnCommissionOfIncome === savedEntry.id);
-          linkedExpense = {
-            ...(existingExpense || {}),
-            id: existingExpense?.id || expenseId,
-            kind: "expense",
-            client: savedEntry.client,
-            project: savedEntry.project,
-            // Multi-collection postings don't own their collection row, so only
-            // single-collection edits may rewrite the commissioned amount.
-            amount: priorCollectionId ? entryCommission : (existingExpense?.amount || 0),
-            date: savedEntry.date,
-            category: "APN Commission",
-            scope: "project",
-            hajiPct: savedEntry.hajiPct,
-            alimPct: savedEntry.alimPct,
-            notes: `APN partner commission for ${savedEntry.client} — posted through finance (${savedEntry.project}).`,
-            source: "apn-commission",
-            apnProjectId: sourceProject.id,
-            apnCommissionExpense: true,
-            apnCommissionOfIncome: savedEntry.id,
-            apnPartnerId: sourceProject.partnerId,
-            createdAt: existingExpense?.createdAt || savedEntry.createdAt || Date.now(),
-          };
-        } else {
-          // NEW income against an already-registered APN project: post
-          // atomically through the reconciliation RPC so the commission
-          // expense is recorded exactly once.
-          const alreadyPosted = (db.transactions || []).find((t) => t.kind === "income" && t.apnProjectId === sourceProject.id);
-          if (alreadyPosted) throw new Error(`This project's income was already posted to finance on ${fmtDate(alreadyPosted.date)} (${money(alreadyPosted.amount)}). Edit that entry instead.`);
-          const { error } = await supabase.rpc("create_apn_income_transaction", { p_transaction: { ...entry, amount: Number(collection.receivedAmount) || 0, apnProjectId: sourceProject.id, apnCollectionIds: [collection.id], apnCollectionId: collection.id }, p_project: linkedProject, p_collections: linkedCollections });
-          if (error) {
-            if (/already exists/i.test(error.message)) await reload().catch(() => {});
-            throw new Error(`${error.message}${/already exists/i.test(error.message) ? " Fresh data was loaded — check the APN project and Share & accounts." : ""}`);
-          }
-          await reload();
-          emitToast("Income recorded and APN commission updated with matching commission expense.", "success");
-          return true;
+        const linkedProject = { ...sourceProject, maximumCommission: max, totalReceived: round2(received), remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, max - earned)), status: apnProjectStatus(sourceProject, received), updatedAt: Date.now() };
+        const { error } = await supabase.rpc("create_apn_income_transaction", { p_transaction: { ...entry, amount: Number(collection.receivedAmount) || 0, apnProjectId: sourceProject.id, apnCollectionIds: [collection.id], apnCollectionId: collection.id }, p_project: linkedProject, p_collections: normalized, p_mode: "create" });
+        if (error) {
+          if (/already exists/i.test(error.message)) await reload().catch(() => {});
+          throw new Error(`${error.message}${/already exists/i.test(error.message) ? " Fresh data was loaded — check the APN project and Share & accounts." : ""}`);
         }
+        await reload();
+        emitToast("Income recorded and APN commission updated with matching commission expense.", "success");
+        return true;
       }
       mutate((d) => {
         let next = { ...d };
         if (savedEntry.id && next.transactions.some((t) => t.id === savedEntry.id)) next.transactions = next.transactions.map((t) => t.id === savedEntry.id ? savedEntry : t);
         else next.transactions = [...next.transactions, savedEntry];
-        if (linkedExpense) {
-          const expenseExists = next.transactions.some((t) => t.id === linkedExpense.id);
-          next.transactions = expenseExists ? next.transactions.map((t) => t.id === linkedExpense.id ? linkedExpense : t) : [...next.transactions, linkedExpense];
-        }
-        if (linkedProject) {
-          next.apn_commission_projects = (d.apn_commission_projects || []).map((p) => p.id === linkedProject.id ? linkedProject : p);
-          next.apn_revenue_collections = [...(d.apn_revenue_collections || []).filter((row) => row.projectId !== linkedProject.id), ...linkedCollections];
-        }
         if (source?.kind === "student") next.students = next.students.map((s) => s.id === source.id ? { ...s, paymentStatus: "Paid" } : s);
         if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: savedEntry.date } : m);
         return next;
-      }, { action: `${savedEntry.id ? "updated" : "added"} ${savedEntry.kind} ${money(savedEntry.amount)}${savedEntry.client ? " · " + savedEntry.client : ""}${shareNote}${companyNote}${linkedProject ? " · synced to APN commission" : ""}${linkedExpense ? ` · commission expense ${money(linkedExpense.amount)}` : ""}`, module: "Accounts" });
-      emitToast(linkedProject ? "Income saved and APN commission updated." : "Income saved.", "success");
+      }, { action: `${savedEntry.id ? "updated" : "added"} ${savedEntry.kind} ${money(savedEntry.amount)}${savedEntry.client ? " · " + savedEntry.client : ""}${shareNote}${companyNote}`, module: "Accounts" });
+      emitToast("Income saved.", "success");
       return true;
     } catch (error) {
       emitToast(error?.message || "Couldn't save this entry.", "error");
