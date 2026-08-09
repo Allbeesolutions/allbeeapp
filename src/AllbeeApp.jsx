@@ -660,6 +660,21 @@ async function callAI(cfg, system, messages) {
   const data = await res.json();
   return (data.content || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n").trim();
 }
+// Contact details are masked before the snapshot leaves the browser, so the
+// model only ever sees partial emails/phones (never full client PII).
+function maskEmail(e) {
+  const s = String(e || "").trim();
+  const at = s.indexOf("@");
+  if (!s) return "";
+  if (at <= 1) return s.slice(0, 1) + "***";
+  return s.slice(0, 1) + "***@" + s.slice(at + 1);
+}
+function maskPhone(p) {
+  const digits = String(p || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length < 5) return "***";
+  return "****" + digits.slice(-4);
+}
 // A compact, bounded snapshot of the workspace so the assistant can answer
 // questions and draft quotations/replies grounded in real ALLBEE data.
 function buildAIContext(db, company) {
@@ -672,12 +687,12 @@ function buildAIContext(db, company) {
   const clients = cap(db.clients, 40);
   if (clients.length) {
     L.push(`\nCLIENTS (${db.clients.length} total, newest first):`);
-    clients.forEach((c) => L.push(`- ${c.name}${c.company ? " (" + c.company + ")" : ""} · ${c.status || "—"}${c.phone ? " · " + c.phone : ""}${c.email ? " · " + c.email : ""}${c.value ? " · deal " + money(c.value) : ""}${c.notes ? " · " + String(c.notes).slice(0, 80) : ""}`));
+    clients.forEach((c) => L.push(`- ${c.name}${c.company ? " (" + c.company + ")" : ""} · ${c.status || "—"}${c.phone ? " · " + maskPhone(c.phone) : ""}${c.email ? " · " + maskEmail(c.email) : ""}${c.value ? " · deal " + money(c.value) : ""}${c.notes ? " · " + String(c.notes).slice(0, 80) : ""}`));
   }
   const leads = cap(db.leads, 40);
   if (leads.length) {
     L.push(`\nLEADS (${db.leads.length}):`);
-    leads.forEach((x) => L.push(`- ${x.name}${x.company ? " (" + x.company + ")" : ""} · service ${x.service || "—"} · stage ${x.stage || "—"}${x.value ? " · est " + money(x.value) : ""}${x.leadOwner ? " · owner " + x.leadOwner : ""}${x.phone ? " · " + x.phone : ""}${x.notes ? " · " + String(x.notes).slice(0, 80) : ""}`));
+    leads.forEach((x) => L.push(`- ${x.name}${x.company ? " (" + x.company + ")" : ""} · service ${x.service || "—"} · stage ${x.stage || "—"}${x.value ? " · est " + money(x.value) : ""}${x.leadOwner ? " · owner " + x.leadOwner : ""}${x.phone ? " · " + maskPhone(x.phone) : ""}${x.notes ? " · " + String(x.notes).slice(0, 80) : ""}`));
   }
   const quotes = cap(db.quotations, 30);
   if (quotes.length) {
@@ -715,6 +730,7 @@ function buildAIContext(db, company) {
   if (db.inhouse?.length) counts.push(`in-house projects ${db.inhouse.length}`);
   if (db.planned?.length) counts.push(`planned expenses ${db.planned.length}`);
   if (counts.length) L.push(`\nOTHER COUNTS: ${counts.join(" · ")}`);
+  L.push(`\nNOTE: Client/lead phone numbers and emails in this snapshot are masked for privacy; ask the user for a full contact when one is needed.`);
 
   let out = L.join("\n");
   if (out.length > 12000) out = out.slice(0, 12000) + "\n…(snapshot truncated)";
