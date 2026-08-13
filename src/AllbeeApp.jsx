@@ -490,6 +490,17 @@ async function fetchAIData() {
   return out;
 }
 
+// WP7 — the partner portal's authoritative financial facts. Reads ONE
+// read-only, auth-scoped snapshot RPC that serves the exact engine values the
+// ALLBEE AI uses (consolidated wallet, ledger, rule ladder, reversals,
+// withdrawal wallets). Returns null when the RPC is absent or fails so the
+// portal degrades to the legacy projection instead of white-screening.
+async function fetchPartnerFinancialSnapshot() {
+  const { data, error } = await supabase.rpc("apn_partner_financial_snapshot");
+  if (error) return null;
+  return data || null;
+}
+
 async function fetchClientData() {
   const out = {};
   await Promise.all(Object.entries(CLIENT_READS).map(async ([table, columns]) => {
@@ -9322,6 +9333,17 @@ function apnPartnerStats(db, pid) {
     districtEarned: round2(apnCommsOf(db, pid).filter((c) => c.kind === "district" && c.status !== APN_COMM_REVERSED).reduce((s, c) => s + (Number(c.amount) || 0), 0)),
   };
 }
+// WP7 — authoritative engine values projected by the snapshot RPC (the same
+// server-side source the ALLBEE AI uses). These helpers read ONLY the snapshot;
+// they never recompute or totalize (no client-side wallet math). Each returns
+// null when the snapshot is absent so callers can fall back to legacy figures.
+const apnSnapshotWallet = (snap) => (snap?.wallet && typeof snap.wallet === "object" ? snap.wallet : null);
+const apnSnapshotRate = (snap, completed) => {
+  const ladder = (snap?.ruleKnowledge?.ladder || []).filter((r) => r.commissionType === "partner");
+  if (!ladder.length) return null;
+  const rule = ladder.find((r) => completed >= Number(r.tierMin) && completed <= (Number(r.tierMax) || Infinity)) || ladder[ladder.length - 1];
+  return rule && Number.isFinite(Number(rule.percent)) ? Number(rule.percent) : null;
+};
 const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
 function apnRankBy(db, pid, scope, metric) {
   let pool = apnLivePartners(db);
@@ -9817,7 +9839,9 @@ function APNAdminSupport({ isSuper, people }) {
   );
 }
 
-function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, profile }) {
+function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenProfile, profile }) {
+  const snapWallet = apnSnapshotWallet(snap);
+  const effRate = apnSnapshotRate(snap, stats.completed) ?? stats.level.rate;
   const next = apnNextLevel(stats.completed);
   const cRank = apnRankBy(db, pid, "company", "revenue");
   const dRank = apnRankBy(db, pid, "district", "revenue");
@@ -9857,16 +9881,16 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
           </button>
           <button type="button" aria-label="Open My Profile" onClick={onOpenProfile} style={{ flex: 1, minWidth: 0, border: 0, padding: 0, background: "none", color: "inherit", textAlign: "left", cursor: "pointer" }}>
             <div className="nm">{meRow.name}</div>
-            <div className="rate">{apnIdFor(meRow)} · {stats.level.name} · {stats.level.rate}% commission</div>
+            <div className="rate">{apnIdFor(meRow)} · {stats.level.name} · {effRate}% commission</div>
           </button>
           {meRow.role === "district_head" && <span className="badge" style={{ background: "rgba(255,255,255,.9)", color: "var(--primary)" }}>District Head</span>}
         </div>
         {next ? (
           <>
             <div className="bar"><i style={{ width: next.pct + "%" }} /></div>
-            <div style={{ fontSize: 12, opacity: .9, marginTop: 7 }}>{next.remaining} more completed project{next.remaining === 1 ? "" : "s"} to reach {next.next.name} ({next.next.rate}%)</div>
+            <div style={{ fontSize: 12, opacity: .9, marginTop: 7 }}>{next.remaining} more completed project{next.remaining === 1 ? "" : "s"} to reach {next.next.name} ({apnSnapshotRate(snap, next.next.minProject) ?? next.next.rate}%)</div>
           </>
-        ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Highest commission level achieved (20%)</div>}
+        ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Highest commission level achieved ({effRate}%)</div>}
       </div>
 
       <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} /></div>
@@ -9892,9 +9916,9 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
 
       <div className="apn-metrics" style={{ marginBottom: 14 }}>
         <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
-        <APNMetric k="Commission earned" v={money(stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
-        <APNMetric k="Payable" v={money(stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
-        <APNMetric k="Paid" v={money(stats.commission.paid)} icon={<Check size={13} />} />
+        <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Payable" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
+        <APNMetric k="Paid" v={money(snapWallet ? Number(snapWallet.withdrawn) : stats.commission.paid)} icon={<Check size={13} />} />
         <APNMetric k="Leads submitted" v={stats.submitted} icon={<UserPlus size={13} />} />
         <APNMetric k="Leads converted" v={stats.converted} icon={<BadgeCheck size={13} />} />
         <APNMetric k="Conversion rate" v={stats.conv + "%"} icon={<GaugeCircle size={13} />} />
@@ -10114,39 +10138,88 @@ function APNQuotations({ db, meRow, pid, openModal }) {
 }
 
 /* ── wallet ──────────────────────────────────────────────────────────── */
-function APNWallet({ db, pid, stats }) {
-  const rows = apnCommsOf(db, pid).map((row) => ({ ...row, rowType: "legacy" })).concat(apnCommissionProjectsOf(db, pid).flatMap((project) => apnRevenueCollectionsOf(db, project.id).map((collection) => ({ ...collection, rowType: "collection", project: project.projectName, revenue: collection.receivedAmount, rate: project.commissionRate, amount: collection.commissionGenerated, status: collection.commissionStatus || "Pending", payoutDate: apnPayoutDate(collection.receivedDate), createdAt: collection.createdAt || Date.parse(collection.receivedDate || "") })))).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+function APNWallet({ db, pid, stats, snap }) {
+  const snapWallet = apnSnapshotWallet(snap);
+  const ledger = snap?.ledger || [];
+  const reversals = snap?.reversals || [];
+  const frozen = snap?.freeze?.frozen === true;
+  const ruleSet = snap?.ruleKnowledge?.ruleSet;
+  const hasSnap = snap != null;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const eligibleBadge = (row) => {
+    if (Number(row.amount) < 0) return <span className="badge neg" style={{ marginTop: 4 }}>Reversed</span>;
+    if (!row.eligibleFrom) return <span className="badge" style={{ marginTop: 4 }}>Recorded</span>;
+    return <span className={"badge" + (String(row.eligibleFrom).slice(0, 10) > todayKey ? " pri" : " pos")} style={{ marginTop: 4 }}>{String(row.eligibleFrom).slice(0, 10) > todayKey ? `Eligible ${fmtDate(row.eligibleFrom)}` : "Eligible"}</span>;
+  };
+  const legacyRows = apnCommsOf(db, pid).map((row) => ({ ...row, rowType: "legacy" })).concat(apnCommissionProjectsOf(db, pid).flatMap((project) => apnRevenueCollectionsOf(db, project.id).map((collection) => ({ ...collection, rowType: "collection", project: project.projectName, revenue: collection.receivedAmount, rate: project.commissionRate, amount: collection.commissionGenerated, status: collection.commissionStatus || "Pending", payoutDate: apnPayoutDate(collection.receivedDate), createdAt: collection.createdAt || Date.parse(collection.receivedDate || "") })))).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const legacyList = (rows) => rows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No records" text="Legacy commission records appear here for reference only. The commission engine is the source of truth from now on." /></div>
+    : rows.map((c) => (
+      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{c.project}{c.kind === "district" ? " (district 1%)" : ""}</div>
+          <div className="hint-line" style={{ fontSize: 12 }}>{c.rowType === "collection" ? `Received ${money(c.revenue)} · ${c.rate}% · ${fmtDate(c.receivedDate)}` : `Revenue ${money(c.revenue)} · ${c.rate}% · pay ${fmtDate(c.payoutDate)}`}</div>
+        </div>
+        <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(c.amount)}</div><span className={"badge " + apnCommTone(c.status)} style={{ marginTop: 4 }}>{c.status}</span>{c.status === APN_COMM_REVERSED && c.reversalReason && <div className="hint-line" style={{ fontSize: 11, maxWidth: 220, textAlign: "right", marginTop: 2 }}>{c.reversalReason}</div>}</div>
+      </div>
+    ));
   return (
     <div>
       <div className="apn-section-h">Wallet</div>
+      {frozen && <div className="banner" style={{ margin: "0 0 12px" }}><ShieldAlert size={15} />APN operations are temporarily frozen by an administrator. Balances shown are the latest engine values; no commission, referral, or withdrawal actions can be processed until the freeze is lifted.</div>}
+      {snapWallet && <div className="banner" style={{ margin: "0 0 12px" }}><Hexagon size={15} />Balances come from the ALLBEE commission engine and match what ALLBEE AI reports. Active rule set: <b>{ruleSet?.code || "—"}</b>{ruleSet?.effectiveFrom ? ` (from ${fmtDate(ruleSet.effectiveFrom)})` : ""}.</div>}
       <div className="apn-metrics" style={{ marginBottom: 14 }}>
         <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
-        <APNMetric k="Commission earned" v={money(stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
-        <APNMetric k="Lifetime commission" v={money(stats.commission.earned + stats.totalIncentives)} icon={<Banknote size={13} />} />
-        <APNMetric k="Pending" v={money(stats.commission.pending)} icon={<Hourglass size={13} />} />
-        <APNMetric k="Approved" v={money(stats.commission.approved)} icon={<Check size={13} />} tone="pri" />
-        <APNMetric k="Payable" v={money(stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
-        <APNMetric k="Paid" v={money(stats.commission.paid)} icon={<BadgeCheck size={13} />} tone="pos" />
+        <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Pending" v={money(snapWallet ? Number(snapWallet.pending) : stats.commission.pending)} icon={<Hourglass size={13} />} />
+        <APNMetric k="Eligible (payable)" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
+        <APNMetric k="Withdrawable" v={money(snapWallet ? Number(snapWallet.withdrawable) : Number(stats.commission.payable) || 0)} icon={<ArrowDownToLine size={13} />} />
+        <APNMetric k="Withdrawn" v={money(snapWallet ? Number(snapWallet.withdrawn) : stats.commission.paid)} icon={<BadgeCheck size={13} />} tone="pos" />
+        <APNMetric k="Reversed" v={money(snapWallet ? Number(snapWallet.reversed) : 0)} icon={<RotateCcw size={13} />} tone="neg" />
+        <APNMetric k="Total balance" v={money(snapWallet ? Number(snapWallet.total_balance) : Number(stats.commission.earned) + Number(stats.totalIncentives) || 0)} icon={<Banknote size={13} />} />
         <APNMetric k="Projects" v={stats.projects} icon={<FolderKanban size={13} />} />
         <APNMetric k="Completed projects" v={stats.completedProjects} icon={<CheckCircle2 size={13} />} />
         <APNMetric k="Processing projects" v={stats.processingProjects} icon={<RefreshCw size={13} />} />
         <APNMetric k="Collections received" v={stats.collectionsReceived} icon={<ArrowDownToLine size={13} />} />
         <APNMetric k="Total incentives" v={money(stats.totalIncentives)} icon={<Gift size={13} />} />
       </div>
-      <div className="banner" style={{ margin: "0 0 12px" }}><Handshake size={15} />Tie-up deals settle 1:1 or lower on both sides — a governed deal never pays more than the partner with the lower commission rate.</div>
-      <div className="apn-rowcard" style={{ padding: 0 }}>
-        <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Commission history</div>
-        {rows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No commission yet" text="Commission appears once a converted project is paid and completed. Payouts land on the 5th of the next month." /></div>
-          : rows.map((c) => (
-            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{c.project}{c.kind === "district" ? " (district 1%)" : ""}</div>
-                <div className="hint-line" style={{ fontSize: 12 }}>{c.rowType === "collection" ? `Received ${money(c.revenue)} · ${c.rate}% · ${fmtDate(c.receivedDate)}` : `Revenue ${money(c.revenue)} · ${c.rate}% · pay ${fmtDate(c.payoutDate)}`}</div>
+      {snapWallet && snap.nextEligibleDate && <div className="banner" style={{ margin: "0 0 12px" }}><CalendarDays size={15} />Next eligibility: <b>{fmtDate(snap.nextEligibleDate)}</b> — pending engine commissions become payable from that date.</div>}
+      {!snapWallet && <div className="banner" style={{ margin: "0 0 12px" }}><Handshake size={15} />Tie-up deals settle 1:1 or lower on both sides — a governed deal never pays more than the partner with the lower commission rate.</div>}
+      {hasSnap ? <>
+        <div className="apn-rowcard" style={{ padding: 0 }}>
+          <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Commission ledger <span className="hint-line" style={{ fontWeight: 500 }}>— engine records</span></div>
+          {ledger.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No engine records yet" text="Once a converted project is paid and completed, its commission is recorded here by the commission engine." /></div>
+            : ledger.map((l) => (
+              <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{l.snapshot?.project || l.snapshot?.projectNumber || l.snapshot?.clientName || "Ledger entry"}</div>
+                  <div className="hint-line" style={{ fontSize: 12 }}>{l.snapshot?.clientName ? `${l.snapshot.clientName} · ` : ""}{l.commissionType}{l.sourceType ? ` · ${l.sourceType}` : ""}{l.baseAmount ? ` · ${money(l.baseAmount)} at ${l.percent}%` : ""} · {fmtDateTime(l.eventAt)}</div>
+                </div>
+                <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{Number(l.amount) < 0 ? money(l.amount) : `+${money(l.amount)}`}</div>{eligibleBadge(l)}{l.snapshot?.reversalReason && <div className="hint-line" style={{ fontSize: 11, maxWidth: 220, textAlign: "right", marginTop: 2 }}>{l.snapshot.reversalReason}</div>}</div>
               </div>
-              <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(c.amount)}</div><span className={"badge " + apnCommTone(c.status)} style={{ marginTop: 4 }}>{c.status}</span>{c.status === APN_COMM_REVERSED && c.reversalReason && <div className="hint-line" style={{ fontSize: 11, maxWidth: 220, textAlign: "right", marginTop: 2 }}>{c.reversalReason}</div>}</div>
+            ))}
+        </div>
+        {reversals.length > 0 && <div className="apn-rowcard" style={{ padding: 0, marginTop: 12 }}>
+          <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Reversal history</div>
+          {reversals.map((r) => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>{money(r.amount)} reversal</div>
+                {r.reason && <div className="hint-line" style={{ fontSize: 12 }}>{r.reason}</div>}
+              </div>
+              <div style={{ textAlign: "right" }}><span className="badge neg">{r.status}</span><div className="hint-line" style={{ fontSize: 11, marginTop: 4 }}>{fmtDateTime(r.appliedAt || r.createdAt)}</div></div>
             </div>
           ))}
-      </div>
+        </div>}
+        <details className="apn-rowcard" style={{ padding: 0, marginTop: 12 }}>
+          <summary style={{ padding: "13px 15px", fontWeight: 700, cursor: "pointer" }}>Legacy records <span className="hint-line" style={{ fontWeight: 500 }}>— read-only projection from before the commission engine; not part of your engine balance</span></summary>
+          <div>{legacyList(legacyRows)}</div>
+        </details>
+      </> : (
+        <div className="apn-rowcard" style={{ padding: 0 }}>
+          <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Commission history</div>
+          {legacyList(legacyRows)}
+        </div>
+      )}
     </div>
   );
 }
@@ -10700,7 +10773,9 @@ function APNBankDetails({ db, pid, reload }) {
   return <div className="apn-rowcard" style={{ marginTop: 14 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}><Building2 size={16} color="var(--primary)" /><div style={{ fontWeight: 800, flex: 1 }}>Bank details</div>{existing && <span className={`badge ${existing.verification_status === "verified" ? "pos" : existing.verification_status === "rejected" ? "neg" : "pri"}`}>{existing.verification_status}</span>}</div><div className="hint-line" style={{ marginBottom: 12 }}>Use either UPI or complete bank-transfer details. Every change is recorded in the financial audit log.</div><div className="grid2"><Field label="Account holder"><input className="input" value={f.accountHolder} onChange={(e) => set("accountHolder", e.target.value)} /></Field><Field label="Bank name"><input className="input" value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field></div><div className="grid2"><Field label="Account number"><input className="input mono" inputMode="numeric" value={f.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} /></Field><Field label="Confirm account number"><input className="input mono" inputMode="numeric" value={f.confirmAccountNumber} onChange={(e) => set("confirmAccountNumber", e.target.value)} /></Field></div><div className="grid2"><Field label="IFSC"><input className="input mono" value={f.ifsc} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} /></Field><Field label="Branch"><input className="input" value={f.branch} onChange={(e) => set("branch", e.target.value)} /></Field></div><Field label="UPI ID"><input className="input" value={f.upiId} onChange={(e) => set("upiId", e.target.value.toLowerCase())} placeholder="name@bank" /></Field><div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save payout details"}</button></div>{message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginTop: 10 }}>{message.text}</div>}</div>;
 }
 
-function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut, reload, isHead, go }) {
+function APNProfile({ db, meRow, stats, snap, profile, sessionEmail, mutate, onSignOut, reload, isHead, go }) {
+  const snapWallet = apnSnapshotWallet(snap);
+  const effRate = apnSnapshotRate(snap, stats.completed) ?? stats.level.rate;
   const governed = apnGovernedLimit(db, meRow.id);
   const [f, setF] = useState(() => ({
     name: meRow.name || "", username: meRow.username || profile?.username || "", email: meRow.email || profile?.email || sessionEmail || "", mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "",
@@ -10775,7 +10850,7 @@ function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut
       {isHead && <div className="banner" style={{ margin: "0 0 12px" }}><ShieldHalf size={15} />You lead district {meRow.district || "—"} ({meRow.headRow || "Head"}). Manage members and revenue from the District tab.</div>}
       <div className="apn-metrics" style={{ marginBottom: 14 }}>
         <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
-        <APNMetric k="Commission earned" v={money(stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
         <APNMetric k="Level" v={stats.level.name} icon={<Award size={13} />} />
       </div>
       {governed.full && <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />{apnCalculatedGovernedExplanation(db, meRow.id)} <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => go("targets")}>View targets</button></div>}
@@ -10798,7 +10873,7 @@ function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut
       </div>
       <div className="apn-rowcard" style={{ marginTop: 14 }}>
         {[
-          ["APN ID", apnIdFor(meRow)], ["Current level", `${stats.level.name} (Level ${stats.level.key})`], ["Commission rate", stats.level.rate + "%"],
+          ["APN ID", apnIdFor(meRow)], ["Current level", `${stats.level.name} (Level ${stats.level.key})`], ["Commission rate", effRate + "%"],
         ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}><span className="hint-line">{label}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{value || "—"}</span></div>)}
       </div>
       <APNBankDetails db={db} pid={meRow.id} reload={reload} />
@@ -10855,6 +10930,17 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
+  const [finSnap, setFinSnap] = useState(null);
+
+  // WP7 — authoritative financial facts for the portal: refetch on mount and
+  // on every tab switch so wallet values refresh right after withdrawal or
+  // settlement actions, while staying a read-only projection (no client-side
+  // recomputation). Never blocks the portal: on failure legacy figures remain.
+  useEffect(() => {
+    let cancelled = false;
+    fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [pid, tab]);
 
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setSearchOpen((v) => !v); } };
@@ -10890,9 +10976,9 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
 
   const section = () => {
     switch (tab) {
-      case "home": return <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
+      case "home": return <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
-      case "wallet": return <APNWallet db={db} pid={pid} stats={stats} />;
+      case "wallet": return <APNWallet db={db} pid={pid} stats={stats} snap={finSnap} />;
       case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} />;
       case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
@@ -10904,8 +10990,8 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
-      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
-      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} />;
+      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
+      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} snap={finSnap} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} />;
       default: return null;
     }
   };
