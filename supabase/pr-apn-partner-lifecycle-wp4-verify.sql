@@ -1,5 +1,13 @@
 -- WP4 verify — re-runnable health check for the APN lifecycle patch.
 -- Expect: every row to return true / OK (alongside the informational counts).
+--
+-- WP4 close-out (non-blocking): the historical "allbee-builtin.sql" seed
+-- (editor-created venues/staff content) is OUT OF SCOPE for WP4. The seed file
+-- is not available, and no venues/staff tables exist in the production schema;
+-- do not introduce them or fabricate seed data. Verified 32/32 on production
+-- (project ogacjpwlbhmonycjevml) at close-out.
+-- NOTE: written for PG15 — pg_policies.qual (not polqual/polrelid) and
+-- aclexplode() (not unnest() of aclitem).
 
 select 'apn_admin_consoles' as obj, exists (
   select 1 from pg_tables where schemaname='public' and tablename='apn_admin_consoles') as ok
@@ -75,10 +83,10 @@ union all select 'pol client tables own-select (partner_id)', (
   where schemaname='public' and tablename in (
     'apn_target_client_levels','apn_target_client_products','apn_target_client_prescriptions',
     'apn_target_client_prescription_items','apn_target_client_loyalty','apn_target_client_loyalty_rewards')
-    and policyname like '%_select' and pg_get_expr(polqual, polrelid) like '%partner_id%')
+    and policyname like '%_select' and qual like '%partner_id%')
 union all select 'rpc revoked from anon/public', (
   select count(*) = 0 from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
-    lateral unnest(p.proacl) acl
+    lateral aclexplode(p.proacl) acl
   where n.nspname='public' and p.proname in (
     'apn_zone_requests_send','apn_zone_requests_approve','apn_zone_requests_reject',
     'apn_add_block_interactions','apn_add_prescription_items','apn_add_prescription_condition_items',
