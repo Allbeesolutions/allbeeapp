@@ -27,7 +27,7 @@ ALLBEE — company management SPA (React + Vite + Supabase) for ALLBEE SOLUTIONS
 
 ## Edge functions (Deno)
 
-- Deployed: `supabase/functions/{admin-users,username-login,ai-chat}/index.ts`. That's the source of truth; root-level `supabase/edge-*.ts` and `supabase/ai-chat-groq.ts` are drafts/copies.
+- Deployed: `supabase/functions/{admin-users,username-login,ai-chat,apn-ai}/index.ts`. That's the source of truth; root-level `supabase/edge-*.ts` and `supabase/ai-chat-groq.ts` are drafts/copies.
 - Deploy commands: `supabase functions deploy admin-users`, and `username-login`/`ai-chat` with `--no-verify-jwt`. `ai-chat` needs a `GROQ_API_KEY` secret; `admin-users`/`username-login` use injected `SUPABASE_SERVICE_ROLE_KEY`. The phase-7 guide (`ALLBEE_phase7_apply_guide (1).md`) documents deploy ordering.
 
 ## Release flow
