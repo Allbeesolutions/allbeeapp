@@ -9102,7 +9102,8 @@ const APN_LEAD_REJECTED = new Set(["Duplicate", "Invalid", "Fake", "Lost"]);
 const apnLeadTone = (s) => (s === "Converted" ? "pos" : APN_LEAD_REJECTED.has(s) ? "neg" : s === "Approved" || s === "Quotation Sent" ? "pri" : "");
 
 const APN_COMM_STATUS = ["Pending", "Approved", "Payable", "Paid"];
-const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : s === "Approved" ? "pri" : "");
+const APN_COMM_REVERSED = "Reversed";
+const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : s === "Approved" ? "pri" : s === APN_COMM_REVERSED ? "neg" : "");
 // Commissions are paid on the 5th of the following month — never immediately.
 function apnPayoutDate(fromISO) {
   const d = fromISO ? new Date(fromISO) : new Date();
@@ -9304,12 +9305,12 @@ function apnPartnerStats(db, pid) {
   const leads = apnLeadsOf(db, pid);
   const submitted = leads.length;
   const converted = leads.filter((l) => l.status === "Converted").length;
-  const manual = apnCommsOf(db, pid).filter((c) => c.kind !== "district" && c.source === "manual");
+  const manual = apnCommsOf(db, pid).filter((c) => c.kind !== "district" && c.source === "manual" && c.status !== APN_COMM_REVERSED);
   const completed = leads.filter((l) => l.projectCompleted).length + manual.length;
   const projectSummaries = apnCommissionProjectsOf(db, pid).map((project) => apnProjectSummary(db, project));
   const revenue = round2(leads.filter((l) => l.status === "Converted").reduce((s, l) => s + (Number(l.revenue) || 0), 0) + manual.reduce((s, c) => s + (Number(c.revenue) || 0), 0) + projectSummaries.reduce((s, project) => s + project.totalReceived, 0));
   const conv = submitted ? Math.round((converted / submitted) * 100) : 0;
-  const own = apnCommsOf(db, pid).filter((c) => c.kind !== "district");
+  const own = apnCommsOf(db, pid).filter((c) => c.kind !== "district" && c.status !== APN_COMM_REVERSED);
   const sumBy = (st) => round2(own.filter((c) => c.status === st).reduce((s, c) => s + (Number(c.amount) || 0), 0));
   const projectEarned = round2(projectSummaries.reduce((s, project) => s + project.commissionEarned, 0));
   const projectPaid = round2(projectSummaries.reduce((s, project) => s + project.totalCommissionPaid, 0));
@@ -9318,7 +9319,7 @@ function apnPartnerStats(db, pid) {
     submitted, converted, completed: completed + projectSummaries.filter((project) => project.status === "Completed").length, revenue, conv, level: apnLevelForCompleted(completed + projectSummaries.filter((project) => project.status === "Completed").length),
     projects: projectSummaries.length, completedProjects: projectSummaries.filter((project) => project.status === "Completed").length, processingProjects: projectSummaries.filter((project) => project.status === "Processing").length, collectionsReceived: projectSummaries.reduce((s, project) => s + project.collections.length, 0), totalIncentives: round2(projectSummaries.reduce((s, project) => s + project.totalIncentives, 0)),
     commission: { earned, pending: round2(sumBy("Pending") + projectSummaries.reduce((s, project) => s + project.remainingCommission, 0)), approved: sumBy("Approved"), payable: sumBy("Payable"), paid: round2(sumBy("Paid") + projectPaid) },
-    districtEarned: round2(apnCommsOf(db, pid).filter((c) => c.kind === "district").reduce((s, c) => s + (Number(c.amount) || 0), 0)),
+    districtEarned: round2(apnCommsOf(db, pid).filter((c) => c.kind === "district" && c.status !== APN_COMM_REVERSED).reduce((s, c) => s + (Number(c.amount) || 0), 0)),
   };
 }
 const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
@@ -9413,14 +9414,15 @@ function apnAdminActionCounts(db, viewerId) {
 function apnBuildCommissions(d, lead) {
   const rows = [];
   const pid = lead.partnerId;
-  const partner = (d.apn_users || []).find((u) => u.id === pid);
   const prior = apnPartnerStats({ ...d, apn_leads: (d.apn_leads || []).filter((row) => row.id !== lead.id) }, pid).completed;
   const rate = apnRateForPrior(prior);
   const revenue = Number(lead.revenue) || 0;
   const project = lead.business || lead.clientName || "Project";
   rows.push({ id: uid(), partnerId: pid, kind: "partner", leadId: lead.id, project, clientName: lead.clientName, service: lead.service, revenue, rate, amount: round2((revenue * rate) / 100), status: "Pending", createdAt: Date.now(), payoutDate: apnPayoutDate() });
-  const head = partner && (d.apn_users || []).find((u) => u.role === "district_head" && u.status === "active" && u.district === partner.district && u.id !== pid);
-  if (head) rows.push({ id: uid(), partnerId: head.id, kind: "district", leadId: lead.id, project, clientName: lead.clientName, service: lead.service, revenue, rate: 1, amount: round2(revenue * 0.01), status: "Pending", createdAt: Date.now(), payoutDate: apnPayoutDate(), fromPartnerId: pid });
+  // District/state head income is NOT created here: the engine pays heads
+  // server-side from apn_hierarchy_assignments on every revenue collection
+  // (wp3 trigger, idempotency key col:<collection>:district). Client-side
+  // kind=district rows would double-count that income (engine.district-client).
   return rows;
 }
 
@@ -10141,7 +10143,7 @@ function APNWallet({ db, pid, stats }) {
                 <div style={{ fontWeight: 600 }}>{c.project}{c.kind === "district" ? " (district 1%)" : ""}</div>
                 <div className="hint-line" style={{ fontSize: 12 }}>{c.rowType === "collection" ? `Received ${money(c.revenue)} · ${c.rate}% · ${fmtDate(c.receivedDate)}` : `Revenue ${money(c.revenue)} · ${c.rate}% · pay ${fmtDate(c.payoutDate)}`}</div>
               </div>
-              <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(c.amount)}</div><span className={"badge " + apnCommTone(c.status)} style={{ marginTop: 4 }}>{c.status}</span></div>
+              <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(c.amount)}</div><span className={"badge " + apnCommTone(c.status)} style={{ marginTop: 4 }}>{c.status}</span>{c.status === APN_COMM_REVERSED && c.reversalReason && <div className="hint-line" style={{ fontSize: 11, maxWidth: 220, textAlign: "right", marginTop: 2 }}>{c.reversalReason}</div>}</div>
             </div>
           ))}
       </div>
@@ -11865,7 +11867,25 @@ function APNCommissionEntry({ db, partners, initial, onSave, onClose, onDelete }
   </Modal>;
 }
 
-function APNAdminCommissions({ db, setCommStatus, openProject, onDelete }) {
+function APNCommissionReverseModal({ commission, partnerName, isSuper, onClose, onSave }) {
+  const [reason, setReason] = useState("");
+  const [unlockPaid, setUnlockPaid] = useState(false);
+  const paid = commission.status === "Paid";
+  const valid = reason.trim().length > 0 && (!paid || (isSuper && unlockPaid));
+  const submit = () => { if (valid) onSave(reason, paid && unlockPaid); };
+  return <Modal title="Reverse commission" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={submit}><Undo2 size={15} />Reverse commission</button></>}>
+    <div className="banner" style={{ margin: 0 }}><AlertTriangle size={15} />This permanently marks the commission as reversed, removes it from wallet, withdrawal and report totals, and writes an audit entry.</div>
+    <div className="apn-profile-kv"><span>Partner</span><b>{partnerName}</b></div>
+    <div className="apn-profile-kv"><span>Project</span><b>{commission.project}</b></div>
+    <div className="apn-profile-kv"><span>Amount</span><b className="mono">{money(commission.amount)}</b></div>
+    <div className="apn-profile-kv"><span>Current status</span><span className={"badge " + apnCommTone(commission.status)}>{commission.status}</span></div>
+    {paid && <div className="banner" style={{ marginTop: 10 }}><LockIcon size={15} />This commission is already Paid. Reversing requires a super admin unlock and will not claw back funds already settled.</div>}
+    <Field label="Reversal reason" required><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this commission being reversed?" /></Field>
+    {paid && isSuper && <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={unlockPaid} onChange={(e) => setUnlockPaid(e.target.checked)} />I confirm this Paid amount may be reversed (super admin unlock)</label>}
+  </Modal>;
+}
+
+function APNAdminCommissions({ db, setCommStatus, openProject, onDelete, onReverse }) {
   const [view, setView] = useState("all");
   const projects = apnCommissionProjectsOf(db).map((project) => apnProjectSummary(db, project)).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
   const legacy = (db.apn_commissions || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -11882,7 +11902,7 @@ function APNAdminCommissions({ db, setCommStatus, openProject, onDelete }) {
         {projectList.length === 0 ? <Empty icon={<Coins size={22} color="var(--muted)" />} title="No commission projects" text="Create a project, then record each client payment as it arrives." />
           : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Project / client</th><th className="num-cell">Value</th><th className="num-cell">Received</th><th className="num-cell">Commission</th><th>Collections</th><th>Finance</th><th>Status</th><th></th></tr></thead><tbody>{projectList.map((project) => { const posted = apnFinancePostedFor(db, project.id); return <tr key={project.id}><td>{partnerName(project.partnerId)}</td><td><div style={{ fontWeight: 600 }}>{project.projectName}</div><div className="hint-line" style={{ fontSize: 11 }}>{project.clientName} · {project.category || "—"}</div></td><td className="num-cell mono">{money(project.projectValue)}</td><td className="num-cell mono">{money(project.totalReceived)}<div className="hint-line" style={{ fontSize: 11 }}>remaining {money(project.remainingAmount)}</div></td><td className="num-cell mono"><b>{money(project.commissionEarned)}</b><div className="hint-line" style={{ fontSize: 11 }}>{project.commissionRate}% · pending {money(project.remainingCommission)}</div></td><td className="mono">{project.collections.length}</td><td className="mono">{posted.expense ? <><b className="pos-txt">{money(posted.expense.amount)}</b><div className="hint-line" style={{ fontSize: 11 }}>posted · {fmtDate(posted.expense.date)}</div></> : <span className="hint-line" style={{ fontSize: 11 }}>not posted</span>}</td><td><span className={"badge " + (project.status === "Completed" ? "pos" : project.status === "Cancelled" ? "neg" : project.status === "Processing" ? "accent" : "")}>{project.status}</span></td><td><div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}><button type="button" className="btn sm" onClick={() => openProject(project)}><Pencil size={13} />Manage</button>{onDelete && <button type="button" className="iconbtn" style={{ width: 30, height: 30 }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onDelete(project); }} aria-label={`Delete commission project ${project.projectName}`} title="Delete commission project"><Trash2 size={14} /></button>}</div></td></tr>; })}</tbody></table></div>}
       </div>
-      {legacyList.length > 0 && <div className="card"><div className="apn-section-head"><h4 style={{ margin: 0 }}>Legacy commission entries</h4><span className="hint-line">Existing APN commission records remain supported.</span></div><div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Project</th><th className="num-cell">Amount</th><th>Payout</th><th>Status</th></tr></thead><tbody>{legacyList.map((c) => <tr key={c.id}><td>{partnerName(c.partnerId)}{c.kind === "district" && <span className="badge" style={{ marginLeft: 5 }}>District 1%</span>}</td><td>{c.project}<div className="hint-line" style={{ fontSize: 11 }}>{money(c.revenue)} · {c.rate}%</div></td><td className="num-cell mono" style={{ fontWeight: 700 }}>{money(c.amount)}</td><td className="mono" style={{ fontSize: 12 }}>{fmtDate(c.payoutDate)}</td><td><select className="select" style={{ width: "auto", padding: "4px 6px" }} value={c.status} onChange={(e) => setCommStatus(c, e.target.value)}>{APN_COMM_STATUS.map((s) => <option key={s}>{s}</option>)}</select></td></tr>)}</tbody></table></div></div>}
+      {legacyList.length > 0 && <div className="card"><div className="apn-section-head"><h4 style={{ margin: 0 }}>Legacy commission entries</h4><span className="hint-line">Existing APN commission records remain supported.</span></div><div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Project</th><th className="num-cell">Amount</th><th>Payout</th><th>Status</th></tr></thead><tbody>{legacyList.map((c) => <tr key={c.id}><td>{partnerName(c.partnerId)}{c.kind === "district" && <span className="badge" style={{ marginLeft: 5 }}>District 1%</span>}</td><td>{c.project}<div className="hint-line" style={{ fontSize: 11 }}>{money(c.revenue)} · {c.rate}%</div></td><td className="num-cell mono" style={{ fontWeight: 700 }}>{money(c.amount)}</td><td className="mono" style={{ fontSize: 12 }}>{fmtDate(c.payoutDate)}</td><td><div className="row-actions">{c.status === APN_COMM_REVERSED ? <span className={"badge " + apnCommTone(c.status)}>{c.status}</span> : <><select className="select" style={{ width: "auto", padding: "4px 6px" }} value={c.status} onChange={(e) => setCommStatus(c, e.target.value)}>{APN_COMM_STATUS.map((s) => <option key={s}>{s}</option>)}</select><button type="button" className="btn sm" onClick={() => onReverse(c)}><Undo2 size={12} />Reverse</button></>}{c.status === APN_COMM_REVERSED && c.reversalReason && <div className="hint-line" style={{ fontSize: 11 }}>{c.reversalReason}</div>}</div></td></tr>)}</tbody></table></div></div>}
     </div>
   );
 }
@@ -12315,11 +12335,14 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     return next;
     }, { ...M(action, lead.partnerId, previous, lead), entity: "APN Lead", entityId: lead.id, metadata: { status: lead.status } });
   };
-  const setCommStatus = (c, status) => mutate((d) => {
+  const setCommStatus = (c, status) => {
+    if (status === APN_COMM_REVERSED) return; // reversals go through the audited RPC only
+    mutate((d) => {
     let next = { ...d, apn_commissions: d.apn_commissions.map((x) => x.id === c.id ? { ...x, status, ...(status === "Approved" ? { approvedAt: Date.now() } : {}), ...(status === "Paid" ? { paidAt: Date.now() } : {}) } : x) };
     if (status === "Approved" && c.kind !== "district") next.apn_notifications = [...(d.apn_notifications || []), withSender(apnNotify({ title: "Commission approved ✅", body: `${money(c.amount)} for ${c.project} is approved and added to your wallet.`, audience: "partner:" + c.partnerId, level: "Important" }))];
     return next;
   }, { ...M(`${status === "Paid" ? "paid" : status === "Approved" ? "approved" : "updated"} APN commission for ${c.project}`, c.partnerId, c.status, status), entity: "APN Commission", entityId: c.id });
+  };
   const saveCommissionProject = ({ project, collections }) => withActionError(async () => {
     const projectRows = (db.apn_commission_projects || []).some((row) => row.id === project.id) ? (db.apn_commission_projects || []).map((row) => row.id === project.id ? project : row) : [...(db.apn_commission_projects || []), project];
     const collectionRows = collections || [];
@@ -12360,6 +12383,23 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       onConfirm: () => deleteCommissionProject(project),
     });
   };
+  const requestCommissionReverse = (entry) => {
+    setActionError("");
+    const partnerName = (db.apn_users || []).find((row) => row.id === entry.partnerId)?.name || "—";
+    setModal({
+      type: "apnCommissionReverse",
+      commission: entry,
+      partnerName,
+      isSuper,
+    });
+  };
+  const reverseCommissionNow = (entry, reason, unlockPaid) => withActionError(async () => {
+    const { error: rpcError } = await supabase.rpc("apn_commission_reverse_legacy", { p_commission_id: entry.id, p_reason: reason.trim(), p_unlock_paid: !!unlockPaid });
+    if (rpcError) throw new Error(rpcError.message);
+    mutateApn((d) => ({ ...d, apn_commissions: (d.apn_commissions || []).map((x) => x.id === entry.id ? { ...x, status: APN_COMM_REVERSED, reversedAt: Date.now(), reversedBy: currentUser, reversalReason: reason.trim(), unlockPaid: !!unlockPaid } : x) }), M(`reversed APN commission ${money(entry.amount)} for "${entry.project}"${unlockPaid ? " (paid unlock)" : ""} · ${reason.trim()}`, entry.partnerId, entry.status, APN_COMM_REVERSED), timeline((db.apn_users || []).find((u) => u.id === entry.partnerId) || { id: entry.partnerId }, "commission-reversed", "Commission Reversed", `${money(entry.amount)} for ${entry.project || "project"}: ${reason.trim()}${unlockPaid ? " (paid amount unlocked by super admin)" : ""}.`, Date.now(), currentUser));
+    emitToast("Commission reversed and wallet updated.", "success");
+    setModal(null);
+  });
   const saveTarget = (t) => mutate((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), t], apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" }))] }), M(`assigned APN target "${t.title}"`));
   const saveRow = (table, row, action) => mutate((d) => ({ ...d, [table]: (d[table] || []).some((x) => x.id === row.id) ? d[table].map((x) => x.id === row.id ? row : x) : [...(d[table] || []), row] }), M(action));
   const sendNotif = (n) => mutate((d) => ({ ...d, apn_notifications: [...(d.apn_notifications || []), withSender(n)] }), M(`sent APN notification "${n.title}"`));
@@ -12535,7 +12575,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} />}
+      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
@@ -12569,6 +12609,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {modal?.type === "apnBulk" && <APNBulkForm action={modal.action} partners={modal.partners} onClose={() => setModal(null)} onSave={(values) => executeBulk(modal.action, modal.partners, values)} />}
       {modal?.type === "apnCreatePartner" && <APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} onClose={() => setModal(null)} />}
       {modal?.type === "apnCommissionEntry" && <APNCommissionEntry db={db} initial={modal.initial} partners={[...new Map([...(partners.filter((p) => apnEffectiveStatus(p) === "active")), ...((db.apn_users || []).filter((p) => p.id === modal.initial?.partnerId))].map((p) => [p.id, p])).values()]} onSave={saveCommissionProject} onClose={() => setModal(null)} onDelete={modal.onDelete} />}
+      {modal?.type === "apnCommissionReverse" && <APNCommissionReverseModal commission={modal.commission} partnerName={modal.partnerName} isSuper={modal.isSuper} onClose={() => setModal(null)} onSave={(reason, unlockPaid) => reverseCommissionNow(modal.commission, reason, unlockPaid)} />}
       {modal?.type === "apnLeadManage" && <APNLeadManage lead={modal.lead} onSave={saveLead} onClose={() => setModal(null)} />}
       {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} heads={(db.apn_users || []).filter((u) => u.role === "district_head" || u.level === "District Head")} onSave={saveTarget} onClose={() => setModal(null)} />}
       {modal?.type === "apnTraining" && <APNTrainingForm initial={modal.initial} onSave={(r) => saveRow("apn_training", r, `${modal.initial ? "updated" : "added"} APN lesson "${r.title}"`)} onClose={() => setModal(null)} />}
