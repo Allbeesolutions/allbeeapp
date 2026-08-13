@@ -1754,6 +1754,23 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-section-h { font-size:17px; font-weight:800; margin:2px 0 12px; }
 .apn-list { display:flex; flex-direction:column; gap:10px; }
 .apn-rowcard { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 15px; box-shadow:var(--shadow); }
+.apn-ai-chat { display:flex; flex-direction:column; gap:10px; padding-bottom:10px; }
+.apn-ai-msg { max-width:86%; padding:10px 13px; border-radius:14px; font-size:13.5px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
+.apn-ai-msg.user { align-self:flex-end; background:var(--primary); color:#fff; border-bottom-right-radius:4px; }
+.apn-ai-msg.bot { align-self:flex-start; background:var(--surface-2); border:1px solid var(--border); border-bottom-left-radius:4px; }
+.apn-ai-msg.err { border-color:var(--neg); color:var(--neg); background:var(--surface); }
+.apn-ai-chips { display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; -webkit-overflow-scrolling:touch; flex-wrap:wrap; }
+.apn-ai-chip { flex:none; display:flex; align-items:center; gap:6px; border:1px solid var(--border); background:var(--surface); border-radius:999px; padding:8px 12px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer; }
+.apn-ai-chip.on { border-color:var(--primary); color:var(--primary); }
+.apn-ai-input { display:flex; gap:8px; align-items:flex-end; }
+.apn-ai-input textarea { flex:1; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font:inherit; font-size:14px; background:var(--surface); color:var(--text); resize:none; min-height:46px; max-height:130px; outline:none; }
+.apn-ai-input textarea:focus { border-color:var(--primary); }
+.apn-ai-banner { display:flex; align-items:center; gap:12px; width:100%; text-align:left; background:linear-gradient(135deg, var(--primary), #6b3df0); color:#fff; border:0; border-radius:16px; padding:13px 14px; margin-bottom:14px; cursor:pointer; box-shadow:0 6px 18px rgba(93,55,221,.25); }
+.apn-ai-banner-ic { flex:none; display:grid; place-items:center; width:38px; height:38px; border-radius:12px; background:rgba(255,255,255,.18); }
+.apn-ai-banner-main { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.apn-ai-banner-main b { font-size:14px; }
+.apn-ai-banner-main span { font-size:11.5px; opacity:.92; line-height:1.35; }
+.apn-ai-banner-go { flex:none; display:grid; place-items:center; width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,.18); }
 .apn-fab { position:fixed; right:16px; bottom:92px; z-index:45; width:52px; height:52px; border-radius:50%; border:none;
   background:var(--primary); color:#fff; display:grid; place-items:center; box-shadow:0 8px 24px rgba(46,59,143,.4); cursor:pointer; }
 .apn-rank { display:flex; align-items:center; gap:12px; padding:11px 6px; border-bottom:1px solid var(--border); }
@@ -9530,6 +9547,274 @@ function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
 }
 
 /* ── dashboard ───────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   ALLBEE AI (APN partner) + SUPPORT TICKETS
+   Chat runs through the server-side apn-ai edge function: the model only
+   ever sees the SQL-built, partner-scoped snapshot — never the full DB.
+   Ticket writes go through audited RPCs (identity from the JWT server-side).
+══════════════════════════════════════════════════════════════════════ */
+const APN_TICKET_STATUSES = ["open", "under_review", "waiting_for_partner", "answered", "resolved", "closed"];
+const APN_TICKET_TONE = { open: "pri", under_review: "accent", waiting_for_partner: "accent", answered: "pos", resolved: "pos", closed: "" };
+const APN_AI_CHIPS = [
+  ["My wallet", "What is my wallet balance and when can I withdraw?"],
+  ["My commission", "Why haven't I received my commission yet? Explain from my records."],
+  ["My reversal", "Which reversals appear on my account and why were they made?"],
+  ["My projects", "Which of my projects and revenue collections are on record?"],
+  ["My referrals", "How much have I earned from referrals and when were they effective?"],
+  ["Rules", "Explain the current commission ladder and caps under the active rule version."],
+  ["Escalate to support", "I need help from the ALLBEE support team."],
+];
+const apnAiCategoryFor = (q) => {
+  const s = String(q || "");
+  if (/withdraw|settlement|payout|release/i.test(s)) return "Withdrawal";
+  if (/refer|tie-up|network|link/i.test(s)) return "Referral";
+  if (/commission|percent|earn|paid|ladder|tier/i.test(s)) return "Commission";
+  if (/wallet|balance|money|₹|rupee/i.test(s)) return "Wallet";
+  if (/project|lead|convert|revenue|collection/i.test(s)) return "Project";
+  if (/rule|version|policy|cap/i.test(s)) return "Rules & Policy";
+  if (/support|help|ticket|escalate/i.test(s)) return "Support";
+  return "Other";
+};
+function APNStatusBadge({ status }) {
+  return <span className={`badge ${APN_TICKET_TONE[status] || ""}`}>{status.replace(/_/g, " ")}</span>;
+}
+
+function APNAI({ meRow, go }) {
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [asked, setAsked] = useState(null);
+  const [ticketDone, setTicketDone] = useState("");
+  const endRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy, ticketDone]);
+
+  const ask = async (q) => {
+    const question = (q || input).trim();
+    if (!question || busy) return;
+    const history = msgs.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+    setMsgs((l) => [...l, { role: "user", text: question, ts: Date.now() }]);
+    setInput(""); setBusy(true); setAsked(null); setTicketDone("");
+    try {
+      const { data, error } = await supabase.functions.invoke("apn-ai", { body: { messages: [...history, { role: "user", content: question }] } });
+      if (error) throw new Error(error.message || "Couldn't reach ALLBEE AI. Is the apn-ai function deployed?");
+      if (data && data.error) throw new Error(typeof data.error === "string" ? data.error : "ALLBEE AI returned an error.");
+      const text = String(data?.text || "").trim();
+      const idx = msgs.length + 1;
+      setMsgs((l) => [...l, { role: "bot", text, uncertain: !!data?.uncertain, ids: data?.relevantIds || [], rule: data?.ruleVersion || "", ts: Date.now() }]);
+      if (data?.uncertain) setAsked({ question, msgIdx: idx, clientKey: uid() });
+    } catch (e) {
+      setMsgs((l) => [...l, { role: "bot", text: e.message, err: true, ts: Date.now() }]);
+    } finally { setBusy(false); }
+  };
+
+  const createTicket = async () => {
+    if (!asked || busy) return;
+    setBusy(true);
+    try {
+      const bot = msgs[asked.msgIdx];
+      const { data, error } = await supabase.rpc("apn_support_tickets_create", {
+        p_category: apnAiCategoryFor(asked.question),
+        p_question: asked.question.slice(0, 2000),
+        p_ai_summary: bot ? bot.text.slice(0, 8000) : "",
+        p_relevant_ids: bot?.ids || [],
+        p_priority: "normal",
+        p_client_key: asked.clientKey,
+      });
+      if (error) throw new Error(error.message);
+      if (data && data.error) throw new Error(data.error);
+      setTicketDone("Your ticket has been created. Our team typically follows up within 24 hours.");
+      setAsked(null);
+    } catch (e) {
+      setTicketDone("Couldn't create the ticket: " + e.message);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="apn-ai">
+      <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={16} color="var(--primary)" />
+          <div style={{ fontWeight: 800, flex: 1 }}>ALLBEE AI</div>
+          <button className="btn sm" onClick={() => go("support")}><MessageCircle size={13} />My tickets</button>
+        </div>
+        <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Your personal APN assistant — answers are built from your live ALLBEE records, not guesses.</div>
+      </div>
+
+      <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+        {msgs.length === 0 && (
+          <div className="hint-line" style={{ marginBottom: 10, fontSize: 12.5 }}>Try one of these:</div>
+        )}
+        <div className="apn-ai-chips">
+          {APN_AI_CHIPS.map(([label, q]) => (
+            <button key={label} className="apn-ai-chip" disabled={busy} onClick={() => ask(q)}><Sparkles size={12} />{label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="apn-rowcard">
+        <div className="apn-ai-chat">
+          {msgs.map((m, i) => (
+            <div key={i}>
+              <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")}>{m.text}</div>
+              {m.uncertain && asked && asked.msgIdx === i && (
+                <div style={{ marginTop: 8, marginLeft: "4%" }}>
+                  <div className="hint-line" style={{ fontSize: 12, marginBottom: 6 }}>Would you like me to create a support ticket?</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn sm primary" disabled={busy} onClick={createTicket}><Check size={13} />Yes</button>
+                    <button className="btn sm" disabled={busy} onClick={() => setAsked(null)}><X size={13} />No</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          {busy && <div className="apn-ai-msg bot" style={{ color: "var(--muted)" }}><span className="spin" style={{ display: "inline-block", marginRight: 6 }}>●</span>ALLBEE AI is checking your records…</div>}
+          {ticketDone && <div className="apn-ai-msg bot" style={{ borderColor: "var(--pos)" }}>{ticketDone}</div>}
+          <div ref={endRef} />
+        </div>
+
+        <div className="apn-ai-input" style={{ marginTop: 10 }}>
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={input}
+            placeholder={`Ask about your wallet, commissions, withdrawals${meRow?.role === "district_head" ? ", district" : ""} or rules…`}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
+          />
+          <button className="btn primary" disabled={busy || !input.trim()} onClick={() => ask()} aria-label="Send" title="Send" style={{ minWidth: 46, height: 46 }}><Send size={17} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function APNSupportTickets({ pid }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.rpc("apn_support_tickets_list", { p_limit: 100 });
+      if (error) { setErr(error.message); return; }
+      setRows(Array.isArray(data) ? data : []);
+    })();
+  }, [pid]);
+  return (
+    <div className="apn-ai">
+      <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}><MessageCircle size={16} color="var(--primary)" /><div style={{ fontWeight: 800, flex: 1 }}>My support tickets</div></div>
+        <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Official responses here are final — ALLBEE AI explains them, never overrides them.</div>
+      </div>
+      {err && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{err}</div>}
+      {!rows ? <div className="hint-line" style={{ padding: "16px 4px" }}>Loading tickets…</div>
+        : rows.length === 0 ? <div className="apn-rowcard"><div className="hint-line" style={{ padding: "12px 4px", fontSize: 13 }}>You don't have any support tickets yet. Ask ALLBEE AI anything — if it can't find the answer, it will offer to create one for you.</div></div>
+          : rows.map((t) => (
+            <div key={t.id} className="apn-rowcard" style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{t.ticket_no}</span>
+                <span className="badge">{t.category}</span>
+                <APNStatusBadge status={t.status} />
+                <span className="hint-line" style={{ marginLeft: "auto", fontSize: 11 }}>{fmtDateTime(t.created_at)}</span>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 13.5 }}>{t.question}</div>
+              {t.ai_summary && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>AI summary: {String(t.ai_summary).slice(0, 220)}{t.ai_summary.length > 220 ? "…" : ""}</div>}
+              {(t.admin_response || t.superadmin_response) && (
+                <div style={{ marginTop: 10, background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>Official response — {t.superadmin_response ? "Super Admin" : "Admin"}{t.admin_responded_at && <span className="hint-line" style={{ fontWeight: 500, marginLeft: 8 }}>{fmtDateTime(t.admin_responded_at)}</span>}</div>
+                  <div style={{ fontSize: 13 }}>{t.superadmin_response || t.admin_response}</div>
+                </div>
+              )}
+            </div>
+          ))}
+    </div>
+  );
+}
+
+function APNAdminSupport({ isSuper, people }) {
+  const [rows, setRows] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [respondTo, setRespondTo] = useState(null);
+  const [response, setResponse] = useState("");
+  const [nextStatus, setNextStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = async () => {
+    const { data, error } = await supabase.rpc("apn_support_tickets_list", { p_limit: 300 });
+    if (error) { setErr(error.message); return; }
+    setRows(Array.isArray(data) ? data : []);
+  };
+  useEffect(() => { load(); }, []);
+
+  const sendResponse = async () => {
+    if (!respondTo || !response.trim() || busy) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("apn_support_tickets_respond", {
+        p_ticket_id: respondTo.id,
+        p_response: response.trim(),
+        p_status: isSuper && nextStatus ? nextStatus : null,
+      });
+      if (error) throw new Error(error.message);
+      if (data && data.error) throw new Error(data.error);
+      setRespondTo(null); setResponse(""); setNextStatus(""); await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const changeStatus = async (t, st) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("apn_support_tickets_status", { p_ticket_id: t.id, p_status: st });
+      if (error) throw new Error(error.message);
+      if (data && data.error) throw new Error(data.error);
+      await load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const counts = (s) => (rows || []).filter((r) => s === "all" || r.status === s).length;
+  const list = (rows || []).filter((r) => filter === "all" || r.status === filter);
+  const adminStatuses = APN_TICKET_STATUSES.filter((s) => !["resolved", "closed"].includes(s));
+
+  return (
+    <div>
+      {err && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{err}</div>}
+      <div className="apn-seg-scroll" style={{ marginBottom: 14 }}>{["all", ...APN_TICKET_STATUSES].map((s) => <button key={s} className={filter === s ? "on" : ""} onClick={() => setFilter(s)}>{s === "all" ? "All" : s.replace(/_/g, " ")} ({counts(s)})</button>)}</div>
+      {list.length === 0 ? <Empty icon={<MessageCircle size={22} color="var(--muted)" />} title="No tickets here" text="Support tickets raised from ALLBEE AI appear here for the admin team." />
+        : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Ticket</th><th>Partner</th><th>Category</th><th>Question</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>
+          {list.map((t) => (
+            <tr key={t.id}>
+              <td><span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{t.ticket_no}</span>{t.priority !== "normal" && <div><span className={`badge ${t.priority === "urgent" || t.priority === "high" ? "neg" : "accent"}`}>{t.priority}</span></div>}</td>
+              <td>{people?.(t.partner_id) || t.partner_id}</td>
+              <td><span className="badge">{t.category}</span></td>
+              <td><div style={{ maxWidth: 260 }}>{String(t.question).slice(0, 80)}{t.question?.length > 80 ? "…" : ""}</div>{t.admin_response && <div className="hint-line" style={{ fontSize: 11, maxWidth: 260 }}>Answered: {String(t.admin_response).slice(0, 60)}…</div>}</td>
+              <td><select className="select" style={{ width: "auto", padding: "4px 6px" }} value={t.status} disabled={busy} onChange={(e) => changeStatus(t, e.target.value)}>{(isSuper ? APN_TICKET_STATUSES : adminStatuses).map((s) => <option key={s}>{s}</option>)}</select></td>
+              <td className="hint-line" style={{ fontSize: 11 }}>{fmtDateTime(t.created_at)}</td>
+              <td><button className="btn sm primary" disabled={busy} onClick={() => { setRespondTo(t); setResponse(""); setNextStatus(""); }}>Respond</button></td>
+            </tr>
+          ))}
+        </tbody></table></div>}
+
+      {respondTo && (
+        <Modal title={`Respond — ${respondTo.ticket_no}`} onClose={() => setRespondTo(null)}
+          footer={<><button className="btn" onClick={() => setRespondTo(null)}>Cancel</button><button className="btn primary" disabled={busy || !response.trim()} onClick={sendResponse}><Check size={15} />Send official response</button></>}>
+          <div className="hint-line" style={{ marginBottom: 8, fontSize: 12 }}>This response becomes the final authoritative answer for this case. ALLBEE AI may explain it to the partner but never overrides it.</div>
+          <Field label={`Question — ${respondTo.category}`}><div style={{ fontSize: 13, background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>{respondTo.question}{respondTo.ai_summary ? <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>AI summary: {String(respondTo.ai_summary).slice(0, 240)}</div> : null}</div></Field>
+          <Field label="Official response"><textarea className="textarea" rows={5} value={response} onChange={(e) => setResponse(e.target.value)} placeholder="Write the official ALLBEE response…" /></Field>
+          {isSuper && (
+            <Field label="Super Admin authority — status after responding" hint="Only Super Admin can resolve/close a case.">
+              <select className="select" style={{ width: "100%" }} value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+                <option value="">Keep current</option>{APN_TICKET_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+              </select>
+            </Field>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, profile }) {
   const next = apnNextLevel(stats.completed);
   const cRank = apnRankBy(db, pid, "company", "revenue");
@@ -9583,6 +9868,12 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
       </div>
 
       <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} /></div>
+
+      <button className="apn-ai-banner" type="button" onClick={() => go("ai")} aria-label="Open ALLBEE AI">
+        <span className="apn-ai-banner-ic"><Sparkles size={17} /></span>
+        <span className="apn-ai-banner-main"><b>ALLBEE AI</b><span>Ask anything about your wallet, commissions & rules — or escalate to support.</span></span>
+        <span className="apn-ai-banner-go"><ChevronRight size={16} /></span>
+      </button>
 
       <div className="apn-rowcard" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -10573,7 +10864,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   useEffect(() => {
     const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
     const route = parts[0] === "apn" ? parts[1] : parts[0];
-    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "learn", "targets", "documents", "notifications", "achievements", "leaderboard", "district", "profile"].includes(route)) setTab(route);
+    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "learn", "targets", "documents", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
   }, []);
 
   if (!meRow) return (
@@ -10606,6 +10897,8 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
       case "documents": return <APNDocuments db={db} />;
+      case "ai": return <APNAI meRow={meRow} go={go} />;
+      case "support": return <APNSupportTickets pid={pid} />;
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
@@ -10622,6 +10915,8 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
     ["network", "My Network", <Users size={20} color="var(--primary)" />, 0],
     ["withdrawals", "Withdrawal Center", <Wallet size={20} color="var(--primary)" />, withdrawalOpenCount],
+    ["ai", "ALLBEE AI", <Sparkles size={20} color="var(--primary)" />, 0],
+    ["support", "My Tickets", <MessageCircle size={20} color="var(--primary)" />, 0],
     ["achievements", "Achievements", <Award size={20} color="var(--primary)" />, 0],
     ["leaderboard", "Leaderboard", <Trophy size={20} color="var(--primary)" />, 0],
     ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
@@ -10650,7 +10945,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         {primary.map(([k, l, Icon]) => (
           <button key={k} className={"apn-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
         ))}
-        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "network", "withdrawals", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
+        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "network", "withdrawals", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
           <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
         </button>
       </nav>
@@ -12216,7 +12511,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   };
 
   const actionBadges = apnAdminActionCounts(db, currentUserId);
-  const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
+  const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["support", "Support", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
   const selectTab = (nextTab) => {
     setTab(nextTab);
     const action = APN_ACTION_BADGE_MAP.find((item) => item.tab === nextTab);
@@ -12243,6 +12538,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} />}
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
+      {tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
           : <div style={{ overflowX: "auto" }}><table className="tbl"><thead><tr><th>Partner</th><th>Target</th><th>Progress</th><th>Acknowledged</th></tr></thead>
