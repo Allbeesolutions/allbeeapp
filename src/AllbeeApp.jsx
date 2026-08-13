@@ -9,6 +9,7 @@ import {
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag, Maximize2,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins, Minimize2,
   Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical, Flame, FileCheck2,
+  Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -339,7 +340,9 @@ const startOfWeek = (ref = new Date()) => { const d = new Date(ref); const day =
 const TABLES = ["transactions", "withdrawals", "tasks", "projects", "students", "marketing", "concepts", "audit", "attendance", "leave", "updates", "recycle",
   "leads", "clients", "quotations", "planned", "announcements", "documents", "knowledge", "chat", "rewards", "vault", "portal_posts", "notifications", "invoices", "resignations", "prompts", "sheets", "inhouse", "payroll", "teams", "team_chat", "testing", "class_students",
   // APN — ALLBEE Partner Network (logically separate from employee operations)
-  "apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_commission_projects", "apn_revenue_collections", "apn_achievements", "apn_notifications", "apn_documents", "apn_timeline", "apn_warnings", "apn_notes", "apn_activity", "apn_transfer_history", "apn_communications"];
+  "apn_users", "apn_attendance", "apn_targets", "apn_training", "apn_quizzes", "apn_leads", "apn_quotations", "apn_commissions", "apn_commission_projects", "apn_revenue_collections", "apn_achievements", "apn_notifications", "apn_documents", "apn_timeline", "apn_warnings", "apn_notes", "apn_activity", "apn_transfer_history", "apn_communications",
+  // WP4 — admin hub consoles/notes + partner zone requests
+  "apn_admin_notes", "apn_admin_consoles", "apn_zone_requests"];
 
 // PR2 referral data is relational and intentionally does not participate in
 // the legacy JSON-row diff writer. Referral mutations go through audited RPCs.
@@ -414,6 +417,17 @@ const AI_READS = {
   ai_reports: "id,report_type,format,title,payload,generated_by,created_at",
 };
 
+// WP4 — client = level / product / prescription / loyalty. Normalized reads;
+// writes go through the audited prescription & loyalty RPCs only.
+const CLIENT_READS = {
+  apn_target_client_levels: "partner_id,record_id,level_key,label,goal,progress,status,notes,created_by,created_at,updated_at",
+  apn_target_client_products: "partner_id,record_id,product_key,label,category,price,quantity,status,created_by,created_at,updated_at",
+  apn_target_client_prescriptions: "partner_id,prescription_id,client_key,patient_name,doctor_name,condition_name,phase,balance,submit_count,last_submitted,status,created_by,created_at,updated_at",
+  apn_target_client_prescription_items: "partner_id,item_id,prescription_id,item_key,label,quantity,unit,amount,condition_item,embed_order,created_at,updated_at",
+  apn_target_client_loyalty: "partner_id,loyalty_id,client_key,points,tier,status,created_by,created_at,updated_at",
+  apn_target_client_loyalty_rewards: "partner_id,reward_id,loyalty_id,reward_key,label,points_cost,redeemed,redeemed_at,created_at,updated_at",
+};
+
 async function fetchReferralData() {
   const out = {};
   await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
@@ -476,6 +490,19 @@ async function fetchAIData() {
   return out;
 }
 
+async function fetchClientData() {
+  const out = {};
+  await Promise.all(Object.entries(CLIENT_READS).map(async ([table, columns]) => {
+    const { data, error } = await supabase.from(table).select(columns);
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
 async function fetchAll() {
   const db = emptyDB();
   await Promise.all(TABLES.map(async (t) => {
@@ -492,7 +519,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), await fetchClientData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
   return db;
 }
 
@@ -8873,8 +8900,8 @@ function apnPercent(value, label) {
 const APN_SUSPEND_REASONS = ["Spam", "Fake Leads", "Policy Violation", "Requested by Admin", "Other"];
 const APN_WARNING_TYPES = ["Poor Lead Quality", "Fake Information", "Customer Complaint", "Spam Behaviour", "Policy Violation", "Inactivity", "Other"];
 const APN_REACTIVATION_REASONS = ["Training Completed", "Investigation Closed", "Admin Decision", "Mistaken Suspension", "Other"];
-const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
-const apnStatusClass = (s) => s === "active" ? "status-active" : s === "pending" ? "status-on_leave" : s === "suspended" ? "status-terminated" : s === "inactive" ? "status-inactive" : s === "deleted" ? "status-deleted" : "status-on_leave";
+const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", banned: "Banned", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
+const apnStatusClass = (s) => s === "active" ? "status-active" : s === "pending" ? "status-on_leave" : s === "suspended" || s === "banned" ? "status-terminated" : s === "inactive" ? "status-inactive" : s === "deleted" ? "status-deleted" : "status-on_leave";
 const apnAdminLevel = (u, stats) => u?.level || (u?.role === "state_head" ? "State Head" : u?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
 const apnTargetFor = (db, pid, resetAt = 0) => [...(db.apn_targets || [])]
   .filter((t) => t.partnerId === pid && (t.createdAt || 0) > (resetAt || 0))
@@ -9068,6 +9095,113 @@ function apnPayoutDate(fromISO) {
 const APN_TARGET_METRICS = [["leads", "Leads"], ["conversions", "Conversions"], ["website", "Website projects"], ["course", "Course admissions"], ["marketing", "Marketing projects"]];
 const apnMetricLabel = (m) => (APN_TARGET_METRICS.find((x) => x[0] === m)?.[1]) || "Leads";
 
+/* ── WP4 — zones, campaigns, ties & governed targets ─────────────────── */
+// The network runs on rolling month-based zones (zone1 … zone6). Each zone
+// has a start/end window; a partner's zone is stored on their row (`zone`)
+// and mirrors the apex zone they joined through a zone request.
+const apnMonthStart = (offset = 0) => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + offset, 1); };
+function apnZonePeriods(count = 6) {
+  return Array.from({ length: count }, (_, i) => {
+    const start = apnMonthStart(i);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { key: `zone${i + 1}`, label: start.toLocaleDateString("en-IN", { month: "short", year: "numeric" }), startAt: start.getTime(), endAt: end.getTime(), startIso: localISODate(start) };
+  });
+}
+const apnZonePeriodKey = (ts) => {
+  const t = Number(ts) || Date.now();
+  return apnZonePeriods(6).find((p) => t >= p.startAt && t <= p.endAt)?.key || "zone1";
+};
+function apnCurrentZone(db) {
+  const consoleRow = apnConsoleRow(db);
+  const period = apnZonePeriods(6).find((p) => p.key === apnZonePeriodKey(consoleRow?.zoneStartAt || Date.now())) || apnZonePeriods(6)[0];
+  return { key: period.key, label: period.label, period };
+}
+const apnZoneTone = (key) => ({ zone1: "pri", zone2: "pos", zone3: "accent", zone4: "pri", zone5: "pos", zone6: "accent" }[key] || "");
+function apnZoneRank(db, pid, zoneKey) {
+  const pool = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
+  const arr = pool.map((u) => ({ id: u.id, v: apnPartnerStats(db, u.id).revenue })).sort((a, b) => b.v - a.v);
+  const idx = arr.findIndex((x) => x.id === pid);
+  return { rank: idx < 0 ? null : idx + 1, total: arr.length };
+}
+function apnZoneStats(db, zoneKey) {
+  const members = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
+  return {
+    members: members.length,
+    active: members.filter((u) => apnEffectiveStatus(u) === "active").length,
+    revenue: round2(members.reduce((s, u) => s + apnPartnerStats(db, u.id).revenue, 0)),
+    leads: members.reduce((s, u) => s + apnPartnerStats(db, u.id).submitted, 0),
+    conversions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).converted, 0),
+    commissions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).commission.earned, 0),
+  };
+}
+// Sweep: every partner belongs to a zone; old rows without one are mapped from
+// their registration month so the hub HUD is never empty.
+const apnPartnerZone = (u) => u?.zone || apnZonePeriodKey(u?.createdAt);
+
+// Hub console row: the admin-side campaign/zone settings live in a row of
+// apn_admin_consoles tagged kind:"console". All hub cards read from here.
+function apnConsoleRow(db) {
+  return [...(db.apn_admin_consoles || [])].filter((c) => c.kind === "console").sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] || {};
+}
+function apnCampaignOf(db) {
+  const c = apnConsoleRow(db);
+  const memberCount = Number(c.apnMemberCount) || 0;
+  const targetCount = Number(c.apnTargetCount) || 0;
+  return {
+    active: !!c.apnCampaignActive,
+    memberCount,
+    targetCount,
+    message: c.apnCampaignMessage || `WORLDWIDE CAMPAIGN — ${memberCount} of ${targetCount} partners have joined`,
+    joined: targetCount > 0 ? Math.min(100, Math.round((memberCount / targetCount) * 100)) : 0,
+    under: targetCount > 0 && memberCount < targetCount,
+  };
+}
+// One active admin-assigned target at a time per partner (the govern limit);
+// anything the partner creates themselves does not count against them.
+const APN_GOVERNED_TARGETS_LIMIT = 1;
+function apnGovernedTargets(db, pid) {
+  return (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.selfCreated);
+}
+function apnGovernedLimit(db, pid) {
+  const targets = apnGovernedTargets(db, pid);
+  return { count: targets.length, limit: APN_GOVERNED_TARGETS_LIMIT, full: targets.length >= APN_GOVERNED_TARGETS_LIMIT };
+}
+function apnCalculatedGovernedExplanation(db, pid) {
+  const g = apnGovernedLimit(db, pid);
+  if (!g.count) return "No admin-assigned targets right now — your targets are your own.";
+  if (g.full) return `You currently have ${g.count} admin-assigned target${g.count === 1 ? "" : "s"} (limit ${g.limit}). Acknowledge it on the Targets tab to clear the counter.`;
+  return `You have ${g.count} admin-assigned target${g.count === 1 ? "" : "s"} of ${g.limit} allowed.`;
+}
+// Express tie-ups: submitting a lead/quote can mark a tie-up with the client.
+// When the client also works with us on the other side of the deal the tie is
+// reciprocal — both parties are governed by the same relationship.
+const APN_TIEUPS = {
+  website: ["Website + maintenance", "Referral swap", "Joint marketing"],
+  marketing: ["Joint campaign", "Referral swap", "Regular retainer"],
+  course: ["Admissions partner", "Campus referral", "Franchise interest"],
+};
+function apnReciprocal(db, meRow) {
+  const mine = apnLeadsOf(db, meRow?.id).filter((l) => l.tieUp);
+  if (!mine.length) return { any: false, count: 0 };
+  const clients = new Set(mine.map((l) => String(l.mobile || "").replace(/\D/g, "")));
+  let count = 0;
+  for (const l of (db.apn_leads || [])) {
+    if (!String(l.mobile || "").replace(/\D/g, "") || clients.has(String(l.mobile || "").replace(/\D/g, ""))) continue;
+    if (mine.some((m) => String(m.mobile || "").replace(/\D/g, "") === String(l.mobile || "").replace(/\D/g, "") && l.partnerId !== meRow?.id)) count += 1;
+  }
+  return { any: count > 0, count };
+}
+// Express form rules: which fields a form surfaces depends on the chosen
+// service (kept in one place so all three forms agree).
+function apnFormRules(service) {
+  switch (service) {
+    case "website": return { showBusiness: true, showBudget: true, showCollege: false, showTieUps: true };
+    case "marketing": return { showBusiness: true, showBudget: true, showCollege: false, showTieUps: true };
+    case "course": return { showBusiness: false, showBudget: false, showCollege: true, showTieUps: true };
+    default: return { showBusiness: true, showBudget: false, showCollege: true, showTieUps: true };
+  }
+}
+
 /* ── partner lookups ─────────────────────────────────────────────────── */
 const apnMe = (db, pid) => (db.apn_users || []).find((u) => u.id === pid) || null;
 const apnAvatarUrl = (partner, profile) => partner?.profilePicture || partner?.photo_url || partner?.photoUrl || profile?.photo_url || "";
@@ -9082,9 +9216,11 @@ function apnAutoInactive(u) {
   const base = apnAttendanceBase(u);
   return !!base && (Date.now() - base) > APN_INACTIVE_DAYS * 86400000;
 }
-// pending / active / inactive / rejected — auto-inactive after 30 days with no check-in.
+// pending / active / inactive / rejected / banned — auto-inactive after 30
+// days with no check-in. A banned partner behaves like suspended everywhere.
 const apnEffectiveStatus = (u) => {
   if (!u) return "pending";
+  if (u.status === "banned") return "suspended";
   if (u.status === "active" && apnAutoInactive(u)) return "inactive";
   return u.status || "pending";
 };
@@ -9272,22 +9408,37 @@ function apnBuildCommissions(d, lead) {
 }
 
 // Create the partner's APN row on first login from the details captured at
-// sign-up (mirrors ensureProfile). Assigns the next APN-TN id.
+// sign-up (mirrors ensureProfile). Assigns the next APN-TN id. A partner who
+// already holds an approved profile (invited by an admin) is activated
+// immediately; everybody else enters the pending queue for approval.
 async function ensureApnProfile(user, existingRows) {
   if ((existingRows || []).some((u) => u.id === user.id)) return false;
+  let preApproved = false;
+  let profileRow = null;
+  try {
+    const { data, error } = await supabase.from("profiles").select("approved,status,active,dob").eq("id", user.id).maybeSingle();
+    if (!error && data) { profileRow = data; preApproved = !!data.approved && data.active !== false; }
+  } catch { /* best effort — pending is a safe default */ }
   const meta = user.user_metadata?.apn || {};
   const n = nextAvailableApnNumber(existingRows, await nextApnNumber());
+  const at = Date.now();
   const row = {
     id: user.id, apnId: apnPadId(n),
     name: meta.name || user.user_metadata?.name || (user.email ? user.email.split("@")[0] : "Partner"),
-    mobile: meta.mobile || "", email: user.email || meta.email || "", dob: meta.dob || "",
+    mobile: meta.mobile || "", email: user.email || meta.email || "", dob: (profileRow?.dob ? localISODate(new Date(profileRow.dob)) : "") || meta.dob || "",
     district: meta.district || "", taluk: meta.taluk || "", city: meta.city || "",
     occupation: meta.occupation || "", college: meta.college || "", reason: meta.reason || "",
     username: (meta.username || "").toLowerCase(), referralCode: (meta.referralCode || "").trim().toUpperCase(),
-    status: "pending", role: "partner", unlocked: {}, quizPasses: {}, createdAt: Date.now(),
+    zone: apnZonePeriodKey(at),
+    status: preApproved ? "active" : "pending", role: "partner", unlocked: {}, quizPasses: {}, createdAt: at,
+    ...(preApproved ? { approvedAt: at, approvedBy: "ALLBEE (invited)" } : {}),
   };
   const { error } = await supabase.from("apn_users").upsert({ id: user.id, data: row, updated_at: new Date().toISOString() }, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw new Error(error.message);
+  if (preApproved) {
+    const { error: profileError } = await supabase.from("profiles").update({ role: "partner", approved: true, active: true, status: "active" }).eq("id", user.id);
+    if (profileError) throw new Error(profileError.message);
+  }
   return true;
 }
 
@@ -9345,16 +9496,33 @@ function APNCheckIn({ db, pid, mutate }) {
 
 /* ── inactive gate (needs Haji/Alim reactivation) ────────────────────── */
 function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
+  const [f, setF] = useState(() => ({ mobile: meRow.mobile || "", email: meRow.email || "", address: meRow.address || "" }));
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
   const recommend = () => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, reactivationRequested: Date.now() } : u) }), null);
+  const saveContact = () => {
+    setErr(""); setSaved(false);
+    if (f.mobile.replace(/\D/g, "").length < 7) return setErr("Enter a valid mobile number.");
+    if (!f.email.trim()) return setErr("Enter an email address.");
+    mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, mobile: f.mobile.trim(), email: f.email.trim(), address: f.address.trim(), updatedAt: Date.now() } : u) }), { action: "updated contact details while inactive", module: "APN", partnerId: pid });
+    setSaved(true);
+  };
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style>
-      <div className="lock-card gate-card">
+      <div className="lock-card gate-card" style={{ width: "min(92vw, 480px)" }}>
         <div className="lock-badge" style={{ background: "linear-gradient(135deg,var(--accent),#d98c00)" }}><Hourglass size={26} /></div>
         <h1>Account inactive</h1>
-        <p>You've been marked inactive due to 30 days without attendance. Only an admin can reactivate your account — your district head can recommend it.</p>
+        <p>You've been marked inactive due to 30 days without attendance. Only an admin can reactivate your account — your district head can recommend it. Keep your contact details current so we can reach you.</p>
         {meRow.reactivationRequested ? <div className="auth-msg ok"><Check size={14} />Reactivation requested — waiting on approval.</div>
           : <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} onClick={recommend}><RefreshCw size={15} />Request reactivation</button>}
+        <div className="apn-rowcard" style={{ marginTop: 14, background: "var(--card)", border: "1px solid var(--border)" }}>
+          <div className="lbl"><Pencil size={14} /> Self-serve contact details</div>
+          <div className="grid2" style={{ marginTop: 8 }}><Field label="Mobile number"><input className="input" value={f.mobile} onChange={(e) => { setSaved(false); setF((s) => ({ ...s, mobile: e.target.value })); }} /></Field><Field label="Email"><input className="input" type="email" value={f.email} onChange={(e) => { setSaved(false); setF((s) => ({ ...s, email: e.target.value })); }} /></Field></div>
+          <Field label="Full address"><textarea className="textarea" value={f.address} onChange={(e) => { setSaved(false); setF((s) => ({ ...s, address: e.target.value })); }} /></Field>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button className="btn primary" onClick={saveContact}><Check size={14} />Save details</button></div>
+          {err && <div className="auth-msg err">{err}</div>}{saved && <div className="auth-msg ok"><Check size={14} />Contact details saved.</div>}
+        </div>
         <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 10 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
       </div>
     </div>
@@ -9368,8 +9536,33 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
   const dRank = apnRankBy(db, pid, "district", "revenue");
   const targets = (db.apn_targets || []).filter((t) => t.partnerId === pid);
   const activeTarget = targets.find((t) => apnTargetProgress(db, t).pct < 100) || targets[0];
+  const campaign = apnCampaignOf(db);
+  const zone = apnCurrentZone(db);
+  const zRank = apnZoneRank(db, pid, zone.key);
+  const zStats = apnZoneStats(db, zone.key);
+  const myZoneRequest = (db.apn_zone_requests || []).find((r) => r.partnerId === pid && ["pending", "requested"].includes(r.status));
+  const reciprocal = apnReciprocal(db, meRow);
+  const refEarnings = (db.apn_referral_earnings || []).filter((row) => row.referrer_id === pid);
+  const refPending = refEarnings.filter((row) => row.status === "pending").reduce((s, row) => s + (Number(row.referral_amount) || 0), 0);
+  // Auto zone join: the first time a partner has no zone they are placed into
+  // the current apex zone through a zone request (approved by the hub admin).
+  const autoZoneRef = React.useRef(false);
+  React.useEffect(() => {
+    if (autoZoneRef.current || !meRow?.id || meRow.zone || myZoneRequest) return;
+    autoZoneRef.current = true;
+    const row = { id: uid(), partnerId: meRow.id, partnerName: meRow.name, zone: zone.key, status: "pending", notes: "Auto-joined the current apex zone", auto: true, createdAt: Date.now() };
+    mutate((d) => ({ ...d, apn_zone_requests: [...(d.apn_zone_requests || []), row], apn_users: (d.apn_users || []).map((u) => u.id === meRow.id ? { ...u, zone: zone.key, zoneRequestedAt: Date.now() } : u) }), { action: `auto-joined the ${zone.label} apex zone`, module: "APN", partnerId: meRow.id });
+  }, [meRow?.id, meRow?.zone, zone.key]);
+  const requestZoneChange = () => {
+    if (myZoneRequest) return;
+    const row = { id: uid(), partnerId: meRow.id, partnerName: meRow.name, zone: zone.key, status: "pending", notes: "Manual zone change request", auto: false, createdAt: Date.now() };
+    mutate((d) => ({ ...d, apn_zone_requests: [...(d.apn_zone_requests || []), row] }), { action: `requested the ${zone.label} apex zone`, module: "APN", partnerId: meRow.id });
+  };
   return (
     <div>
+      {campaign.active && campaign.under && (
+        <div className="banner" style={{ margin: "0 0 14px" }}><Megaphone size={15} />{campaign.message} — <b>Target: {campaign.targetCount}</b></div>
+      )}
       <div className="apn-lvl" style={{ marginBottom: 14 }}>
         <div className="apn-hero">
           <button type="button" aria-label="Open My Profile" onClick={onOpenProfile} style={{ border: 0, padding: 0, background: "none", cursor: "pointer", borderRadius: 999 }}>
@@ -9390,6 +9583,19 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
       </div>
 
       <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} /></div>
+
+      <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Zap size={15} color="var(--primary)" /><div style={{ fontWeight: 700, flex: 1 }}>Apex zone — {zone.label}</div>
+          <span className={"badge " + apnZoneTone(zone.key)}>{zStats.members} members</span>
+        </div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
+          <div><div className="hint-line" style={{ fontSize: 11 }}>Zone revenue</div><div className="mono" style={{ fontWeight: 700 }}>{money(zStats.revenue)}</div></div>
+          <div><div className="hint-line" style={{ fontSize: 11 }}>Zone leads</div><div className="mono" style={{ fontWeight: 700 }}>{zStats.leads}</div></div>
+          <div><div className="hint-line" style={{ fontSize: 11 }}>Your zone rank</div><div className="mono" style={{ fontWeight: 700 }}>{zRank.rank ? `#${zRank.rank}` : "—"}{zRank.total ? ` / ${zRank.total}` : ""}</div></div>
+        </div>
+        <div style={{ marginTop: 10 }}>{myZoneRequest ? <span className="badge pri">Zone request pending</span> : <button className="btn sm" onClick={requestZoneChange}>Request zone change</button>}</div>
+      </div>
 
       <div className="apn-metrics" style={{ marginBottom: 14 }}>
         <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
@@ -9415,6 +9621,18 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
         </div>
       ); })()}
 
+      {(reciprocal.any || refEarnings.length > 0) && (
+        <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Handshake size={15} color="var(--primary)" /><div style={{ fontWeight: 700, flex: 1 }}>Your referrals</div>
+            {refEarnings.length > 0 && <span className="badge pos">{money(refPending)} pending</span>}
+          </div>
+          <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>
+            {reciprocal.any ? `${reciprocal.count} reciprocal tie-up${reciprocal.count === 1 ? "" : "s"} active — both sides governed by the same relationship.` : `${refEarnings.length} referral earning${refEarnings.length === 1 ? "" : "s"} on record.`}
+          </div>
+          <button className="btn sm" style={{ marginTop: 10 }} onClick={() => go("network")}><Users size={13} />Open referral dashboard</button>
+        </div>
+      )}
+
       <div className="apn-metrics" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <button className="apn-more-item" onClick={() => openModal({ type: "apnLead" })}><UserPlus size={20} color="var(--primary)" />Submit a lead</button>
         <button className="apn-more-item" onClick={() => go("learn")}><GraduationCap size={20} color="var(--primary)" />Training & quiz</button>
@@ -9427,9 +9645,10 @@ function APNHome({ db, meRow, stats, pid, go, openModal, mutate, onOpenProfile, 
 function APNLeadForm({ meRow, db, initial, onSave, onClose }) {
   const unlocked = apnUnlocked(meRow);
   const enabled = APN_SERVICES.filter(([k]) => unlocked[k]);
-  const [f, setF] = useState(() => ({ clientName: "", mobile: "", business: "", service: enabled[0]?.[0] || "", notes: "", ...initial }));
+  const [f, setF] = useState(() => ({ clientName: "", mobile: "", business: "", service: enabled[0]?.[0] || "", budget: "", college: "", tieUp: "", notes: "", ...initial }));
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [err, setErr] = useState("");
+  const rules = apnFormRules(f.service);
   const save = () => {
     if (!enabled.length) { setErr("Pass a sales quiz first to unlock lead submission."); return; }
     if (!f.clientName.trim()) { setErr("Client name is required."); return; }
@@ -9437,7 +9656,7 @@ function APNLeadForm({ meRow, db, initial, onSave, onClose }) {
     if (!f.service) { setErr("Choose the service required."); return; }
     const nums = (db.apn_leads || []).map((l) => Number(String(l.leadId || "").replace(/\D/g, "")) || 0);
     const n = (nums.length ? Math.max(...nums) : 0) + 1;
-    onSave({ id: uid(), leadId: apnLeadId(n), partnerId: meRow.id, partnerName: meRow.name, clientName: f.clientName.trim(), mobile: f.mobile.trim(), business: f.business.trim(), service: f.service, notes: f.notes.trim(), status: "Submitted", createdAt: Date.now() });
+    onSave({ id: uid(), leadId: apnLeadId(n), partnerId: meRow.id, partnerName: meRow.name, clientName: f.clientName.trim(), mobile: f.mobile.trim(), business: String(f.business || "").trim(), service: f.service, budget: String(f.budget || "").trim(), college: String(f.college || "").trim(), tieUp: f.tieUp || "", tieUpReciprocal: false, notes: f.notes.trim(), status: "Submitted", createdAt: Date.now() });
     onClose();
   };
   return (
@@ -9447,13 +9666,22 @@ function APNLeadForm({ meRow, db, initial, onSave, onClose }) {
       <Field label="Client name" required error={err}><input className="input" value={f.clientName} onChange={(e) => set("clientName", e.target.value)} placeholder="Client's name" /></Field>
       <div className="grid2">
         <Field label="Mobile number" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
-        <Field label="Business name"><input className="input" value={f.business} onChange={(e) => set("business", e.target.value)} placeholder="Business / shop" /></Field>
+        <Field label={rules.showBusiness ? "Business name" : "College / campus"}><input className="input" value={rules.showBusiness ? f.business : f.college} onChange={(e) => set(rules.showBusiness ? "business" : "college", e.target.value)} placeholder={rules.showBusiness ? "Business / shop" : "College / campus"} /></Field>
       </div>
       <Field label="Service required" required>
         <select className="select" value={f.service} onChange={(e) => set("service", e.target.value)}>
           {enabled.length ? enabled.map(([k, l]) => <option key={k} value={k}>{l}</option>) : <option value="">No services unlocked yet</option>}
         </select>
       </Field>
+      {rules.showBudget && <Field label="Expected budget"><input className="input mono" value={f.budget} onChange={(e) => set("budget", e.target.value)} placeholder="Approximate budget (₹)" /></Field>}
+      {rules.showTieUps && (
+        <Field label="Tie-up with the client" hint="Mark an express tie-up — when the client works with ALLBEE on the other side of the deal both sides govern the relationship.">
+          <select className="select" value={f.tieUp} onChange={(e) => set("tieUp", e.target.value)}>
+            <option value="">No tie-up</option>
+            {(APN_TIEUPS[f.service] || []).map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything useful about the lead…" /></Field>
     </Modal>
   );
@@ -9476,6 +9704,8 @@ function APNLeads({ db, meRow, pid, openModal, mutate }) {
               </div>
               <span className={"badge " + apnLeadTone(l.status)}>{l.status}</span>
             </div>
+            {l.tieUp && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}><Handshake size={12} style={{ verticalAlign: -2 }} /> Tie-up: {l.tieUp}{l.tieUpReciprocal ? " · reciprocal" : ""}</div>}
+            {l.budget && <div className="hint-line" style={{ marginTop: 4, fontSize: 12 }}>Budget {money(Number(l.budget) || 0)}</div>}
             {l.status === "Converted" && l.revenue != null && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Revenue {money(l.revenue)}{l.projectCompleted ? " · project completed" : ""}</div>}
             {APN_LEAD_REJECTED.has(l.status) && l.rejectReason && <div className="field-err" style={{ marginTop: 6 }}><AlertTriangle size={13} />{l.status}: {l.rejectReason}</div>}
             <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>Submitted {fmtDate(new Date(l.createdAt).toISOString().slice(0, 10))}{l.ownershipLocked ? " · ownership locked to you" : ""}</div>
@@ -9510,6 +9740,7 @@ function APNQuoteForm({ meRow, initial, onSave, onClose }) {
   const [priceBusy, setPriceBusy] = useState(true);
   const [clientName, setClientName] = useState(initial?.clientName || "");
   const [requirements, setRequirements] = useState(initial?.requirements || "");
+  const [tieUp, setTieUp] = useState(initial?.tieUp || "");
   const [items, setItems] = useState(initial?.items || null);
   React.useEffect(() => {
     let alive = true;
@@ -9532,7 +9763,7 @@ function APNQuoteForm({ meRow, initial, onSave, onClose }) {
   const rmItem = (id) => setItems((prev) => (prev || base).filter((it) => it.id !== id));
   const save = (status) => {
     if (!clientName.trim()) return;
-    onSave({ id: initial?.id || uid(), partnerId: meRow.id, partnerName: meRow.name, clientName: clientName.trim(), service, requirements: requirements.trim(), items: list, total: round2(total), status, createdAt: initial?.createdAt || Date.now() });
+    onSave({ id: initial?.id || uid(), partnerId: meRow.id, partnerName: meRow.name, clientName: clientName.trim(), service, requirements: requirements.trim(), tieUp, items: list, total: round2(total), status, createdAt: initial?.createdAt || Date.now() });
     onClose();
   };
   return (
@@ -9543,6 +9774,12 @@ function APNQuoteForm({ meRow, initial, onSave, onClose }) {
         <Field label="Service"><select className="select" value={service} onChange={(e) => setService(e.target.value)} disabled={!!initial?.id}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
       </div>
       <Field label="Requirements"><textarea className="textarea" value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="What does the client need?" /></Field>
+      <Field label="Tie-up with the client" hint="Express an optional tie-up — reciprocal deals govern both sides of the relationship.">
+        <select className="select" value={tieUp} onChange={(e) => setTieUp(e.target.value)}>
+          <option value="">No tie-up</option>
+          {(APN_TIEUPS[service] || []).map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </Field>
       <Field label="Add-ons" hint={priceBusy ? "Loading official pricing…" : price?.customQuote ? "This service is quoted after scope review." : "Tap to add an official add-on — you can edit every line below."}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{(price?.options || []).map((option) => <button key={option.key} type="button" className="preset" disabled={priceBusy} onClick={() => addOpt(option.label, Number(option.amount) || 0)}>+ {option.label} {option.amount != null ? `(₹${Number(option.amount).toLocaleString("en-IN")})` : "(custom quote)"}</button>)}</div>
       </Field>
@@ -9572,6 +9809,7 @@ function APNQuotations({ db, meRow, pid, openModal }) {
               <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{q.clientName}</div><div className="hint-line" style={{ fontSize: 12 }}>{APN_SERVICE_LABEL[q.service]} · {money(q.total)}</div></div>
               <span className={"badge " + tone(q.status)}>{q.status}</span>
             </div>
+            {q.tieUp && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}><Handshake size={12} style={{ verticalAlign: -2 }} /> Tie-up: {q.tieUp}</div>}
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <button className="btn sm" onClick={() => apnPrintQuote(q, meRow)}><Download size={13} />PDF</button>
               {q.status !== "Approved" && <button className="btn sm" onClick={() => openModal({ type: "apnQuote", initial: q })}><Pencil size={13} />Edit</button>}
@@ -9602,6 +9840,7 @@ function APNWallet({ db, pid, stats }) {
         <APNMetric k="Collections received" v={stats.collectionsReceived} icon={<ArrowDownToLine size={13} />} />
         <APNMetric k="Total incentives" v={money(stats.totalIncentives)} icon={<Gift size={13} />} />
       </div>
+      <div className="banner" style={{ margin: "0 0 12px" }}><Handshake size={15} />Tie-up deals settle 1:1 or lower on both sides — a governed deal never pays more than the partner with the lower commission rate.</div>
       <div className="apn-rowcard" style={{ padding: 0 }}>
         <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Commission history</div>
         {rows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No commission yet" text="Commission appears once a converted project is paid and completed. Payouts land on the 5th of the next month." /></div>
@@ -9829,6 +10068,17 @@ function APNNetwork({ db, meRow, pid, reload, onOpenWithdrawals }) {
         <APNReferralMetric label="Pending referrals" value={pendingReferrals} icon={<UserPlus size={13} />} tone="accent" />
       </div>
       <div className="apn-rowcard" style={{ marginBottom: 12 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Link a referral code</div>{ownRelationship ? <div className="hint-line">You are linked to a direct referrer since {fmtDate(ownRelationship.linked_at)}. This relationship cannot be replaced.</div> : <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}><input className="input mono" style={{ flex: "1 1 180px" }} value={referralDraft} onChange={(e) => setReferralDraft(e.target.value.toUpperCase())} placeholder="Enter one referral code" aria-label="Referral code from another partner" /><button className="btn sm primary" onClick={linkCode} disabled={busy || !referralDraft.trim()}><Link2 size={13} />Link code</button></div>}</div>
+      <div className="apn-rowcard" style={{ padding: 0, marginBottom: 12 }}>
+        <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Referral earnings <span className="badge" style={{ marginLeft: 5 }}>{earningRows.length}</span></div>
+        {earningRows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No referral earnings yet" text="When a referred partner's collection is recorded, the snapshot %, revenue, and your earnings appear here." /></div>
+          : earningRows.slice().sort((a, b) => new Date(b.collection_at) - new Date(a.collection_at)).slice(0, 6).map((row) => (
+            <div key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 15px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13 }}>Collection {money(row.revenue_amount)} · {row.referral_percent}% snapshot</div><div className="hint-line" style={{ fontSize: 11 }}>On {fmtDate(row.collection_at)}{row.relationship_id && " · logged against your network"}</div></div>
+              <div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.referral_amount)}</div><span className={"badge " + (row.status === "paid" ? "pos" : row.status === "pending" ? "pri" : "neg")} style={{ marginTop: 3 }}>{row.status}</span></div>
+            </div>
+          ))}
+        {earningRows.length > 6 && <div className="hint-line" style={{ padding: 10, fontSize: 11 }}>Showing the latest 6 of {earningRows.length} — use the Timeline for the full history.</div>}
+      </div>
       <div className="apn-rowcard"><div style={{ fontWeight: 700, marginBottom: 8 }}>Referral withdrawals</div><div className="hint-line" style={{ marginBottom: 9 }}>Withdrawable balance: {money(wallet.withdrawable)}. New requests use the secure Withdrawal Center, which locks the balance and keeps one settlement history for every wallet.</div><button className="btn sm primary" onClick={onOpenWithdrawals}><Wallet size={13} />Open Withdrawal Center</button></div>
     </>}
 
@@ -9911,17 +10161,34 @@ function APNTraining({ db, meRow, pid, mutate }) {
 }
 
 /* ── targets ─────────────────────────────────────────────────────────── */
-function APNTargets({ db, pid, mutate }) {
+function APNTargets({ db, pid, mutate, go }) {
   const list = (db.apn_targets || []).filter((t) => t.partnerId === pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const ack = (t) => mutate((d) => ({ ...d, apn_targets: (d.apn_targets || []).map((x) => x.id === t.id ? { ...x, acknowledged: true, acknowledgedAt: Date.now() } : x) }), null);
+  // Deep link #/targets/<id> — acknowledge the target the head sent you to and
+  // surface it, so a notification tap lands exactly where it should.
+  const ackRef = React.useRef(null);
+  React.useEffect(() => {
+    const raw = String(window.location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/");
+    if (raw[0] !== "targets" || !raw[1]) return;
+    const target = list.find((t) => t.id === decodeURIComponent(raw[1]));
+    if (!target) return;
+    if (!target.acknowledged && !ackRef.current) {
+      ackRef.current = target.id;
+      ack(target);
+      window.history.replaceState(null, "", "#/apn/targets");
+    }
+  }, [list]);
+  const governed = apnGovernedLimit(db, pid);
+  const explanation = apnCalculatedGovernedExplanation(db, pid);
   return (
     <div>
       <div className="apn-section-h">My targets</div>
+      <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />{explanation}{governed.full && <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => go("home")}>Back to overview</button>}</div>
       {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<Target size={22} color="var(--muted)" />} title="No targets assigned" text="Targets from your admin or district head will show up here." /></div>
         : <div className="apn-list">{list.map((t) => { const p = apnTargetProgress(db, t); return (
           <div key={t.id} className="apn-rowcard">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{t.title}</div><div className="hint-line" style={{ fontSize: 12 }}>{t.goal} {apnMetricLabel(t.metric).toLowerCase()} · by {t.assignedByName || "Admin"}</div></div>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{t.title}</div><div className="hint-line" style={{ fontSize: 12 }}>{t.goal} {apnMetricLabel(t.metric).toLowerCase()} · by {t.assignedByName || "Admin"}{t.selfCreated ? " · self-assigned" : " · governed"}{t.parValue ? ` · par ${t.parValue}%` : ""}</div>{t.parentName && <div className="hint-line" style={{ fontSize: 12 }}>Parent: {t.parentName}</div>}{t.prescriptionIds && <div className="hint-line" style={{ fontSize: 12 }}>Prescriptions: {String(t.prescriptionIds).replace(/[;,]\s*/g, ", ")}</div>}</div>
               <span className={"badge " + (p.pct >= 100 ? "pos" : "pri")}>{p.raw}/{p.goal}</span>
             </div>
             <div className="progress-track" style={{ marginTop: 10 }}><div className="progress-fill" style={{ width: p.pct + "%", background: p.pct >= 100 ? "var(--pos)" : "var(--primary)" }} /></div>
@@ -9930,6 +10197,10 @@ function APNTargets({ db, pid, mutate }) {
             </div>
           </div>
         ); })}</div>}
+      <div className="apn-rowcard" style={{ marginTop: 14 }}>
+        <div className="lbl"><ListChecks size={14} /> Data guide</div>
+        <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Progress is calculated from leads submitted after the target was created. Admin-assigned targets are governed: at most {APN_GOVERNED_TARGETS_LIMIT} at a time, acknowledged by you here. Your own self-set targets never count against the limit.</div>
+      </div>
     </div>
   );
 }
@@ -10023,29 +10294,91 @@ function APNLeaderboard({ db, meRow, pid }) {
 
 /* ── district head dashboard ─────────────────────────────────────────── */
 function APNDistrict({ db, meRow, mutate }) {
-  const district = meRow.district;
-  const partners = (db.apn_users || []).filter((u) => u.district === district && u.role !== "district_head" && u.status !== "rejected");
-  const leads = (db.apn_leads || []).filter((l) => partners.some((p) => p.id === l.partnerId));
+  const district = meRow.district || "—";
+  const state = meRow.state || meRow.zone || "";
+  const headRow = meRow.headRow || (state ? state.toUpperCase().split("-")[0] : "A");
+  const [crisis, setCrisis] = useState(false);
+  const [stapler, setStapler] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(null);
+  const [transferNote, setTransferNote] = useState("");
+  const [declarations, setDeclarations] = useState(false);
+  const members = (db.apn_users || []).filter((u) => u.district === district && u.role !== "district_head" && u.status !== "rejected" && u.status !== "banned");
+  const heads = (db.apn_users || []).filter((u) => u.role === "district_head");
+  const headGrid = ["A", "B", "C", "D", "E", "F", "G"].map((letter) => ({ letter, heads: heads.filter((h) => (h.headRow || "A") === letter || (h.state || "").toUpperCase().split("-")[0] === letter) }));
+  const leads = (db.apn_leads || []).filter((l) => members.some((p) => p.id === l.partnerId));
   const converted = leads.filter((l) => l.status === "Converted");
   const revenue = round2(converted.reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const targets = (db.apn_targets || []).filter((t) => members.some((p) => p.id === t.partnerId) && t.metric === "revenue");
   const recommend = (p) => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === p.id ? { ...u, reactivationRecommended: Date.now(), reactivationRecommendedBy: meRow.name } : u) }), null);
+  const requestTransfer = (p) => {
+    if (!transferNote.trim()) return;
+    mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === p.id ? { ...u, transferRequestedAt: Date.now(), transferRequestedBy: meRow.name, transferReason: transferNote.trim() } : u) }), { action: "requested member transfer", module: "APN", entity: "Partner", entityId: p.id, partnerId: meRow.id, metadata: { member: p.name, reason: transferNote.trim() } });
+    setShowTransfer(null); setTransferNote("");
+  };
+  const logCall = (p) => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === p.id ? { ...u, lastHeadCallAt: Date.now(), lastHeadCallBy: meRow.name } : u) }), { action: "logged head call", module: "APN", entity: "Partner", entityId: p.id, partnerId: meRow.id, metadata: { member: p.name } });
+  const crisisMembers = crisis ? members.filter((p) => apnEffectiveStatus(p) !== "active" || apnTargetProgress(db, targets.find((t) => t.partnerId === p.id))?.pct < 50) : [];
+  const memberRate = (p) => { const c = (db.apn_commissions || []).filter((row) => row.partnerId === p.id); return c.length ? Math.max(...c.map((row) => Number(row.rate) || 0)) : Number(p.commercialRate) || 0; };
+  const completeCount = (p) => ["dob", "address", "city", "mobile"].filter((k) => (p[k] || "").toString().trim()).length;
   return (
     <div>
-      <div className="apn-section-h">District — {district}</div>
+      <div className="apn-section-h" style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ flex: 1 }}>District — {district}</div>{meRow.headRow && <span className="badge pri">Head {headRow}</span>}</div>
       <div className="apn-metrics" style={{ marginBottom: 14 }}>
-        <APNMetric k="Partners" v={partners.length} icon={<UserPlus size={13} />} />
+        <APNMetric k="Members" v={members.length} icon={<UserPlus size={13} />} />
         <APNMetric k="District revenue" v={money(revenue)} icon={<TrendingUp size={13} />} />
-        <APNMetric k="Leads" v={leads.length} icon={<UserPlus size={13} />} />
+        <APNMetric k="Leads" v={leads.length} icon={<Lightbulb size={13} />} />
         <APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} />
+        <APNMetric k="Member target row" v={round2(targets.reduce((s, t) => s + (Number(t.goal) || 0), 0))} icon={<Target size={13} />} />
       </div>
-      <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />You can recommend reactivation and monitor partners. Only an admin can reactivate accounts or change commissions.</div>
-      <div className="apn-list">{partners.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); return (
-        <div key={p.id} className="apn-rowcard">
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{p.name}</div><div className="hint-line" style={{ fontSize: 12 }}>{apnIdFor(p)} · {s.level.name} · {money(s.revenue)}</div></div>
-            <span className={"badge " + (eff === "active" ? "pos" : eff === "inactive" ? "neg" : "")}>{eff}</span>
+      <div className="apn-rowcard" style={{ marginBottom: 14 }}>
+        <div className="lbl"><Megaphone size={14} /> Head grid — {state ? state.split("-")[0] : "state"} A–G</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginTop: 10 }}>
+          {headGrid.map((col) => (
+            <div key={col.letter} className={col.heads.length ? "banner" : "banner"} style={{ margin: 0, textAlign: "center", borderStyle: col.heads.length ? "solid" : "dashed", color: col.heads.length ? undefined : "var(--muted)" }}>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>{col.letter}</div>
+              {col.heads.length ? col.heads.map((h) => <div key={h.id} className="hint-line" style={{ fontSize: 11 }}>{h.name}{h.id === meRow.id ? " · you" : ""}</div>) : <div className="hint-line" style={{ fontSize: 11 }}>Vacant</div>}
+            </div>
+          ))}
+        </div>
+        <div className="hint-line" style={{ marginTop: 8, fontSize: 12 }}>Member target row: {round2(targets.reduce((s, t) => s + (Number(t.goal) || 0), 0))} revenue goal across {targets.length} active governed targets.</div>
+      </div>
+      <div className="banner" style={{ margin: "0 0 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <ShieldCheck size={15} />You can recommend reactivation, request member transfers, and log calls. Only an admin can approve transfers or change commissions.
+        <button className={"btn sm " + (crisis ? "primary" : "")} onClick={() => setCrisis(!crisis)}><Flame size={13} />{crisis ? "Crisis mode on" : "Crisis mode"}</button>
+        <button className={"btn sm " + (stapler ? "primary" : "")} onClick={() => setStapler(!stapler)}><ListChecks size={13} />Stapler view</button>
+        <button className={"btn sm " + (declarations ? "primary" : "")} onClick={() => setDeclarations(!declarations)}><FileCheck2 size={13} />Declarations</button>
+      </div>
+      {crisis && <div className="banner neg" style={{ margin: "0 0 12px" }}><Flame size={15} />Crisis mode: {crisisMembers.length} member{crisisMembers.length === 1 ? "" : "s"} are inactive or below 50% of target. Follow up with calls and transfers.</div>}
+      {declarations && (
+        <div className="apn-rowcard" style={{ marginBottom: 12 }}>
+          <div className="lbl"><FileCheck2 size={14} /> Declarations — profile compliance</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 10 }}>
+            {members.map((p) => { const n = completeCount(p); return (
+              <div key={p.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                <span className={"badge " + (n >= 4 ? "pos" : n >= 3 ? "pri" : "neg")} style={{ marginTop: 4 }}>{n}/4 declared</span>
+              </div>
+            ); })}
           </div>
-          {eff === "inactive" && (p.reactivationRecommended ? <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Reactivation recommended</div> : <button className="btn sm" style={{ marginTop: 8 }} onClick={() => recommend(p)}><RefreshCw size={13} />Recommend reactivation</button>)}
+        </div>
+      )}
+      <div className="apn-list">{members.map((p) => { const s = apnPartnerStats(db, p.id); const eff = apnEffectiveStatus(p); const tgt = targets.find((t) => t.partnerId === p.id); const prog = tgt ? apnTargetProgress(db, tgt) : null; return (
+        <div key={p.id} className="apn-rowcard" style={crisisMembers.includes(p) ? { borderColor: "var(--neg)", borderStyle: "dashed" } : undefined}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{p.name}</div><div className="hint-line" style={{ fontSize: 12 }}>{apnIdFor(p)} · {s.level.name} · {money(s.revenue)}{p.commercialRate ? " · rate " + p.commercialRate + "%" : memberRate(p) ? " · rate " + memberRate(p) + "%" : ""}</div></div>
+            <span className={"badge " + (eff === "active" ? "pos" : eff === "inactive" ? "neg" : "pri")}>{eff}</span>
+          </div>
+          {stapler && (tgt ? <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div className="hint-line" style={{ fontSize: 12, flex: 1 }}>{tgt.title} · {prog.raw}/{tgt.goal}</div><span className="mono" style={{ fontWeight: 700, fontSize: 13 }}>{prog.pct}%</span></div>
+            <div className="progress-track"><div className="progress-fill" style={{ width: prog.pct + "%", background: prog.pct >= 100 ? "var(--pos)" : crisisMembers.includes(p) ? "var(--neg)" : "var(--primary)" }} /></div>
+          </div> : <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>No governed revenue target assigned.</div>)}
+          {p.transferRequestedAt ? <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Transfer requested{p.transferReason ? ": " + p.transferReason : ""} — pending admin approval.</div>
+            : eff === "inactive" && !p.reactivationRecommended && <button className="btn sm" style={{ marginTop: 8 }} onClick={() => recommend(p)}><RefreshCw size={13} />Recommend reactivation</button>}
+          {p.reactivationRecommended && eff === "inactive" && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Reactivation recommended{p.reactivationRecommendedBy ? " by " + p.reactivationRecommendedBy : ""}</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button className="btn sm" onClick={() => logCall(p)}><PhoneCall size={13} />Log call{p.lastHeadCallAt ? " (" + fmtDate(new Date(p.lastHeadCallAt).toISOString().slice(0, 10)) + ")" : ""}</button>
+            {showTransfer === p.id ? <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1, minWidth: 180 }}><input className="input" value={transferNote} onChange={(e) => setTransferNote(e.target.value)} placeholder="Reason for transfer…" /><button className="btn sm primary" onClick={() => requestTransfer(p)}>Request</button><button className="btn sm" onClick={() => { setShowTransfer(null); setTransferNote(""); }}>Cancel</button></div>
+              : <button className="btn sm" onClick={() => { setShowTransfer(p.id); setTransferNote(""); }}><ArrowDownUp size={13} />Request transfer</button>}
+          </div>
         </div>
       ); })}</div>
     </div>
@@ -10074,7 +10407,8 @@ function APNBankDetails({ db, pid, reload }) {
   return <div className="apn-rowcard" style={{ marginTop: 14 }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}><Building2 size={16} color="var(--primary)" /><div style={{ fontWeight: 800, flex: 1 }}>Bank details</div>{existing && <span className={`badge ${existing.verification_status === "verified" ? "pos" : existing.verification_status === "rejected" ? "neg" : "pri"}`}>{existing.verification_status}</span>}</div><div className="hint-line" style={{ marginBottom: 12 }}>Use either UPI or complete bank-transfer details. Every change is recorded in the financial audit log.</div><div className="grid2"><Field label="Account holder"><input className="input" value={f.accountHolder} onChange={(e) => set("accountHolder", e.target.value)} /></Field><Field label="Bank name"><input className="input" value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field></div><div className="grid2"><Field label="Account number"><input className="input mono" inputMode="numeric" value={f.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} /></Field><Field label="Confirm account number"><input className="input mono" inputMode="numeric" value={f.confirmAccountNumber} onChange={(e) => set("confirmAccountNumber", e.target.value)} /></Field></div><div className="grid2"><Field label="IFSC"><input className="input mono" value={f.ifsc} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} /></Field><Field label="Branch"><input className="input" value={f.branch} onChange={(e) => set("branch", e.target.value)} /></Field></div><Field label="UPI ID"><input className="input" value={f.upiId} onChange={(e) => set("upiId", e.target.value.toLowerCase())} placeholder="name@bank" /></Field><div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save payout details"}</button></div>{message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginTop: 10 }}>{message.text}</div>}</div>;
 }
 
-function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut, reload }) {
+function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut, reload, isHead, go }) {
+  const governed = apnGovernedLimit(db, meRow.id);
   const [f, setF] = useState(() => ({
     name: meRow.name || "", username: meRow.username || profile?.username || "", email: meRow.email || profile?.email || sessionEmail || "", mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "",
     address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", photoUrl: apnAvatarUrl(meRow, profile),
@@ -10145,6 +10479,13 @@ function APNProfile({ db, meRow, stats, profile, sessionEmail, mutate, onSignOut
   return (
     <div>
       <div className="apn-section-h">My profile</div>
+      {isHead && <div className="banner" style={{ margin: "0 0 12px" }}><ShieldHalf size={15} />You lead district {meRow.district || "—"} ({meRow.headRow || "Head"}). Manage members and revenue from the District tab.</div>}
+      <div className="apn-metrics" style={{ marginBottom: 14 }}>
+        <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
+        <APNMetric k="Commission earned" v={money(stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Level" v={stats.level.name} icon={<Award size={13} />} />
+      </div>
+      {governed.full && <div className="banner" style={{ margin: "0 0 12px" }}><ShieldCheck size={15} />{apnCalculatedGovernedExplanation(db, meRow.id)} <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => go("targets")}>View targets</button></div>}
       <div className="apn-rowcard" style={{ marginBottom: 14 }}>
         <div className="apn-hero">
           <button type="button" aria-label="Change profile picture" onClick={() => photoRef.current?.click()} style={{ border: 0, padding: 0, background: "none", cursor: "pointer", borderRadius: 999 }}><Avatar name={f.name} url={f.photoUrl} size={48} fontSize={19} /></button>
@@ -10227,6 +10568,14 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Deep links: #/apn/<tab>, and bare #/targets/<id> lands partners on their
+  // targets tab so a notification tap acknowledges the right target.
+  useEffect(() => {
+    const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+    const route = parts[0] === "apn" ? parts[1] : parts[0];
+    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "learn", "targets", "documents", "notifications", "achievements", "leaderboard", "district", "profile"].includes(route)) setTab(route);
+  }, []);
+
   if (!meRow) return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
       <style>{CSS}</style><div style={{ color: "var(--muted)", display: "flex", gap: 10, alignItems: "center" }}><Hexagon size={20} className="spin" />Setting up your APN account…</div>
@@ -10254,14 +10603,14 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} />;
       case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
-      case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} />;
+      case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
       case "documents": return <APNDocuments db={db} />;
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
       case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
-      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} />;
+      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} />;
       default: return null;
     }
   };
@@ -10394,19 +10743,21 @@ function APNLeadManage({ lead, onSave, onClose }) {
     </Modal>
   );
 }
-function APNTargetForm({ partners, onSave, onClose }) {
-  const [f, setF] = useState({ partnerId: partners[0]?.id || "", title: "", metric: "leads", goal: 5 });
+function APNTargetForm({ partners, heads, onSave, onClose }) {
+  const [f, setF] = useState({ partnerId: partners[0]?.id || "", parentId: "", title: "", metric: "leads", goal: 5 });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const save = () => {
     if (!f.partnerId || !f.title.trim()) return;
     const p = partners.find((x) => x.id === f.partnerId);
-    onSave({ id: uid(), partnerId: f.partnerId, partnerName: p?.name || "", title: f.title.trim(), metric: f.metric, goal: Number(f.goal) || 0, acknowledged: false, createdAt: Date.now() });
+    const head = (heads || []).find((x) => x.id === f.parentId);
+    onSave({ id: uid(), partnerId: f.partnerId, partnerName: p?.name || "", parentId: f.parentId || null, parentName: head?.name || null, title: f.title.trim(), metric: f.metric, goal: Number(f.goal) || 0, acknowledged: false, createdAt: Date.now() });
     onClose();
   };
   return (
     <Modal title="Assign target" onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Assign</button></>}>
       <div className="field"><label>Partner</label><SearchableSelect value={f.partnerId} onChange={(value) => set("partnerId", value)} ariaLabel="Assign target to partner" options={partners.map((p) => ({ value: p.id, label: p.name, meta: apnIdFor(p) }))} /></div>
+      <div className="field"><label>Parent (district head) <span className="hint-line">optional</span></label><SearchableSelect value={f.parentId} onChange={(value) => set("parentId", value)} ariaLabel="District head who owns this target" options={(heads || []).map((h) => ({ value: h.id, label: h.name, meta: apnIdFor(h) }))} /></div>
       <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. 5 leads this month" /></Field>
       <div className="grid2">
         <Field label="Measure"><select className="select" value={f.metric} onChange={(e) => set("metric", e.target.value)}>{APN_TARGET_METRICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
@@ -10553,6 +10904,17 @@ function APNSuspendForm({ partner, onSave, onClose }) {
   );
 }
 
+function APNBanForm({ partner, onSave, onClose }) {
+  const [reason, setReason] = useState("");
+  return (
+    <Modal title={`Ban ${partner.name}?`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn danger" disabled={!reason.trim()} onClick={() => onSave(reason.trim())}><Ban size={15} />Confirm ban</button></>}>
+      <div className="banner" style={{ margin: 0, borderColor: "var(--neg)" }}><Ban size={15} />A ban permanently restricts the partner lifecycle: they count as banned everywhere, cannot be reactivated by a district head, and the reason is kept on the public record for this account.</div>
+      <Field label="Ban reason" required><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Policy reason — shown to admins and retained in the audit log…" /></Field>
+    </Modal>
+  );
+}
+
 function APNReactivateForm({ partner, onSave, onClose }) {
   const [reason, setReason] = useState(APN_REACTIVATION_REASONS[0]);
   return (
@@ -10623,21 +10985,68 @@ function APNPermanentDeleteForm({ partner, onSave, onClose }) {
   );
 }
 
+const parseCsvText = (text) => {
+  const rows = [];
+  let row = [], cell = "", inq = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inq) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inq = false; } else cell += ch; }
+    else if (ch === '"') inq = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cell); if (row.some((c) => c.trim())) rows.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  row.push(cell); if (row.some((c) => c.trim())) rows.push(row);
+  return rows;
+};
 function APNBulkForm({ action, partners, onSave, onClose }) {
   const [district, setDistrict] = useState(TN_DISTRICTS[0]);
   const [reason, setReason] = useState(APN_SUSPEND_REASONS[0]);
   const [message, setMessage] = useState("");
   const [word, setWord] = useState("");
+  const [csvRows, setCsvRows] = useState(null);
+  const [csvError, setCsvError] = useState("");
+  const csvImport = ["Import Partners (CSV)", "Import Targets (CSV)"].includes(action);
+  const readCsv = (file) => {
+    setCsvError(""); setCsvRows(null);
+    if (!file) return;
+    if (!/\.csv$/i.test(file.name)) return setCsvError("Choose a .csv file.");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const rows = parseCsvText(String(reader.result || "")).map((r) => r.map((c) => c.trim()));
+        if (rows.length < 2) return setCsvError("The CSV needs a header row and at least one data row.");
+        const header = rows[0].map((h) => h.toLowerCase());
+        const data = rows.slice(1).filter((r) => r.some(Boolean));
+        setCsvRows({ header, data, file: file.name });
+      } catch { setCsvError("Could not read that CSV file."); }
+    };
+    reader.readAsText(file);
+  };
   const destructive = action === "Delete";
-  const ready = (!destructive && action !== "Send Notification") || word === "DELETE" || (action === "Send Notification" && message.trim().length > 0);
+  const ready = csvImport ? !!csvRows && !csvError
+    : (!destructive && action !== "Send Notification") || word === "DELETE" || (action === "Send Notification" && message.trim().length > 0);
+  const confirm = () => {
+    if (csvImport) {
+      onSave({ csv: csvRows }); return;
+    }
+    onSave({ district, reason, message: message.trim() });
+  };
+  const csvHint = ({ "Import Partners (CSV)": ["name", "mobile", "email", "district"].join(", "),
+    "Import Targets (CSV)": ["partner", "title", "metric", "goal", "parent"].join(", ") }[action]);
   return (
-    <Modal title={`${action} ${partners.length} partner${partners.length === 1 ? "" : "s"}?`} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!ready} style={destructive && ready ? { background: "var(--neg)", borderColor: "var(--neg)" } : {}} onClick={() => onSave({ district, reason, message: message.trim() })}>Confirm</button></>}>
+    <Modal title={`${action} ${csvImport ? "" : partners.length + " partner" + (partners.length === 1 ? "" : "s")}`} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!ready} style={destructive && ready ? { background: "var(--neg)", borderColor: "var(--neg)" } : {}} onClick={confirm}>Confirm</button></>}>
       <div className="banner" style={{ margin: 0 }}><Users size={15} />This operation will be recorded for every selected partner.</div>
       {(action === "Transfer District" || action === "Assign District Head") && <Field label="District" required><select className="select" value={district} onChange={(e) => setDistrict(e.target.value)}>{TN_DISTRICTS.map((x) => <option key={x}>{x}</option>)}</select></Field>}
       {action === "Suspend" && <Field label="Suspension reason" required><select className="select" value={reason} onChange={(e) => setReason(e.target.value)}>{APN_SUSPEND_REASONS.map((x) => <option key={x}>{x}</option>)}</select></Field>}
       {action === "Send Notification" && <Field label="Message" required><textarea className="textarea" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message for the selected partners…" /></Field>}
       {destructive && <Field label={<>Type <b className="mono">DELETE</b> to continue</>} required><input className="input mono" value={word} onChange={(e) => setWord(e.target.value)} placeholder="DELETE" autoFocus /></Field>}
+      {csvImport && <>
+        <Field label="CSV file" required hint={<>Header row: <b className="mono">{csvHint}</b>. A header is required; rows are matched by header name.</>}><input className="input" type="file" accept=".csv" onChange={(e) => readCsv(e.target.files?.[0])} /></Field>
+        {csvError && <div className="auth-msg err"><AlertTriangle size={14} />{csvError}</div>}
+        {csvRows && <div className="hint-line">{csvRows.data.length} data row{csvRows.data.length === 1 ? "" : "s"} ready from {csvRows.file}. {action === "Import Partners (CSV)" ? "Rows are added as Pending (restricted) — they need credentials from the Add Partner form before they can sign in." : "Each row becomes an admin-assigned governed target (par-value column optional)."}</div>}
+      </>}
     </Modal>
   );
 }
@@ -10756,6 +11165,7 @@ function APNActionMenu({ partner, isSuper, canManage, onAction }) {
     ["Reset Password", isSuper], ["Send Notification", isSuper], ["Generate Report", isSuper], ["Promote", isSuper && partner.role !== "state_head"], ["Demote", isSuper && (partner.role === "district_head" || partner.role === "state_head")],
     ["Transfer District", isSuper], ["Reset Quiz", isSuper], ["Reset Training", isSuper], ["Reset Attendance", isSuper], ["Reset Target", isSuper],
     ["Suspend", isSuper && !["suspended", "deleted"].includes(apnEffectiveStatus(partner))], ["Deactivate", isSuper && apnEffectiveStatus(partner) === "active"],
+    ["Ban", isSuper && partner.status !== "banned" && partner.status !== "deleted"],
     ["Reactivate", isSuper && ["inactive", "suspended"].includes(apnEffectiveStatus(partner))], ["Delete Partner", isSuper && partner.status !== "deleted"], ["Permanent Delete", isSuper && partner.status !== "deleted"],
     ["View as Partner (Coming Soon)", false],
   ];
@@ -10944,6 +11354,72 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
   );
 }
 
+function APNAdminHub({ db, mutate, currentUser, isAdmin }) {
+  const [campaign, setCampaign] = useState(() => null);
+  const requests = (db.apn_zone_requests || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const openRequests = requests.filter((r) => ["pending", "requested"].includes(r.status));
+  const consoleRow = apnConsoleRow(db);
+  const camp = apnCampaignOf(db);
+  const live = apnLivePartners(db);
+  const todayLeads = (db.apn_leads || []).filter((l) => l.createdAt && new Date(l.createdAt).toDateString() === new Date().toDateString()).length;
+  const todayRevenue = round2((db.apn_leads || []).filter((l) => l.status === "Converted" && l.createdAt && new Date(l.createdAt).toDateString() === new Date().toDateString()).reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const pendingApprovals = (db.apn_users || []).filter((u) => u.status === "pending").length;
+  const bans = (db.apn_users || []).filter((u) => u.status === "banned").length;
+  const saveConsole = (next) => mutate((d) => {
+    const existing = apnConsoleRow(d);
+    const row = { ...existing, id: existing.id || uid(), kind: "console", ...next, updatedAt: Date.now() };
+    return { ...d, apn_admin_consoles: [...(d.apn_admin_consoles || []).filter((c) => c.kind !== "console"), row] };
+  }, { action: "updated hub console settings", module: "APN" });
+  const handleZone = async (req, approve) => {
+    const status = approve ? "approved" : "rejected";
+    mutate((d) => ({ ...d, apn_zone_requests: (d.apn_zone_requests || []).map((r) => r.id === req.id ? { ...r, status, handledAt: Date.now(), handledBy: currentUser } : r), apn_users: approve ? (d.apn_users || []).map((u) => u.id === req.partnerId ? { ...u, zone: req.zone, zoneApprovedAt: Date.now() } : u) : d.apn_users }), { action: `${approve ? "approved" : "rejected"} ${req.partnerName}'s ${req.zone} zone request`, module: "APN", partnerId: req.partnerId });
+    try { const { error } = await supabase.rpc(approve ? "apn_zone_requests_approve" : "apn_zone_requests_reject", { p_request_id: req.id, p_note: null }); if (error) throw error; emitToast(approve ? "Zone request approved." : "Zone request rejected.", "success"); } catch (err) { console.warn("zone request RPC", err); }
+  };
+  return (
+    <div>
+      <div className="sumrow">
+        <div className="card"><div className="k"><Users size={14} /> Members</div><div className="v mono">{live.length}</div></div>
+        <div className="card"><div className="k"><Check size={14} color="var(--pos)" /> Active partners</div><div className="v mono">{live.filter((u) => apnEffectiveStatus(u) === "active").length}</div></div>
+        <div className="card"><div className="k"><Hourglass size={14} /> Pending approvals</div><div className="v mono">{pendingApprovals}</div></div>
+        <div className="card"><div className="k"><Ban size={14} color="var(--neg)" /> Bans</div><div className="v mono">{bans}</div></div>
+        <div className="card"><div className="k"><Lightbulb size={14} /> Leads today</div><div className="v mono">{todayLeads}</div></div>
+        <div className="card"><div className="k"><TrendingUp size={14} /> Revenue today</div><div className="v mono">{money(todayRevenue)}</div></div>
+      </div>
+
+      <div className="apn-rowcard" style={{ margin: "14px 0" }}>
+        <div className="lbl"><Megaphone size={14} /> Worldwide campaign</div>
+        <div className="hint-line" style={{ marginTop: 4 }}>The banner partners see says "{camp.active ? camp.message : "inactive"}". Campaign turns on when the flag is set and the member count is below the target count.</div>
+        <div className="grid2" style={{ marginTop: 10 }}>
+          <Field label="Members joined"><input className="input mono" type="number" min="0" value={campaign?.apnMemberCount ?? (consoleRow.apnMemberCount ?? camp.memberCount)} onChange={(e) => setCampaign((s) => ({ ...s, ...consoleRow, apnMemberCount: Number(e.target.value) || 0 }))} /></Field>
+          <Field label="Target member count"><input className="input mono" type="number" min="0" value={campaign?.apnTargetCount ?? (consoleRow.apnTargetCount ?? camp.targetCount)} onChange={(e) => setCampaign((s) => ({ ...s, ...consoleRow, apnTargetCount: Number(e.target.value) || 0 }))} /></Field>
+        </div>
+        <Field label="Campaign message"><input className="input" value={campaign?.apnCampaignMessage ?? (consoleRow.apnCampaignMessage ?? "")} onChange={(e) => setCampaign((s) => ({ ...s, ...consoleRow, apnCampaignMessage: e.target.value }))} placeholder="WORLDWIDE CAMPAIGN — X of Y partners have joined" /></Field>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label className="apn-check" style={{ marginRight: 10 }}><input type="checkbox" checked={campaign?.apnCampaignActive ?? !!consoleRow.apnCampaignActive} onChange={(e) => setCampaign((s) => ({ ...s, ...consoleRow, apnCampaignActive: e.target.checked }))} /> Campaign active</label>
+          <button className="btn sm primary" disabled={!isAdmin} onClick={() => { saveConsole(campaign || {}); setCampaign(null); }}><Check size={13} />Save campaign</button>
+        </div>
+        {camp.active && camp.under && <div className="banner" style={{ margin: "10px 0 0" }}><Globe2 size={15} />{camp.message} — <b>Target: {camp.targetCount}</b> · {camp.joined}% filled</div>}
+      </div>
+
+      <div className="apn-rowcard" style={{ padding: 0, marginBottom: 12 }}>
+        <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Zone requests <span className="badge pri" style={{ marginLeft: 5 }}>{openRequests.length || 0}</span></div>
+        {requests.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Globe2 size={22} color="var(--muted)" />} title="No zone requests" text="Partners auto-join the current apex zone when they sign in; manual zone changes land here for your approval." /></div>
+          : requests.map((r) => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
+              <div className="cmdk-ic"><Globe2 size={15} /></div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{r.partnerName} <span className={"badge " + apnZoneTone(r.zone)} style={{ marginLeft: 5 }}>{String(r.zone || "").toUpperCase()}</span>{r.auto && <span className="badge" style={{ marginLeft: 5 }}>auto</span>}</div>
+                <div className="hint-line" style={{ fontSize: 11 }}>{r.notes || (r.auto ? "Auto-joined the current apex zone" : "Manual zone change request")} · {fmtDateTime(r.createdAt)}{r.handledBy ? ` · handled by ${r.handledBy}` : ""}</div>
+              </div>
+              {["pending", "requested"].includes(r.status) && isAdmin ? <><button className="btn sm primary" onClick={() => handleZone(r, true)}><Check size={13} />Approve</button><button className="btn sm" onClick={() => handleZone(r, false)}><X size={13} />Reject</button></> : <span className={"status-pill " + apnZoneTone(r.status === "approved" ? "zone1" : r.status === "rejected" ? "zone6" : "zone3")}>{r.status}</span>}
+            </div>
+          ))}
+      </div>
+      <div className="hint-line" style={{ fontSize: 12 }}><ShieldHalf size={12} style={{ verticalAlign: -2 }} /> Approvals write a hub note and notify the partner server-side; requesting the RPC twice is safe (idempotent).</div>
+    </div>
+  );
+}
+
 function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal, onOpenProfile }) {
   const [view, setView] = useState("all");
   const [q, setQ] = useState("");
@@ -10987,7 +11463,7 @@ function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal,
       </div>
       <div className="toolbar"><div className="search" style={{ flex: 1, maxWidth: 560 }}><Search size={16} color="var(--muted)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, username, APN ID, phone, email, tags, timeline, warnings, notes, documents…" /></div></div>
       <div className="apn-seg-scroll">{[["all", "All"], ["active", "Active"], ["pending", "Pending"], ["inactive", "Inactive"], ["heads", "District Heads"], ["state_heads", "State Heads"], ...(isSuper ? [["archived", "Archived Partners"]] : [])].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => changeView(k)}>{l}{k === "pending" && <ActionBadge count={counts.pending} label="pending partner action" />}</button>)}</div>
-      {selectedPartners.length > 0 && <div className="toolbar" style={{ marginTop: 0 }}><span className="hint-line">{selectedPartners.length} selected</span><span className="spacer" /><select className="select" style={{ width: "auto" }} defaultValue="" onChange={(e) => { if (e.target.value) { act.bulk(e.target.value, selectedPartners); e.target.value = ""; } }}><option value="">Bulk actions…</option><option>Activate</option><option>Deactivate</option><option>Suspend</option><option>Transfer District</option><option>Assign District Head</option><option>Export</option><option>Delete</option><option>Send Notification</option></select><button className="btn sm" onClick={() => setSelected(new Set())}>Clear</button></div>}
+      {selectedPartners.length > 0 && <div className="toolbar" style={{ marginTop: 0 }}><span className="hint-line">{selectedPartners.length} selected</span><span className="spacer" /><select className="select" style={{ width: "auto" }} defaultValue="" onChange={(e) => { if (e.target.value) { act.bulk(e.target.value, selectedPartners); e.target.value = ""; } }}><option value="">Bulk actions…</option><option>Activate</option><option>Deactivate</option><option>Suspend</option><option>Transfer District</option><option>Assign District Head</option><option>Import Partners (CSV)</option><option>Import Targets (CSV)</option><option>Export</option><option>Delete</option><option>Send Notification</option></select><button className="btn sm" onClick={() => setSelected(new Set())}>Clear</button></div>}
       <div className="card">
         {list.length === 0 ? <Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No partners here" text="Applications and partners show up in these tabs." action={canManage ? <button className="btn primary" onClick={() => openModal({ type: "apnCreatePartner" })}><Plus size={16} />Add partner</button> : undefined} />
           : <div style={{ overflowX: "auto" }}><table className="tbl">
@@ -10998,7 +11474,7 @@ function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal,
                 <td><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={p.name} url={apnAvatarUrl(p, people.find((x) => x.id === p.id))} size={28} /><div><div style={{ fontWeight: 600 }}>{p.name}{(["district_head", "state_head"].includes(p.role) || ["District Head", "State Head"].includes(p.level)) && <span className="badge pri" style={{ marginLeft: 6 }}>{apnAdminLevel(p, s)}</span>}</div><div className="hint-line" style={{ fontSize: 11 }}>{apnIdFor(p)} · {p.mobile || "—"}{p.reactivationRequested || p.reactivationRecommended ? " · ⟳ reactivation requested" : ""}</div>{p.tags?.slice(0, 2).map((tag) => <span className="apn-tag" style={{ margin: "3px 3px 0 0" }} key={tag}>{tag}</span>)}</div></div>{view === "archived" && <div className="hint-line" style={{ fontSize: 11 }}>Deleted by {p.deletedBy || "—"} · {p.deletedAt ? fmtDateTime(p.deletedAt) : "—"} · {p.deleteReason || p.archiveReason || "No reason recorded"}</div>}</td>
                 <td>{p.district || "—"}<div className="hint-line" style={{ fontSize: 11 }}>{p.taluk || ""}</div></td>
                 <td><span className="tag">{apnAdminLevel(p, s)}</span><div className="hint-line" style={{ fontSize: 11 }}>{money(s.revenue)} · {s.completed} done</div></td>
-                <td><span className={"status-pill " + apnStatusClass(eff)}>{apnStatusLabel(eff)}</span>{(p.suspensionReason || p.suspendedAt) && eff === "suspended" && <div className="hint-line" style={{ fontSize: 11 }}>{p.suspensionReason || "Suspended"}</div>}</td>
+                <td><span className={"status-pill " + apnStatusClass(eff)}>{apnStatusLabel(eff)}</span>{(p.approvedAt && Date.now() - p.approvedAt < 30 * 864e5) && <span className="badge pos" style={{ marginLeft: 5 }}>New Partner</span>}{p.status === "banned" && <span className="badge neg" style={{ marginLeft: 5 }}><Ban size={11} style={{ verticalAlign: -2 }} />Banned</span>}{(p.suspensionReason || p.suspendedAt) && eff === "suspended" && <div className="hint-line" style={{ fontSize: 11 }}>{p.suspensionReason || "Suspended"}</div>}{p.status === "banned" && p.banReason && <div className="hint-line" style={{ fontSize: 11 }}>{p.banReason}</div>}</td>
                 <td><span className="badge pri">{apnHealthScore(db, p, people.find((x) => x.id === p.id)).score}</span></td>
                 <td className="hint-line">{apnLastSeenLabel(p, people.find((x) => x.id === p.id))}</td>
                 <td><APNActionMenu partner={p} isSuper={isSuper} canManage={canManage} onAction={act.run} /></td>
@@ -11282,7 +11758,7 @@ function APNAdminWithdrawals({ db, isSuper, onRefresh }) {
   </div>;
 }
 
-function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
+function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose, inline = false }) {
   const [f, setF] = useState({ name: "", email: "", password: "", mobile: "", apnId: "", district: TN_DISTRICTS[0], taluk: "", city: "", occupation: "", college: "", username: "", reason: "" });
   const usernameCheck = useUsernameAvailability(f.username);
   const emailCheck = useEmailAvailability(f.email);
@@ -11335,34 +11811,44 @@ function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose }) {
         : msg);
     } finally { setBusy(false); }
   };
-  if (ok) return <Modal title="Partner added 🎉" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}><div className="banner" style={{ margin: 0, borderColor: "var(--pos)" }}><BadgeCheck size={15} color="var(--pos)" />{ok}</div></Modal>;
+  if (ok) return inline ? <div className="banner" style={{ margin: 0, borderColor: "var(--pos)" }}><BadgeCheck size={15} color="var(--pos)" />{ok}<div style={{ marginTop: 8 }}><button className="btn" onClick={onClose}>Done</button></div></div> : <Modal title="Partner added 🎉" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}><div className="banner" style={{ margin: 0, borderColor: "var(--pos)" }}><BadgeCheck size={15} color="var(--pos)" />{ok}</div></Modal>;
+  const body = <>
+    <div className="banner" style={{ margin: "0 0 12px" }}><GaugeCircle size={15} />Creates a ready-to-use partner account — confirmed and approved, so they can sign in immediately. Share the password with them securely.</div>
+    <div className="grid2">
+      <Field label="Full name" required><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Partner name" /></Field>
+      <Field label="Mobile" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
+    </div>
+    {canManage && <Field label="APN ID (optional)" hint="Leave blank to allocate the next ID. Reserved gaps may be filled manually; the ID is immutable after creation."><input className="input mono" value={f.apnId} onChange={(e) => set("apnId", e.target.value)} placeholder="0006 or APN-TN-0006" /></Field>}
+    <div className="grid2">
+      <div className="field"><label>Email<span className="req" aria-hidden="true"> *</span></label><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email.com" aria-describedby="create-partner-email-status" />{f.email.trim().includes("@") && <div id="create-partner-email-status" className="hint-line" style={{ color: emailCheck.available === false ? "var(--neg)" : emailCheck.available === true ? "var(--pos)" : undefined }}>{emailCheck.checking ? "Checking email availability…" : emailCheck.available === false ? "Email already registered" : emailCheck.available === true ? "Email available" : ""}</div>}</div>
+      <PasswordField label="Password" required hint="At least 6 characters." value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" autoComplete="new-password" />
+    </div>
+    <div className="grid2">
+      <div className="field"><label>District<span className="req" aria-hidden="true"> *</span></label><SearchableSelect value={f.district} onChange={(value) => set("district", value)} ariaLabel="Partner district" options={TN_DISTRICTS.map((d) => ({ value: d, label: d }))} /></div>
+      <Field label="Taluk"><input className="input" value={f.taluk} onChange={(e) => set("taluk", e.target.value)} placeholder="Taluk" /></Field>
+    </div>
+    <div className="grid2">
+      <Field label="City / town"><input className="input" value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="City" /></Field>
+      <Field label="Occupation"><input className="input" value={f.occupation} onChange={(e) => set("occupation", e.target.value)} placeholder="Student, freelancer…" /></Field>
+    </div>
+    <div className="grid2">
+      <Field label="College (optional)"><input className="input" value={f.college} onChange={(e) => set("college", e.target.value)} placeholder="College" /></Field>
+      <div className="field"><label>Username (optional)</label><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="Sign-in username" aria-describedby="create-partner-username-status" />{f.username.trim() && <div id="create-partner-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
+    </div>
+    <Field label="Notes / why joining (optional)"><textarea className="textarea" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field>
+    {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
+  </>;
+  if (inline) return (
+    <div className="apn-rowcard">
+      <div className="lbl"><UserPlus size={14} /> Add APN partner</div>
+      {body}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}><button className="btn" onClick={onClose}>Close</button><button className="btn primary" onClick={create} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}Create partner</button></div>
+    </div>
+  );
   return (
     <Modal title="Add APN partner" onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={create} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}Create partner</button></>}>
-      <div className="banner" style={{ margin: "0 0 12px" }}><GaugeCircle size={15} />Creates a ready-to-use partner account — confirmed and approved, so they can sign in immediately. Share the password with them securely.</div>
-      <div className="grid2">
-        <Field label="Full name" required><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Partner name" /></Field>
-        <Field label="Mobile" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
-      </div>
-      {canManage && <Field label="APN ID (optional)" hint="Leave blank to allocate the next ID. Reserved gaps may be filled manually; the ID is immutable after creation."><input className="input mono" value={f.apnId} onChange={(e) => set("apnId", e.target.value)} placeholder="0006 or APN-TN-0006" /></Field>}
-      <div className="grid2">
-        <div className="field"><label>Email<span className="req" aria-hidden="true"> *</span></label><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email.com" aria-describedby="create-partner-email-status" />{f.email.trim().includes("@") && <div id="create-partner-email-status" className="hint-line" style={{ color: emailCheck.available === false ? "var(--neg)" : emailCheck.available === true ? "var(--pos)" : undefined }}>{emailCheck.checking ? "Checking email availability…" : emailCheck.available === false ? "Email already registered" : emailCheck.available === true ? "Email available" : ""}</div>}</div>
-        <PasswordField label="Password" required hint="At least 6 characters." value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" autoComplete="new-password" />
-      </div>
-      <div className="grid2">
-        <div className="field"><label>District<span className="req" aria-hidden="true"> *</span></label><SearchableSelect value={f.district} onChange={(value) => set("district", value)} ariaLabel="Partner district" options={TN_DISTRICTS.map((d) => ({ value: d, label: d }))} /></div>
-        <Field label="Taluk"><input className="input" value={f.taluk} onChange={(e) => set("taluk", e.target.value)} placeholder="Taluk" /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="City / town"><input className="input" value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="City" /></Field>
-        <Field label="Occupation"><input className="input" value={f.occupation} onChange={(e) => set("occupation", e.target.value)} placeholder="Student, freelancer…" /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="College (optional)"><input className="input" value={f.college} onChange={(e) => set("college", e.target.value)} placeholder="College" /></Field>
-        <div className="field"><label>Username (optional)</label><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="Sign-in username" aria-describedby="create-partner-username-status" />{f.username.trim() && <div id="create-partner-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
-      </div>
-      <Field label="Notes / why joining (optional)"><textarea className="textarea" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field>
-      {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
+      {body}
     </Modal>
   );
 }
@@ -11372,6 +11858,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   const [modal, setModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
   const partners = (db.apn_users || []).filter((u) => !["rejected", "deleted"].includes(u.status));
   const M = (action, partnerId, previousValue = null, newValue = null) => ({ action, module: "APN", ...(partnerId ? { partnerId } : {}), previousValue, newValue, ip: null, device: typeof navigator !== "undefined" ? navigator.userAgent : null });
   const withSender = (notification) => ({ ...notification, senderId: notification.senderId || currentUserId, senderName: notification.senderName || currentUser, senderRole: notification.senderRole || (isSuper ? "Super Admin" : "Admin"), senderDesignation: notification.senderDesignation || currentUserDesignation || (isSuper ? apnApproverFor(currentUser).designation : "Admin"), senderAvatar: notification.senderAvatar || currentUserAvatar });
@@ -11488,6 +11975,13 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     if (error) throw new Error(error.message);
     mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === partner.id ? { ...u, status: "rejected", rejectReason: reason, rejectedBy: currentUser, rejectedAt: at } : u) }), M(`rejected APN application "${partner.name}"${reason ? ` · ${reason}` : ""}`, partner.id), timeline(partner, "rejected", "Application Rejected", reason || "The APN application was rejected.", at));
   });
+  const banPartner = (partner, reason) => withActionError(async () => {
+    // profiles_status_check has no "banned"; the ban lives on apn_users and the
+    // auth profile is switched to suspended so login is blocked.
+    await updateProfileStatus(partner, false, "suspended");
+    const at = Date.now();
+    mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === partner.id ? { ...u, status: "banned", banReason: reason, bannedBy: currentUser, bannedAt: at, updatedAt: at } : u), apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify({ title: "Account banned", body: "Your APN account has been banned by the administration.", audience: "partner:" + partner.id }))] }), M(`banned APN partner "${partner.name}" · ${reason}`, partner.id), timeline(partner, "banned", "Banned", reason, at));
+  });
   const runAction = (action, partner) => {
     if (action === "View details") return openProfile(partner);
     if (action === "Edit Profile" || action === "Change Username" || action === "Change Email" || action === "Change Phone" || action === "Transfer District") return openProfile(partner);
@@ -11497,6 +11991,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     if (action === "Generate Report") return exportApnPartnerReport(partner);
     if (action === "Reset Password") return setModal({ type: "apnResetPassword", partner });
     if (action === "Suspend") return setModal({ type: "apnSuspend", partner });
+    if (action === "Ban") return setModal({ type: "apnBan", partner });
     if (action === "Reactivate") return setModal({ type: "apnReactivate", partner });
     if (action === "Delete Partner") return setModal({ type: "apnDelete", partner });
     if (action === "Permanent Delete") return setModal({ type: "apnPermanentDelete", partner });
@@ -11654,6 +12149,46 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     withActionError(async () => {
       if (action === "Export") return exportApnPartnerReport(selectedPartners);
       const at = Date.now();
+      if (action === "Import Partners (CSV)") {
+        const { header, data } = values.csv || {};
+        if (!data) return;
+        const col = (row, names) => { const i = header.findIndex((h) => names.includes(h)); return i >= 0 ? row[i] : ""; };
+        const added = [];
+        for (const row of data) {
+          const name = col(row, ["name", "full name", "partner", "full_name"]).trim();
+          const mobile = col(row, ["mobile", "mobile number", "phone", "phone number"]).trim();
+          const email = col(row, ["email", "email address"]).trim().toLowerCase();
+          const district = col(row, ["district"]).trim();
+          if (!name) continue;
+          const existing = (db.apn_users || []).some((u) => u.id === name || u.email === email || (mobile && u.mobile === mobile));
+          if (existing) continue;
+          added.push({ id: uid(), apnId: "", name, mobile, email, district, status: "pending", role: "partner", importedBy: currentUser, importedAt: at, unlocked: {}, quizPasses: {}, createdAt: at });
+        }
+        if (!added.length) return;
+        mutateApn((d) => ({ ...d, apn_users: [...(d.apn_users || []), ...added] }), M(`bulk-imported ${added.length} partners from CSV (restricted adds — pending approval)`), added.map((p) => timeline(p, "imported", "Imported via CSV", "Restricted add — pending approval and credentials.", at)));
+        emitToast(`${added.length} partner${added.length === 1 ? "" : "s"} imported as pending.`, "success"); return;
+      }
+      if (action === "Import Targets (CSV)") {
+        const { header, data } = values.csv || {};
+        if (!data) return;
+        const col = (row, names) => { const i = header.findIndex((h) => names.includes(h)); return i >= 0 ? row[i] : ""; };
+        const created = []; let skipped = 0;
+        for (const row of data) {
+          const partnerKey = col(row, ["partner", "partner name", "apn id", "apn_id"]).trim().toLowerCase();
+          const title = col(row, ["title", "target", "target title"]).trim();
+          const metric = col(row, ["metric"]).trim();
+          const goal = Number(col(row, ["goal", "value", "target value"])) || 0;
+          const par = Number(col(row, ["par", "par value", "par_value"])) || null;
+          const parentKey = col(row, ["parent", "parent name", "head", "district head"]).trim().toLowerCase();
+          const p = (db.apn_users || []).find((u) => apnIdFor(u).toLowerCase() === partnerKey || String(u.name || "").toLowerCase() === partnerKey || String(u.email || "").toLowerCase() === partnerKey);
+          if (!p || apnEffectiveStatus(p) === "rejected") { skipped++; continue; }
+          const head = parentKey ? (db.apn_users || []).find((u) => (u.role === "district_head" || u.level === "District Head") && (String(u.name || "").toLowerCase() === parentKey)) : null;
+          created.push({ id: uid(), partnerId: p.id, partnerName: p.name, parentId: head?.id || null, parentName: head?.name || null, title: title || `${goal} ${apnMetricLabel(APN_TARGET_METRICS.some(([k]) => k === metric) ? metric : "leads").toLowerCase()}`, metric: APN_TARGET_METRICS.some(([k]) => k === metric) ? metric : "leads", goal: par && par > 0 && par < 100 ? round2(goal * (par / 100)) : goal, parValue: par && par > 0 && par < 100 ? par : null, acknowledged: false, createdAt: at });
+        }
+        if (!created.length) return;
+        mutateApn((d) => ({ ...d, apn_targets: [...(d.apn_targets || []), ...created], apn_notifications: [...(d.apn_notifications || []), ...created.map((t) => withSender(apnNotify({ title: "New target assigned 🎯", body: `${t.title} — ${t.goal} ${apnMetricLabel(t.metric)}.`, audience: "partner:" + t.partnerId, level: "Important" })))] }), M(`bulk-imported ${created.length} targets from CSV (par-value ${created.filter((t) => t.parValue).length}, skipped ${skipped})`), created.map((t) => timeline({ id: t.partnerId, name: t.partnerName }, "target-bulk-imported", "Target Imported", `${t.title} · ${t.goal} ${apnMetricLabel(t.metric)}${t.parValue ? " · par " + t.parValue + "%" : ""}.`, at)));
+        emitToast(`${created.length} target${created.length === 1 ? "" : "s"} imported${skipped ? ` (${skipped} row${skipped === 1 ? "" : "s"} skipped)` : ""}.`, "success"); return;
+      }
       if (action === "Suspend" || action === "Activate") await Promise.all(selectedPartners.map((p) => updateProfileStatus(p, action === "Activate", action === "Activate" ? "active" : "suspended")));
       if (action === "Delete") {
         for (const p of selectedPartners) {
@@ -11681,7 +12216,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   };
 
   const actionBadges = apnAdminActionCounts(db, currentUserId);
-  const tabs = [["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
+  const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
   const selectTab = (nextTab) => {
     setTab(nextTab);
     const action = APN_ACTION_BADGE_MAP.find((item) => item.tab === nextTab);
@@ -11692,7 +12227,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     <div className="content">
       <div className="page-head"><h3>APN — Partner Network</h3><span className="spacer" />
         <button className="btn sm" onClick={() => setTab("activity")}><Activity size={14} />Activity Log</button>
-        {tab === "partners" && isAdmin && <button className="btn primary" onClick={() => setModal({ type: "apnCreatePartner" })}><Plus size={16} />Add partner</button>}
+        {tab === "partners" && isAdmin && <button className="btn primary" onClick={() => setShowCreate((v) => !v)}>{showCreate ? <X size={16} /> : <Plus size={16} />}{showCreate ? "Close form" : "Add partner"}</button>}
         {tab === "commissions" && isAdmin && <button className="btn primary" onClick={() => setModal({ type: "apnCommissionEntry" })}><Plus size={16} />Add entry</button>}
         {tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
         {tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
@@ -11700,7 +12235,9 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l, badge]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => selectTab(k)}>{l}{badge > 0 && <ActionBadge count={badge} label={`${l.toLowerCase()} action`} />}</button>)}</div>
 
       {actionError && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{actionError}</div>}
+      {showCreate && tab === "partners" && <div style={{ marginBottom: 14 }}><APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} inline onClose={() => setShowCreate(false)} /></div>}
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
+      {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
       {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} />}
@@ -11724,6 +12261,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {modal?.type === "apnPartnerProfile" && <APNPartnerProfile fullPage={!!modal.fullPage} partner={modal.partner} db={db} people={people} isSuper={isSuper} initialSection={modal.section} onSave={(next) => { setModal(null); setPendingAction({ kind: "saveProfile", partner: modal.partner, next }); }} onAction={runAction} onWarning={(p) => setModal({ type: "apnWarning", partner: p })} onResolveWarning={(warning) => resolveWarning(modal.partner, warning)} onDeleteWarning={(warning) => setPendingAction({ kind: "deleteWarning", partner: modal.partner, warning })} onNote={(p) => setModal({ type: "apnNote", partner: p })} onEditNote={(note) => setModal({ type: "apnNote", partner: modal.partner, initial: note })} onTags={(p) => setModal({ type: "apnTags", partner: p })} onDocuments={(p) => setModal({ type: "apnDocument", partner: p })} onDocumentDownload={downloadPartnerDocument} onCommunication={(p) => setModal({ type: "apnCommunication", partner: p })} onExport={(p) => exportApnPartnerReport(p)} onOpenFullPage={() => setModal((current) => ({ ...current, fullPage: true }))} onClose={() => setModal(null)} />}
       {modal?.type === "apnResetPassword" && <APNResetPasswordForm partner={modal.partner} onClose={() => setModal(null)} onSave={(password) => withActionError(async () => { const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "reset_password", userId: modal.partner.id, password } }); if (error) throw new Error(error.message); if (data?.error) throw new Error(data.error); mutate((d) => d, M(`reset password for APN partner "${modal.partner.name}"`, modal.partner.id)); setModal(null); })} />}
       {modal?.type === "apnSuspend" && <APNSuspendForm partner={modal.partner} onClose={() => setModal(null)} onSave={({ reason, notes }) => { const p = modal.partner; setModal(null); withActionError(async () => { const at = Date.now(); await updateProfileStatus(p, false, "suspended"); mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "suspended", suspensionReason: reason, suspensionNotes: notes, suspendedBy: currentUser, suspendedAt: at, updatedAt: at } : u) }), M(`suspended APN partner "${p.name}" · ${reason}`, p.id), timeline(p, "suspended", "Suspended", notes ? `${reason}: ${notes}` : reason, at)); }); }} />}
+      {modal?.type === "apnBan" && <APNBanForm partner={modal.partner} onClose={() => setModal(null)} onSave={(reason) => { const p = modal.partner; setModal(null); banPartner(p, reason); }} />}
       {modal?.type === "apnReactivate" && <APNReactivateForm partner={modal.partner} onClose={() => setModal(null)} onSave={(reason) => { const p = modal.partner; setModal(null); setPendingAction({ kind: "reactivate", partner: p, reason }); }} />}
       {modal?.type === "apnDelete" && <APNDeleteForm partner={modal.partner} onClose={() => setModal(null)} onSave={(reason) => { const p = modal.partner; setModal(null); deletePartnerNow(p, reason); }} />}
       {modal?.type === "apnPermanentDelete" && <APNPermanentDeleteForm partner={modal.partner} onClose={() => setModal(null)} onSave={(reason) => { const p = modal.partner; setModal(null); permanentDeleteNow(p, reason); }} />}
@@ -11736,7 +12274,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {modal?.type === "apnCreatePartner" && <APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} onClose={() => setModal(null)} />}
       {modal?.type === "apnCommissionEntry" && <APNCommissionEntry db={db} initial={modal.initial} partners={[...new Map([...(partners.filter((p) => apnEffectiveStatus(p) === "active")), ...((db.apn_users || []).filter((p) => p.id === modal.initial?.partnerId))].map((p) => [p.id, p])).values()]} onSave={saveCommissionProject} onClose={() => setModal(null)} onDelete={modal.onDelete} />}
       {modal?.type === "apnLeadManage" && <APNLeadManage lead={modal.lead} onSave={saveLead} onClose={() => setModal(null)} />}
-      {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} onSave={saveTarget} onClose={() => setModal(null)} />}
+      {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} heads={(db.apn_users || []).filter((u) => u.role === "district_head" || u.level === "District Head")} onSave={saveTarget} onClose={() => setModal(null)} />}
       {modal?.type === "apnTraining" && <APNTrainingForm initial={modal.initial} onSave={(r) => saveRow("apn_training", r, `${modal.initial ? "updated" : "added"} APN lesson "${r.title}"`)} onClose={() => setModal(null)} />}
       {modal?.type === "apnQuiz" && <APNQuizForm initial={modal.initial} onSave={(r) => saveRow("apn_quizzes", r, `${modal.initial ? "updated" : "created"} APN quiz "${r.title}"`)} onClose={() => setModal(null)} />}
       {modal?.type === "apnDoc" && <APNDocForm initial={modal.initial} onSave={(r) => saveRow("apn_documents", r, `${modal.initial ? "updated" : "uploaded"} APN material "${r.title}"`)} onClose={() => setModal(null)} />}
@@ -11915,6 +12453,7 @@ export default function App() {
     Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(AI_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
+    Object.keys(CLIENT_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, reload);
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
