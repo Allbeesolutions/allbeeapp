@@ -1736,6 +1736,15 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-top .brand-logo { height:26px; }
 .apn-top h1 { font-size:15px; font-weight:800; margin:0; letter-spacing:.3px; }
 .apn-top .apn-id { font-size:11px; color:var(--muted); font-weight:600; }
+/* Header/more-sheet action buttons: exact icon centering via flex + block svg
+   (kills any inline-baseline drift; same 34px geometry for all three). */
+.apn-top .iconbtn { width:34px; height:34px; padding:0; flex:none; display:flex; align-items:center; justify-content:center; }
+.apn-top .iconbtn svg, .apn-more-sheet .iconbtn svg { display:block; flex:none; }
+.apn-more-sheet .iconbtn { display:flex; align-items:center; justify-content:center; flex:none; }
+/* Pull-to-refresh indicator: passive pill below the sticky header. */
+.apn-ptr { position:fixed; z-index:35; top:calc(env(safe-area-inset-top) + 52px); left:50%; display:flex; align-items:center; gap:8px;
+  padding:9px 15px; border-radius:999px; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow);
+  font-size:12px; font-weight:700; color:var(--muted); pointer-events:none; white-space:nowrap; }
 .apn-body { flex:1; padding:16px 16px 88px; max-width:720px; width:100%; margin:0 auto; }
 .apn-bottomnav { position:fixed; left:0; right:0; bottom:0; z-index:40; display:flex; background:var(--surface);
   border-top:1px solid var(--border); padding:6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow:0 -2px 16px rgba(0,0,0,.06); }
@@ -10958,6 +10967,60 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [finSnap, setFinSnap] = useState(null);
+  const [pull, setPull] = useState(null);
+  const portalRootRef = useRef(null);
+  const ptrStartRef = useRef(null);
+  const portalUiRef = useRef({ tab, moreOpen, searchOpen, modal });
+  useEffect(() => { portalUiRef.current = { tab, moreOpen, searchOpen, modal }; });
+  const reloadRef = useRef(reload);
+  useEffect(() => { reloadRef.current = reload; });
+
+  const ptrTouchStart = useCallback((e) => {
+    const ui = portalUiRef.current;
+    if (ui.tab !== "home" || ui.modal || ui.searchOpen || ui.moreOpen) return;
+    const t = e.touches[0];
+    if (!t) return;
+    ptrStartRef.current = { id: t.identifier, startY: t.clientY, raw: 0, engaged: false };
+  }, []);
+  const ptrTouchMove = useCallback((e) => {
+    const st = ptrStartRef.current;
+    if (!st) return;
+    if (e.touches.length !== 1 || e.touches[0].identifier !== st.id) { setPull(null); ptrStartRef.current = null; return; }
+    const y = e.touches[0].clientY;
+    const dy = y - st.startY;
+    if (!st.engaged) {
+      if (window.scrollY > 0) { setPull(null); ptrStartRef.current = null; return; }
+      if (dy < 10) return;
+      st.engaged = true;
+    }
+    e.preventDefault();
+    st.raw = Math.max(0, y - st.startY);
+    setPull({ raw: st.raw, refreshing: false });
+  }, []);
+  const ptrTouchEnd = useCallback(() => {
+    const st = ptrStartRef.current;
+    ptrStartRef.current = null;
+    if (!st || !st.engaged) { setPull(null); return; }
+    if (st.raw < 64) { setPull(null); return; }
+    setPull({ raw: 0, refreshing: true });
+    reloadRef.current().catch(() => {}).finally(() => setPull(null));
+  }, []);
+  const ptrTouchCancel = useCallback(() => { ptrStartRef.current = null; setPull(null); }, []);
+
+  useEffect(() => {
+    const el = portalRootRef.current;
+    if (!el || !window.matchMedia("(pointer: coarse)").matches) return;
+    el.addEventListener("touchstart", ptrTouchStart, { passive: true });
+    el.addEventListener("touchmove", ptrTouchMove, { passive: false });
+    el.addEventListener("touchend", ptrTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", ptrTouchCancel, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", ptrTouchStart);
+      el.removeEventListener("touchmove", ptrTouchMove);
+      el.removeEventListener("touchend", ptrTouchEnd);
+      el.removeEventListener("touchcancel", ptrTouchCancel);
+    };
+  }, [ptrTouchStart, ptrTouchMove, ptrTouchEnd, ptrTouchCancel]);
 
   // WP7 — authoritative financial facts for the portal: refetch on mount and
   // on every tab switch so wallet values refresh right after withdrawal or
@@ -11041,14 +11104,14 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const showFab = tab === "leads" || tab === "quotations";
 
   return (
-    <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
+    <div className="allbee apn" data-theme={isDark ? "dark" : "light"} ref={portalRootRef}>
       <style>{CSS}</style><ToastHost />
       <header className="apn-top">
         <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><img className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={reload} />
-        <button className="iconbtn" style={{ width: 34, height: 34 }} onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
-        <button className="iconbtn" style={{ width: 34, height: 34, position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
+        <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
+        <button className="iconbtn" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
@@ -11075,6 +11138,12 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {pull && (
+        <div className="apn-ptr" style={{ transform: `translate(-50%, ${pull.refreshing ? 6 : 10 + Math.min(pull.raw * 0.45, 86)}px)` }} role="status" aria-live="polite">
+          <RefreshCw size={15} className={pull.refreshing ? "spin" : ""} /><span>{pull.refreshing ? "Refreshing…" : pull.raw >= 64 ? "Release to refresh" : "Pull to refresh"}</span>
         </div>
       )}
 
