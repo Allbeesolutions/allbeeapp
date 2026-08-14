@@ -1741,8 +1741,11 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-top .iconbtn { width:34px; height:34px; padding:0; flex:none; display:flex; align-items:center; justify-content:center; }
 .apn-top .iconbtn svg, .apn-more-sheet .iconbtn svg { display:block; flex:none; }
 .apn-more-sheet .iconbtn { display:flex; align-items:center; justify-content:center; flex:none; }
-/* Pull-to-refresh indicator: passive pill below the sticky header. */
-.apn-ptr { position:fixed; z-index:35; top:calc(env(safe-area-inset-top) + 52px); left:50%; display:flex; align-items:center; gap:8px;
+/* Pull-to-refresh indicator: ONE passive pill below the sticky header,
+   shared by every surface (internal app, APN portal, client portal). Rendered
+   by <GlobalPullToRefresh /> only — it never blocks taps, scrolls, the header
+   or the bottom navigation, and is safe-area aware. */
+.app-ptr { position:fixed; z-index:35; top:calc(env(safe-area-inset-top) + 54px); left:50%; display:flex; align-items:center; gap:8px;
   padding:9px 15px; border-radius:999px; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow);
   font-size:12px; font-weight:700; color:var(--muted); pointer-events:none; white-space:nowrap; }
 .apn-body { flex:1; padding:16px 16px 88px; max-width:720px; width:100%; margin:0 auto; }
@@ -7474,6 +7477,7 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
   return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ minHeight: "100vh" }}>
       <style>{CSS}</style><ToastHost />
+      <GlobalPullToRefresh onRefresh={reload} />
       <header className="topbar" style={{ position: "sticky", top: 0 }}>
         <img className="brand-logo" src={co.logoUrl || LOGO_ICON} alt={co.name || "ALLBEE"} style={{ height: 30 }} />
         <div><h2 style={{ fontSize: 16 }}>{co.name || "ALLBEE Solutions"}</h2><div className="topbar-sub">Client portal</div></div>
@@ -9750,7 +9754,7 @@ function APNAI({ meRow, go }) {
   );
 }
 
-function APNSupportTickets({ pid }) {
+function APNSupportTickets({ pid, refreshTick = 0 }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -9759,7 +9763,7 @@ function APNSupportTickets({ pid }) {
       if (error) { setErr(error.message); return; }
       setRows(Array.isArray(data) ? data : []);
     })();
-  }, [pid]);
+  }, [pid, refreshTick]);
   return (
     <div className="apn-ai">
       <div className="apn-rowcard" style={{ marginBottom: 14 }}>
@@ -10351,7 +10355,7 @@ function APNReferralMetric({ label, value, icon, tone }) {
   return <APNMetric k={label} v={value} icon={icon} tone={tone} />;
 }
 
-function APNNetwork({ db, meRow, pid, reload, onOpenWithdrawals }) {
+function APNNetwork({ db, meRow, pid, reload, onOpenWithdrawals, refreshTick = 0 }) {
   const [view, setView] = useState("dashboard");
   const [network, setNetwork] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -10382,7 +10386,7 @@ function APNNetwork({ db, meRow, pid, reload, onOpenWithdrawals }) {
   useEffect(() => {
     if (!codeRow && pid) supabase.rpc("apn_referral_ensure_code", { p_partner_id: pid }).then(() => reload?.()).catch(() => {});
     refresh().catch(() => {});
-  }, [pid, leaderPeriod, codeRow?.code]);
+  }, [pid, leaderPeriod, codeRow?.code, refreshTick]);
   useEffect(() => { if (codeRow?.code && !codeDraft) setCodeDraft(codeRow.code); }, [codeRow?.code]);
   useEffect(() => {
     const value = codeDraft.trim().toUpperCase();
@@ -10958,6 +10962,114 @@ function APNSearch({ db, meRow, pid, go, onClose }) {
   );
 }
 
+/* ── global pull-to-refresh: ONE mechanism for every surface ───────────── */
+// The single authoritative pull-to-refresh implementation in the app. Every
+// surface (internal admin/staff app, APN portal, client portal) mounts one
+// instance of this component; there is no per-page or per-portal gesture code
+// anywhere else.
+//
+// Why this works app-wide: every ALLBEE surface scrolls at the window level
+// (pages grow, the document scrolls — `.main`, `.content`, `.apn-body` are
+// plain flex children, never nested scrollers) and every dynamic screen reads
+// from the shared `db` store. So the surface's existing reload contract
+// (`reload` = fetchAll → setDb) refreshes the CURRENT page's data. The only
+// nested scrollers in the app live inside overlays (modals, sheets, drawers,
+// search, dropdowns) and form fields — all blocked below, so this gesture can
+// never hijack a nested scroll.
+const PTR_BLOCKED_SELECTOR = "textarea, input, select, [contenteditable], .apn-top, .topbar, .modal, .overlay, .activity-drawer, .activity-drawer-overlay, .dropdown, .combo-options, .cmdk, .cmdk-overlay, .apn-more, .apn-more-sheet";
+function scrollContainerAt(target) {
+  // Walk up from the touched element to find its real vertical scroll
+  // container. Plain wrappers fall through to the document; horizontal-only
+  // scrollers (chips, table wraps) never qualify, so pulling on them leaves
+  // the native gesture alone. Overlay/form subtrees return null up front.
+  let el = target && target.nodeType === 1 ? target.parentElement : null;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (el.closest?.(PTR_BLOCKED_SELECTOR)) return null;
+    const cs = getComputedStyle(el);
+    const ov = cs.overflowY || cs.overflow || "";
+    if ((ov === "auto" || ov === "scroll" || ov === "overlay") && el.scrollHeight > el.clientHeight + 1) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement;
+}
+function GlobalPullToRefresh({ onRefresh, enabled = true }) {
+  const [pull, setPull] = useState(null);
+  const startRef = useRef(null);
+  const refreshingRef = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
+  useEffect(() => { onRefreshRef.current = onRefresh; });
+
+  const reset = useCallback(() => { startRef.current = null; setPull(null); }, []);
+
+  const onTouchStart = useCallback((e) => {
+    if (refreshingRef.current) return;                              // one pull = one refresh
+    if (!window.matchMedia("(pointer: coarse)").matches) return;    // touch devices only
+    const t = e.touches[0];
+    if (!t) return;
+    if (startRef.current) { reset(); return; }                      // second finger: cancel
+    const target = e.target;
+    if (target && target.closest && target.closest(PTR_BLOCKED_SELECTOR)) return;
+    const container = scrollContainerAt(target);
+    if (!container) return;
+    startRef.current = { id: t.identifier, startX: t.clientX, startY: t.clientY, raw: 0, engaged: false, container };
+  }, [reset]);
+
+  const onTouchMove = useCallback((e) => {
+    const st = startRef.current;
+    if (!st) return;
+    if (e.touches.length !== 1 || e.touches[0].identifier !== st.id) { reset(); return; }
+    const y = e.touches[0].clientY;
+    const x = e.touches[0].clientX;
+    const dy = y - st.startY;
+    const dx = x - st.startX;
+    if (!st.engaged) {
+      if (dy < 10) return;                                   // not a pull yet
+      if (Math.abs(dx) > dy) { reset(); return; }            // horizontal intent → native swipe
+      if (st.container && st.container.scrollTop > 1) { reset(); return; }  // only at the very top
+      st.engaged = true;
+    }
+    e.preventDefault();                                       // stop iOS rubber-band once engaged
+    st.raw = Math.max(0, dy);
+    setPull({ raw: st.raw, refreshing: false });
+  }, [reset]);
+
+  const onTouchEnd = useCallback(() => {
+    const st = startRef.current;
+    startRef.current = null;
+    if (!st || !st.engaged) { setPull(null); return; }
+    if (st.raw < 64) { setPull(null); return; }               // not past the threshold
+    setPull({ raw: 0, refreshing: true });
+    refreshingRef.current = true;
+    Promise.resolve(onRefreshRef.current ? onRefreshRef.current() : undefined)
+      .catch(() => {})                                        // failures surface via existing app patterns
+      .finally(() => { refreshingRef.current = false; setTimeout(() => setPull(null), 250); });
+  }, []);
+
+  const onTouchCancel = useCallback(reset, [reset]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (typeof window === "undefined" || !window.matchMedia("(pointer: coarse)").matches) return;
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", onTouchCancel);
+    };
+  }, [enabled, onTouchStart, onTouchMove, onTouchEnd, onTouchCancel]);
+
+  return pull ? (
+    <div className="app-ptr" style={{ transform: `translate(-50%, ${pull.refreshing ? 6 : 10 + Math.min(pull.raw * 0.45, 86)}px)` }} role="status" aria-live="polite">
+      <RefreshCw size={15} className={pull.refreshing ? "spin" : ""} />
+      <span>{pull.refreshing ? "Refreshing…" : pull.raw >= 64 ? "Release to refresh" : "Pull to refresh"}</span>
+    </div>
+  ) : null;
+}
+
 /* ── portal shell ────────────────────────────────────────────────────── */
 function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const pid = profile.id;
@@ -10967,70 +11079,27 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [finSnap, setFinSnap] = useState(null);
-  const [pull, setPull] = useState(null);
-  const portalRootRef = useRef(null);
-  const ptrStartRef = useRef(null);
-  const portalUiRef = useRef({ tab, moreOpen, searchOpen, modal });
-  useEffect(() => { portalUiRef.current = { tab, moreOpen, searchOpen, modal }; });
-  const reloadRef = useRef(reload);
-  useEffect(() => { reloadRef.current = reload; });
+  const [snapTick, setSnapTick] = useState(0);
 
-  const ptrTouchStart = useCallback((e) => {
-    const ui = portalUiRef.current;
-    if (ui.tab !== "home" || ui.modal || ui.searchOpen || ui.moreOpen) return;
-    const t = e.touches[0];
-    if (!t) return;
-    ptrStartRef.current = { id: t.identifier, startY: t.clientY, raw: 0, engaged: false };
-  }, []);
-  const ptrTouchMove = useCallback((e) => {
-    const st = ptrStartRef.current;
-    if (!st) return;
-    if (e.touches.length !== 1 || e.touches[0].identifier !== st.id) { setPull(null); ptrStartRef.current = null; return; }
-    const y = e.touches[0].clientY;
-    const dy = y - st.startY;
-    if (!st.engaged) {
-      if (window.scrollY > 0) { setPull(null); ptrStartRef.current = null; return; }
-      if (dy < 10) return;
-      st.engaged = true;
-    }
-    e.preventDefault();
-    st.raw = Math.max(0, y - st.startY);
-    setPull({ raw: st.raw, refreshing: false });
-  }, []);
-  const ptrTouchEnd = useCallback(() => {
-    const st = ptrStartRef.current;
-    ptrStartRef.current = null;
-    if (!st || !st.engaged) { setPull(null); return; }
-    if (st.raw < 64) { setPull(null); return; }
-    setPull({ raw: 0, refreshing: true });
-    reloadRef.current().catch(() => {}).finally(() => setPull(null));
-  }, []);
-  const ptrTouchCancel = useCallback(() => { ptrStartRef.current = null; setPull(null); }, []);
+  // The portal's ONE refresh operation: reload the shared store (which every
+  // APN page reads from) and bump the snapshot tick so the wallet facts and
+  // any page-owned loaders (network, support tickets) refetch. Used by BOTH
+  // the header refresh button and the global pull-to-refresh — one pull, one
+  // refresh, no duplicated pipelines.
+  const refreshPortal = useCallback(async () => {
+    await reload();
+    setSnapTick((t) => t + 1);
+  }, [reload]);
 
-  useEffect(() => {
-    const el = portalRootRef.current;
-    if (!el || !window.matchMedia("(pointer: coarse)").matches) return;
-    el.addEventListener("touchstart", ptrTouchStart, { passive: true });
-    el.addEventListener("touchmove", ptrTouchMove, { passive: false });
-    el.addEventListener("touchend", ptrTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", ptrTouchCancel, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", ptrTouchStart);
-      el.removeEventListener("touchmove", ptrTouchMove);
-      el.removeEventListener("touchend", ptrTouchEnd);
-      el.removeEventListener("touchcancel", ptrTouchCancel);
-    };
-  }, [ptrTouchStart, ptrTouchMove, ptrTouchEnd, ptrTouchCancel]);
-
-  // WP7 — authoritative financial facts for the portal: refetch on mount and
-  // on every tab switch so wallet values refresh right after withdrawal or
-  // settlement actions, while staying a read-only projection (no client-side
-  // recomputation). Never blocks the portal: on failure legacy figures remain.
+  // WP7 — authoritative financial facts for the portal: refetch on mount, on
+  // tab switch, and after a refresh so wallet values stay current, while
+  // staying a read-only projection (no client-side recomputation). Never
+  // blocks the portal: on failure legacy figures remain.
   useEffect(() => {
     let cancelled = false;
     fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [pid, tab]);
+  }, [pid, tab, snapTick]);
 
   useEffect(() => {
     const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setSearchOpen((v) => !v); } };
@@ -11069,14 +11138,14 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "home": return <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
       case "wallet": return <APNWallet db={db} pid={pid} stats={stats} snap={finSnap} />;
-      case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} />;
+      case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} refreshTick={snapTick} />;
       case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
       case "documents": return <APNDocuments db={db} />;
       case "ai": return <APNAI meRow={meRow} go={go} />;
-      case "support": return <APNSupportTickets pid={pid} />;
+      case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
@@ -11091,7 +11160,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ["quotations", "Quotations", <FileText size={20} color="var(--primary)" />, 0],
     ["documents", "Materials", <BookOpen size={20} color="var(--primary)" />, 0],
     ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
-    ["network", "My Network", <Users size={20} color="var(--primary)" />, 0],
+    ["learn", "Learn", <GraduationCap size={20} color="var(--primary)" />, 0],
     ["withdrawals", "Withdrawal Center", <Wallet size={20} color="var(--primary)" />, withdrawalOpenCount],
     ["ai", "ALLBEE AI", <Sparkles size={20} color="var(--primary)" />, 0],
     ["support", "My Tickets", <MessageCircle size={20} color="var(--primary)" />, 0],
@@ -11100,16 +11169,16 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
     ["profile", "Profile", <User size={20} color="var(--primary)" />, 0],
   ];
-  const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["learn", "Learn", GraduationCap]];
+  const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users]];
   const showFab = tab === "leads" || tab === "quotations";
 
   return (
-    <div className="allbee apn" data-theme={isDark ? "dark" : "light"} ref={portalRootRef}>
+    <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
       <header className="apn-top">
         <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><img className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
-        <PortalRefreshButton onRefresh={reload} />
+        <PortalRefreshButton onRefresh={refreshPortal} />
         <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
         <button className="iconbtn" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
@@ -11119,11 +11188,14 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
 
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
+      {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
+      <GlobalPullToRefresh enabled={!modal && !searchOpen && !moreOpen} onRefresh={refreshPortal} />
+
       <nav className="apn-bottomnav">
         {primary.map(([k, l, Icon]) => (
           <button key={k} className={"apn-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
         ))}
-        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "network", "withdrawals", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
+        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "withdrawals", "learn", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
           <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
         </button>
       </nav>
@@ -11138,12 +11210,6 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
               ))}
             </div>
           </div>
-        </div>
-      )}
-
-      {pull && (
-        <div className="apn-ptr" style={{ transform: `translate(-50%, ${pull.refreshing ? 6 : 10 + Math.min(pull.raw * 0.45, 86)}px)` }} role="status" aria-live="polite">
-          <RefreshCw size={15} className={pull.refreshing ? "spin" : ""} /><span>{pull.refreshing ? "Refreshing…" : pull.raw >= 64 ? "Release to refresh" : "Pull to refresh"}</span>
         </div>
       )}
 
@@ -13725,6 +13791,12 @@ export default function App() {
             {renderPage()}
           </div>
         </div>
+
+        {/* global pull-to-refresh for the internal app — one mechanism for
+            every admin/staff/intern route, driving the same shared reload
+            (and team people fetch) the toolbar Refresh button uses */}
+        <GlobalPullToRefresh enabled={!modal}
+          onRefresh={async () => { await reload(); if (session) try { await loadPeople(session.user); } catch { /* ignore */ } }} />
 
         {/* MODALS */}
         {modal?.type === "income" && <ShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} />}
