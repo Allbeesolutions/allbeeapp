@@ -1453,9 +1453,14 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .loading-screen { width:min(520px,calc(100% - 32px)); display:grid; gap:18px; }
 .loading-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; box-shadow:var(--shadow); }
 .loading-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:13px; font-weight:600; }
-.skeleton { display:block; background:linear-gradient(90deg,var(--surface-2) 25%,color-mix(in srgb,var(--surface-2) 55%,var(--surface)) 37%,var(--surface-2) 63%); background-size:400% 100%; animation:skeleton-shimmer 1.3s ease infinite; border-radius:8px; }
+/* GPU-friendly shimmer: a translating sheen pseudo-element (transform), never
+   background-position — no layout work on iPhone. */
+.skeleton { display:block; position:relative; overflow:hidden; background:var(--surface-2); border-radius:8px; }
+.skeleton::after { content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--surface) 55%,transparent) 50%,transparent 70%);
+  animation:skeleton-sheen 1.4s ease-in-out infinite; }
 .skeleton-line { height:12px; }
-@keyframes skeleton-shimmer { from { background-position:100% 0; } to { background-position:-100% 0; } }
+@keyframes skeleton-sheen { to { transform:translateX(100%); } }
 
 @media (max-width:900px) {
   .layout { grid-template-columns:1fr; }
@@ -1497,8 +1502,93 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
   .table-wrap table.tbl { min-width:580px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .allbee *, .allbee *::before, .allbee *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; scroll-behavior:auto !important; transition-duration:.001ms !important; }
+  .allbee *, .allbee *::before, .allbee *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; animation-delay:0ms !important; scroll-behavior:auto !important; transition-duration:.001ms !important; }
 }
+
+/* ── Premium motion: one coherent, subtle system (transform + opacity only) ── */
+@keyframes card-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes msg-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
+@keyframes check-pop { 0% { transform:scale(.4); opacity:0; } 60% { transform:scale(1.15); } 100% { transform:scale(1); opacity:1; } }
+@keyframes mark-ring { 0% { opacity:.5; transform:scale(.72); } 70%,100% { opacity:0; transform:scale(1.3); } }
+@keyframes ai-typing { 0%,80%,100% { opacity:.35; transform:scale(.8); } 40% { opacity:1; transform:scale(1); } }
+
+/* Page/route entrance — one wrapper per surface, keyed to the current route.
+   Almost invisible, but makes navigation feel settled. */
+.page-enter { animation:page-enter .22s cubic-bezier(.2,.7,.3,1); }
+@keyframes page-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+/* Staggered card entrance for dashboard metric rows (`.appear` on the grid). */
+.appear > * { animation:card-in .32s cubic-bezier(.2,.7,.3,1) both; }
+.appear > :nth-child(2) { animation-delay:.04s; }
+.appear > :nth-child(3) { animation-delay:.08s; }
+.appear > :nth-child(4) { animation-delay:.12s; }
+.appear > :nth-child(5) { animation-delay:.16s; }
+.appear > :nth-child(6) { animation-delay:.2s; }
+.appear > :nth-child(7) { animation-delay:.24s; }
+.appear > :nth-child(8) { animation-delay:.28s; }
+
+/* Startup / loading experience */
+.loading-card { animation:card-in .3s cubic-bezier(.2,.7,.3,1) both; }
+.loading-label span { animation:msg-in .3s ease; }
+.load-mark { position:relative; width:36px; height:36px; border-radius:12px; background:var(--primary-soft);
+  display:grid; place-items:center; flex:none; }
+.load-mark::after { content:""; position:absolute; inset:-5px; border-radius:16px; border:1.5px solid var(--primary);
+  opacity:0; animation:mark-ring 1.6s cubic-bezier(.2,.7,.3,1) infinite; }
+.lock-card { animation:card-in .34s cubic-bezier(.2,.7,.3,1) both; }
+
+/* Overlays, dialogs, sheets */
+.overlay { animation:overlay-in .18s ease; }
+.modal { animation:pop .22s cubic-bezier(.2,.75,.3,1); }
+.dropdown { animation:pop .16s ease; }
+.combo-menu { animation:pop .14s ease; }
+.cmdk { animation:pop .18s ease; }
+.cmdk-overlay { animation:overlay-in .16s ease; }
+.cmdk-item { animation:msg-in .16s ease both; }
+.apn-more { animation:overlay-in .2s ease; }
+.apn-more-grid > * { animation:card-in .28s cubic-bezier(.2,.7,.3,1) both; }
+.apn-more-grid > :nth-child(2) { animation-delay:.02s; }
+.apn-more-grid > :nth-child(3) { animation-delay:.04s; }
+.apn-more-grid > :nth-child(4) { animation-delay:.06s; }
+.apn-more-grid > :nth-child(5) { animation-delay:.08s; }
+.apn-more-grid > :nth-child(6) { animation-delay:.1s; }
+.apn-more-grid > :nth-child(7) { animation-delay:.12s; }
+.apn-more-grid > :nth-child(8) { animation-delay:.14s; }
+.apn-more-grid > :nth-child(9) { animation-delay:.16s; }
+.apn-more-grid > :nth-child(10) { animation-delay:.18s; }
+.apn-more-grid > :nth-child(11) { animation-delay:.2s; }
+.apn-more-grid > :nth-child(12) { animation-delay:.22s; }
+.web-ai-panel { animation:pop .22s cubic-bezier(.2,.75,.3,1); }
+
+/* Pull-to-refresh indicator — smooth appearance; threshold/pipeline untouched */
+.app-ptr { animation:ptr-fade .15s ease; }
+@keyframes ptr-fade { from { opacity:0; } to { opacity:1; } }
+
+/* Consistent press feedback — subtle, disabled-safe, never on inputs */
+.btn:not(:disabled):active, .iconbtn:not(:disabled):active, .apn-ai-chip:not(:disabled):active,
+.apn-fab:active, .apn-more-item:active, .apn-quiz-opt:active, .combo-option:not(:disabled):active { transform:scale(.97); }
+.btn, .iconbtn, .apn-fab, .apn-ai-chip, .apn-more-item, .apn-quiz-opt,
+.ai-command, .combo-option { transition:transform .12s ease, background-color .15s ease, border-color .15s ease, color .15s ease; }
+
+/* Tabs / chips / segments — ease the active state instead of snapping it */
+.seg button { transition:color .18s ease, background-color .18s ease, box-shadow .18s ease; }
+.apn-seg-scroll button { transition:color .15s ease, background-color .15s ease, border-color .15s ease; }
+.preset { transition:border-color .15s ease, color .15s ease, background-color .15s ease; }
+.apn-quiz-opt { transition:border-color .15s ease, background-color .15s ease; }
+
+/* Search affordances */
+.search { transition:border-color .15s ease, box-shadow .15s ease; }
+
+/* Empty / error / feedback states */
+.empty { animation:msg-in .25s ease; }
+.banner { animation:page-enter .22s ease; }
+.field-err { animation:msg-in .18s ease; }
+.toast.success .toast-icon { animation:check-pop .3s cubic-bezier(.25,1.4,.5,1); }
+
+/* AI chat — message entrances + typing pulse (existing loading state only) */
+.apn-ai-msg { animation:msg-in .24s cubic-bezier(.2,.7,.3,1); }
+.web-ai-bubble { animation:msg-in .22s cubic-bezier(.2,.7,.3,1); }
+.ai-dot { display:inline-block; animation:ai-typing 1.1s ease-in-out infinite; }
 
 /* ── Phase 2 additions ─────────────────────────────────────────────────── */
 /* logo */
@@ -1752,7 +1842,17 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-bottomnav { position:fixed; left:0; right:0; bottom:0; z-index:40; display:flex; background:var(--surface);
   border-top:1px solid var(--border); padding:6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow:0 -2px 16px rgba(0,0,0,.06); }
 .apn-tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; border:none; background:none;
-  color:var(--muted); font-size:10.5px; font-weight:600; cursor:pointer; border-radius:10px; position:relative; }
+  color:var(--muted); font-size:10.5px; font-weight:600; cursor:pointer; border-radius:10px; position:relative; transition:color .18s ease; }
+.apn-tab span { white-space:nowrap; }
+/* "My Network" is the only label that would wrap on narrow phones — keep it on
+   one line with the smallest typography adjustment needed (320px check). */
+.apn-tab.net span { font-size:9.5px; letter-spacing:-.15px; }
+.apn-tab svg { transition:transform .2s cubic-bezier(.25,1.4,.5,1); }
+.apn-tab:active svg { transform:scale(1.18); }
+.apn-tab::after { content:""; position:absolute; bottom:2px; left:50%; width:16px; height:3px; border-radius:2px;
+  background:var(--primary); opacity:0; transform:translateX(-50%) scale(.4); pointer-events:none;
+  transition:opacity .18s ease, transform .18s ease; }
+.apn-tab.on::after { opacity:1; transform:translateX(-50%) scale(1); }
 .apn-tab.on { color:var(--primary); }
 .apn-tab .tb { position:absolute; top:-6px; right:calc(50% - 22px); background:var(--neg); color:#fff; font-size:9px; font-weight:800;
   min-width:15px; height:15px; border-radius:8px; padding:0 4px; display:grid; place-items:center; }
@@ -1761,7 +1861,8 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 @keyframes sheet { from { transform:translateY(20px); opacity:.6; } to { transform:none; opacity:1; } }
 .apn-more-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
 .apn-more-item { display:flex; flex-direction:column; align-items:center; gap:7px; padding:15px 8px; border:1px solid var(--border);
-  border-radius:14px; background:var(--surface-2); cursor:pointer; font-size:12px; font-weight:600; color:var(--ink); text-align:center; }
+  border-radius:14px; background:var(--surface-2); cursor:pointer; font-size:12px; font-weight:600; color:var(--ink); text-align:center;
+  transition:border-color .15s ease, background-color .15s ease, color .15s ease, transform .12s ease; }
 .apn-more-item:hover { border-color:var(--primary); }
 .apn-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .apn-metric { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 14px; box-shadow:var(--shadow); }
@@ -2757,7 +2858,7 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
       {showMoney && <ExpenseShareCards db={db} go={go} />}
 
       {stats.length > 0 && (
-        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", marginBottom: 18 }}>
+        <div className="cards-grid appear" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", marginBottom: 18 }}>
           {stats}
         </div>
       )}
@@ -7485,7 +7586,7 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
         <PortalRefreshButton onRefresh={reload} />
         <div className="userchip" onClick={signOut} style={{ cursor: "pointer" }}><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={26} /><span className="userchip-name">{profile?.name}</span><LogOut size={15} /></div>
       </header>
-      <div className="content" style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className="content page-enter" style={{ maxWidth: 820, margin: "0 auto" }}>
         <div className="page-head"><h3>Welcome, {profile?.name?.split(" ")[0] || "there"}</h3></div>
 
         <div className="card stat" style={{ marginBottom: 16 }}>
@@ -9733,7 +9834,7 @@ function APNAI({ meRow, go }) {
               )}
             </div>
           ))}
-          {busy && <div className="apn-ai-msg bot" style={{ color: "var(--muted)" }}><span className="spin" style={{ display: "inline-block", marginRight: 6 }}>●</span>ALLBEE AI is checking your records…</div>}
+          {busy && <div className="apn-ai-msg bot" style={{ color: "var(--muted)" }}><span className="ai-dot" style={{ marginRight: 6 }}>●</span>ALLBEE AI is checking your records…</div>}
           {ticketDone && <div className="apn-ai-msg bot" style={{ borderColor: "var(--pos)" }}>{ticketDone}</div>}
           <div ref={endRef} />
         </div>
@@ -9954,7 +10055,7 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
         <div style={{ marginTop: 10 }}>{myZoneRequest ? <span className="badge pri">Zone request pending</span> : <button className="btn sm" onClick={requestZoneChange}>Request zone change</button>}</div>
       </div>
 
-      <div className="apn-metrics" style={{ marginBottom: 14 }}>
+      <div className="apn-metrics appear" style={{ marginBottom: 14 }}>
         <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
         <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
         <APNMetric k="Payable" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
@@ -9965,7 +10066,7 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
         <APNMetric k="Completed projects" v={stats.completed} icon={<Trophy size={13} />} />
       </div>
 
-      <div className="apn-metrics" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
+      <div className="apn-metrics appear" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
         <div className="apn-metric"><div className="k"><Trophy size={13} />Company rank</div><div className="v">{cRank.rank ? `#${cRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> / {cRank.total}</span></div></div>
         <div className="apn-metric"><div className="k"><MapPin size={13} />District rank</div><div className="v">{dRank.rank ? `#${dRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> · {meRow.district || "—"}</span></div></div>
       </div>
@@ -11184,7 +11285,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <div className="apn-body">{section()}</div>
+      <div className="apn-body" key={tab}><div className="page-enter">{section()}</div></div>
 
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
@@ -11193,7 +11294,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
 
       <nav className="apn-bottomnav">
         {primary.map(([k, l, Icon]) => (
-          <button key={k} className={"apn-tab" + (tab === k ? " on" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
+          <button key={k} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
         ))}
         <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "withdrawals", "learn", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
           <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
@@ -13523,7 +13624,7 @@ export default function App() {
       <style>{CSS}</style><ToastHost />
       <div className="loading-screen">
         <div className="loading-card">
-          <div className="loading-label"><Hexagon size={20} className="spin" aria-hidden="true" /> <span>{note || "Loading ALLBEE…"}</span></div>
+          <div className="loading-label"><span className="load-mark"><Hexagon size={20} className="spin" aria-hidden="true" /></span> <span key={note || "Loading"}>{note || "Loading ALLBEE…"}</span></div>
           <div style={{ display: "grid", gap: 10, marginTop: 20 }} aria-hidden="true">
             <span className="skeleton skeleton-line" style={{ width: "42%" }} />
             <span className="skeleton" style={{ height: 76 }} />
@@ -13788,7 +13889,9 @@ export default function App() {
                 )}
               </div>
             </header>
-            {renderPage()}
+            <div className="page-enter" key={safeRoute + "|" + (taskDetailId || "") + "|" + (accountUser || "")}>
+              {renderPage()}
+            </div>
           </div>
         </div>
 
