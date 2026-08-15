@@ -1518,7 +1518,7 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .page-enter { animation:page-enter .22s cubic-bezier(.2,.7,.3,1); }
 @keyframes page-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
-/* Staggered card entrance for dashboard metric rows (`.appear` on the grid). */
+/* Staggered card entrance for dashboard metric rows (the .appear class on the grid). */
 .appear > * { animation:card-in .32s cubic-bezier(.2,.7,.3,1) both; }
 .appear > :nth-child(2) { animation-delay:.04s; }
 .appear > :nth-child(3) { animation-delay:.08s; }
