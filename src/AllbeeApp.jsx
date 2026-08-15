@@ -9,7 +9,7 @@ import {
   ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag, Maximize2,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins, Minimize2,
   Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical, Flame, FileCheck2,
-  Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2,
+  Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2, Headset,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -428,6 +428,14 @@ const CLIENT_READS = {
   apn_target_client_loyalty_rewards: "partner_id,reward_id,loyalty_id,reward_key,label,points_cost,redeemed,redeemed_at,created_at,updated_at",
 };
 
+// Helpdesk — client portal support tickets. Normalized reads; writes go through
+// the audited, identity-checked RPCs in supabase/helpdesk.sql only.
+const HELPDESK_READS = {
+  support_tickets: "id,ticket_no,client_id,client_name,client_email,client_company,subject,description,category,priority,status,assignee_id,created_at,updated_at,closed_at",
+  support_ticket_messages: "id,ticket_id,author_id,author_name,author_role,author_public,body,created_at",
+  support_ticket_audit: "id,ticket_id,author_id,author_name,action,metadata,created_at",
+};
+
 async function fetchReferralData() {
   const out = {};
   await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
@@ -514,6 +522,19 @@ async function fetchClientData() {
   return out;
 }
 
+async function fetchHelpdeskData() {
+  const out = {};
+  await Promise.all(Object.entries(HELPDESK_READS).map(async ([table, columns]) => {
+    const { data, error } = await supabase.from(table).select(columns);
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
 async function fetchAll() {
   const db = emptyDB();
   await Promise.all(TABLES.map(async (t) => {
@@ -530,7 +551,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), await fetchClientData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), await fetchClientData(), await fetchHelpdeskData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
   return db;
 }
 
@@ -5626,6 +5647,7 @@ const NAV = [
   ["quotations", "Quotations", FileText, "perm:quotations"],
   ["invoices", "Invoices", Banknote, "perm:invoices"],
   ["portal-posts", "Client updates", ExternalLink, "perm:portal-posts"],
+  ["support", "Support", Headset, "collab"],
   ["projects", "Projects", FolderKanban, "perm:projects"],
   ["inhouse", "In-house projects", Home, "perm:inhouse"],
   ["testing", "Testing", ClipboardCheck, "perm:testing"],
@@ -5673,7 +5695,7 @@ const NAV_CATEGORIES = [
 const NAV_CATEGORY = {
   dashboard: "overview", notifications: "overview", myteam: "overview", assistant: "overview", "ai-center": "overview",
   tasks: "work", attendance: "work", leave: "work", updates: "work", progress: "work", chat: "work",
-  leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
+  leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", support: "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
   accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
   announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
   team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", "requirement-builder": "admin", "proposal-center": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
@@ -7575,6 +7597,30 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
   const quotes = [...db.quotations].filter((q) => q.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const invoices = [...db.invoices].filter((iv) => iv.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";
+  const [portalView, setPortalView] = useState("home");
+  const [helpFormOpen, setHelpFormOpen] = useState(false);
+  const [helpBusy, setHelpBusy] = useState(false);
+  const myTickets = [...(db.support_tickets || [])].filter((t) => t.client_id === myId).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const openTickets = myTickets.filter((t) => !["resolved", "closed"].includes(t.status)).length;
+  const createSupportTicket = async (f) => {
+    setHelpBusy(true);
+    try {
+      const { error } = await supabase.rpc("apn_create_support_ticket", { p_subject: f.subject, p_description: f.description || "", p_category: f.category || "General", p_priority: f.priority || "Normal" });
+      if (error) throw error;
+      setHelpFormOpen(false);
+      emitToast("Support ticket raised. Our team will follow up here.", "success");
+      await reload();
+    } catch (e) { emitToast(e.message || "Could not create the ticket.", "error"); }
+    finally { setHelpBusy(false); }
+  };
+  const sendSupportMessage = async (ticketId, body) => {
+    if (!(body || "").trim()) return false;
+    const { error } = await supabase.rpc("apn_helpdesk_client_message", { p_ticket_id: ticketId, p_message: body.trim() });
+    if (error) { emitToast(error.message || "Could not send your message.", "error"); return false; }
+    emitToast("Message sent.", "success");
+    await reload();
+    return true;
+  };
   return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ minHeight: "100vh" }}>
       <style>{CSS}</style><ToastHost />
@@ -7588,7 +7634,12 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
       </header>
       <div className="content page-enter" style={{ maxWidth: 820, margin: "0 auto" }}>
         <div className="page-head"><h3>Welcome, {profile?.name?.split(" ")[0] || "there"}</h3></div>
+        <div className="seg" style={{ margin: "0 0 16px", width: "max-content" }}>
+          <button className={portalView === "home" ? "on" : ""} onClick={() => setPortalView("home")}><Home size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Overview</button>
+          <button className={portalView === "support" ? "on" : ""} onClick={() => setPortalView("support")}><Headset size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Support{openTickets > 0 && <span className="badge accent" style={{ marginLeft: 6 }}>{openTickets}</span>}</button>
+        </div>
 
+        {portalView === "home" && (<>
         <div className="card stat" style={{ marginBottom: 16 }}>
           <div className="lbl" style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 4 }}>Your project updates</div>
           {updates.length === 0 ? <p className="hint-line" style={{ margin: "8px 0 0" }}>No updates yet. We'll post progress here as we go.</p>
@@ -7660,9 +7711,233 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
             {[co.phone, co.email, co.website].filter(Boolean).length > 0 && <div>{[co.phone, co.email, co.website].filter(Boolean).join("  ·  ")}</div>}
           </div>
         )}
+        </>)}
+
+        {portalView === "support" && <PortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} />}
       </div>
     </div>
   );
+}
+
+
+
+/// ══ Helpdesk · client portal ──────────────────────────────────────────────
+const HELP_STATUS_LABEL = { open: "Open", in_progress: "In progress", resolved: "Resolved", closed: "Closed" };
+const HELP_STATUS_TONE = (s) => ({ open: "pri", in_progress: "accent", resolved: "pos", closed: "" }[s] || "pri");
+const HELP_CATEGORIES = ["General", "Payment / Invoice", "Project / Delivery", "Quotation", "Technical issue", "Other"];
+
+function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpen, setHelpFormOpen, helpBusy }) {
+  const [expanded, setExpanded] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ subject: "", category: "General", priority: "Normal", description: "" });
+  const msgsOf = (id) => [...messages].filter((m) => m.ticket_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const send = async (t, body) => {
+    const txt = (body || "").trim();
+    if (!txt || busy) return;
+    setBusy(true);
+    const ok = await onSend(t.id, txt);
+    setBusy(false);
+    if (ok) setDrafts((d) => ({ ...d, [t.id]: "" }));
+  };
+  const submit = () => {
+    if (!form.subject.trim()) { emitToast("Please add a subject.", "error"); return; }
+    onCreate({ subject: form.subject, description: form.description, category: form.category, priority: form.priority });
+    setForm({ subject: "", category: "General", priority: "Normal", description: "" });
+  };
+  return (
+    <div>
+      <div className="page-head" style={{ marginBottom: 8 }}>
+        <div>
+          <h3 style={{ marginBottom: 3 }}>Support</h3>
+          <div className="hint-line">Facing an issue or have a question? Raise a ticket and our team will reply right here.</div>
+        </div>
+        <span className="spacer" />
+        <button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />New ticket</button>
+      </div>
+
+      {tickets.length === 0 ? <div className="card"><Empty icon={<Headset size={22} color="var(--muted)" />} title="No support tickets yet" text="When you raise a ticket, it will show up here with the team's replies." action={<button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />Raise a ticket</button>} /></div>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{tickets.map((t) => {
+          const isOpen = expanded === t.id;
+          const thread = msgsOf(t.id);
+          return (
+            <div key={t.id} className="card stat">
+              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flexWrap: "wrap" }} onClick={() => setExpanded(isOpen ? null : t.id)}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontWeight: 700 }}>{t.subject}</div>
+                  <div className="hint-line" style={{ fontSize: 11.5, marginTop: 2 }}>{t.ticket_no} · {t.category} · raised {fmtDate(t.created_at ? new Date(t.created_at).toISOString().slice(0, 10) : 0)}</div>
+                </div>
+                {t.priority && t.priority !== "Normal" && <span className={"badge " + (t.priority === "High" || t.priority === "Urgent" ? "neg" : "accent")}>{t.priority}</span>}
+                <span className={"badge " + HELP_STATUS_TONE(t.status)}>{HELP_STATUS_LABEL[t.status] || t.status}</span>
+                <ChevronDown size={15} style={{ transform: isOpen ? "rotate(180deg)" : "", transition: "transform .18s ease", color: "var(--muted)" }} />
+              </div>
+              {isOpen && (
+                <div style={{ marginTop: 14 }}>
+                  {t.description && <div className="hint-line" style={{ margin: "0 0 12px", lineHeight: 1.6, whiteSpace: "pre-wrap", color: "var(--ink)" }}>{t.description}</div>}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {thread.length === 0 ? <div className="hint-line">No replies yet — our team typically follows up within one business day.</div>
+                      : thread.map((m) => (
+                        <div key={m.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                          <Avatar name={m.author_name || (m.author_role === "client" ? "You" : "ALLBEE")} size={26} />
+                          <div style={{ background: m.author_role === "client" ? "var(--primary-soft)" : "var(--surface-2)", borderRadius: 10, padding: "9px 12px", flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                              <b style={{ fontSize: 12.5 }}>{m.author_role === "client" ? "You" : (m.author_name || "ALLBEE team")}</b>
+                              <span className="hint-line" style={{ fontSize: 10.5 }}>{fmtDateTime(m.created_at)}</span>
+                            </div>
+                            <div style={{ marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 13.5 }}>{m.body}</div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                  {!["resolved", "closed"].includes(t.status) && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                      <textarea className="textarea" style={{ minHeight: 40, flex: 1 }} value={drafts[t.id] || ""} onChange={(e) => setDrafts((d) => ({ ...d, [t.id]: e.target.value }))} placeholder="Write a reply…" />
+                      <button className="btn primary" disabled={busy || !(drafts[t.id] || "").trim()} onClick={() => send(t, drafts[t.id])}><Send size={14} />Reply</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}</div>}
+
+      {helpFormOpen && <Modal title="Raise a support ticket" onClose={() => setHelpFormOpen(false)} footer={<><button className="btn" onClick={() => setHelpFormOpen(false)}>Cancel</button><button className="btn primary" disabled={helpBusy || !form.subject.trim()} onClick={submit}>{helpBusy ? "Submitting…" : "Submit ticket"}</button></>}>
+        <Field label="Subject" required><input className="input" autoFocus value={form.subject} onChange={(e) => setForm((s) => ({ ...s, subject: e.target.value }))} placeholder="Short summary of your request" /></Field>
+        <div className="grid2"><Field label="Category"><select className="select" value={form.category} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}>{HELP_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></Field><Field label="Priority"><select className="select" value={form.priority} onChange={(e) => setForm((s) => ({ ...s, priority: e.target.value }))}>{["Low", "Medium", "High", "Urgent"].map((p) => <option key={p}>{p}</option>)}</select></Field></div>
+        <Field label="Describe the issue"><textarea className="textarea" style={{ minHeight: 110 }} value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))} placeholder="Share as much detail as you can — what happened, when, and what you'd like us to do." /></Field>
+      </Modal>}
+    </div>
+  );
+}
+
+
+
+/// ══ Helpdesk · ops console (staff/admin reply & triage from the app) ────
+function APNHelpdesk({ db, me, team = [], isAdmin = false, onRefresh }) {
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("all");
+  const [expanded, setExpanded] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [busy, setBusy] = useState(false);
+  const staff = (team || []).filter((p) => ["superadmin", "admin", "accountant", "staff", "intern"].includes(p.role));
+  const nameOf = (id) => (staff.find((p) => p.id === id) || (team || []).find((p) => p.id === id))?.name || (id ? id : "Unassigned");
+  const allTickets = [...(db.support_tickets || [])].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const msgsOf = (id) => [...(db.support_ticket_messages || [])].filter((m) => m.ticket_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const rows = allTickets.filter((t) => {
+    if (status !== "all" && t.status !== status) return false;
+    if (q && ![t.subject, t.ticket_no, t.client_name, t.client_email, t.category].join(" ").toLowerCase().includes(q.toLowerCase())) return false;
+    return true;
+  });
+  const counts = (s) => allTickets.filter((t) => t.status === s).length;
+  const run = async (rpcName, args, okMsg) => {
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc(rpcName, args);
+      if (error) throw error;
+      if (okMsg) emitToast(okMsg, "success");
+      await onRefresh();
+      return true;
+    } catch (e) { emitToast(e.message || "Something went wrong.", "error"); return false; }
+    finally { setBusy(false); }
+  };
+  const reply = async (t, body, isPublic) => {
+    const txt = (body || "").trim();
+    if (!txt || busy) return;
+    const ok = await run("apn_helpdesk_staff_message", { p_ticket_id: t.id, p_message: txt, p_public: !!isPublic }, isPublic ? "Reply sent to the client." : "Internal note saved.");
+    if (ok) setDrafts((d) => ({ ...d, [t.id]: "" }));
+  };
+  return (
+    <div className="content">
+      <div className="page-head">
+        <div>
+          <h3>Support tickets</h3>
+          <div className="hint-line">Tickets raised by clients from the portal — reply, triage and assign here. Replies are one-to-one with the client.</div>
+        </div>
+        <span className="spacer" />
+        <button className="btn" onClick={onRefresh}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="toolbar" style={{ margin: 0, alignItems: "center" }}>
+          <div className="search" style={{ flex: 1 }}><Search size={16} color="var(--muted)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket, client, category…" /></div>
+          <div className="seg" style={{ width: "max-content" }}>
+            <button className={status === "all" ? "on" : ""} onClick={() => setStatus("all")}>All <span className="badge">{allTickets.length}</span></button>
+            <button className={status === "open" ? "on" : ""} onClick={() => setStatus("open")}>Open {counts("open") > 0 && <span className="badge accent">{counts("open")}</span>}</button>
+            <button className={status === "in_progress" ? "on" : ""} onClick={() => setStatus("in_progress")}>In progress</button>
+            <button className={status === "resolved" ? "on" : ""} onClick={() => setStatus("resolved")}>Resolved</button>
+            <button className={status === "closed" ? "on" : ""} onClick={() => setStatus("closed")}>Closed</button>
+          </div>
+        </div>
+      </div>
+
+      {rows.length === 0 ? <div className="card"><Empty icon={<Headset size={22} color="var(--muted)" />} title="No support tickets" text="When a client raises a ticket in the portal, it will appear here in real time." /></div>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{rows.map((t) => {
+          const isOpen = expanded === t.id;
+          const thread = msgsOf(t.id);
+          return (
+            <div key={t.id} className="card stat">
+              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flexWrap: "wrap" }} onClick={() => setExpanded(isOpen ? null : t.id)}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <div style={{ fontWeight: 700 }}>{t.subject}</div>
+                  <div className="hint-line" style={{ fontSize: 11.5, marginTop: 2 }}>{t.ticket_no} · {nameOfT(t)} · {t.category}</div>
+                </div>
+                {t.priority && t.priority !== "Normal" && <span className={"badge " + (t.priority === "High" || t.priority === "Urgent" ? "neg" : "accent")}>{t.priority}</span>}
+                {t.assignee_id && <span className="badge">→ {nameOf(t.assignee_id)}</span>}
+                <span className={"badge " + HELP_STATUS_TONE(t.status)}>{HELP_STATUS_LABEL[t.status] || t.status}</span>
+                <ChevronDown size={15} style={{ transform: isOpen ? "rotate(180deg)" : "", transition: "transform .18s ease", color: "var(--muted)" }} />
+              </div>
+              {isOpen && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }} className="hint-line">
+                    <span><b style={{ color: "var(--ink)" }}>Client:</b> {t.client_name || "—"} {t.client_company ? `· ${t.client_company}` : ""}</span>
+                    {t.client_email && <span><b style={{ color: "var(--ink)" }}>Email:</b> {t.client_email}</span>}
+                    <span><b style={{ color: "var(--ink)" }}>Raised:</b> {fmtDateTime(t.created_at)}</span>
+                    {["resolved", "closed"].includes(t.status) && t.closed_at && <span><b style={{ color: "var(--ink)" }}>Closed:</b> {fmtDateTime(t.closed_at)}</span>}
+                  </div>
+                  {t.description && <div className="hint-line" style={{ margin: "0 0 12px", lineHeight: 1.6, whiteSpace: "pre-wrap", color: "var(--ink)" }}>{t.description}</div>}
+
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                    <select className="select" style={{ width: "auto" }} value={t.status} onChange={(e) => { const v = e.target.value; if (v !== t.status) run("apn_set_support_ticket_status", { p_ticket_id: t.id, p_status: v }, `Ticket marked ${(HELP_STATUS_LABEL[v] || v).toLowerCase()}.`); }} disabled={busy}>
+                      {Object.keys(HELP_STATUS_LABEL).map((s) => <option key={s} value={s}>{HELP_STATUS_LABEL[s]}</option>)}
+                    </select>
+                    {isAdmin && <select className="select" style={{ width: "auto" }} value={t.assignee_id || ""} onChange={(e) => { const v = e.target.value || null; if (v !== (t.assignee_id || null)) run("apn_assign_support_ticket", { p_ticket_id: t.id, p_assignee_id: v }, v ? `Assigned to ${nameOf(v)}.` : "Ticket unassigned."); }} disabled={busy}>
+                      <option value="">Assign to…</option>
+                      {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>}
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {thread.length === 0 ? <div className="hint-line">No messages yet on this ticket.</div>
+                      : thread.map((m) => (
+                        <div key={m.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                          <Avatar name={m.author_name || (m.author_role === "staff" ? "ALLBEE" : "Client")} url={(staff.find((p) => p.id === m.author_id))?.photo_url} size={26} />
+                          <div style={{ background: m.author_role === "staff" ? "var(--surface-2)" : "var(--primary-soft)", borderRadius: 10, padding: "9px 12px", flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                              <b style={{ fontSize: 12.5 }}>{m.author_name || (m.author_role === "staff" ? "ALLBEE" : "Client")}{m.author_role === "staff" && !m.author_public ? <span className="badge accent" style={{ marginLeft: 6 }}>Internal note</span> : null}</b>
+                              <span className="hint-line" style={{ fontSize: 10.5 }}>{fmtDateTime(m.created_at)}</span>
+                            </div>
+                            <div style={{ marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 13.5 }}>{m.body}</div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "flex-start" }}>
+                    <textarea className="textarea" style={{ minHeight: 40, flex: 1 }} value={drafts[t.id] || ""} onChange={(e) => setDrafts((d) => ({ ...d, [t.id]: e.target.value }))} placeholder="Reply to the client, or add an internal note…" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if ((drafts[t.id] || "").trim()) reply(t, drafts[t.id], true); } }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <button className="btn primary" disabled={busy || !(drafts[t.id] || "").trim()} onClick={() => reply(t, drafts[t.id], true)}><Send size={14} />Send to client</button>
+                      <button className="btn sm" disabled={busy || !(drafts[t.id] || "").trim()} onClick={() => reply(t, drafts[t.id], false)}><EyeOff size={12} />Internal note</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}</div>}
+    </div>
+  );
+
+  function nameOfT(t) { return (team || []).find((p) => p.id === t.client_id)?.name || t.client_name || "Client"; }
 }
 
 
@@ -13742,6 +14017,7 @@ export default function App() {
       case "quotations": return <Quotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} />;
       case "invoices": return <Invoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
       case "portal-posts": return <PortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
+      case "support": return <APNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} />;
       case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
       case "vault": return <Vault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
       case "notifications": return <Notifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} />;
