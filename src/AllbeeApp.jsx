@@ -1482,6 +1482,32 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
   animation:skeleton-sheen 1.4s ease-in-out infinite; }
 .skeleton-line { height:12px; }
 @keyframes skeleton-sheen { to { transform:translateX(100%); } }
+/* ── Prism Flux — premium global loader: a six-faced 3D prism built from
+   Lucide Plus marks, spun on the GPU (transform-only), with an honest
+   rotating status line (re-uses msg-in). No fake delays, no JS stepping. ── */
+.prism { position:relative; width:54px; height:54px; margin:6px auto 0; transform-style:preserve-3d;
+  animation:prism-turn 9s linear infinite; will-change:transform; }
+.prism-face { position:absolute; inset:0; display:grid; place-items:center; color:var(--primary);
+  background:color-mix(in srgb, var(--primary) 10%, transparent);
+  border:1.5px solid color-mix(in srgb, var(--primary) 45%, transparent); border-radius:10px; }
+.prism-f1 { transform:rotateY(0deg) translateZ(27px); }
+.prism-f2 { transform:rotateY(60deg) translateZ(27px); }
+.prism-f3 { transform:rotateY(120deg) translateZ(27px); }
+.prism-f4 { transform:rotateY(180deg) translateZ(27px); }
+.prism-f5 { transform:rotateY(240deg) translateZ(27px); }
+.prism-f6 { transform:rotateY(300deg) translateZ(27px); }
+@keyframes prism-turn { from { transform:rotateX(-24deg) rotateY(0deg) rotateZ(6deg); }
+  to { transform:rotateX(-24deg) rotateY(360deg) rotateZ(6deg); } }
+@keyframes prism-in { from { opacity:0; transform:scale(.6) rotate(-8deg); } to { opacity:1; transform:none; } }
+.prism-wrap { perspective:500px; animation:prism-in .5s cubic-bezier(.2,.7,.3,1) both; }
+.prism-status { display:flex; justify-content:center; min-height:20px; margin-top:16px;
+  color:var(--muted); font-size:13px; font-weight:600; text-align:center; }
+.prism-status span { animation:msg-in .3s ease; white-space:nowrap; }
+@media (max-width:420px) { .prism { width:46px; height:46px; }
+  .prism-face { border-radius:8px; } .prism-f1 { transform:rotateY(0deg) translateZ(23px); }
+  .prism-f2 { transform:rotateY(60deg) translateZ(23px); } .prism-f3 { transform:rotateY(120deg) translateZ(23px); }
+  .prism-f4 { transform:rotateY(180deg) translateZ(23px); } .prism-f5 { transform:rotateY(240deg) translateZ(23px); }
+  .prism-f6 { transform:rotateY(300deg) translateZ(23px); } }
 
 @media (max-width:900px) {
   .layout { grid-template-columns:1fr; }
@@ -1531,7 +1557,6 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 @keyframes msg-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 @keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
 @keyframes check-pop { 0% { transform:scale(.4); opacity:0; } 60% { transform:scale(1.15); } 100% { transform:scale(1); opacity:1; } }
-@keyframes mark-ring { 0% { opacity:.5; transform:scale(.72); } 70%,100% { opacity:0; transform:scale(1.3); } }
 @keyframes ai-typing { 0%,80%,100% { opacity:.35; transform:scale(.8); } 40% { opacity:1; transform:scale(1); } }
 
 /* Page/route entrance — one wrapper per surface, keyed to the current route.
@@ -1551,11 +1576,6 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 
 /* Startup / loading experience */
 .loading-card { animation:card-in .3s cubic-bezier(.2,.7,.3,1) both; }
-.loading-label span { animation:msg-in .3s ease; }
-.load-mark { position:relative; width:36px; height:36px; border-radius:12px; background:var(--primary-soft);
-  display:grid; place-items:center; flex:none; }
-.load-mark::after { content:""; position:absolute; inset:-5px; border-radius:16px; border:1.5px solid var(--primary);
-  opacity:0; animation:mark-ring 1.6s cubic-bezier(.2,.7,.3,1) infinite; }
 .lock-card { animation:card-in .34s cubic-bezier(.2,.7,.3,1) both; }
 
 /* Overlays, dialogs, sheets */
@@ -5253,6 +5273,44 @@ function ApprovalPending({ isDark, name, onSignOut }) {
         <h1>Awaiting approval</h1>
         <p>Thanks {name} — your account has been created. A partner needs to approve it before you can get in. You'll have access as soon as they do.</p>
         <button className="btn" style={{ marginTop: 8 }} onClick={onSignOut}><LogOut size={15} />Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+// Prism Flux — the app's premium global loader visual: a six-faced 3D prism
+// of Lucide Plus marks, GPU-spun via CSS only. Optionally cycles through an
+// honest, neutral status queue underneath (re-uses msg-in; key={i} re-triggers
+// the entrance per message). No fake delays — this never extends the wait.
+const DEFAULT_PRISM_STATUS = [
+  "Preparing AllBee",
+  "Loading your workspace",
+  "Syncing data",
+  "Preparing your dashboard",
+  "Almost ready",
+];
+function PrismFluxLoader({ status, statusList, size = 40, interval = 1700 }) {
+  const [i, setI] = useState(0);
+  const list = useMemo(
+    () => [status, ...(statusList && statusList.length ? statusList : DEFAULT_PRISM_STATUS)].filter(Boolean),
+    [status, statusList]
+  );
+  useEffect(() => {
+    if (list.length < 2) return;
+    const t = setInterval(() => setI((v) => (v + 1) % list.length), interval);
+    return () => clearInterval(t);
+  }, [list, interval]);
+  return (
+    <div className="prism-wrap" role="status" aria-live="polite">
+      <div className="prism" aria-hidden="true">
+        {[1, 2, 3, 4, 5, 6].map((f) => (
+          <span key={f} className={`prism-face prism-f${f}`}>
+            <Plus size={Math.round(size * 0.5)} strokeWidth={1.6} />
+          </span>
+        ))}
+      </div>
+      <div className="prism-status">
+        <span key={i}>{list[i]}</span>
       </div>
     </div>
   );
@@ -11492,7 +11550,12 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
 
   if (!meRow) return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-      <style>{CSS}</style><div style={{ color: "var(--muted)", display: "flex", gap: 10, alignItems: "center" }}><Hexagon size={20} className="spin" />Setting up your APN account…</div>
+      <style>{CSS}</style>
+      <div className="loading-screen">
+        <div className="loading-card">
+          <PrismFluxLoader status="Setting up your APN account…" statusList={["Loading your network", "Syncing data", "Almost ready"]} />
+        </div>
+      </div>
     </div>
   );
 
@@ -13894,21 +13957,22 @@ export default function App() {
     setModal(null);
   };
 
-  const Loading = ({ note }) => (
-    <div className="allbee" data-theme={isDark ? "dark" : "light"} aria-busy="true" aria-live="polite" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-      <style>{CSS}</style><ToastHost />
-      <div className="loading-screen">
-        <div className="loading-card">
-          <div className="loading-label"><span className="load-mark"><Hexagon size={20} className="spin" aria-hidden="true" /></span> <span key={note || "Loading"}>{note || "Loading ALLBEE…"}</span></div>
-          <div style={{ display: "grid", gap: 10, marginTop: 20 }} aria-hidden="true">
-            <span className="skeleton skeleton-line" style={{ width: "42%" }} />
-            <span className="skeleton" style={{ height: 76 }} />
-            <span className="skeleton skeleton-line" style={{ width: "68%" }} />
+  const Loading = ({ note }) => {
+    const prisms = note === "Signing you in…" ? ["Checking your access", "Preparing your workspace", "Almost ready"]
+      : note === "Loading your portal…" || note === "Loading APN…" ? ["Preparing your dashboard", "Syncing data", "Almost ready"]
+      : note === "Preparing your workspace…" ? ["Syncing data", "Almost ready"]
+      : null;
+    return (
+      <div className="allbee" data-theme={isDark ? "dark" : "light"} aria-busy="true" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+        <style>{CSS}</style><ToastHost />
+        <div className="loading-screen">
+          <div className="loading-card">
+            <PrismFluxLoader status={note || "Loading ALLBEE…"} statusList={prisms} />
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   if (publicProposalToken) return <ProposalPortal token={publicProposalToken} isDark={isDark} />;
   if (session === undefined) return <Loading />;
