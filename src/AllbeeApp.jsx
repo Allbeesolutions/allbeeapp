@@ -6,10 +6,10 @@ import {
   Download, Upload, LogOut, Hexagon, CalendarClock, ArrowRight, Menu, Wifi, WifiOff,
   Mail, KeyRound, LogIn, RefreshCw, CloudOff,
   Users, UserCheck, CalendarDays, MessageSquare, Plane, Clock, CheckCircle2, XCircle, Hourglass, ShieldCheck, ShieldAlert,
-  ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag, Maximize2,
+  ArrowLeft, Undo2, RotateCcw, Paperclip, Link2, ExternalLink, Activity, Filter, Send, FileText, Sheet, Tag, Maximize2, History, Save,
   Copy, Eye, EyeOff, Lock as LockIcon, Unlock as UnlockIcon, Award, Star, BookOpen, Bell, Building2, Phone, UserPlus, Megaphone as MegaphoneIcon, BadgeCheck, Banknote, User, Sparkles, Home, Coins, Minimize2,
   Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical, Flame, FileCheck2,
-  Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2, Headset,
+  Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2, Headset, LifeBuoy,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -1416,6 +1416,7 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 
 .calc-box { background:var(--surface-2); border-radius:11px; padding:13px 15px; display:flex; flex-direction:column; gap:9px; }
 .calc-row { display:flex; align-items:center; justify-content:space-between; font-size:13.5px; }
+.calc-total b { color:var(--primary); }
 
 .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
 .crm-kanban { display:grid; grid-template-columns:repeat(7,minmax(190px,1fr)); gap:10px; overflow-x:auto; padding-bottom:6px; }
@@ -1991,6 +1992,7 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .web-ai-quick { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
 .web-ai-quick button { border:1px solid var(--primary); border-radius:999px; padding:7px 10px; background:var(--primary-soft); color:var(--primary); font-size:12px; cursor:pointer; }
 .web-ai-quick button:hover { background:var(--primary); color:#fff; }
+.laa-chip { animation:msg-in .22s cubic-bezier(.2,.7,.3,1) both; }
 .web-ai-progress { height:4px; background:rgba(255,255,255,.2); }
 .web-ai-progress > i { display:block; height:100%; background:#fff; transition:width .25s ease; }
 .web-ai-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px 14px; background:var(--surface-2); border-bottom:1px solid var(--border); }
@@ -5911,6 +5913,184 @@ function WebSalesConsultant() {
   </>;
 }
 
+/* ── Login / access support assistant — button-driven and deterministic.
+   Answers are grounded in the app's real auth rules (no LLM, no hallucination). */
+const LOGIN_ASSIST_BACK = { label: "Back to start", go: "root" };
+const LOGIN_ASSIST_NODES = {
+  root: {
+    text: "Hi 👋 I'm AllBee AI. I'm here to help you sign in, choose the right login, or solve access issues.\n\nPick an option below to get started.",
+    chips: [
+      { label: "Which login should I use?", go: "which" },
+      { label: "I can't sign in", go: "cant" },
+      { label: "I forgot my password", go: "forgot" },
+      { label: "OTP problem", go: "otp" },
+      { label: "My account is inactive", go: "inactive" },
+      { label: "Employee Login", pick: "employee" },
+      { label: "Client Login", pick: "client" },
+      { label: "APN Partner Login", pick: "partner" },
+      { label: "Contact Support", go: "contact" },
+    ],
+  },
+  which: {
+    text: "There are three sign-in options on this screen:\n\n• Employee Login — for ALLBEE team members (staff and admins).\n• Client Login — for clients. You get your own portal with project updates, quotations and support tickets.\n• APN Partner Login — for partner network members, signed in with their APN username.\n\nChoose the option that matches you.",
+    chips: [
+      { label: "Open Employee Login", pick: "employee" },
+      { label: "Open Client Login", pick: "client" },
+      { label: "Open APN Partner Login", pick: "partner" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  cant: {
+    text: "Let's fix that. Check these in order:\n\n1. Use the username or email you signed up with.\n2. Passwords are case-sensitive — check caps lock.\n3. If you can't remember the password, enter your username or email and tap \"Forgot password?\" below the form — a reset link is emailed to you.\n4. New accounts must confirm their email first, and APN accounts wait for admin approval before they can sign in.\n\nWhat's going wrong?",
+    chips: [
+      { label: "I forgot my password", go: "forgot" },
+      { label: "OTP problem", go: "otp" },
+      { label: "My account is inactive", go: "inactive" },
+      { label: "Contact Support", go: "contact" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  forgot: {
+    text: "Resetting your password takes a minute:\n\n1. Enter your email, username or APN ID in the field above.\n2. Tap \"Forgot password?\" just below the form.\n3. Open the reset email and use its link — it is single-use and expires, so always use the newest email if you requested it more than once.\n4. Check your spam or promotions folder if it doesn't arrive.\n\nThen come back here and sign in with your new password.",
+    chips: [
+      { label: "My reset link is expired", go: "otp" },
+      { label: "My account is inactive", go: "inactive" },
+      { label: "Contact Support", go: "contact" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  otp: {
+    text: "Reset links are single-use and expire after a short time. When a link is invalid, expired or denied, the app detects it and tells you to request a new one.\n\nJust enter your username or email above, tap \"Forgot password?\" again and use the latest email link — links from older emails won't work.",
+    chips: [
+      { label: "I forgot my password", go: "forgot" },
+      { label: "This still isn't working", go: "contact" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  inactive: {
+    text: "Here's why an account may not open:\n\n• New accounts must click the confirmation link in their email before they can sign in.\n• APN partner applications are reviewed and approved by an admin — approval can take a little time.\n• Disabled accounts are reactivated by the ALLBEE admin team only.\n\nIf you've confirmed your email and still can't get in, contact support and mention the email you signed up with.",
+    chips: [
+      { label: "Contact Support", go: "contact" },
+      { label: "I can't sign in", go: "cant" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  employee: {
+    text: "Employee Login is for the ALLBEE team. I've opened the form below — enter your username or email and your password to continue.\n\nIf you see a sign-in error, come back here and I'll help.",
+    chips: [
+      { label: "I can't sign in", go: "cant" },
+      { label: "I forgot my password", go: "forgot" },
+      { label: "Contact Support", go: "contact" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  client: {
+    text: "Client Login is for clients of ALLBEE. Your portal shows project updates, quotations, invoices and support tickets. I've opened the form below — sign in with your email and password.\n\nClient accounts see only their own data, so one login is all you need for your project.",
+    chips: [
+      { label: "I can't sign in", go: "cant" },
+      { label: "I forgot my password", go: "forgot" },
+      { label: "Contact Support", go: "contact" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+  partner: {
+    text: "APN Partner Login is for members of the ALLBEE Partner Network. Partners sign in with their APN username (not email). I've opened the form below — enter your username and password.\n\nNew partners: your application must be approved by an admin before your login is activated.",
+    chips: [
+      { label: "My account is inactive", go: "inactive" },
+      { label: "I forgot my password", go: "forgot" },
+      { label: "Contact Support", go: "contact" },
+      LOGIN_ASSIST_BACK,
+    ],
+  },
+};
+
+function LoginAccessAssistant({ onPick }) {
+  const [open, setOpen] = useState(false);
+  const [chat, setChat] = useState(() => [{ id: "laa-w", role: "assistant", text: LOGIN_ASSIST_NODES.root.text }]);
+  const [chips, setChips] = useState(LOGIN_ASSIST_NODES.root.chips);
+  const [supportEmail, setSupportEmail] = useState("");
+  const endRef = useRef(null);
+  const seqRef = useRef(0);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc("web_ai_config");
+        if (!error && data && data.fallback_contact) setSupportEmail(String(data.fallback_contact).trim());
+      } catch { /* the config table may not exist in older environments */ }
+    })();
+  }, []);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [chat, chips]);
+
+  const pushAssistant = (text, nextChips) => {
+    const id = `laa-${Date.now()}-${seqRef.current++}`;
+    setChat((c) => [...c, { id, role: "assistant", text }]);
+    setChips(nextChips || [LOGIN_ASSIST_BACK]);
+  };
+  const startOver = () => {
+    setChat([{ id: "laa-w", role: "assistant", text: LOGIN_ASSIST_NODES.root.text }]);
+    setChips(LOGIN_ASSIST_NODES.root.chips);
+  };
+  const contactChips = () => {
+    const list = [];
+    if (supportEmail) list.push({ label: "Email support", act: "mail" });
+    list.push({ label: "Open Client Login", pick: "client" });
+    list.push({ label: "Back to start", go: "root" });
+    return list;
+  };
+  const goNode = (key) => {
+    if (key === "contact") {
+      pushAssistant(`Here's how to reach the ALLBEE team:\n\n• After you sign in, open Support → My Tickets → Create Ticket — our team replies right inside the app.\n${supportEmail ? "• If you can't sign in at all, email us directly and include the email address you registered with." : "• If you can't sign in at all, mention the email you registered with to any ALLBEE team member or use the contact details on your paper work."}\n\nSupport tickets are created from inside your account (we can't accept them from a signed-out screen).`, contactChips());
+      return;
+    }
+    const node = LOGIN_ASSIST_NODES[key];
+    if (node) pushAssistant(node.text, node.chips);
+  };
+  const handleChip = (chip) => {
+    setChat((c) => [...c, { id: `laa-${Date.now()}-${seqRef.current++}`, role: "user", text: chip.label }]);
+    if (chip.act === "mail") { window.location.href = `mailto:${supportEmail}?subject=${encodeURIComponent("Help signing in to the ALLBEE app")}`; return; }
+    if (chip.pick) {
+      onPick?.(chip.pick);
+      const node = LOGIN_ASSIST_NODES[chip.pick];
+      pushAssistant(`${node.text}\n\nTip: you can dismiss me anytime with the ✕ button.`, node.chips);
+      emitToast(`${chip.pick === "employee" ? "Employee" : chip.pick === "client" ? "Client" : "APN partner"} login form opened below.`, "success");
+      return;
+    }
+    if (chip.go) goNode(chip.go);
+  };
+
+  if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><LifeBuoy size={18} /><span>Need help signing in?</span></button>;
+  return (
+    <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI — access and login assistant">
+      <header className="web-ai-head">
+        <div className="web-ai-avatar"><LifeBuoy size={18} /></div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 800 }}>AllBee AI</div>
+          <div style={{ fontSize: 11, opacity: .82 }}>Access &amp; login assistant</div>
+        </div>
+        <button className="iconbtn" style={{ color: "#fff", borderColor: "rgba(255,255,255,.35)", minWidth: 44, minHeight: 44 }} onClick={() => setOpen(false)} aria-label="Close AllBee AI"><X size={18} /></button>
+      </header>
+      <div className="web-ai-messages" aria-live="polite">
+        {chat.map((m) => (
+          <div key={m.id} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "92%" }}>
+            <div className={`web-ai-bubble ${m.role === "user" ? "user" : "assistant"}`}>{m.text}</div>
+          </div>
+        ))}
+        <div ref={endRef} />
+      </div>
+      <div className="web-ai-composer" style={{ flexDirection: "column", alignItems: "stretch", gap: 9 }}>
+        <div className="web-ai-quick" style={{ maxHeight: 132, overflowY: "auto" }}>
+          {chips.map((chip, i) => <button key={chip.label} className="laa-chip" style={{ animationDelay: `${i * 35}ms` }} onClick={() => handleChip(chip)}>{chip.label}</button>)}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button className="btn sm" onClick={startOver}><RotateCcw size={13} />Start over</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Lock({ isDark, setDark }) {
   const [mode, setMode] = useState("signin"); // signin | signup
   const [entry, setEntry] = useState("choose"); // choose | form  (the two-button gate)
@@ -6107,7 +6287,7 @@ function Lock({ isDark, setDark }) {
           {isDark ? <Sun size={15} /> : <Moon size={15} />} {isDark ? "Light" : "Dark"} mode
         </button>
       </div>
-      <WebSalesConsultant />
+      <LoginAccessAssistant onPick={(t) => { setLoginAs(t); setMode("signin"); setEntry("form"); setErr(""); setNotice(""); }} />
     </div>
   );
 }
@@ -7663,7 +7843,7 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
   const createSupportTicket = async (f) => {
     setHelpBusy(true);
     try {
-      const { error } = await supabase.rpc("apn_create_support_ticket", { p_subject: f.subject, p_description: f.description || "", p_category: f.category || "General", p_priority: f.priority || "Normal" });
+      const { error } = await supabase.rpc("apn_create_support_ticket", { p_subject: f.subject, p_description: f.description || "", p_category: f.category || "Other", p_priority: f.priority || "Normal" });
       if (error) throw error;
       setHelpFormOpen(false);
       emitToast("Support ticket raised. Our team will follow up here.", "success");
@@ -7782,13 +7962,13 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
 /// ══ Helpdesk · client portal ──────────────────────────────────────────────
 const HELP_STATUS_LABEL = { open: "Open", in_progress: "In progress", resolved: "Resolved", closed: "Closed" };
 const HELP_STATUS_TONE = (s) => ({ open: "pri", in_progress: "accent", resolved: "pos", closed: "" }[s] || "pri");
-const HELP_CATEGORIES = ["General", "Payment / Invoice", "Project / Delivery", "Quotation", "Technical issue", "Other"];
+const HELP_CATEGORIES = ["Login / Account", "Payment / Billing", "Quotation", "Project", "Website", "Digital Marketing", "Training", "Technical Issue", "App / Portal", "APN", "Other"];
 
 function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpen, setHelpFormOpen, helpBusy }) {
   const [expanded, setExpanded] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ subject: "", category: "General", priority: "Normal", description: "" });
+  const [form, setForm] = useState({ subject: "", category: "Other", priority: "Normal", description: "" });
   const msgsOf = (id) => [...messages].filter((m) => m.ticket_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const send = async (t, body) => {
     const txt = (body || "").trim();
@@ -7801,7 +7981,7 @@ function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpe
   const submit = () => {
     if (!form.subject.trim()) { emitToast("Please add a subject.", "error"); return; }
     onCreate({ subject: form.subject, description: form.description, category: form.category, priority: form.priority });
-    setForm({ subject: "", category: "General", priority: "Normal", description: "" });
+    setForm({ subject: "", category: "Other", priority: "Normal", description: "" });
   };
   return (
     <div>
@@ -7811,10 +7991,10 @@ function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpe
           <div className="hint-line">Facing an issue or have a question? Raise a ticket and our team will reply right here.</div>
         </div>
         <span className="spacer" />
-        <button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />New ticket</button>
+        <button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />Create Ticket</button>
       </div>
 
-      {tickets.length === 0 ? <div className="card"><Empty icon={<Headset size={22} color="var(--muted)" />} title="No support tickets yet" text="When you raise a ticket, it will show up here with the team's replies." action={<button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />Raise a ticket</button>} /></div>
+      {tickets.length === 0 ? <div className="card"><Empty icon={<Headset size={22} color="var(--muted)" />} title="No support tickets yet" text="When you create a ticket, it will show up here with the team's replies." action={<button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />Create your first ticket</button>} /></div>
         : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{tickets.map((t) => {
           const isOpen = expanded === t.id;
           const thread = msgsOf(t.id);
@@ -7859,7 +8039,7 @@ function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpe
           );
         })}</div>}
 
-      {helpFormOpen && <Modal title="Raise a support ticket" onClose={() => setHelpFormOpen(false)} footer={<><button className="btn" onClick={() => setHelpFormOpen(false)}>Cancel</button><button className="btn primary" disabled={helpBusy || !form.subject.trim()} onClick={submit}>{helpBusy ? "Submitting…" : "Submit ticket"}</button></>}>
+      {helpFormOpen && <Modal title="Create a support ticket" onClose={() => setHelpFormOpen(false)} footer={<><button className="btn" onClick={() => setHelpFormOpen(false)}>Cancel</button><button className="btn primary" disabled={helpBusy || !form.subject.trim()} onClick={submit}>{helpBusy ? "Submitting…" : "Submit ticket"}</button></>}>
         <Field label="Subject" required><input className="input" autoFocus value={form.subject} onChange={(e) => setForm((s) => ({ ...s, subject: e.target.value }))} placeholder="Short summary of your request" /></Field>
         <div className="grid2"><Field label="Category"><select className="select" value={form.category} onChange={(e) => setForm((s) => ({ ...s, category: e.target.value }))}>{HELP_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></Field><Field label="Priority"><select className="select" value={form.priority} onChange={(e) => setForm((s) => ({ ...s, priority: e.target.value }))}>{["Low", "Medium", "High", "Urgent"].map((p) => <option key={p}>{p}</option>)}</select></Field></div>
         <Field label="Describe the issue"><textarea className="textarea" style={{ minHeight: 110 }} value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))} placeholder="Share as much detail as you can — what happened, when, and what you'd like us to do." /></Field>
@@ -7874,6 +8054,7 @@ function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpe
 function APNHelpdesk({ db, me, team = [], isAdmin = false, onRefresh }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
+  const [priority, setPriority] = useState("all");
   const [expanded, setExpanded] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [busy, setBusy] = useState(false);
@@ -7881,12 +8062,24 @@ function APNHelpdesk({ db, me, team = [], isAdmin = false, onRefresh }) {
   const nameOf = (id) => (staff.find((p) => p.id === id) || (team || []).find((p) => p.id === id))?.name || (id ? id : "Unassigned");
   const allTickets = [...(db.support_tickets || [])].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
   const msgsOf = (id) => [...(db.support_ticket_messages || [])].filter((m) => m.ticket_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const auditOf = (id) => [...(db.support_ticket_audit || [])].filter((a) => a.ticket_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const rows = allTickets.filter((t) => {
     if (status !== "all" && t.status !== status) return false;
+    if (priority !== "all" && (t.priority || "Normal") !== priority) return false;
     if (q && ![t.subject, t.ticket_no, t.client_name, t.client_email, t.category].join(" ").toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
   const counts = (s) => allTickets.filter((t) => t.status === s).length;
+  const pCounts = (p) => allTickets.filter((t) => (t.priority || "Normal") === p).length;
+  const auditText = (a) => {
+    if (a.action === "ticket_created") return `Ticket created — ${a.metadata?.subject || "subject"} (category: ${a.metadata?.category || "—"}, priority: ${a.metadata?.priority || "Normal"})`;
+    if (a.action === "assigned") {
+      const assignee = a.metadata?.assignee_id;
+      return assignee ? `Assigned to ${nameOf(assignee)}` : "Ticket unassigned";
+    }
+    if (a.action && a.action.startsWith("status_")) return `Status changed to ${HELP_STATUS_LABEL[a.action.slice(7)] || a.action.slice(7)}`;
+    return a.action || "Update";
+  };
   const run = async (rpcName, args, okMsg) => {
     setBusy(true);
     try {
@@ -7916,14 +8109,25 @@ function APNHelpdesk({ db, me, team = [], isAdmin = false, onRefresh }) {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <div className="toolbar" style={{ margin: 0, alignItems: "center" }}>
-          <div className="search" style={{ flex: 1 }}><Search size={16} color="var(--muted)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket, client, category…" /></div>
-          <div className="seg" style={{ width: "max-content" }}>
+        <div className="toolbar" style={{ margin: 0, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="search" style={{ flex: "1 1 220px" }}><Search size={16} color="var(--muted)" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ticket, client, category…" /></div>
+          <div className="seg" style={{ width: "max-content", flexWrap: "wrap" }}>
             <button className={status === "all" ? "on" : ""} onClick={() => setStatus("all")}>All <span className="badge">{allTickets.length}</span></button>
             <button className={status === "open" ? "on" : ""} onClick={() => setStatus("open")}>Open {counts("open") > 0 && <span className="badge accent">{counts("open")}</span>}</button>
             <button className={status === "in_progress" ? "on" : ""} onClick={() => setStatus("in_progress")}>In progress</button>
             <button className={status === "resolved" ? "on" : ""} onClick={() => setStatus("resolved")}>Resolved</button>
             <button className={status === "closed" ? "on" : ""} onClick={() => setStatus("closed")}>Closed</button>
+          </div>
+        </div>
+        <div className="toolbar" style={{ margin: "10px 0 0", alignItems: "center", flexWrap: "wrap" }}>
+          <span className="hint-line" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em" }}>Priority</span>
+          <div className="seg" style={{ width: "max-content", flexWrap: "wrap" }}>
+            <button className={priority === "all" ? "on" : ""} onClick={() => setPriority("all")}>All</button>
+            <button className={priority === "Urgent" ? "on" : ""} onClick={() => setPriority("Urgent")}>Urgent {pCounts("Urgent") > 0 && <span className="badge neg">{pCounts("Urgent")}</span>}</button>
+            <button className={priority === "High" ? "on" : ""} onClick={() => setPriority("High")}>High</button>
+            <button className={priority === "Medium" ? "on" : ""} onClick={() => setPriority("Medium")}>Medium</button>
+            <button className={priority === "Low" ? "on" : ""} onClick={() => setPriority("Low")}>Low</button>
+            <button className={priority === "Normal" ? "on" : ""} onClick={() => setPriority("Normal")}>Normal</button>
           </div>
         </div>
       </div>
@@ -7987,6 +8191,23 @@ function APNHelpdesk({ db, me, team = [], isAdmin = false, onRefresh }) {
                       <button className="btn sm" disabled={busy || !(drafts[t.id] || "").trim()} onClick={() => reply(t, drafts[t.id], false)}><EyeOff size={12} />Internal note</button>
                     </div>
                   </div>
+
+                  {auditOf(t.id).length > 0 && (
+                    <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 12.5, marginBottom: 8 }}><History size={13} color="var(--muted)" />Activity</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                        {auditOf(t.id).map((a) => (
+                          <div key={a.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5 }}>
+                            <div className="av" style={{ width: 22, height: 22, fontSize: 10, flex: "none" }}>{a.author_name?.[0] || "?"}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ lineHeight: 1.45 }}><b>{a.author_name || "System"}</b> {auditText(a)}</div>
+                              <div className="hint-line" style={{ fontSize: 10.5 }}>{fmtDateTime(a.created_at)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -10077,12 +10298,13 @@ function APNStatusBadge({ status }) {
   return <span className={`badge ${APN_TICKET_TONE[status] || ""}`}>{status.replace(/_/g, " ")}</span>;
 }
 
-function APNAI({ meRow, go }) {
+function APNAI({ meRow, go, mutate, pid }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [asked, setAsked] = useState(null);
   const [ticketDone, setTicketDone] = useState("");
+  const [quoteOpen, setQuoteOpen] = useState(false);
   const endRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -10129,6 +10351,11 @@ function APNAI({ meRow, go }) {
     } finally { setBusy(false); }
   };
 
+  const saveQuote = (qq, status) => {
+    mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid });
+    emitToast(status === "Draft" ? "Quotation draft saved." : "Quotation sent for approval.", "success");
+  };
+
   return (
     <div className="apn-ai">
       <div className="apn-rowcard" style={{ marginBottom: 14 }}>
@@ -10145,6 +10372,7 @@ function APNAI({ meRow, go }) {
           <div className="hint-line" style={{ marginBottom: 10, fontSize: 12.5 }}>Try one of these:</div>
         )}
         <div className="apn-ai-chips">
+          <button type="button" className="apn-ai-chip" style={{ borderColor: "var(--pos)", color: "var(--pos)" }} onClick={() => setQuoteOpen(true)}><FileText size={12} />Generate Quotation</button>
           {APN_AI_CHIPS.map(([label, q]) => (
             <button key={label} className="apn-ai-chip" disabled={busy} onClick={() => ask(q)}><Sparkles size={12} />{label}</button>
           ))}
@@ -10184,6 +10412,8 @@ function APNAI({ meRow, go }) {
           <button className="btn primary" disabled={busy || !input.trim()} onClick={() => ask()} aria-label="Send" title="Send" style={{ minWidth: 46, height: 46 }}><Send size={17} /></button>
         </div>
       </div>
+
+      {quoteOpen && <APNQuoteWizard meRow={meRow} go={go} onClose={() => setQuoteOpen(false)} onSave={saveQuote} />}
     </div>
   );
 }
@@ -10507,23 +10737,291 @@ function APNLeads({ db, meRow, pid, openModal, mutate }) {
 }
 
 /* ── quotations ──────────────────────────────────────────────────────── */
-function apnPrintQuote(q, meRow) {
-  const rows = (q.items || []).map((it) => `<tr><td>${it.label}</td><td style="text-align:right">₹${(Number(it.amount) || 0).toLocaleString("en-IN")}</td></tr>`).join("");
-  const w = window.open("", "_blank");
-  if (!w) return;
-  w.document.write(`<!doctype html><html><head><title>Quotation ${q.clientName || ""}</title>
-    <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#161A20;padding:36px;max-width:720px;margin:auto}
-    h1{color:#2E3B8F;margin:0 0 2px} .muted{color:#626C7A;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:18px}
-    td,th{padding:10px 12px;border-bottom:1px solid #E4E8EF;font-size:14px} th{text-align:left;color:#626C7A;font-size:11px;text-transform:uppercase}
-    .tot{font-weight:800;font-size:18px} .box{border:1px solid #E4E8EF;border-radius:12px;padding:16px 18px;margin-top:18px}</style></head>
-    <body><h1>ALLBEE</h1><div class="muted">Quotation · ${APN_SERVICE_LABEL[q.service] || ""}</div>
-    <div class="box"><b>To:</b> ${q.clientName || "—"}<br/><span class="muted">Prepared by ${meRow?.name || "APN Partner"} (${meRow?.apnId || ""})</span><br/>
-    ${q.requirements ? `<div class="muted" style="margin-top:8px">${q.requirements}</div>` : ""}</div>
-    <table><thead><tr><th>Item</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rows}
-    <tr><td class="tot">Total</td><td class="tot" style="text-align:right">₹${(Number(q.total) || 0).toLocaleString("en-IN")}</td></tr></tbody></table>
-    <p class="muted" style="margin-top:24px">This is an approximate quotation and is subject to final confirmation by the ALLBEE sales team.</p>
-    <script>window.onload=function(){window.print()}</script></body></html>`);
-  w.document.close();
+const QUOTE_CATALOG = {
+  website: {
+    base: 15000, baseLabel: "Website (starter)",
+    options: [
+      { key: "ecommerce", label: "E-commerce store", amount: 12000 },
+      { key: "seo", label: "SEO setup", amount: 5000 },
+      { key: "extra", label: "Extra pages / sections", amount: 4000 },
+      { key: "maintenance", label: "Annual maintenance (per year)", amount: 6000 },
+    ],
+  },
+  marketing: {
+    base: 8000, baseLabel: "Digital marketing (monthly)",
+    options: [
+      { key: "ads", label: "Paid ad management (monthly)", amount: 5000 },
+      { key: "content", label: "Content creation (monthly)", amount: 4000 },
+      { key: "social", label: "Social media handling (monthly)", amount: 3000 },
+    ],
+  },
+  course: {
+    base: 5000, baseLabel: "Course admission",
+    options: [
+      { key: "advanced", label: "Advanced module", amount: 3000 },
+      { key: "certification", label: "Certification", amount: 1500 },
+    ],
+  },
+};
+const QUOTE_BUSINESS_EMAIL = { key: "business_email", label: "Business Email (per year)", amount: 999 };
+const QUOTE_URGENT_RATE = 0.10;
+const QUOTE_SITE_TYPES = [
+  ["static", "Static website", "Standard pages — the Starter website."],
+  ["dynamic", "Dynamic website", "Custom pages, modules and content management."],
+  ["ecommerce", "E-commerce", "Online store with cart, checkout and payments."],
+  ["custom", "Custom build", "Built from scratch to the client's exact scope."],
+];
+const QUOTE_TECHS = ["React", "HTML-CSS or WordPress", "PHP", ".NET", "No Preference"];
+const QUOTE_STEP_LABELS = ["Service", "Type", "Technology", "Add-ons", "Urgency", "Client", "Summary"];
+const QUOTE_DISCLAIMER = "This is an AllBee partner network's estimated quotation. Final pricing is confirmed by the ALLBEE sales team after scope review.";
+const QUOTE_SERVICE_LABEL = { website: "Website Development", marketing: "Digital Marketing", course: "Course Admission" };
+
+async function downloadQuotePdf(q, meRow) {
+  try {
+    const jspdfMod = await import(/* @vite-ignore */ EXPORT_CDN.jspdf);
+    const jsPDF = jspdfMod.jsPDF || jspdfMod.default;
+    const autoTable = (await import(/* @vite-ignore */ EXPORT_CDN.autotable)).default;
+    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+    const inr = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN");
+    doc.setFillColor(46, 59, 143); doc.rect(0, 0, W, 92, "F");
+    doc.setFillColor(214, 168, 56); doc.rect(0, 92, W, 4, "F");
+    doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(21); doc.text("ALLBEE SOLUTIONS", 40, 46);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.text("Quotation", 40, 66);
+    doc.setFontSize(9); doc.setTextColor(215, 222, 255);
+    doc.text(`No: ${q.quoteNo || ""}`, 40, 80);
+    doc.text(`Date: ${q.createdAt ? fmtDate(new Date(q.createdAt)) : fmtDate(new Date())}`, W - 250, 80);
+    doc.setDrawColor(230, 234, 242);
+    let y = 120;
+    doc.setFontSize(10); doc.setTextColor(46, 59, 143); doc.setFont("helvetica", "bold"); doc.text("Prepared for", 40, y);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(22, 26, 32); doc.setFontSize(10.5);
+    doc.text(q.clientName || "Client", 40, y + 16);
+    let detailY = y + 16;
+    if (q.business) { detailY += 13; doc.setTextColor(98, 108, 122); doc.text(q.business, 40, detailY); }
+    if (q.contact) { detailY += 13; doc.text(q.contact, 40, detailY); }
+    doc.setTextColor(98, 108, 122); doc.setFontSize(9.5);
+    doc.text(`Prepared by ${meRow?.name || "APN Partner"} (${meRow?.apnId || ""})`, W - 240, y + 16, { align: "right" });
+    doc.text(QUOTE_SERVICE_LABEL[q.service] || q.service || "", W - 240, y + 30, { align: "right" });
+    if (q.requirements) {
+      doc.setFontSize(9); doc.setTextColor(98, 108, 122);
+      const lines = doc.splitTextToSize(`Scope: ${q.requirements}`, W - 80 - 258);
+      doc.text(lines, 258, y + 2);
+      doc.line(40, y + 2 + lines.length * 11, W - 40, y + 2 + lines.length * 11);
+    } else {
+      doc.line(40, y + 2, W - 40, y + 2);
+    }
+    let startY = detailY + 26;
+    autoTable(doc, {
+      startY,
+      head: [["Item", "Amount"]],
+      body: (q.items || []).map((it) => [it.label || "", it.amount == null ? "To be confirmed (scope review)" : inr(it.amount)]),
+      theme: "grid",
+      styles: { fontSize: 10, cellPadding: 7, textColor: [22, 26, 32] },
+      headStyles: { fillColor: [46, 59, 143], textColor: 255, fontStyle: "bold", halign: "left" },
+      columnStyles: { 1: { halign: "right" } },
+      margin: { left: 40, right: 40 },
+    });
+    let tailY = doc.lastAutoTable.finalY + 14;
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(22, 26, 32);
+    doc.text("Subtotal", W - 250, tailY);
+    doc.text(inr(q.subtotal ?? (q.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)), W - 40, tailY, { align: "right" });
+    if (q.urgent) { tailY += 16; doc.text("Urgent delivery surcharge (+10%)", W - 250, tailY); doc.text(inr(Math.round((q.subtotal || 0) * QUOTE_URGENT_RATE)), W - 40, tailY, { align: "right" }); }
+    tailY += 18;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text("Total", W - 250, tailY);
+    doc.text(inr(q.total || 0), W - 40, tailY, { align: "right" });
+    tailY += 34;
+    doc.setDrawColor(230, 234, 242); doc.line(40, tailY, W - 40, tailY);
+    tailY += 18;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("Payment terms", 40, tailY);
+    tailY += 15;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(98, 108, 122);
+    doc.text("50% advance at project start, 50% on delivery.", 40, tailY);
+    tailY += 26;
+    doc.setFontSize(9); doc.setTextColor(98, 108, 122);
+    const disc = doc.splitTextToSize(QUOTE_DISCLAIMER, W - 80);
+    doc.text(disc, 40, tailY);
+    tailY += disc.length * 12 + 12;
+    doc.setFontSize(8.5); doc.text("ALLBEE SOLUTIONS · Generated by the APN quotation assistant.", 40, tailY);
+    doc.save(`allbee-quotation-${(q.clientName || "client").replace(/[^\w-]+/g, "-").slice(0, 24)}-${todayISO()}.pdf`);
+  } catch (e) { console.error(e); emitToast("Couldn't build the PDF file — check your connection and try again.", "error"); }
+}
+
+function APNQuoteWizard({ meRow, onSave, onClose, go }) {
+  const [step, setStep] = useState(0);
+  const [service, setService] = useState(null);
+  const [price, setPrice] = useState(null);
+  const [priceBusy, setPriceBusy] = useState(false);
+  const [siteType, setSiteType] = useState(null);
+  const [tech, setTech] = useState(null);
+  const [addons, setAddons] = useState([]);
+  const [urgent, setUrgent] = useState(null);
+  const [clientName, setClientName] = useState("");
+  const [business, setBusiness] = useState("");
+  const [contact, setContact] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(null);
+  const isWeb = service === "website";
+  const stepNow = () => {
+    if (!isWeb && step >= 1) {
+      const order = [0, 3, 4, 5, 6];
+      const idx = order.indexOf(step);
+      return order[Math.max(0, idx - 1)];
+    }
+    return Math.max(0, step - 1);
+  };
+  const stepNext = () => {
+    if (step === 2 && !isWeb) { setStep(3); return; }
+    setStep((s) => Math.min(6, s + 1));
+  };
+  const chooseService = (key) => {
+    setService(key); setAddons([]); setSiteType(null); setTech(null); setDone(null);
+    setPriceBusy(true);
+    supabase.rpc("knowledge_get_pricing", { p_service: key }).then(({ data, error }) => {
+      setPrice(error || !data ? QUOTE_CATALOG[key] : { base: Number(data.base) || 0, baseLabel: data.baseLabel || QUOTE_CATALOG[key].baseLabel, options: (data.options && data.options.length ? data.options : QUOTE_CATALOG[key].options) });
+      setPriceBusy(false);
+    });
+    setStep(key === "website" ? 1 : 3);
+  };
+  const optOf = (k) => (price?.options || []).find((o) => o.key === k);
+  const itemId = () => `qi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const items = (() => {
+    if (!service || !price) return [];
+    const lines = [{ id: itemId(), label: price.baseLabel || QUOTE_SERVICE_LABEL[service], amount: Number(price.base) || 0 }];
+    if (isWeb) {
+      if (siteType === "ecommerce" && optOf("ecommerce")) lines.push({ id: itemId(), label: optOf("ecommerce").label, amount: Number(optOf("ecommerce").amount) || 0 });
+      if (siteType === "dynamic") lines.push({ id: itemId(), label: "Dynamic website build (modules and content)", amount: null });
+      if (siteType === "custom") lines.push({ id: itemId(), label: "Custom build engineering", amount: null });
+      if (addons.includes("business_email")) lines.push({ id: itemId(), label: QUOTE_BUSINESS_EMAIL.label, amount: QUOTE_BUSINESS_EMAIL.amount });
+      if (addons.includes("source_code")) lines.push({ id: itemId(), label: "Source code handover", amount: null });
+    }
+    for (const k of addons) { const o = optOf(k); if (o) lines.push({ id: itemId(), label: o.label, amount: Number(o.amount) || 0 }); }
+    return lines;
+  })();
+  const subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+  const surcharge = urgent ? round2(subtotal * QUOTE_URGENT_RATE) : 0;
+  const total = round2(subtotal + surcharge);
+  const addonLabel = (k) => k === "business_email" ? "Business Email (per year)" : k === "source_code" ? "Source code handover" : (optOf(k)?.label || k);
+  const requirements = [QUOTE_SERVICE_LABEL[service], siteType ? (QUOTE_SITE_TYPES.find(([k2]) => k2 === siteType) || [])[1] : null, tech && tech !== "No Preference" ? `Tech: ${tech}` : null, addons.length ? addons.map(addonLabel).join(", ") : null, urgent ? "Urgent delivery" : null].filter(Boolean).join(" · ");
+  const toggleAddon = (k) => setAddons((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
+  const startOver = () => { setService(null); setPrice(null); setSiteType(null); setTech(null); setAddons([]); setUrgent(null); setClientName(""); setBusiness(""); setContact(""); setDone(null); setStep(0); };
+  const saveQuote = (status) => {
+    if (!clientName.trim()) { emitToast("Add the client's name to save the quotation.", "error"); return; }
+    setSaving(true);
+    const id = uid();
+    const qq = {
+      id, partnerId: meRow.id, partnerName: meRow.name,
+      clientName: clientName.trim(), business: business.trim(), contact: contact.trim(),
+      service, siteType, tech: tech && tech !== "No Preference" ? tech : "", urgent: !!urgent,
+      requirements, items, subtotal, total,
+      quoteNo: "QT" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + id.slice(0, 4).toUpperCase(),
+      status, createdAt: Date.now(),
+    };
+    onSave(qq, status);
+    setSaving(false);
+    setDone(qq);
+    setStep(7);
+  };
+  const chip = (active, onClick, label, sub) => (
+    <button type="button" className="apn-rowcard" style={{ textAlign: "left", cursor: "pointer", borderColor: active ? "var(--primary)" : "var(--border)", background: active ? "var(--primary-soft)" : "var(--card)", opacity: 1 }} onClick={onClick}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontWeight: 700, flex: 1 }}>{label}</span>
+        {active && <Check size={16} color="var(--primary)" />}
+      </div>
+      {sub && <div className="hint-line" style={{ marginTop: 4, fontSize: 12 }}>{sub}</div>}
+    </button>
+  );
+  const canContinue = step === 0 ? !!service : step === 1 ? !!siteType : step === 2 ? !!tech : step === 3 ? true : step === 4 ? urgent != null : step === 5 ? true : true;
+  return (
+    <Modal title="Generate Quotation" onClose={onClose}
+      footer={step === 7 ? <><button className="btn" onClick={onClose}>Done</button></>
+        : <><button className="btn" onClick={() => (step === 0 ? onClose() : setStep(stepNow()))} disabled={saving}>{step === 0 ? "Cancel" : "Back"}</button><button className="btn" onClick={startOver} disabled={saving}><RotateCcw size={14} />Start over</button><span className="spacer" />{step < 6 && <button className="btn primary" onClick={stepNext} disabled={!canContinue || saving}>Continue</button>}</>}>
+      <div style={{ display: "flex", gap: 5, marginBottom: 16 }}>
+        {QUOTE_STEP_LABELS.map((l, i) => <i key={l} title={l} style={{ height: 5, flex: 1, borderRadius: 3, background: i <= step ? "var(--primary)" : "var(--border)", transition: "background .2s" }} />)}
+      </div>
+      <div className="hint-line" style={{ margin: "-8px 0 12px" }}>Step {Math.min(step + 1, 7)} of 7 — {QUOTE_STEP_LABELS[Math.min(step, 6)]}</div>
+
+      {step === 0 && <>
+        <div style={{ display: "grid", gap: 10 }}>
+          {APN_SERVICES.map(([k, l]) => chip(service === k, () => chooseService(k), l, k === "website" ? "Business websites and landing pages" : k === "marketing" ? "Monthly retainer for ads, content and social media" : "Course admission and training programs"))}
+        </div>
+        {priceBusy && <div className="hint-line" style={{ marginTop: 10 }}>Loading official pricing…</div>}
+      </>}
+
+      {step === 1 && <>
+        <div style={{ display: "grid", gap: 10 }}>
+          {QUOTE_SITE_TYPES.map(([k, l, d]) => chip(siteType === k, () => setSiteType(k), l, d))}
+        </div>
+      </>}
+
+      {step === 2 && <>
+        <div className="hint-line" style={{ marginBottom: 10 }}>Which technology does the client prefer? {"No Preference"} means ALLBEE picks the best fit for the scope.</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {QUOTE_TECHS.map((t) => <button key={t} type="button" className="preset" style={tech === t ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => setTech(t)}>{t}</button>)}
+        </div>
+      </>}
+
+      {step === 3 && <>
+        <div className="hint-line" style={{ marginBottom: 10 }}>Select any add-ons required — you can edit every line in the summary.</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {(price?.options || []).map((o) => <button key={o.key} type="button" className="preset" style={addons.includes(o.key) ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => toggleAddon(o.key)}>+ {o.label} (₹{(Number(o.amount) || 0).toLocaleString("en-IN")})</button>)}
+          {isWeb && <button type="button" className="preset" style={addons.includes("business_email") ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => toggleAddon("business_email")}>+ {QUOTE_BUSINESS_EMAIL.label} (₹{QUOTE_BUSINESS_EMAIL.amount})</button>}
+          {isWeb && <button type="button" className="preset" style={addons.includes("source_code") ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => toggleAddon("source_code")}>+ Source code handover (quote on request)</button>}
+        </div>
+      </>}
+
+      {step === 4 && <>
+        <div className="hint-line" style={{ marginBottom: 10 }}>Does the client need faster delivery? Urgent delivery adds a 10% surcharge to the quoted amount.</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {chip(urgent === false, () => setUrgent(false), "Normal delivery", "Standard timeline, no surcharge")}
+          {chip(urgent === true, () => setUrgent(true), `Urgent delivery (+10%)`, "Priority scheduling — quoted total will include the surcharge")}
+        </div>
+      </>}
+
+      {step === 5 && <>
+        <Field label="Client name" required><input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Person or business" autoFocus /></Field>
+        <div className="grid2">
+          <Field label="Business name (optional)"><input className="input" value={business} onChange={(e) => setBusiness(e.target.value)} placeholder="Business / company" /></Field>
+          <Field label="Phone or email (optional)"><input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="+91 … or name@email" /></Field>
+        </div>
+      </>}
+
+      {step === 6 && <>
+        <div className="calc-box" style={{ marginBottom: 12 }}>
+          <div className="hint-line" style={{ marginBottom: 6 }}>{requirements}</div>
+          {items.map((it) => (
+            <div key={it.id} className="calc-row"><span>{it.label}</span><b className="mono">{it.amount == null ? "Quote on request" : money(it.amount)}</b></div>
+          ))}
+          <div className="calc-row" style={{ borderTop: "1px solid var(--border)", marginTop: 6, paddingTop: 6 }}><span>Subtotal</span><b className="mono">{money(subtotal)}</b></div>
+          {urgent && <div className="calc-row"><span>Urgent delivery surcharge (+10%)</span><b className="mono">{money(surcharge)}</b></div>}
+          <div className="calc-row calc-total" style={{ fontSize: 16 }}><span>Total</span><b className="mono">{money(total)}</b></div>
+        </div>
+        <div className="hint-line" style={{ fontSize: 12, lineHeight: 1.55 }}>{QUOTE_DISCLAIMER} Amounts marked “Quote on request” are excluded from the total and confirmed after scope review.</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          <button className="btn sm" onClick={() => saveQuote("Draft")} disabled={saving}><Save size={13} />Save draft</button>
+          <button className="btn sm primary" onClick={() => saveQuote("Sent for approval")} disabled={saving}><Send size={13} />{saving ? "Saving…" : "Send for approval"}</button>
+        </div>
+      </>}
+
+      {step === 7 && done && <>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 4 }}>
+          <div className="av" style={{ background: "var(--pos-soft, rgba(22,163,74,.14))", color: "var(--pos)", width: 34, height: 34, fontSize: 15 }}><Check size={17} /></div>
+          <div>
+            <div style={{ fontWeight: 800 }}>Quotation {done.quoteNo}</div>
+            <div className="hint-line">Saved to My Quotations as {done.status}. {done.status === "Draft" ? "Send it for approval when you're ready." : "It's now with the ALLBEE team for review."}</div>
+          </div>
+        </div>
+        <div className="calc-box" style={{ marginTop: 12, marginBottom: 14 }}>
+          {done.items.map((it) => <div key={it.id} className="calc-row"><span>{it.label}</span><b className="mono">{it.amount == null ? "Quote on request" : money(it.amount)}</b></div>)}
+          <div className="calc-row calc-total" style={{ fontSize: 15 }}><span>{done.clientName} — total</span><b className="mono">{money(done.total)}</b></div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn" onClick={() => downloadQuotePdf(done, meRow)}><Download size={14} />Download PDF</button>
+          <button className="btn" onClick={() => go?.("quotations")}><FileText size={14} />My quotations</button>
+        </div>
+      </>}
+    </Modal>
+  );
 }
 function APNQuoteForm({ meRow, initial, onSave, onClose }) {
   const [service, setService] = useState(initial?.service || "website");
@@ -10602,7 +11100,7 @@ function APNQuotations({ db, meRow, pid, openModal }) {
             </div>
             {q.tieUp && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}><Handshake size={12} style={{ verticalAlign: -2 }} /> Tie-up: {q.tieUp}</div>}
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-              <button className="btn sm" onClick={() => apnPrintQuote(q, meRow)}><Download size={13} />PDF</button>
+              <button className="btn sm" onClick={() => downloadQuotePdf(q, meRow)}><Download size={13} />PDF</button>
               {q.status !== "Approved" && <button className="btn sm" onClick={() => openModal({ type: "apnQuote", initial: q })}><Pencil size={13} />Edit</button>}
             </div>
           </div>
@@ -11583,7 +12081,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
       case "documents": return <APNDocuments db={db} />;
-      case "ai": return <APNAI meRow={meRow} go={go} />;
+      case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
       case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
