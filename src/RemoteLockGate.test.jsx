@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { RemoteLockGate } from "./AllbeeApp.jsx";
+import { RemoteLockGate, FounderTap } from "./AllbeeApp.jsx";
 
 // The founder lockdown gate, in PAUSE_TEST mode: it must render the lockdown
 // UI instantly with ZERO network calls, replace the wrapped app, drain local
@@ -17,7 +17,7 @@ const tapLogo = async (n) => {
     await new Promise((r) => setTimeout(r, 280));
   }
 };
-const countdownShown = () => document.querySelector(".founder-count .founder-chip") || null;
+const countdownShown = () => document.querySelector(".founder-tap .founder-chip") || null;
 
 beforeEach(() => { vi.useRealTimers(); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -59,6 +59,45 @@ describe("RemoteLockGate (pause mode)", () => {
 });
 
 describe("RemoteLockGate — hidden logo-tap countdown", () => {
+  it("sequence works from a logo inside the wrapped app shell (real app entry, gate unlocked)", async () => {
+    // The production failure: the handler was only on the gate card, never on
+    // the shell logo the user actually sees. Here the gate is LIVE and reports
+    // unlocked, so the real app shell (with its own logo) passes through — the
+    // sequence must open the authorization screen from THAT logo.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ locked: false }),
+    }));
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RemoteLockGate isDark={false} signOut={signOut}>
+        <div className="brand" role="button" aria-label="Go to Home Dashboard">
+          <FounderTap className="brand-logo" src="/allbee-icon.png" alt="ALLBEE" style={{ height: 34 }} />
+          <div><h1>ALLBEE</h1><p>Solutions</p></div>
+        </div>
+      </RemoteLockGate>
+    );
+    // gate must pass the app shell through once the status poll reports unlocked
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /go to home dashboard/i })).toBeTruthy();
+    });
+    await tapLogo(17);
+    expect(countdownShown()?.textContent).toBe("3");
+    await tapLogo(1);
+    expect(countdownShown()?.textContent).toBe("2");
+    await tapLogo(1);
+    expect(countdownShown()?.textContent).toBe("1");
+    await tapLogo(1);
+    expect(countdownShown()?.dataset.countdown).toBe("armed");
+    await tapLogo(1);
+    // 21st tap: the existing emergency authorization screen replaces the app shell
+    await waitFor(() => {
+      expect(screen.getByText(/authorization code/i)).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: /go to home dashboard/i })).toBeNull();
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+  }, 20000);
+
   it("1-16 taps: no countdown is visible and the logo stays a plain image", async () => {
     render(<RemoteLockGate isDark={false} pause />);
     await tapLogo(16);

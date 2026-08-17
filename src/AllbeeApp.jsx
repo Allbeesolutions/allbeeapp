@@ -224,6 +224,33 @@ const LOCKDOWN_PAUSE_TEST = import.meta.env.VITE_PAUSE_TEST === "1";
 // frontend — this only reveals the same server-verified gateway.
 const FOUNDER_TAP_TIMEOUT_MS = 2500;   // inactivity resets the sequence
 
+// The founder tap sequence is hosted in RemoteLockGate and shared with every
+// logo in the app shell via this context, so the sequence works from the logo
+// the user actually sees — login, sidebar, client portal, APN or the gate card.
+const FounderTapContext = React.createContext(null);
+
+// Wraps a logo element with the shared founder tap handler + countdown chip.
+// One centralized handler — no competing per-surface listeners. The chip is
+// absolutely positioned so it never shifts the layout around the logo.
+export function FounderTap({ className, src, alt, style, onClick, children, ...rest }) {
+  const ctx = React.useContext(FounderTapContext);
+  if (!ctx) return <img className={className} src={src} alt={alt} style={style} onClick={onClick} {...rest} />;
+  return (
+    <span className="founder-tap">
+      <img className={className} src={src} alt={alt} style={style} onClick={(e) => { onClick?.(e); ctx.tap(); }} {...rest} />
+      {ctx.count >= 17 && (
+        <span
+          className={`founder-chip${ctx.anim ? " shift" : ""}`}
+          data-countdown={ctx.armed ? "armed" : String(20 - ctx.count)}
+          aria-live="polite"
+          role="status"
+        >{ctx.armed ? "✓" : 20 - ctx.count}</span>
+      )}
+      {children}
+    </span>
+  );
+}
+
 /* ── roles & access (Phase 3 — five levels) ───────────────────────────────
    superadmin (Haji & Alim) · admin · accountant · staff · intern.
    The money (Share & accounts, Withdrawals) is superadmin + accountant only;
@@ -1501,9 +1528,9 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .founder-gate-btn { justify-content:center; min-height:44px; width:100%; }
 .founder-gate-hint { font-size:11.5px; margin-top:2px; }
 /* hidden logo-tap entrance to the founder authorization flow (taps 17-20) */
-.founder-count { position:relative; height:18px; margin:0 auto; width:100%; overflow:visible; }
-.founder-chip {
-  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.8);
+.founder-tap { position:relative; display:inline-flex; align-items:center; justify-content:center; }
+.founder-tap .founder-chip {
+  position:absolute; top:-4px; left:50%; transform:translateX(-50%) scale(.8);
   display:inline-flex; align-items:center; justify-content:center;
   min-width:22px; height:22px; padding:0 6px; border-radius:999px; box-sizing:border-box;
   background:color-mix(in srgb, var(--muted) 12%, transparent);
@@ -1511,9 +1538,9 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
   color:var(--muted); font-size:12.5px; font-weight:800; line-height:1;
   opacity:0; pointer-events:none; transition:opacity .14s linear, transform .2s cubic-bezier(.2,.7,.3,1);
 }
-.founder-chip.shift { opacity:1; transform:translate(-50%,-50%) scale(1); }
-.founder-chip[data-countdown="armed"] { color:var(--accent, var(--pos)); border-color:color-mix(in srgb, var(--pos) 45%, transparent); background:color-mix(in srgb, var(--pos) 14%, transparent); }
-.founder-count:has(.founder-chip[data-countdown="armed"])::after {
+.founder-tap .founder-chip.shift { opacity:1; transform:translateX(-50%) scale(1); }
+.founder-tap .founder-chip[data-countdown="armed"] { color:var(--accent, var(--pos)); border-color:color-mix(in srgb, var(--pos) 45%, transparent); background:color-mix(in srgb, var(--pos) 14%, transparent); }
+.founder-tap:has(.founder-chip[data-countdown="armed"])::after {
   content:""; position:absolute; left:50%; top:50%; width:40px; height:40px;
   transform:translate(-50%,-50%) scale(.55); border-radius:50%; opacity:.34;
   border:1.5px solid color-mix(in srgb, var(--pos) 70%, transparent);
@@ -5392,7 +5419,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
       <div className="lock-card gate-card">
-        <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
+        <FounderTap className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
         <h1>Complete your profile</h1>
         <p>A few details before you start — your team uses these to reach you.</p>
         <div className="gate-body">
@@ -5649,7 +5676,7 @@ function TermsGate({ agreements = [], onAccept, onSignOut, isDark }) {
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
       <div className="lock-card gate-card">
-        <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
+        <FounderTap className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
         <h1>Terms &amp; conditions</h1>
         <p>{multi ? "Please read and accept both agreements to continue." : "Please read and accept to continue."}</p>
         {list.map((a) => (
@@ -5851,7 +5878,7 @@ function PasswordRecovery({ isDark, onComplete }) {
   return <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
     <style>{CSS}</style><ToastHost />
     <div className="lock-card">
-      <img className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
+      <FounderTap className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
       {done ? <><div className="lock-badge" style={{ background: "var(--pos-soft)", color: "var(--pos)" }}><Check size={28} /></div><h1>Password updated</h1><p>Your password reset was successful. You can continue using ALLBEE.</p><button className="btn primary" onClick={() => onComplete?.()}>Continue</button></>
         : <><h1>Set a new password</h1><p>Choose a new password for your ALLBEE account.</p><PasswordField label="New password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="At least 6 characters" /><PasswordField label="Confirm password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" placeholder="Repeat your password" />{err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}<button className="btn primary" style={{ width: "100%", marginTop: 12 }} onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <KeyRound size={16} />}Update password</button></>}
     </div>
@@ -6135,7 +6162,7 @@ function Lock({ isDark, setDark }) {
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
       <div className="lock-card">
-        <img className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
+        <FounderTap className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
         <p>{mode === "signin" ? (entry === "choose" ? "How would you like to sign in?" : (loginAs === "client" ? "Client sign in" : loginAs === "partner" ? "APN partner sign in" : "Employee sign in")) : "Create your account"}</p>
 
         {mode === "signin" && entry === "choose" ? (
@@ -6247,7 +6274,7 @@ function NamePicker({ isDark, onChoose }) {
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style>
       <div className="lock-card">
-        <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 56 }} />
+        <FounderTap className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 56 }} />
         <h1>One quick thing</h1>
         <p>Which partner is this account?</p>
         <div className="who-grid">
@@ -7815,7 +7842,7 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
       <style>{CSS}</style><ToastHost />
       <GlobalPullToRefresh onRefresh={reload} />
       <header className="topbar" style={{ position: "sticky", top: 0 }}>
-        <img className="brand-logo" src={co.logoUrl || LOGO_ICON} alt={co.name || "ALLBEE"} style={{ height: 30 }} />
+        <FounderTap className="brand-logo" src={co.logoUrl || LOGO_ICON} alt={co.name || "ALLBEE"} style={{ height: 30 }} />
         <div><h2 style={{ fontSize: 16 }}>{co.name || "ALLBEE Solutions"}</h2><div className="topbar-sub">Client portal</div></div>
         <span className="spacer" style={{ flex: 1 }} />
         <PortalRefreshButton onRefresh={reload} />
@@ -12095,7 +12122,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
       <header className="apn-top">
-        <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><img className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
+        <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><FounderTap className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={refreshPortal} />
         <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
@@ -13807,10 +13834,10 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
   const [ok, setOk] = useState(false);
   const [reveal, setReveal] = useState(false);
   const signedOutRef = useRef(false);
-  // Hidden logo-tap entrance to the founder authorization flow. Pure frontend
-  // state machine — the server-side code check remains the real security
-  // boundary. Taps 1-16 idle silently; 17/18/19 show 3/2/1; 20 arms; 21 opens
-  // the existing authorization screen; 2500ms of inactivity resets.
+  // Hidden logo-tap entrance to the founder authorization flow — shared with
+  // every shell logo via FounderTapContext. Server-side code check remains the
+  // real security boundary. Taps 1-16 idle silently; 17/18/19 show 3/2/1;
+  // 20 arms; 21 opens the existing authorization screen; 2500ms inactivity resets.
   const [tapCount, setTapCount] = useState(0);
   const [armed, setArmed] = useState(false);
   const [countAnim, setCountAnim] = useState(true);
@@ -13835,7 +13862,7 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
     }, FOUNDER_TAP_TIMEOUT_MS);
     return () => { if (resetTimerRef.current) clearTimeout(resetTimerRef.current); };
   }, [tapCount]);
-  const onLogoTap = useCallback((e) => {
+  const tap = useCallback(() => {
     // De-duplicate: browsers can fire repeat pointer/click events around a
     // single physical tap (esp. touch) — require a real gap between taps.
     const now = Date.now();
@@ -13843,12 +13870,12 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
     lastTapRef.current = now;
     setCountAnim(!reduceMotionRef.current);
     setTapCount((c) => {
-      const next = c + 1;
       if (c >= 20) { setArmed(false); setStatus("locked"); return 0; }
       if (c === 19) { setArmed(true); }
-      return next;
+      return c + 1;
     });
   }, []);
+  const tapValue = useMemo(() => ({ tap, count: tapCount, armed, anim: countAnim }), [tap, tapCount, armed, countAnim]);
   const endpoint = `${SUPABASE_URL}/functions/v1/founder-lockdown`;
 
   const poll = useCallback(async () => {
@@ -13883,8 +13910,6 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
     }
   }, [status, signOut]);
 
-  if (status === "unlocked") return children || null;
-
   const authorize = async () => {
     const candidate = code.trim();
     if (!candidate) { setError("Enter the authorization code."); return; }
@@ -13907,58 +13932,52 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
 
   const card = (node) => (
     <div className="lock-card founder-gate-card">
-      <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} onClick={onLogoTap} />
-      {tapCount >= 17 && (
-        <div className="founder-count">
-          <span
-            className={`founder-chip${countAnim ? " shift" : ""}`}
-            data-countdown={armed ? "armed" : String(20 - tapCount)}
-            aria-live="polite"
-            role="status"
-          >{armed ? "✓" : 20 - tapCount}</span>
-        </div>
-      )}
+      <FounderTap className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
       <h1>ALLBEE</h1>
       {node}
     </div>
   );
 
   return (
-    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <style>{CSS}</style><ToastHost />
-      {status === "checking" && card(
-        <div className="loading-label" style={{ justifyContent: "center" }}><RefreshCw size={15} className="spin" />Checking services…</div>
+    <FounderTapContext.Provider value={tapValue}>
+      {status === "unlocked" ? (children || null) : (
+        <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+          <style>{CSS}</style><ToastHost />
+          {status === "checking" && card(
+            <div className="loading-label" style={{ justifyContent: "center" }}><RefreshCw size={15} className="spin" />Checking services…</div>
+          )}
+          {status === "offline" && card(
+            <>
+              <div className="founder-gate-status err"><CloudOff size={15} /> ALLBEE services could not be reached</div>
+              <p className="hint-line">Check your connection. The app will keep retrying automatically.</p>
+              <button className="btn founder-gate-btn" onClick={poll}><RefreshCw size={15} />Try again now</button>
+              {import.meta.env.MODE === "development" && <button className="linkbtn" onClick={() => setStatus("unlocked")}>Development build — skip the check</button>}
+            </>
+          )}
+          {status === "locked" && card(
+            <>
+              <p className="founder-gate-sub">Our services are temporarily unavailable.</p>
+              <div className="founder-gate-status active"><ShieldAlert size={15} /> Founder-controlled maintenance in progress</div>
+              <label className="founder-gate-label" htmlFor="founder-code">Authorization code</label>
+              <div className="founder-code-row">
+                <input id="founder-code" className="input" type={reveal ? "text" : "password"} value={code}
+                  onChange={(e) => setCode(e.target.value)} placeholder="Enter code" autoComplete="off" autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") authorize(); }} />
+                <button className="iconbtn" type="button" onClick={() => setReveal((v) => !v)} aria-label={reveal ? "Hide code" : "Show code"}>
+                  {reveal ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+              <button className="btn primary founder-gate-btn" disabled={busy || !code.trim()} onClick={authorize}>
+                {busy ? <RefreshCw size={15} className="spin" /> : <ShieldCheck size={15} />}{busy ? "Verifying…" : "Authorize"}
+              </button>
+              {error && <div className="auth-msg err"><AlertTriangle size={14} /> {error}</div>}
+              {ok && <div className="auth-msg ok"><CheckCircle2 size={14} /> Authorized. Services restore when the founder completes protocol #301.</div>}
+              <p className="hint-line founder-gate-hint">Expected for authorized personnel only. If you are not authorized, please close this window.</p>
+            </>
+          )}
+        </div>
       )}
-      {status === "offline" && card(
-        <>
-          <div className="founder-gate-status err"><CloudOff size={15} /> ALLBEE services could not be reached</div>
-          <p className="hint-line">Check your connection. The app will keep retrying automatically.</p>
-          <button className="btn founder-gate-btn" onClick={poll}><RefreshCw size={15} />Try again now</button>
-          {import.meta.env.MODE === "development" && <button className="linkbtn" onClick={() => setStatus("unlocked")}>Development build — skip the check</button>}
-        </>
-      )}
-      {status === "locked" && card(
-        <>
-          <p className="founder-gate-sub">Our services are temporarily unavailable.</p>
-          <div className="founder-gate-status active"><ShieldAlert size={15} /> Founder-controlled maintenance in progress</div>
-          <label className="founder-gate-label" htmlFor="founder-code">Authorization code</label>
-          <div className="founder-code-row">
-            <input id="founder-code" className="input" type={reveal ? "text" : "password"} value={code}
-              onChange={(e) => setCode(e.target.value)} placeholder="Enter code" autoComplete="off" autoFocus
-              onKeyDown={(e) => { if (e.key === "Enter") authorize(); }} />
-            <button className="iconbtn" type="button" onClick={() => setReveal((v) => !v)} aria-label={reveal ? "Hide code" : "Show code"}>
-              {reveal ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
-          </div>
-          <button className="btn primary founder-gate-btn" disabled={busy || !code.trim()} onClick={authorize}>
-            {busy ? <RefreshCw size={15} className="spin" /> : <ShieldCheck size={15} />}{busy ? "Verifying…" : "Authorize"}
-          </button>
-          {error && <div className="auth-msg err"><AlertTriangle size={14} /> {error}</div>}
-          {ok && <div className="auth-msg ok"><CheckCircle2 size={14} /> Authorized. Services restore when the founder completes protocol #301.</div>}
-          <p className="hint-line founder-gate-hint">Expected for authorized personnel only. If you are not authorized, please close this window.</p>
-        </>
-      )}
-    </div>
+    </FounderTapContext.Provider>
   );
 }
 
@@ -14822,7 +14841,7 @@ export default function App() {
           {menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />}
           <aside className="sidebar">
             <div className="brand" role="button" tabIndex={0} aria-label="Go to Home Dashboard" title="Go to Home Dashboard" onClick={() => go("dashboard")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("dashboard"); } }}>
-              <img className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
+              <FounderTap className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
               <div><h1>ALLBEE</h1><p>Solutions</p></div>
             </div>
             {favNav.length > 0 && <div className="nav-sec">Favorites</div>}
