@@ -11,7 +11,7 @@ import {
   Bug, ClipboardCheck, Image as ImageIcon, MapPin, Trophy, Target, PhoneCall, GaugeCircle, Gift, ArrowDownUp, MessageCircle, MoreVertical, Flame, FileCheck2,
   Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2, Headset, LifeBuoy,
 } from "lucide-react";
-import { supabase } from "./supabaseClient";
+import { supabase, SUPABASE_URL } from "./supabaseClient";
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALLBEE — Business management app for Haji & Alim (ALLBEE SOLUTIONS)
@@ -209,6 +209,15 @@ function activityForMutation(prev, next) {
 }
 const LOGO_FULL = "/allbee-logo.png";   // full lockup (monogram + wordmark)
 const LOGO_ICON = "/allbee-icon.png";   // square monogram
+
+// ── Founder Emergency Lockdown — go-live switch ────────────────────────────
+// Gate is LIVE by default in this repo. Hosted deployments keep it live too
+// UNLESS the Vercel env var VITE_FOUNDER_LOCKDOWN_QUIET is set to "true"
+// (used on the flagship domain while the launch PR is under review). Tests
+// pass pause (VITE_PAUSE_TEST=1) so the gate renders its lockdown UI
+// immediately with zero network.
+const FOUNDER_LOCKDOWN_LIVE = import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET !== "true";
+const LOCKDOWN_PAUSE_TEST = import.meta.env.VITE_PAUSE_TEST === "1";
 
 /* ── roles & access (Phase 3 — five levels) ───────────────────────────────
    superadmin (Haji & Alim) · admin · accountant · staff · intern.
@@ -1475,6 +1484,17 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .loading-screen { width:min(520px,calc(100% - 32px)); display:grid; gap:18px; }
 .loading-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; box-shadow:var(--shadow); }
 .loading-label { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:13px; font-weight:600; }
+/* founder emergency lockdown gate — replaces the whole app while locked */
+.founder-gate-card { text-align:center; gap:12px; animation:card-in .34s cubic-bezier(.2,.7,.3,1) both; }
+.founder-gate-sub { color:var(--muted); font-size:14px; margin:0; }
+.founder-gate-status { display:flex; align-items:center; justify-content:center; gap:7px; padding:9px 12px; border-radius:10px; font-size:13px; font-weight:700; }
+.founder-gate-status.active { color:var(--neg); background:color-mix(in srgb, var(--neg) 10%, transparent); border:1px solid color-mix(in srgb, var(--neg) 25%, transparent); }
+.founder-gate-status.err { color:var(--muted); background:var(--surface-2); border:1px solid var(--border); }
+.founder-gate-label { text-align:left; font-size:12.5px; font-weight:700; color:var(--muted); margin-top:4px; }
+.founder-code-row { display:flex; gap:8px; }
+.founder-code-row .input { flex:1; text-align:center; letter-spacing:3px; font-size:16px; min-height:44px; }
+.founder-gate-btn { justify-content:center; min-height:44px; width:100%; }
+.founder-gate-hint { font-size:11.5px; margin-top:2px; }
 /* GPU-friendly shimmer: a translating sheen pseudo-element (transform), never
    background-position — no layout work on iPhone. */
 .skeleton { display:block; position:relative; overflow:hidden; background:var(--surface-2); border-radius:8px; }
@@ -1636,7 +1656,12 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 /* logo */
 .brand-logo { height:30px; width:auto; display:block; }
 .brand-logo-button { display:inline-flex; align-items:center; border:0; padding:0; background:transparent; cursor:pointer; }
-.lock-logo { height:64px; width:auto; margin:0 auto 16px; display:block; }
+.lock-logo { height:64px; width:auto; margin:0 auto 16px; display:block; animation:lock-logo-in .45s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes lock-logo-in { from { opacity:0; transform:translateY(-5px) scale(.98); } to { opacity:1; transform:none; } }
+.lock-card .choose-stack button { animation:msg-in .26s cubic-bezier(.2,.7,.3,1) both; }
+.lock-card .choose-stack button:nth-child(1) { animation-delay:.04s; }
+.lock-card .choose-stack button:nth-child(2) { animation-delay:.09s; }
+.lock-card .choose-stack button:nth-child(3) { animation-delay:.14s; }
 .brand-mini { display:flex; align-items:center; gap:10px; padding:6px 8px 16px; }
 
 /* back link + detail header */
@@ -2969,9 +2994,12 @@ function BalanceDetail({ db, user, onClose, onFull }) {
    (Loaded via a variable URL so the bundler treats them as runtime-external.) */
 const EXPORT_CDN = {
   xlsx: "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs",
-  jspdf: "https://esm.sh/jspdf@2.5.2",
-  autotable: "https://esm.sh/jspdf-autotable@3.8.4",
 };
+// PDFs are built with the bundled jsPDF engine (a real PDF, not a print page).
+// Standard PDF fonts cover WinAnsi only, so rupee signs and non-Latin glyphs
+// are sanitized before drawing — deterministic on every device, no font bloat.
+const pdfSafe = (t) => String(t ?? "").replace(/₹/g, "Rs.").replace(/[\u2013\u2014\u2018\u2019\u201C\u201D\u2026]/g, (c) => ({ "\u2013": "-", "\u2014": "-", "\u2018": "'", "\u2019": "'", "\u201C": '"', "\u201D": '"', "\u2026": "..." }[c])).replace(/[^\x20-\x7E\xA0-\xFF]/g, "?").replace(/\s+/g, " ").trim();
+const loadPdfEngine = () => Promise.all([import("jspdf"), import("jspdf-autotable")]).then(([j, a]) => ({ jsPDF: j.jsPDF, autoTable: a.default }));
 async function exportRowsToExcel(filename, sheetName, columns, rows) {
   try {
     const mod = await import(/* @vite-ignore */ EXPORT_CDN.xlsx);
@@ -3010,15 +3038,13 @@ async function exportFullBackupXLSX(db) {
 }
 async function exportRowsToPDF(filename, title, subtitle, columns, rows) {
   try {
-    const jspdfMod = await import(/* @vite-ignore */ EXPORT_CDN.jspdf);
-    const jsPDF = jspdfMod.jsPDF || jspdfMod.default;
-    const autoTable = (await import(/* @vite-ignore */ EXPORT_CDN.autotable)).default;
+    const { jsPDF, autoTable } = await loadPdfEngine();
     const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-    doc.setFontSize(15); doc.text(title, 40, 40);
-    if (subtitle) { doc.setFontSize(10); doc.setTextColor(120); doc.text(subtitle, 40, 58); doc.setTextColor(0); }
+    doc.setFontSize(15); doc.text(pdfSafe(title), 40, 40);
+    if (subtitle) { doc.setFontSize(10); doc.setTextColor(120); doc.text(pdfSafe(subtitle), 40, 58); doc.setTextColor(0); }
     autoTable(doc, {
       head: [columns.map((c) => c.label)],
-      body: rows.map((r) => columns.map((c) => { const v = c.value(r); return v === "" || v == null ? "" : String(v); })),
+      body: rows.map((r) => columns.map((c) => { const v = c.value(r); return v === "" || v == null ? "" : pdfSafe(String(v)); })),
       startY: 72, styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
       headStyles: { fillColor: [16, 159, 142], textColor: 255 },
       alternateRowStyles: { fillColor: [244, 247, 249] },
@@ -5807,112 +5833,6 @@ function PasswordRecovery({ isDark, onComplete }) {
   </div>;
 }
 
-function WebSalesConsultant() {
-  const [open, setOpen] = useState(false);
-  const [sessionId, setSessionId] = useState(() => {
-    try { return localStorage.getItem("allbee-web-ai-session") || ""; } catch { return ""; }
-  });
-  const [payload, setPayload] = useState(null);
-  const [config, setConfig] = useState({ enabled: true, welcome_message: "Hi — I’m AllBee AI. I can help you explore the right business solution.", pricing_visibility: true });
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const endRef = useRef(null);
-  const inputRef = useRef(null);
-  const sessionRef = useRef(sessionId);
-  const referral = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    const hash = String(window.location.hash || "").split("?")[1] || "";
-    return new URLSearchParams(`${window.location.search.replace(/^\?/, "")}${hash ? `&${hash}` : ""}`).get("ref")?.trim().toUpperCase() || "";
-  }, []);
-  const messages = payload?.messages || [];
-  const state = payload?.state || {};
-  const proposalToken = state?.proposal?.public_token || "";
-  const estimate = payload?.estimate;
-  const summary = payload?.summary || {};
-  const completed = payload?.status === "completed";
-  const disabled = payload?.status === "disabled";
-  const progress = Number.isFinite(Number(summary.progress)) ? Number(summary.progress) : Math.min(100, Math.max(0, Math.round((Number(state.step || 0) / Math.max(1, Number(state.total_questions || 10))) * 100)));
-
-  const applyPayload = (data) => {
-    if (data && typeof data === "object") {
-      setPayload(data);
-      if (data.config) setConfig(data.config);
-      if (data.session_id) setSessionId(data.session_id);
-    }
-  };
-  const start = useCallback(async () => {
-    let id = sessionRef.current;
-    if (!id) { id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : uid(); sessionRef.current = id; setSessionId(id); }
-    setBusy(true); setError("");
-    try {
-      const { data, error: rpcError } = await supabase.rpc("web_ai_start", { p_session_id: id, p_ref: referral || null });
-      if (rpcError) throw new Error(rpcError.message);
-      applyPayload(data);
-      try { localStorage.setItem("allbee-web-ai-session", id); } catch { /* storage can be unavailable */ }
-    } catch (e) { setError(e.message || "The consultant is temporarily unavailable. Please contact the AllBee team."); }
-    finally { setBusy(false); }
-  }, [referral]);
-  useEffect(() => { if (open && !payload && config.enabled !== false) start(); }, [open, payload, config.enabled, start]);
-  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 80); }, [open, payload?.messages?.length]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length, busy]);
-  const send = async (value) => {
-    const text = String(value ?? draft).trim();
-    if (!text || busy || completed || !sessionId) return;
-    setDraft(""); setBusy(true); setError("");
-    try {
-      const { data, error: rpcError } = await supabase.rpc("web_ai_message", { p_session_id: sessionId, p_message: text, p_client_event_id: uid(), p_honeypot: "" });
-      if (rpcError) throw new Error(rpcError.message);
-      applyPayload(data);
-    } catch (e) { setError(e.message || "I couldn’t process that. Please try again."); }
-    finally { setBusy(false); }
-  };
-  const endConversation = async () => {
-    if (!sessionId || completed) return;
-    setBusy(true);
-    try { const { data, error: rpcError } = await supabase.rpc("web_ai_abandon", { p_session_id: sessionId }); if (rpcError) throw new Error(rpcError.message); applyPayload(data); }
-    catch (e) { setError(e.message || "Unable to end this conversation."); }
-    finally { setBusy(false); }
-  };
-  const estimateText = () => {
-    if (!estimate) return "Your estimate will appear here after we capture your requirements.";
-    if (estimate.known === false) return `${estimate.disclaimer || "A tailored estimate needs a technical discussion."} ${estimate.next_step || "Our team will follow up."}`;
-    return `${estimate.service_label || "Solution"}: ${money(estimate.estimated_cost)}${estimate.disclaimer ? `\n${estimate.disclaimer}` : ""}`;
-  };
-  const saveDraft = async () => {
-    try { await supabase.rpc("web_requirement_save_draft", { p_session_id: sessionId, p_draft: { payload, savedAt: new Date().toISOString() } }); localStorage.setItem("allbee-web-ai-draft", JSON.stringify({ sessionId, payload, savedAt: new Date().toISOString() })); emitToast("Conversation saved. You can resume this draft later.", "success"); }
-    catch { emitToast("This browser could not save the draft.", "error"); }
-  };
-  const shareEstimate = (channel) => {
-    const body = `AllBee AI estimate\n${estimateText()}\n\nWe’ll confirm the final scope after a technical discussion.`;
-    if (channel === "email") window.location.href = `mailto:${config.fallback_contact || ""}?subject=${encodeURIComponent("AllBee project estimate")}&body=${encodeURIComponent(body)}`;
-    if (channel === "whatsapp") window.open(`https://wa.me/?text=${encodeURIComponent(body)}`, "_blank", "noopener,noreferrer");
-  };
-  const downloadEstimate = () => {
-    const esc = (v) => String(v || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    const html = `<html><head><title>AllBee estimate</title><style>body{font:16px Arial;padding:40px;color:#161a20}h1{color:#2e3b8f}pre{white-space:pre-wrap;line-height:1.6}</style></head><body><h1>ALLBEE SOLUTIONS</h1><h2>Project estimate</h2><pre>${esc(estimateText())}</pre><p>Final pricing is confirmed after technical review.</p></body></html>`;
-    const blob = new Blob([html], { type: "text/html" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `allbee-estimate-${todayISO()}.html`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-  if (!config.enabled && !open) return null;
-  return <>
-    {!open && <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Talk to AllBee AI"><Sparkles size={18} /><span>Talk to AllBee AI</span></button>}
-    {open && <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI sales consultant">
-      <header className="web-ai-head"><div className="web-ai-avatar"><Sparkles size={18} /></div><div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>AllBee AI</div><div style={{ fontSize: 11, opacity: .82 }}>Business solution consultant</div></div><button className="iconbtn" style={{ color: "#fff", borderColor: "rgba(255,255,255,.35)" }} onClick={() => setOpen(false)} aria-label="Close AllBee AI"><X size={17} /></button></header>
-      <div className="web-ai-progress" aria-label={`Consultation progress ${progress}%`}><i style={{ width: `${progress}%` }} /></div>
-      <div className="web-ai-summary" aria-label="Live requirement summary"><div><span>Business</span><b>{summary.businessType || "Discovering…"}</b></div><div><span>Features</span><b>{Array.isArray(summary.selectedFeatures) ? summary.selectedFeatures.slice(0, 2).join(", ") || "Discovering…" : summary.selectedFeatures || "Discovering…"}</b></div><div><span>Package</span><b>{summary.recommendedPackage || "To be recommended"}</b></div><div><span>Timeline</span><b>{summary.estimatedTimeline || "To be confirmed"}</b></div>{summary.estimatedCost != null && <div><span>Estimate</span><b>{money(summary.estimatedCost)}</b></div>}<div><span>Progress</span><b>{progress}%</b></div></div>
-      <div className="web-ai-messages" aria-live="polite">
-        {!messages.length && !busy && <div className="web-ai-bubble assistant">{disabled ? "The website consultant is currently offline. Please use the contact options on this page and our team will help you." : config.welcome_message}</div>}
-        {messages.map((m, index) => <div key={`${m.id || index}-${m.created_at || ""}`} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "92%" }}><div className={`web-ai-bubble ${m.role === "user" ? "user" : "assistant"}`}>{m.content}</div><div className="web-ai-time" style={{ textAlign: m.role === "user" ? "right" : "left" }}>{m.created_at ? fmtDateTime(m.created_at) : "Now"}{m.role === "assistant" && m.metadata?.quick_replies?.length > 0 && !completed && <div className="web-ai-quick">{m.metadata.quick_replies.map((reply) => <button key={reply} onClick={() => send(reply)} disabled={busy}>{reply}</button>)}</div>}</div></div>)}
-        {busy && <div className="web-ai-bubble assistant web-ai-typing" aria-label="AllBee AI is typing"><i /><i /><i /></div>}
-        {error && <div className="auth-msg err" role="alert"><AlertTriangle size={14} />{error}</div>}
-        {completed && <div className="web-ai-estimate"><div className="hint-line">Estimate</div><strong>{estimate?.known === false ? "Custom consultation" : money(estimate?.estimated_cost)}</strong><div style={{ marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.45 }}>{estimateText()}</div><div className="web-ai-actions">{proposalToken && <button className="btn sm primary" onClick={() => window.open(`${window.location.origin}${window.location.pathname}#/proposal/${proposalToken}`, "_blank", "noopener,noreferrer")}><FileText size={13} />View proposal</button>}<button className="btn sm" onClick={downloadEstimate}><Download size={13} />Download</button><button className="btn sm" onClick={() => shareEstimate("email")}><Mail size={13} />Email</button><button className="btn sm" onClick={() => shareEstimate("whatsapp")}><MessageCircle size={13} />WhatsApp</button><button className="btn sm" onClick={saveDraft}><Check size={13} />Save draft</button></div></div>}
-        <div ref={endRef} />
-      </div>
-      <div className="web-ai-composer">{completed || disabled ? <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => { setPayload(null); sessionRef.current = ""; setSessionId(""); try { localStorage.removeItem("allbee-web-ai-session"); } catch {} }}>{disabled ? "Try again" : "Start another consultation"}</button> : <><textarea ref={inputRef} className="textarea" value={draft} onChange={(e) => setDraft(e.target.value.slice(0, 500))} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Type your answer…" aria-label="Your answer" disabled={busy || !payload} /><button className="btn primary" onClick={() => send()} disabled={busy || !draft.trim() || !payload} aria-label="Send message"><Send size={16} /></button><button className="btn" onClick={endConversation} disabled={busy || !payload} aria-label="End consultation">End</button></>}</div>
-    </section>}
-  </>;
-}
-
 /* ── Login / access support assistant — button-driven and deterministic.
    Answers are grounded in the app's real auth rules (no LLM, no hallucination). */
 const LOGIN_ASSIST_BACK = { label: "Back to start", go: "root" };
@@ -6035,11 +5955,16 @@ function LoginAccessAssistant({ onPick }) {
   const contactChips = () => {
     const list = [];
     if (supportEmail) list.push({ label: "Email support", act: "mail" });
+    list.push({ label: "Create Support Ticket", go: "ticket" });
     list.push({ label: "Open Client Login", pick: "client" });
     list.push({ label: "Back to start", go: "root" });
     return list;
   };
   const goNode = (key) => {
+    if (key === "ticket") {
+      pushAssistant("Support tickets are created from inside your account — we can't accept them from a signed-out screen for security reasons.\n\nHere's the exact path:\n\n1. Sign in (Client Login or the login for your role).\n2. Open Support → My Tickets.\n3. Tap Create Ticket, pick the category and priority, and describe the issue.\n4. Our team replies inside the ticket — you'll get a ticket number you can track.\n\nIf you can't sign in at all, use Email support or WhatsApp below and mention the email you registered with.", contactChips());
+      return;
+    }
     if (key === "contact") {
       pushAssistant(`Here's how to reach the ALLBEE team:\n\n• After you sign in, open Support → My Tickets → Create Ticket — our team replies right inside the app.\n${supportEmail ? "• If you can't sign in at all, email us directly and include the email address you registered with." : "• If you can't sign in at all, mention the email you registered with to any ALLBEE team member or use the contact details on your paper work."}\n\nSupport tickets are created from inside your account (we can't accept them from a signed-out screen).`, contactChips());
       return;
@@ -6190,7 +6115,7 @@ function Lock({ isDark, setDark }) {
 
         {mode === "signin" && entry === "choose" ? (
           <>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6, width: "100%" }}>
+            <div className="choose-stack" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6, width: "100%" }}>
               <button className="btn primary" style={{ width: "100%", justifyContent: "center", padding: "13px 14px" }} onClick={() => { setLoginAs("employee"); setEntry("form"); setErr(""); }}><Users size={18} />Employee Login</button>
               <button className="btn" style={{ width: "100%", justifyContent: "center", padding: "13px 14px" }} onClick={() => { setLoginAs("client"); setEntry("form"); setErr(""); }}><Building2 size={18} />Client Login</button>
               <button className="btn" style={{ width: "100%", justifyContent: "center", padding: "13px 14px" }} onClick={() => { setLoginAs("partner"); setEntry("form"); setErr(""); }}><GaugeCircle size={18} />APN Partner Login</button>
@@ -7843,10 +7768,11 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
   const createSupportTicket = async (f) => {
     setHelpBusy(true);
     try {
-      const { error } = await supabase.rpc("apn_create_support_ticket", { p_subject: f.subject, p_description: f.description || "", p_category: f.category || "Other", p_priority: f.priority || "Normal" });
+      const { data: ticketId, error } = await supabase.rpc("apn_create_support_ticket", { p_subject: f.subject, p_description: f.description || "", p_category: f.category || "Other", p_priority: f.priority || "Normal" });
       if (error) throw error;
       setHelpFormOpen(false);
-      emitToast("Support ticket raised. Our team will follow up here.", "success");
+      const { data: created } = await supabase.from("support_tickets").select("ticket_no").eq("id", ticketId).maybeSingle();
+      emitToast(created?.ticket_no ? `Support ticket ${created.ticket_no} raised — our team will follow up here.` : "Support ticket raised. Our team will follow up here.", "success");
       await reload();
     } catch (e) { emitToast(e.message || "Could not create the ticket.", "error"); }
     finally { setHelpBusy(false); }
@@ -7951,7 +7877,7 @@ function ClientPortal({ db, profile, signOut, isDark, config, reload }) {
         )}
         </>)}
 
-        {portalView === "support" && <PortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} />}
+        {portalView === "support" && <PortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} />}
       </div>
     </div>
   );
@@ -7964,7 +7890,9 @@ const HELP_STATUS_LABEL = { open: "Open", in_progress: "In progress", resolved: 
 const HELP_STATUS_TONE = (s) => ({ open: "pri", in_progress: "accent", resolved: "pos", closed: "" }[s] || "pri");
 const HELP_CATEGORIES = ["Login / Account", "Payment / Billing", "Quotation", "Project", "Website", "Digital Marketing", "Training", "Technical Issue", "App / Portal", "APN", "Other"];
 
-function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpen, setHelpFormOpen, helpBusy }) {
+function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpen, setHelpFormOpen, helpBusy, co = {} }) {
+  const waNumber = String(co.phone || "").replace(/[^\d]/g, "");
+  const waLink = waNumber ? `https://wa.me/${waNumber.replace(/^0+/, "")}?text=${encodeURIComponent("Hello ALLBEE, I need help with a support query.")}` : "";
   const [expanded, setExpanded] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [busy, setBusy] = useState(false);
@@ -7993,6 +7921,14 @@ function PortalHelpdesk({ myId, tickets, messages, onCreate, onSend, helpFormOpe
         <span className="spacer" />
         <button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />Create Ticket</button>
       </div>
+
+      {(co.email || waLink) && (
+        <div className="card" style={{ marginBottom: 14, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span className="hint-line" style={{ flex: "1 1 200px" }}>Prefer to reach us directly? Email or WhatsApp your query anytime — tickets still get the fastest response.</span>
+          {co.email && <a className="btn sm" href={`mailto:${co.email}?subject=${encodeURIComponent("Support request — client portal")}`} style={{ textDecoration: "none" }}><Mail size={13} />Email us</a>}
+          {waLink && <a className="btn sm" href={waLink} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}><MessageCircle size={13} />WhatsApp</a>}
+        </div>
+      )}
 
       {tickets.length === 0 ? <div className="card"><Empty icon={<Headset size={22} color="var(--muted)" />} title="No support tickets yet" text="When you create a ticket, it will show up here with the team's replies." action={<button className="btn primary" onClick={() => setHelpFormOpen(true)}><Plus size={15} />Create your first ticket</button>} /></div>
         : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{tickets.map((t) => {
@@ -10776,35 +10712,52 @@ const QUOTE_STEP_LABELS = ["Service", "Type", "Technology", "Add-ons", "Urgency"
 const QUOTE_DISCLAIMER = "This is an AllBee partner network's estimated quotation. Final pricing is confirmed by the ALLBEE sales team after scope review.";
 const QUOTE_SERVICE_LABEL = { website: "Website Development", marketing: "Digital Marketing", course: "Course Admission" };
 
+// Share a quotation over email or WhatsApp — a plain-text summary (line items
+// + total) since attachments need a server; the sender can attach the PDF
+// they just downloaded.
+const quoteShareText = (q) => {
+  const lines = (q.items || []).map((it) => `• ${it.label}: ${it.amount == null ? "to be confirmed" : money(it.amount)}`).join("\n");
+  return `Quotation ${q.quoteNo || ""} — ${q.clientName || "Client"}\n${QUOTE_SERVICE_LABEL[q.service] || q.service || ""}${lines ? `\n\n${lines}` : ""}\nTotal: ${money(q.total)}\n\n${QUOTE_DISCLAIMER}`;
+};
+const shareQuoteVia = (q, via) => {
+  const text = quoteShareText(q);
+  if (via === "whatsapp") {
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    if (typeof window !== "undefined") window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  if (typeof window !== "undefined") {
+    window.location.href = `mailto:?subject=${encodeURIComponent(`Quotation ${q.quoteNo || ""} — ${q.clientName || "Client"}`)}&body=${encodeURIComponent(text)}`;
+  }
+};
+
 async function downloadQuotePdf(q, meRow) {
   try {
-    const jspdfMod = await import(/* @vite-ignore */ EXPORT_CDN.jspdf);
-    const jsPDF = jspdfMod.jsPDF || jspdfMod.default;
-    const autoTable = (await import(/* @vite-ignore */ EXPORT_CDN.autotable)).default;
+    const { jsPDF, autoTable } = await loadPdfEngine();
     const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
     const W = doc.internal.pageSize.getWidth();
-    const inr = (n) => "₹" + (Number(n) || 0).toLocaleString("en-IN");
+    const inr = (n) => pdfSafe("₹" + (Number(n) || 0).toLocaleString("en-IN"));
     doc.setFillColor(46, 59, 143); doc.rect(0, 0, W, 92, "F");
     doc.setFillColor(214, 168, 56); doc.rect(0, 92, W, 4, "F");
     doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(21); doc.text("ALLBEE SOLUTIONS", 40, 46);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.text("Quotation", 40, 66);
     doc.setFontSize(9); doc.setTextColor(215, 222, 255);
-    doc.text(`No: ${q.quoteNo || ""}`, 40, 80);
-    doc.text(`Date: ${q.createdAt ? fmtDate(new Date(q.createdAt)) : fmtDate(new Date())}`, W - 250, 80);
+    doc.text(pdfSafe(`No: ${q.quoteNo || ""}`), 40, 80);
+    doc.text(pdfSafe(`Date: ${q.createdAt ? fmtDate(new Date(q.createdAt)) : fmtDate(new Date())}`), W - 250, 80);
     doc.setDrawColor(230, 234, 242);
     let y = 120;
     doc.setFontSize(10); doc.setTextColor(46, 59, 143); doc.setFont("helvetica", "bold"); doc.text("Prepared for", 40, y);
     doc.setFont("helvetica", "normal"); doc.setTextColor(22, 26, 32); doc.setFontSize(10.5);
-    doc.text(q.clientName || "Client", 40, y + 16);
+    doc.text(pdfSafe(q.clientName || "Client"), 40, y + 16);
     let detailY = y + 16;
-    if (q.business) { detailY += 13; doc.setTextColor(98, 108, 122); doc.text(q.business, 40, detailY); }
-    if (q.contact) { detailY += 13; doc.text(q.contact, 40, detailY); }
+    if (q.business) { detailY += 13; doc.setTextColor(98, 108, 122); doc.text(pdfSafe(q.business), 40, detailY); }
+    if (q.contact) { detailY += 13; doc.text(pdfSafe(q.contact), 40, detailY); }
     doc.setTextColor(98, 108, 122); doc.setFontSize(9.5);
-    doc.text(`Prepared by ${meRow?.name || "APN Partner"} (${meRow?.apnId || ""})`, W - 240, y + 16, { align: "right" });
-    doc.text(QUOTE_SERVICE_LABEL[q.service] || q.service || "", W - 240, y + 30, { align: "right" });
+    doc.text(pdfSafe(`Prepared by ${meRow?.name || "APN Partner"} (${meRow?.apnId || ""})`), W - 240, y + 16, { align: "right" });
+    doc.text(pdfSafe(QUOTE_SERVICE_LABEL[q.service] || q.service || ""), W - 240, y + 30, { align: "right" });
     if (q.requirements) {
       doc.setFontSize(9); doc.setTextColor(98, 108, 122);
-      const lines = doc.splitTextToSize(`Scope: ${q.requirements}`, W - 80 - 258);
+      const lines = doc.splitTextToSize(pdfSafe(`Scope: ${q.requirements}`), W - 80 - 258);
       doc.text(lines, 258, y + 2);
       doc.line(40, y + 2 + lines.length * 11, W - 40, y + 2 + lines.length * 11);
     } else {
@@ -10814,7 +10767,7 @@ async function downloadQuotePdf(q, meRow) {
     autoTable(doc, {
       startY,
       head: [["Item", "Amount"]],
-      body: (q.items || []).map((it) => [it.label || "", it.amount == null ? "To be confirmed (scope review)" : inr(it.amount)]),
+      body: (q.items || []).map((it) => [pdfSafe(it.label || ""), it.amount == null ? "To be confirmed (scope review)" : inr(it.amount)]),
       theme: "grid",
       styles: { fontSize: 10, cellPadding: 7, textColor: [22, 26, 32] },
       headStyles: { fillColor: [46, 59, 143], textColor: 255, fontStyle: "bold", halign: "left" },
@@ -10824,25 +10777,25 @@ async function downloadQuotePdf(q, meRow) {
     let tailY = doc.lastAutoTable.finalY + 14;
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal"); doc.setTextColor(22, 26, 32);
-    doc.text("Subtotal", W - 250, tailY);
+    doc.text(pdfSafe("Subtotal"), W - 250, tailY);
     doc.text(inr(q.subtotal ?? (q.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)), W - 40, tailY, { align: "right" });
-    if (q.urgent) { tailY += 16; doc.text("Urgent delivery surcharge (+10%)", W - 250, tailY); doc.text(inr(Math.round((q.subtotal || 0) * QUOTE_URGENT_RATE)), W - 40, tailY, { align: "right" }); }
+    if (q.urgent) { tailY += 16; doc.text(pdfSafe("Urgent delivery surcharge (+10%)"), W - 250, tailY); doc.text(inr(Math.round((q.subtotal || 0) * QUOTE_URGENT_RATE)), W - 40, tailY, { align: "right" }); }
     tailY += 18;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text("Total", W - 250, tailY);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.text(pdfSafe("Total"), W - 250, tailY);
     doc.text(inr(q.total || 0), W - 40, tailY, { align: "right" });
     tailY += 34;
     doc.setDrawColor(230, 234, 242); doc.line(40, tailY, W - 40, tailY);
     tailY += 18;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("Payment terms", 40, tailY);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text(pdfSafe("Payment terms"), 40, tailY);
     tailY += 15;
     doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(98, 108, 122);
-    doc.text("50% advance at project start, 50% on delivery.", 40, tailY);
+    doc.text(pdfSafe("50% advance at project start, 50% on delivery."), 40, tailY);
     tailY += 26;
     doc.setFontSize(9); doc.setTextColor(98, 108, 122);
-    const disc = doc.splitTextToSize(QUOTE_DISCLAIMER, W - 80);
+    const disc = doc.splitTextToSize(pdfSafe(QUOTE_DISCLAIMER), W - 80);
     doc.text(disc, 40, tailY);
     tailY += disc.length * 12 + 12;
-    doc.setFontSize(8.5); doc.text("ALLBEE SOLUTIONS · Generated by the APN quotation assistant.", 40, tailY);
+    doc.setFontSize(8.5); doc.text(pdfSafe("ALLBEE SOLUTIONS · Generated by the APN quotation assistant."), 40, tailY);
     doc.save(`allbee-quotation-${(q.clientName || "client").replace(/[^\w-]+/g, "-").slice(0, 24)}-${todayISO()}.pdf`);
   } catch (e) { console.error(e); emitToast("Couldn't build the PDF file — check your connection and try again.", "error"); }
 }
@@ -11016,7 +10969,9 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
           <div className="calc-row calc-total" style={{ fontSize: 15 }}><span>{done.clientName} — total</span><b className="mono">{money(done.total)}</b></div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn" onClick={() => downloadQuotePdf(done, meRow)}><Download size={14} />Download PDF</button>
+          <button className="btn primary" onClick={() => downloadQuotePdf(done, meRow)}><Download size={14} />Download PDF</button>
+          <button className="btn" onClick={() => shareQuoteVia(done, "email")}><Mail size={14} />Email</button>
+          <button className="btn" onClick={() => shareQuoteVia(done, "whatsapp")}><MessageCircle size={14} />WhatsApp</button>
           <button className="btn" onClick={() => go?.("quotations")}><FileText size={14} />My quotations</button>
         </div>
       </>}
@@ -11101,6 +11056,8 @@ function APNQuotations({ db, meRow, pid, openModal }) {
             {q.tieUp && <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}><Handshake size={12} style={{ verticalAlign: -2 }} /> Tie-up: {q.tieUp}</div>}
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <button className="btn sm" onClick={() => downloadQuotePdf(q, meRow)}><Download size={13} />PDF</button>
+              <button className="btn sm" onClick={() => shareQuoteVia(q, "email")}><Mail size={13} />Email</button>
+              <button className="btn sm" onClick={() => shareQuoteVia(q, "whatsapp")}><MessageCircle size={13} />WhatsApp</button>
               {q.status !== "Approved" && <button className="btn sm" onClick={() => openModal({ type: "apnQuote", initial: q })}><Pencil size={13} />Edit</button>}
             </div>
           </div>
@@ -13809,6 +13766,125 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
 }
 
 
+// ── Founder Emergency Lockdown gate ─────────────────────────────────────────
+// When the company is locked (state held in the emergency_lockdown table and
+// activated via the founder-lockdown edge function — see the pr_emergency_lockdown
+// migrations), this gate REPLACES the entire app surface: every role, every
+// route, and even the public proposal link. Live state is polled every 30s;
+// the founder's authorization code is verified server-side (rate-limited),
+// never locally. On recovery the gate detects the state flip within one poll
+// cycle and the normal app (and sign-in) restores automatically.
+export function RemoteLockGate({ isDark, signOut, pause, children }) {
+  const [status, setStatus] = useState("checking"); // checking | locked | unlocked | offline
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [reveal, setReveal] = useState(false);
+  const signedOutRef = useRef(false);
+  const endpoint = `${SUPABASE_URL}/functions/v1/founder-lockdown`;
+
+  const poll = useCallback(async () => {
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      });
+      if (!r.ok) throw new Error("status unavailable");
+      const j = await r.json();
+      setStatus(j.locked ? "locked" : "unlocked");
+    } catch {
+      setStatus((prev) => (prev === "checking" ? "offline" : prev));
+    }
+  }, [endpoint]);
+
+  useEffect(() => {
+    if (pause) { setStatus("locked"); return undefined; }
+    let cancelled = false;
+    const tick = async () => { await poll(); if (!cancelled) setTimeout(tick, 30000); };
+    tick();
+    return () => { cancelled = true; };
+  }, [pause, poll]);
+
+  // A lockdown drains local sessions so every account must sign in afresh
+  // once services are restored (per the founder lockdown protocol).
+  useEffect(() => {
+    if (status === "locked" && !signedOutRef.current) {
+      signedOutRef.current = true;
+      if (signOut) signOut();
+    }
+  }, [status, signOut]);
+
+  if (status === "unlocked") return children || null;
+
+  const authorize = async () => {
+    const candidate = code.trim();
+    if (!candidate) { setError("Enter the authorization code."); return; }
+    setBusy(true); setError(""); setOk(false);
+    try {
+      const r = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", code: candidate }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 429) setError("Too many attempts. Wait a few minutes, then try again.");
+      else if (r.status === 401 || j.ok === false) setError("Incorrect authorization code.");
+      else if (!r.ok || j.ok !== true) setError("The authorization service could not be reached. Try again.");
+      else { setCode(""); setOk(true); }
+    } catch {
+      setError("Could not reach the authorization service — check your connection.");
+    } finally { setBusy(false); }
+  };
+
+  const card = (node) => (
+    <div className="lock-card founder-gate-card">
+      <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
+      <h1>ALLBEE</h1>
+      {node}
+    </div>
+  );
+
+  return (
+    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+      <style>{CSS}</style><ToastHost />
+      {status === "checking" && card(
+        <div className="loading-label" style={{ justifyContent: "center" }}><RefreshCw size={15} className="spin" />Checking services…</div>
+      )}
+      {status === "offline" && card(
+        <>
+          <div className="founder-gate-status err"><CloudOff size={15} /> ALLBEE services could not be reached</div>
+          <p className="hint-line">Check your connection. The app will keep retrying automatically.</p>
+          <button className="btn founder-gate-btn" onClick={poll}><RefreshCw size={15} />Try again now</button>
+          {import.meta.env.MODE === "development" && <button className="linkbtn" onClick={() => setStatus("unlocked")}>Development build — skip the check</button>}
+        </>
+      )}
+      {status === "locked" && card(
+        <>
+          <p className="founder-gate-sub">Our services are temporarily unavailable.</p>
+          <div className="founder-gate-status active"><ShieldAlert size={15} /> Founder-controlled maintenance in progress</div>
+          <label className="founder-gate-label" htmlFor="founder-code">Authorization code</label>
+          <div className="founder-code-row">
+            <input id="founder-code" className="input" type={reveal ? "text" : "password"} value={code}
+              onChange={(e) => setCode(e.target.value)} placeholder="Enter code" autoComplete="off" autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") authorize(); }} />
+            <button className="iconbtn" type="button" onClick={() => setReveal((v) => !v)} aria-label={reveal ? "Hide code" : "Show code"}>
+              {reveal ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+          <button className="btn primary founder-gate-btn" disabled={busy || !code.trim()} onClick={authorize}>
+            {busy ? <RefreshCw size={15} className="spin" /> : <ShieldCheck size={15} />}{busy ? "Verifying…" : "Authorize"}
+          </button>
+          {error && <div className="auth-msg err"><AlertTriangle size={14} /> {error}</div>}
+          {ok && <div className="auth-msg ok"><CheckCircle2 size={14} /> Authorized. Services restore when the founder completes protocol #301.</div>}
+          <p className="hint-line founder-gate-hint">Expected for authorized personnel only. If you are not authorized, please close this window.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [db, setDb] = useState(null);
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
@@ -14472,35 +14548,41 @@ export default function App() {
     );
   };
 
-  if (publicProposalToken) return <ProposalPortal token={publicProposalToken} isDark={isDark} />;
+  // Wraps every remote surface in the founder lockdown gate when live (allows
+  // tests to force the paused UI with zero network via LOCKDOWN_PAUSE_TEST).
+  const gateChild = (node) => (FOUNDER_LOCKDOWN_LIVE
+    ? <RemoteLockGate isDark={isDark} signOut={signOut} pause={LOCKDOWN_PAUSE_TEST}>{node}</RemoteLockGate>
+    : node);
+
+  if (publicProposalToken) return gateChild(<ProposalPortal token={publicProposalToken} isDark={isDark} />);
   if (session === undefined) return <Loading />;
-  if (!session) return <Lock isDark={isDark} setDark={setIsDark} />;
-  if (passwordRecovery) return <PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />;
+  if (!session) return gateChild(<Lock isDark={isDark} setDark={setIsDark} />);
+  if (passwordRecovery) return gateChild(<PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />);
   if (profile === undefined) return <Loading note="Signing you in…" />;
   if (profile && profile.active === false && role !== "partner")
-    return <Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />;
+    return gateChild(<Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />);
   // new staff & client sign-ups wait for a partner to approve them
   if (profile && (role === "staff" || role === "client") && profile.approved === false)
-    return <ApprovalPending isDark={isDark} name={currentUser} onSignOut={signOut} />;
+    return gateChild(<ApprovalPending isDark={isDark} name={currentUser} onSignOut={signOut} />);
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <Loading note="Loading your portal…" />;
-    return <ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} />;
+    return gateChild(<ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} />);
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
   if (role === "partner") {
     if (loading || !db) return <Loading note="Loading APN…" />;
-    return <APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} reload={reload} />;
+    return gateChild(<APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} reload={reload} />);
   }
   // first login: require the core profile details before anything else
   if (profile && (!profile.mobile || !profile.dob))
-    return <ProfileSetup profile={profile} onSave={saveMyProfile} onSignOut={signOut} isDark={isDark} />;
+    return gateChild(<ProfileSetup profile={profile} onSave={saveMyProfile} onSignOut={signOut} isDark={isDark} />);
   // then the Terms gate — show every agreement (general + role-specific) this
   // user still needs to accept; they accept all before gaining access
   const tncPending = pendingTnc(config, profile, role);
   if (profile && tncPending.length)
-    return <TermsGate agreements={tncPending} onAccept={acceptTnc} onSignOut={signOut} isDark={isDark} />;
+    return gateChild(<TermsGate agreements={tncPending} onAccept={acceptTnc} onSignOut={signOut} isDark={isDark} />);
   if (loading || !db) return <Loading />;
 
   const teamNames = team.length ? team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head" && p.active !== false).map((p) => p.name) : USERS;
@@ -14650,8 +14732,8 @@ export default function App() {
     </div>
   );
 
-  return (
-    <ErrorBoundary>
+  return gateChild(
+  <ErrorBoundary>
       <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"}>
         <style>{CSS}</style><ToastHost />
 

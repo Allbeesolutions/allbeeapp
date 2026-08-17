@@ -17,6 +17,8 @@ if (!url || !anonKey) {
   );
 }
 
+export const SUPABASE_URL = url || "https://placeholder.supabase.co";
+
 export const supabase = createClient(
   url || "https://placeholder.supabase.co",
   anonKey || "public-anon-key-placeholder",
