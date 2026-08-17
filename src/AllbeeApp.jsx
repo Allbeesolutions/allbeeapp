@@ -218,6 +218,11 @@ const LOGO_ICON = "/allbee-icon.png";   // square monogram
 // immediately with zero network.
 const FOUNDER_LOCKDOWN_LIVE = import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET !== "true";
 const LOCKDOWN_PAUSE_TEST = import.meta.env.VITE_PAUSE_TEST === "1";
+// Hidden entrance to the founder authorization flow: 16 idle taps on the gate
+// logo, then a 3-2-1 countdown (taps 17-19), an armed beat (tap 20), and the
+// existing authorization screen opens on tap 21. No code ever lives in the
+// frontend — this only reveals the same server-verified gateway.
+const FOUNDER_TAP_TIMEOUT_MS = 2500;   // inactivity resets the sequence
 
 /* ── roles & access (Phase 3 — five levels) ───────────────────────────────
    superadmin (Haji & Alim) · admin · accountant · staff · intern.
@@ -1495,6 +1500,26 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .founder-code-row .input { flex:1; text-align:center; letter-spacing:3px; font-size:16px; min-height:44px; }
 .founder-gate-btn { justify-content:center; min-height:44px; width:100%; }
 .founder-gate-hint { font-size:11.5px; margin-top:2px; }
+/* hidden logo-tap entrance to the founder authorization flow (taps 17-20) */
+.founder-count { position:relative; height:18px; margin:0 auto; width:100%; overflow:visible; }
+.founder-chip {
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.8);
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:22px; height:22px; padding:0 6px; border-radius:999px; box-sizing:border-box;
+  background:color-mix(in srgb, var(--muted) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--muted) 26%, transparent);
+  color:var(--muted); font-size:12.5px; font-weight:800; line-height:1;
+  opacity:0; pointer-events:none; transition:opacity .14s linear, transform .2s cubic-bezier(.2,.7,.3,1);
+}
+.founder-chip.shift { opacity:1; transform:translate(-50%,-50%) scale(1); }
+.founder-chip[data-countdown="armed"] { color:var(--accent, var(--pos)); border-color:color-mix(in srgb, var(--pos) 45%, transparent); background:color-mix(in srgb, var(--pos) 14%, transparent); }
+.founder-count:has(.founder-chip[data-countdown="armed"])::after {
+  content:""; position:absolute; left:50%; top:50%; width:40px; height:40px;
+  transform:translate(-50%,-50%) scale(.55); border-radius:50%; opacity:.34;
+  border:1.5px solid color-mix(in srgb, var(--pos) 70%, transparent);
+  animation:founder-armed .9s cubic-bezier(.2,.7,.3,1) infinite; pointer-events:none;
+}
+@keyframes founder-armed { from { transform:translate(-50%,-50%) scale(.55); opacity:.34; } to { transform:translate(-50%,-50%) scale(1.05); opacity:0; } }
 /* GPU-friendly shimmer: a translating sheen pseudo-element (transform), never
    background-position — no layout work on iPhone. */
 .skeleton { display:block; position:relative; overflow:hidden; background:var(--surface-2); border-radius:8px; }
@@ -13782,6 +13807,48 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
   const [ok, setOk] = useState(false);
   const [reveal, setReveal] = useState(false);
   const signedOutRef = useRef(false);
+  // Hidden logo-tap entrance to the founder authorization flow. Pure frontend
+  // state machine — the server-side code check remains the real security
+  // boundary. Taps 1-16 idle silently; 17/18/19 show 3/2/1; 20 arms; 21 opens
+  // the existing authorization screen; 2500ms of inactivity resets.
+  const [tapCount, setTapCount] = useState(0);
+  const [armed, setArmed] = useState(false);
+  const [countAnim, setCountAnim] = useState(true);
+  const lastTapRef = useRef(0);
+  const resetTimerRef = useRef(null);
+  const reduceMotionRef = useRef(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return undefined;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduceMotionRef.current = mq.matches;
+    const onChange = (e) => { reduceMotionRef.current = e.matches; };
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+  useEffect(() => () => { if (resetTimerRef.current) clearTimeout(resetTimerRef.current); }, []);
+  useEffect(() => {
+    if (tapCount === 0) return undefined;
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      resetTimerRef.current = null;
+      setTapCount(0); setArmed(false);
+    }, FOUNDER_TAP_TIMEOUT_MS);
+    return () => { if (resetTimerRef.current) clearTimeout(resetTimerRef.current); };
+  }, [tapCount]);
+  const onLogoTap = useCallback((e) => {
+    // De-duplicate: browsers can fire repeat pointer/click events around a
+    // single physical tap (esp. touch) — require a real gap between taps.
+    const now = Date.now();
+    if (now - lastTapRef.current < 250) return;
+    lastTapRef.current = now;
+    setCountAnim(!reduceMotionRef.current);
+    setTapCount((c) => {
+      const next = c + 1;
+      if (c >= 20) { setArmed(false); setStatus("locked"); return 0; }
+      if (c === 19) { setArmed(true); }
+      return next;
+    });
+  }, []);
   const endpoint = `${SUPABASE_URL}/functions/v1/founder-lockdown`;
 
   const poll = useCallback(async () => {
@@ -13840,7 +13907,17 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
 
   const card = (node) => (
     <div className="lock-card founder-gate-card">
-      <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} />
+      <img className="lock-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 52 }} onClick={onLogoTap} />
+      {tapCount >= 17 && (
+        <div className="founder-count">
+          <span
+            className={`founder-chip${countAnim ? " shift" : ""}`}
+            data-countdown={armed ? "armed" : String(20 - tapCount)}
+            aria-live="polite"
+            role="status"
+          >{armed ? "✓" : 20 - tapCount}</span>
+        </div>
+      )}
       <h1>ALLBEE</h1>
       {node}
     </div>
