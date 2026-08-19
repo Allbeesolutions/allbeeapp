@@ -200,7 +200,7 @@ begin
   if v_row.status <> 'draft' then
     raise exception 'Only drafts can be published.' using errcode = 'check_violation';
   end if;
-  v_hash := encode(digest(v_row.title || E'\n\n' || v_row.body, 'sha256'), 'hex');
+  v_hash := encode(extensions.digest(v_row.title || E'\n\n' || v_row.body, 'sha256'), 'hex');
   if exists (
     select 1 from public.apn_agreements x
     where x.code = v_row.code and x.status = 'published' and x.content_hash = v_hash

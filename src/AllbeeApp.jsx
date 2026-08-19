@@ -480,10 +480,14 @@ const HELPDESK_READS = {
 // PR-APN agreements — versioned legal documents + per-partner acceptance
 // evidence. Normalized reads; writes go exclusively through the audited
 // apn_agreement_save_draft / publish / accept RPCs (see
-// supabase/pr-apn-partner-agreements.sql).
+// supabase/pr-apn-partner-agreements.sql). The finalized schema also exposes
+// the Simple-English rendering (body_simple), the material/editorial
+// classification (material, change_summary, supersedes_id) and the
+// centralized legal-entity row (apn_agreement_company).
 const AGREEMENT_READS = {
-  apn_agreements: "id,code,version,title,category,body,content_hash,status,mandatory,reason,effective_from,published_at,published_by,created_by,created_at,updated_at",
-  apn_agreement_acceptances: "id,partner_id,agreement_id,version,content_hash,accepted_at,accepted_by,method,ip,user_agent",
+  apn_agreements: "id,code,version,title,category,body,body_simple,content_hash,status,mandatory,reason,effective_from,published_at,published_by,created_by,created_at,updated_at,material,supersedes_id,change_summary",
+  apn_agreement_acceptances: "id,partner_id,agreement_id,version,content_hash,accepted_at,accepted_by,method,terms_view,ip,user_agent",
+  apn_agreement_company: "id,legal_name,trade_name,address_line1,address_line2,city,state,country,postal_code,email,governance_framework,governing_law,jurisdiction_place,signatories,updated_at",
 };
 
 async function fetchReferralData() {
@@ -10284,7 +10288,10 @@ function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
    resolved server-side), never through mutate.                               */
 const AGREEMENT_CATEGORIES = ["Agreement", "Terms & Conditions", "Commission Schedule", "Code of Conduct", "Privacy & Data Notice", "IP & Brand", "Confidentiality", "Lead & Client Management", "Quotation & Sales", "Training & Certification", "Suspension & Termination", "Dispute & Grievance"];
 
-function APNAgreementReader({ doc, onClose, footer }) {
+function APNAgreementReader({ doc, onClose, footer, simple = false, onToggleSimple }) {
+  const simpleBody = doc.body_simple || doc.simpleBody || "";
+  const body = (simple ? simpleBody : (doc.body || simpleBody)) || "";
+  const simpleAvailable = !!(doc.body_simple || doc.simpleBody);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div style={{ width: "min(94vw, 720px)", maxHeight: "88vh", overflow: "auto", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 16, padding: "20px 22px" }}>
@@ -10292,11 +10299,21 @@ function APNAgreementReader({ doc, onClose, footer }) {
           <div className="cmdk-ic" style={{ flexShrink: 0 }}><ScrollText size={18} /></div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 17, lineHeight: 1.3 }}>{doc.title}</div>
-            <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{doc.category} · Version {doc.version} · {doc.mandatory ? "Required document" : "Optional"} · Effective {fmtDate(doc.effectiveFrom || doc.effective_from)}</div>
+            <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>
+              {doc.category} · Version {doc.version} · {doc.mandatory ? "Required document" : "Optional"} · Effective {fmtDate(doc.effectiveFrom || doc.effective_from)}
+              {doc.material === undefined || doc.material === null ? "" : doc.material === false ? " · Editorial change" : " · Material change"}
+              {doc.changeSummary || doc.change_summary ? ` · ${doc.changeSummary || doc.change_summary}` : ""}
+            </div>
           </div>
           <button className="iconbtn" onClick={onClose} aria-label="Close document" title="Close document"><X size={16} /></button>
         </div>
-        <div style={{ marginTop: 14, fontSize: 14.5, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap" }}>{doc.body}</div>
+        {simpleAvailable && onToggleSimple && (
+          <div style={{ display: "flex", gap: 6, margin: "10px 0 2px" }}>
+            <button className={"btn xs" + (simple ? "" : " primary")} onClick={() => onToggleSimple(false)}>Full text</button>
+            <button className={"btn xs" + (simple ? " primary" : "")} onClick={() => onToggleSimple(true)}>Simple English</button>
+          </div>
+        )}
+        <div style={{ marginTop: 12, fontSize: 14.5, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap" }}>{body || "This document has no readable text yet."}</div>
         {footer}
       </div>
     </div>
@@ -10309,6 +10326,7 @@ function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
   const [checks, setChecks] = useState(() => ({}));
   const [agree, setAgree] = useState(false);
   const [reading, setReading] = useState(null);
+  const [views, setViews] = useState(() => ({}));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const allRead = required.length > 0 && required.every((d) => checks[d.id]);
@@ -10317,7 +10335,7 @@ function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
     setBusy(true); setErr("");
     try {
       for (const d of required) {
-        const { error } = await supabase.rpc("apn_agreement_accept", { p_agreement_id: d.id, p_method: "explicit" });
+        const { error } = await supabase.rpc("apn_agreement_accept", { p_agreement_id: d.id, p_method: "explicit", p_terms_view: views[d.id] || "normal" });
         if (error) throw new Error(error.message);
       }
       await onAccepted?.();
@@ -10326,7 +10344,7 @@ function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
-      {reading && <APNAgreementReader doc={reading} onClose={() => setReading(null)} footer={<button className="btn primary" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={() => markRead(reading.id)}><Check size={15} />I've read this document</button>} />}
+      {reading && <APNAgreementReader doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={<button className="btn primary" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={() => markRead(reading.id)}><Check size={15} />I've read this document</button>} />}
       <div className="lock-card gate-card" style={{ width: "min(94vw, 540px)", maxHeight: "92vh", overflow: "auto" }}>
           <div className="lock-badge" style={{ background: "linear-gradient(135deg,#c8901b,#8a5f00)" }}><ScrollText size={26} /></div>
           <h1>Agreement review required</h1>
@@ -10357,19 +10375,30 @@ function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
 /* ── agreement center (portal tab): current published docs + accept state ─── */
 function APNAgreementCenter({ db, pid, onRefresh }) {
   const [reading, setReading] = useState(null);
+  const [views, setViews] = useState({});
   const [busyId, setBusyId] = useState(null);
   const published = (db.apn_agreements || []).filter((a) => a.status === "published");
   const byCode = new Map();
   for (const a of published) { const cur = byCode.get(a.code); if (!cur || a.version > cur.version) byCode.set(a.code, a); }
   const docs = Array.from(byCode.values()).sort((a, b) => a.code.localeCompare(b.code));
   const myAccepts = new Map((db.apn_agreement_acceptances || []).filter((x) => x.partner_id === pid).map((x) => [x.agreement_id, x]));
-  const requiredOpen = docs.filter((d) => d.mandatory && !(myAccepts.get(d.id)?.version === d.version)).length;
+  const satisfied = (d) => {
+    const acc = myAccepts.get(d.id);
+    if (acc && acc.version === d.version) return true;
+    // mirror of the status RPC rule: a non-material bump is satisfied by
+    // acceptance of the version it supersedes; a material bump always
+    // requires a fresh acceptance.
+    if (d.material === false && d.supersedes_id) return !!myAccepts.get(d.supersedes_id);
+    return false;
+  };
+  const requiredOpen = docs.filter((d) => d.mandatory && !satisfied(d)).length;
   const accept = async (doc) => {
     setBusyId(doc.id);
-    const { error } = await supabase.rpc("apn_agreement_accept", { p_agreement_id: doc.id, p_method: "explicit" });
+    const { error } = await supabase.rpc("apn_agreement_accept", { p_agreement_id: doc.id, p_method: "explicit", p_terms_view: views[doc.id] || "normal" });
     setBusyId(null);
     if (error) emitToast(error.message, "error"); else { emitToast("Accepted — thank you.", "success"); onRefresh?.(); }
   };
+  const company = (db.apn_agreement_company || [])[0];
   return (
     <div>
       <div className="apn-section-h">Agreements &amp; policies</div>
@@ -10381,22 +10410,30 @@ function APNAgreementCenter({ db, pid, onRefresh }) {
         {docs.length === 0 ? <div className="apn-rowcard"><Empty icon={<ScrollText size={22} color="var(--muted)" />} title="No published agreements" text="Published agreements will appear here." /></div>
           : docs.map((d) => {
             const acc = myAccepts.get(d.id);
-            const done = !!acc && acc.version === d.version;
+            const done = satisfied(d);
             return (
               <div key={d.id} className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div className="cmdk-ic"><ScrollText size={16} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{d.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · Version {d.version}{d.mandatory ? " · Required" : " · Optional"}</div></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{d.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · Version {d.version}{d.mandatory ? " · Required" : " · Optional"}{d.material === false ? " · Editorial" : ""}</div></div>
                 {done ? <span className="badge pos"><Check size={12} />Accepted</span> : d.mandatory ? <span className="badge accent">Required</span> : <span className="badge">Optional</span>}
                 <button className="btn sm" onClick={() => setReading(d)}><BookOpen size={13} />Read</button>
               </div>
             );
           })}
       </div>
-      {reading && <APNAgreementReader doc={reading} onClose={() => setReading(null)} footer={(() => { const acc = myAccepts.get(reading.id); const done = !!acc && acc.version === reading.version; return (
+      {company && (
+        <div className="apn-rowcard" style={{ marginTop: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{company.legal_name} · {company.trade_name}</div>
+          <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{company.address_line1}{company.address_line2 ? ", " + company.address_line2 : ""}, {company.city}, {company.state} {company.postal_code}, {company.country} · {company.email}</div>
+          {(company.signatories || []).length > 0 && <div className="hint-line" style={{ fontSize: 11.5, marginTop: 4 }}>Signatories: {(company.signatories || []).map((s) => s.name + " (" + s.role + ")").join(" · ")}</div>}
+        </div>
+      )}
+      {reading && <APNAgreementReader doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={(() => { const done = satisfied(reading); const acc = myAccepts.get(reading.id); const acceptedNow = !!acc && acc.version === reading.version; return (
         <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-          {done && <span className="badge pos" style={{ alignSelf: "center" }}><Check size={12} />Accepted · {fmtDate(acc.accepted_at)}</span>}
+          {acceptedNow && <span className="badge pos" style={{ alignSelf: "center" }}><Check size={12} />Accepted · {fmtDate(acc.accepted_at)}</span>}
+          {done && !acceptedNow && <span className="badge" style={{ alignSelf: "center" }}>Covered by your earlier acceptance (editorial change)</span>}
           <button className="btn" onClick={() => setReading(null)}><X size={14} />Close</button>
-          {!done && <button className="btn primary" disabled={busyId === reading.id} onClick={() => accept(reading)}>{busyId === reading.id ? <RefreshCw size={14} className="spin" /> : <FileCheck2 size={14} />}{reading.mandatory ? "Accept this document" : "Accept this document (optional)"}</button>}
+          {!done && <button className="btn primary" disabled={busyId === reading.id} onClick={() => accept(reading)}>{busyId === reading.id ? <RefreshCw size={14} className="spin" /> : <FileCheck2 size={14} />}{reading.material === false ? "Accept this document (editorial)" : "Accept this document"}</button>}
         </div>
       ); })()} />}
     </div>
@@ -10414,18 +10451,21 @@ function APNAdminAgreements({ db, isAdmin, onRefresh }) {
   const grouped = [];
   for (const r of rows) { const g = grouped.find((x) => x.code === r.code); if (g) g.rows.push(r); else grouped.push({ code: r.code, rows: [r] }); }
   const statusChip = (s) => s === "published" ? <span className="badge pos">Published</span> : s === "superseded" ? <span className="badge">Superseded</span> : <span className="badge accent">Draft</span>;
-  const openEditor = (code, doc) => setEditing({ code, title: doc?.title || "", category: doc?.category || "Agreement", body: doc?.body || "", mandatory: doc ? !!doc.mandatory : true, effective_from: doc?.effective_from || "", reason: "" });
+  const openEditor = (code, doc) => setEditing({ code, title: doc?.title || "", category: doc?.category || "Agreement", body: doc?.body || "", body_simple: doc?.body_simple || "", mandatory: doc ? !!doc.mandatory : true, material: doc ? doc.material !== false : true, change_summary: doc?.change_summary || "", effective_from: doc?.effective_from || "", reason: "" });
   const save = async (publish) => {
     setBusy(true); setErr("");
     try {
       if (!editing.title.trim() || !editing.body.trim()) throw new Error("Title and body are required.");
-      const args = { p_code: editing.code, p_title: editing.title.trim(), p_category: editing.category, p_body: editing.body, p_mandatory: editing.mandatory };
+      if (publish && !(editing.body_simple || "").trim()) throw new Error("A Simple English rendering is required before publishing.");
+      const args = { p_code: editing.code, p_title: editing.title.trim(), p_category: editing.category, p_body: editing.body, p_mandatory: editing.mandatory, p_body_simple: (editing.body_simple || "").trim() };
       if (editing.effective_from) args.p_effective_from = editing.effective_from;
       if (editing.reason) args.p_reason = editing.reason.trim();
       const { data, error } = await supabase.rpc("apn_agreement_save_draft", args);
       if (error) throw new Error(error.message);
       if (publish && !/\[ DRAFT/.test(editing.body) && data?.id) {
-        const { error: perr } = await supabase.rpc("apn_agreement_publish", { p_agreement_id: data.id });
+        const pargs = { p_agreement_id: data.id, p_material: editing.material !== false };
+        if ((editing.change_summary || "").trim()) pargs.p_change_summary = editing.change_summary.trim();
+        const { error: perr } = await supabase.rpc("apn_agreement_publish", pargs);
         if (perr) throw new Error(perr.message);
       } else if (publish) {
         throw new Error("This document still contains the [ DRAFT ] placeholder marker. Remove it (or keep only a saved draft) before publishing.");
@@ -10450,7 +10490,7 @@ function APNAdminAgreements({ db, isAdmin, onRefresh }) {
                 return (
                   <div key={d.id} className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <div className="cmdk-ic"><ScrollText size={16} /></div>
-                    <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{d.title} <span className="hint-line">v{d.version}</span></div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · {d.mandatory ? "Required" : "Optional"}{d.effective_from ? " · Effective " + fmtDate(d.effective_from) : ""}{d.status === "published" && coverage ? ` · ${coverage}` : ""}</div></div>
+                    <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{d.title} <span className="hint-line">v{d.version}</span></div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · {d.mandatory ? "Required" : "Optional"}{d.material === false ? " · Editorial change" : d.material ? " · Material change" : ""}{d.status === "published" && d.change_summary ? ` · ${d.change_summary}` : ""}{d.status === "superseded" && d.supersedes_id ? " · superseded by v" + (d.version + 1) : ""}{d.effective_from ? " · Effective " + fmtDate(d.effective_from) : ""}{d.status === "published" && coverage ? ` · ${coverage}` : ""}</div></div>
                     {statusChip(d.status)}
                     {d.status === "draft" && <div style={{ display: "flex", gap: 6 }}><button className="btn sm" onClick={() => openEditor(g.code, d)}><Pencil size={13} />Edit</button><button className="btn sm primary" onClick={() => { setEditing({ ...d, reason: "" }); }}><Check size={13} />Publish</button></div>}
                     {d.status === "published" && <button className="btn sm" onClick={() => openEditor(g.code, null)}><Plus size={13} />New version</button>}
@@ -10471,15 +10511,21 @@ function APNAdminAgreements({ db, isAdmin, onRefresh }) {
             <Field label="Title" required><input className="input" value={editing.title} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, title: e.target.value }))} /></Field>
             <Field label="Category" required>{(() => <select className="input" value={editing.category} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, category: e.target.value }))}>{AGREEMENT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>)()}</Field>
           </div>
-          <Field label="Body" required hint="Paste the final wording from the business / legal owner. The [ DRAFT ] marker is only allowed while saving drafts — publishing requires final wording."><textarea className="textarea" rows={9} value={editing.body} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, body: e.target.value }))} /></Field>
-          <div className="grid2">
-            <Field label="Effective from"><input className="input" type="date" value={(editing.effective_from || "").slice(0, 10)} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, effective_from: e.target.value ? new Date(e.target.value + "T12:00:00Z").toISOString() : "" }))} /></Field>
-            <Field label="Reason for this version"><input className="input" value={editing.reason} placeholder="e.g. Legal refresh 2026" disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, reason: e.target.value }))} /></Field>
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+          <Field label="Body" required hint="Paste the final wording from the business / legal owner. The [ DRAFT ] marker is only allowed while saving drafts — publishing requires final wording."><textarea className="textarea" rows={7} value={editing.body} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, body: e.target.value }))} /></Field>
+            <Field label="Simple English" hint="Plain-language rendering of the SAME legal version above. Required before publishing — partners can read this instead of the full text."><textarea className="textarea" rows={5} value={editing.body_simple || ""} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, body_simple: e.target.value }))} /></Field>
+            <div className="grid2">
+              <Field label="Effective from"><input className="input" type="date" value={(editing.effective_from || "").slice(0, 10)} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, effective_from: e.target.value ? new Date(e.target.value + "T12:00:00Z").toISOString() : "" }))} /></Field>
+              <Field label="Reason for this version"><input className="input" value={editing.reason} placeholder="e.g. Legal refresh 2026" disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, reason: e.target.value }))} /></Field>
+            </div>
+            <div className="grid2">
+              <Field label="Change type" hint="Material changes re-lock partners; editorial changes do not."><select className="input" value={(editing.material ?? true) ? "material" : "editorial"} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, material: e.target.value === "material" }))}><option value="material">Material — partners must re-accept</option><option value="editorial">Editorial — no re-accept required</option></select></Field>
+              <Field label="Change summary"><input className="input" value={editing.change_summary || ""} placeholder="e.g. Added breach-reporting duty" disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, change_summary: e.target.value }))} /></Field>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
             <input type="checkbox" checked={editing.mandatory} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, mandatory: e.target.checked }))} />
             <span>Required — partners must accept before using the portal</span>
-          </label>
+            </label>
+            {(editing.material ?? true) === false && <div className="hint-line" style={{ marginTop: 8, fontSize: 11.5 }}>Editorial changes never block partners: acceptance of the superseded version keeps satisfying the document (and the change summary appears in the partner's reader).</div>}
           {/\[ DRAFT/.test(editing.body) && <div className="auth-msg" style={{ marginTop: 10 }}><AlertTriangle size={13} />This version still contains the [ DRAFT ] placeholder marker — publishing is blocked while it remains.</div>}
           {err && <div className="auth-msg err" style={{ marginTop: 10 }}>{err}</div>}
         </Modal>

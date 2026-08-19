@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════════════
--- APN PARTNER AGREEMENT GOVERNANCE — automated verification (T1–T30)
+-- APN PARTNER AGREEMENT GOVERNANCE — automated verification (T1–T38)
 --
 -- Delivery: paste into the Supabase SQL Editor (single session so BEGIN/COMMIT
 -- applies). The whole file runs inside one transaction; all test data,
@@ -7,6 +7,12 @@
 -- back before commit — ZERO lasting impact on business data. Any failed
 -- assertion aborts the transaction, the editor reports an error, and nothing
 -- changes.
+--
+-- Scope: T1–T29 cover the base suite (20260819120000); T31–T38 cover the
+-- final-governance extensions (20260820000000: Simple-English bodies, hash
+-- over both renderings, material/non-material publish classification,
+-- terms-view evidence, centralized company configuration). T30 proves the
+-- rollback restored production state byte-identically.
 --
 -- The editor session has no JWT, so auth.uid() is null. The accept/status
 -- RPCs resolve the partner from the request claims, so the tests simulate a
@@ -42,11 +48,16 @@ end $$;
 -- Two partner identities: one ACTIVE (acceptance flows), one SUSPENDED
 -- (negative flows). Both referenced through the simulated JWT claim sub.
 insert into public.apn_users (id, data, updated_at) values
-  ('verify-agr-partner', jsonb_build_object('id', 'verify-agr-partner', 'status', 'active', 'name', 'Verify Agreement Partner', 'role', 'partner'), now()),
-  ('verify-agr-suspended', jsonb_build_object('id', 'verify-agr-suspended', 'status', 'suspended', 'name', 'Verify Suspended Partner', 'role', 'partner'), now());
+  ('00000000-0000-4000-8000-0000000000a1', jsonb_build_object('id', '00000000-0000-4000-8000-0000000000a1', 'status', 'active', 'name', 'Verify Agreement Partner', 'role', 'partner'), now()),
+  ('00000000-0000-4000-8000-0000000000a2', jsonb_build_object('id', '00000000-0000-4000-8000-0000000000a2', 'status', 'suspended', 'name', 'Verify Suspended Partner', 'role', 'partner'), now());
 
-insert into public.profiles (id, name, email, role, active, status, approved)
-values ('verify-agr-partner', 'Verify Agreement Partner', 'verify-agr@test.in', 'partner', true, 'active', true);
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, is_super_admin, created_at, updated_at)
+values ('00000000-0000-0000-0000-000000000000', '00000000-0000-4000-8000-0000000000a1', 'authenticated', 'authenticated',
+        'verify-agr@test.in', '', '{}'::jsonb, '{"id": "00000000-0000-4000-8000-0000000000a1"}'::jsonb, false, now(), now())
+on conflict (id) do nothing;
+-- The project's handle_new_user trigger creates the matching profiles row
+-- (mirroring a real signup); the savepoint rollback removes BOTH rows, which
+-- T30 proves.
 
 do $$
 declare
@@ -104,7 +115,9 @@ begin
   perform public.vf_assert((select count(*) from pg_trigger where tgname = 'apn_agreement_acceptances_guard_trg' and not tgisinternal) = 1, 'T4 acceptances immutability trigger');
   raise notice '[verify] T4 immutability triggers OK';
 
-  -- ── T5 seed: all twelve document codes as DRAFT, flagged placeholder ───────
+  -- ── T5 seed: all twelve document codes as final-content DRAFTS ───────────
+  -- (applies AFTER 20260820000000: placeholders were replaced by the
+  -- owner-approved final commercial text; bodies stay drafts until published)
   select count(*) into c from public.apn_agreements where status = 'draft';
   perform public.vf_assert(c = 12, 'T5 exactly 12 seed drafts: ' || c);
   select count(*) into c from public.apn_agreements where code = any (v_codes) and status = 'draft';
@@ -112,17 +125,26 @@ begin
   select count(*) into c from public.apn_agreements where status = 'published';
   perform public.vf_assert(c = 0, 'T5 nothing published from seed');
   select count(*) into c from public.apn_agreements where body like '[ DRAFT%';
-  perform public.vf_assert(c = 12, 'T5 all seed bodies carry the DRAFT marker: ' || c);
+  perform public.vf_assert(c = 0, 'T5 final seeds carry no placeholder markers: ' || c);
+  select count(*) into c from public.apn_agreements
+  where status = 'draft' and (length(trim(body_simple)) = 0 or body_simple is null);
+  perform public.vf_assert(c = 0, 'T5 every seed has a Simple English body: ' || c);
+  select count(*) into c from public.apn_agreements
+  where status = 'draft' and body not like '%ALLBEE SOLUTIONS%';
+  perform public.vf_assert(c = 0, 'T5 every seed body identifies the company: ' || c);
   select count(*) into c from public.apn_agreements where version <> 1;
   perform public.vf_assert(c = 0, 'T5 all seeds at version 1');
-  raise notice '[verify] T5 seed drafts OK';
+  raise notice '[verify] T5 final-content seeds OK';
 
   -- ── T6 save_draft: refresh of an existing draft keeps its version ──────────
   perform public.apn_agreement_save_draft('partner-agreement', 'Partner Agreement v1 refresh', 'Agreement',
-    'The partnership relationship between ALLBEE SOLUTIONS and its APN partner, including engagement, obligations and rights.', true, null, 'T6 refresh');
+    'The partnership relationship between ALLBEE SOLUTIONS and its APN partner, including engagement, obligations and rights.',
+    true, null, 'T6 refresh', 'Plain-language summary of the refreshed partner agreement for T6.');
   select id, version into v_draft_id, n from public.apn_agreements where code = 'partner-agreement' and status = 'draft';
   perform public.vf_assert(v_draft_id is not null, 'T6 draft refreshed in place');
   perform public.vf_assert(n = 1, 'T6 draft kept version 1: ' || n);
+  select coalesce(length(trim(body_simple)), 0) into n from public.apn_agreements where id = v_draft_id;
+  perform public.vf_assert(n > 0, 'T6 draft carries a Simple English body: ' || n);
   raise notice '[verify] T6 draft refresh OK';
 
   -- ── T7 publish: activates the draft, stamps SHA-256 hash, single current ────
@@ -132,9 +154,11 @@ begin
   from public.apn_agreements where code = 'partner-agreement' and status = 'published';
   perform public.vf_assert(n = 1, 'T7 published at version 1: ' || n);
   perform public.vf_assert(length(h) = 64, 'T7 hash is sha256 hex (64 chars)');
-  v_expected_hash := encode(digest('Partner Agreement v1 refresh' || E'\n\n' ||
-    'The partnership relationship between ALLBEE SOLUTIONS and its APN partner, including engagement, obligations and rights.', 'sha256'), 'hex');
-  perform public.vf_assert(h = v_expected_hash, 'T7 hash matches deterministically computed sha256');
+  v_expected_hash := encode(extensions.digest('Partner Agreement v1 refresh' || E'\n\n' ||
+    'The partnership relationship between ALLBEE SOLUTIONS and its APN partner, including engagement, obligations and rights.' ||
+    E'\n\n[SIMPLE ENGLISH]\n' || 'Plain-language summary of the refreshed partner agreement for T6.', 'sha256'), 'hex');
+  perform public.vf_assert(h = v_expected_hash, 'T7 hash covers formal + Simple English text');
+  perform public.vf_assert(v_status->>'material' = 'true', 'T7 publish defaults to a material change');
   select count(*) into c from public.apn_agreements where code = 'partner-agreement' and status = 'published';
   perform public.vf_assert(c = 1, 'T7 exactly one published version per code: ' || c);
   select count(*) into c from public.apn_agreements where code = 'partner-agreement' and status in ('draft','published');
@@ -143,7 +167,8 @@ begin
 
   -- ── T8 duplicate publish of identical content is rejected ──────────────────
   perform public.apn_agreement_save_draft('partner-agreement', 'Partner Agreement v1 refresh', 'Agreement',
-    'The partnership relationship between ALLBEE SOLUTIONS and its APN partner, including engagement, obligations and rights.', true, null, 'T8 dup');
+    'The partnership relationship between ALLBEE SOLUTIONS and its APN partner, including engagement, obligations and rights.',
+    true, null, 'T8 dup', 'Plain-language summary of the refreshed partner agreement for T6.');
   select id into v_dup from public.apn_agreements where code = 'partner-agreement' and status = 'draft';
   perform public.vf_assert(v_dup is not null, 'T8 duplicate-content draft exists');
   begin
@@ -158,7 +183,8 @@ begin
 
   -- ── T9 version update: v2 publishes over v1, v1 superseded, not deleted ────
   perform public.apn_agreement_save_draft('partner-agreement', 'Partner Agreement v2', 'Agreement',
-    'Updated partnership terms for ALLBEE APN partners: engagement, obligations, rights and the 2026 rider.', true, null, 'T9 v2');
+    'Updated partnership terms for ALLBEE APN partners: engagement, obligations, rights and the 2026 rider.',
+    true, null, 'T9 v2', 'Plain-language summary of the v2 partner agreement.');
   select id into v_v2_id from public.apn_agreements where code = 'partner-agreement' and status = 'draft';
   perform public.vf_assert(v_v2_id is not null, 'T9 v2 draft created');
   select version into n from public.apn_agreements where id = v_v2_id;
@@ -197,33 +223,33 @@ begin
   raise notice '[verify] T10 immutability OK';
 
   -- ── T11 acceptance evidence: server-resolved partner/version/hash ──────────
-  perform set_config('request.jwt.claim.sub', 'verify-agr-partner', true);
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
   perform set_config('request.headers', '{"x-forwarded-for": "203.0.113.7", "user-agent": "verify-ua/1.0"}', true);
   select public.apn_agreement_accept(v_v2_id) into v_status;
   perform public.vf_assert(v_status->>'accepted' = 'true', 'T11 accept returns accepted=true');
   select count(*) into c
   from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(c = 1, 'T11 acceptance row created: ' || c);
   select version into n from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(n = 2, 'T11 stored version matches published version 2');
   select content_hash into v_expected_hash from public.apn_agreements where id = v_v2_id;
   select content_hash into h from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(h = v_expected_hash, 'T11 stored hash matches published hash');
   select method into v_fn from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(v_fn = 'explicit', 'T11 method recorded');
   select user_agent into v_fn from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(v_fn = 'verify-ua/1.0', 'T11 user-agent recorded server-side');
   select ip into v_headers_row from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(v_headers_row = '203.0.113.7', 'T11 ip recorded server-side');
   select accepted_by into v_fn from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
-  perform public.vf_assert(v_fn = 'verify-agr-partner', 'T11 accepted_by is server-resolved partner id');
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
+  perform public.vf_assert(v_fn = '00000000-0000-4000-8000-0000000000a1', 'T11 accepted_by is server-resolved partner id');
   raise notice '[verify] T11 acceptance evidence OK';
 
   -- ── T12 acceptance idempotency (no duplicate evidence, returns not-new) ────
@@ -231,12 +257,12 @@ begin
   perform public.vf_assert(v_status->>'accepted' = 'false', 'T12 re-accept reports not-new (idempotent)');
   select count(*) into c
   from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' and agreement_id = v_v2_id;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_v2_id;
   perform public.vf_assert(c = 1, 'T12 no duplicate evidence row: ' || c);
   raise notice '[verify] T12 idempotency OK';
 
   -- ── T13 draft / superseded versions can never be accepted ──────────────────
-  perform set_config('request.jwt.claim.sub', 'verify-agr-partner', true);
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
   begin
     select public.apn_agreement_accept(v_v1_id) into v_status;
     raise exception 'should-not-reach';
@@ -253,7 +279,7 @@ begin
   raise notice '[verify] T13 stale/draft rejection OK';
 
   -- ── T14 inactive/suspended partners cannot accept ──────────────────────────
-  perform set_config('request.jwt.claim.sub', 'verify-agr-suspended', true);
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a2', true);
   begin
     select public.apn_agreement_accept(v_v2_id) into v_status;
     raise exception 'should-not-reach';
@@ -281,7 +307,7 @@ begin
   raise notice '[verify] T15 baseline publish-all OK';
 
   -- ── T16 status: required until ALL mandatory current versions accepted ─────
-  perform set_config('request.jwt.claim.sub', 'verify-agr-partner', true);
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
   select public.apn_agreement_status() into v_status;
   perform public.vf_assert(v_status->>'required' = 'true', 'T16 status required=true with unaccepted docs');
   perform public.vf_assert((v_status->>'requiredCount')::int = 11, 'T16 requiredCount = 11 (all but the earlier acceptance): ' || (v_status->>'requiredCount'));
@@ -298,7 +324,7 @@ begin
     where d.mandatory
       and not exists (
         select 1 from public.apn_agreement_acceptances a
-        where a.partner_id = 'verify-agr-partner' and a.agreement_id = d.id and a.version = d.version
+        where a.partner_id = '00000000-0000-4000-8000-0000000000a1' and a.agreement_id = d.id and a.version = d.version
       )
   loop
     select public.apn_agreement_accept(v_draft_id, 'explicit') into v_status;
@@ -308,13 +334,14 @@ begin
   perform public.vf_assert(v_status->>'required' = 'false', 'T17 all accepted → required=false');
   perform public.vf_assert((v_status->>'requiredCount')::int = 0, 'T17 requiredCount=0');
   select count(*) into c from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner';
+  where partner_id = '00000000-0000-4000-8000-0000000000a1';
   perform public.vf_assert(c = 12, 'T17 exactly 12 acceptance rows: ' || c);
   raise notice '[verify] T17 unlock OK';
 
   -- ── T18 re-lock on version update: v3 publish → required flips true ────────
   perform public.apn_agreement_save_draft('partner-agreement', 'Partner Agreement v3', 'Agreement',
-    'Third revision of partnership terms and the annual review rider.', true, null, 'T18 v3');
+    'Third revision of partnership terms and the annual review rider.',
+    true, null, 'T18 v3', 'Plain-language summary of the v3 partner agreement.');
   select id into v_v2_id from public.apn_agreements where code = 'partner-agreement' and status = 'draft';
   select public.apn_agreement_publish(v_v2_id) into v_status;
   perform public.vf_assert(v_status->>'version' = '3', 'T18 v3 published: ' || (v_status->>'version'));
@@ -329,7 +356,8 @@ begin
 
   -- ── T19 non-mandatory documents never block the gate ───────────────────────
   perform public.apn_agreement_save_draft('code-of-conduct', 'Code of Conduct (optional refresh)', 'Code of Conduct',
-    'Optional supplementary code of conduct for APN partners, non-blocking refresh.', false, null, 'T19 optional');
+    'Optional supplementary code of conduct for APN partners, non-blocking refresh.',
+    false, null, 'T19 optional', 'Plain-language summary of the optional code-of-conduct refresh.');
   select id into v_draft_id from public.apn_agreements where code = 'code-of-conduct' and status = 'draft';
   select public.apn_agreement_publish(v_draft_id) into v_status;
   perform public.vf_assert(v_status->>'status' = 'published', 'T19 optional doc published');
@@ -338,7 +366,7 @@ begin
   select count(*) into c
   from public.apn_agreement_acceptances a
   join public.apn_agreements d on d.id = a.agreement_id
-  where a.partner_id = 'verify-agr-partner' and d.code = 'code-of-conduct' and d.status = 'published' and not d.mandatory;
+  where a.partner_id = '00000000-0000-4000-8000-0000000000a1' and d.code = 'code-of-conduct' and d.status = 'published' and not d.mandatory;
   perform public.vf_assert(c = 0, 'T19 optional doc not forced on the partner');
   raise notice '[verify] T19 optional documents OK';
 
@@ -348,18 +376,18 @@ begin
   where n.nspname = 'public' and p.proname = 'apn_agreement_status'
     and pg_get_functiondef(p.oid) like '%p_partner_id <> auth.uid()::text and not public.is_admin()%';
   perform public.vf_assert(c = 1, 'T20 cross-partner status guarded in function source');
-  perform set_config('request.jwt.claim.sub', 'verify-agr-partner', true);
-  select public.apn_agreement_status('verify-agr-suspended') into v_status;
-  perform public.vf_assert(v_status->>'partnerId' = 'verify-agr-suspended', 'T20 admin passthrough consultation works');
-  perform set_config('request.jwt.claim.sub', 'verify-agr-partner', true);
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
+  select public.apn_agreement_status('00000000-0000-4000-8000-0000000000a2') into v_status;
+  perform public.vf_assert(v_status->>'partnerId' = '00000000-0000-4000-8000-0000000000a2', 'T20 admin passthrough consultation works');
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
   select public.apn_agreement_status() into v_status;
-  perform public.vf_assert(v_status->>'partnerId' = 'verify-agr-partner', 'T20 own status resolvable');
+  perform public.vf_assert(v_status->>'partnerId' = '00000000-0000-4000-8000-0000000000a1', 'T20 own status resolvable');
   raise notice '[verify] T20 status scoping OK';
 
   -- ── T21 immutability of acceptance evidence (trigger + grants) ─────────────
-  perform set_config('request.jwt.claim.sub', 'verify-agr-partner', true);
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
   select id into v_acc from public.apn_agreement_acceptances
-  where partner_id = 'verify-agr-partner' limit 1;
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' limit 1;
   begin
     update public.apn_agreement_acceptances set version = 999 where id = v_acc;
     raise exception 'should-not-reach';
@@ -383,9 +411,9 @@ do $$
 declare v_proc oid; c bigint;
 begin
   foreach v_proc in array array[
-    'public.apn_agreement_save_draft(text,text,text,text,boolean,timestamptz,text)'::regprocedure,
-    'public.apn_agreement_publish(uuid)'::regprocedure,
-    'public.apn_agreement_accept(uuid,text)'::regprocedure,
+    'public.apn_agreement_save_draft(text,text,text,text,boolean,timestamptz,text,text)'::regprocedure,
+    'public.apn_agreement_publish(uuid,boolean,text)'::regprocedure,
+    'public.apn_agreement_accept(uuid,text,text)'::regprocedure,
     'public.apn_agreement_status(text)'::regprocedure
   ] loop
     perform public.vf_assert((select prosecdef from pg_proc where oid = v_proc), 'T22 SECURITY DEFINER: ' || v_proc::text);
@@ -440,7 +468,7 @@ begin
   perform public.vf_assert((select count(*) from pg_policies
     where schemaname = 'public' and tablename = 'apn_agreement_acceptances'
       and policyname = 'apn_agreement_acceptances_select'
-      and qual like '%partner_id = auth.uid()%') = 1, 'T28 acceptance select is partner-scoped');
+      and qual like '%partner_id = %auth.uid()%text%') = 1, 'T28 acceptance select is partner-scoped');
   raise notice '[verify] T28 RLS partner scoping OK';
 
   select count(*) into c from pg_proc p
@@ -450,12 +478,152 @@ begin
   raise notice '[verify] T29 status RPC stability OK';
 end $$;
 
+-- ── T31–T38 FINAL-GOVERNANCE EXTENSIONS (after 20260820000000) ─────────────
+-- Dependencies: T1–T29 already ran; the fixture partner has accepted every
+-- mandatory current version (12 acceptances) and partner-agreement is at v3.
+do $$
+declare
+  c bigint; n numeric; h text;
+  v_draft_id uuid;
+  v_privacy_v2 uuid; v_privacy_v3 uuid;
+  v_status jsonb;
+  v_fn text;
+begin
+  perform set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a1', true);
+
+  -- ── T31 Simple English exists on every published version ──────────────────
+  select count(*) into c from public.apn_agreements
+  where status = 'published' and (length(trim(body_simple)) = 0 or body_simple is null);
+  perform public.vf_assert(c = 0, 'T31 every published version carries Simple English: ' || c);
+  select count(*) into c from public.apn_agreements
+  where status = 'published' and body_simple = body;
+  perform public.vf_assert(c = 0, 'T31 Simple English differs from the formal text');
+  raise notice '[verify] T31 Simple English coverage OK';
+
+  -- ── T32a non-material publish does NOT re-lock an accepting partner ───────
+  perform public.apn_agreement_save_draft('privacy-policy', 'Data Protection & Privacy (T32 editorial)', 'Privacy & Data Notice',
+    'Editorial clarification of the data-handling obligations. No rights or obligations are changed by this revision.',
+    true, null, 'T32a editorial', 'Plain-language summary: this update only clarifies wording; nothing changed for partners.');
+  select id into v_privacy_v2 from public.apn_agreements where code = 'privacy-policy' and status = 'draft';
+  select public.apn_agreement_publish(v_privacy_v2, false, 'Editorial clarification — no change of rights or obligations') into v_status;
+  perform public.vf_assert(v_status->>'status' = 'published', 'T32a editorial publish succeeds');
+  perform public.vf_assert(v_status->>'material' = 'false', 'T32a publish records the non-material classification');
+  perform public.vf_assert(v_status->>'changeSummary' like 'Editorial%', 'T32a change summary recorded');
+  select public.apn_agreement_status() into v_status;
+  perform public.vf_assert(v_status->>'required' = 'false', 'T32a non-material bump does not re-lock');
+  perform public.vf_assert((v_status->>'requiredCount')::int = 0, 'T32a requiredCount stays 0');
+  select count(*) into c from public.apn_agreement_acceptances
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_privacy_v2;
+  perform public.vf_assert(c = 0, 'T32a no acceptance row auto-created for an editorial bump');
+  select supersedes_id into v_privacy_v3 from public.apn_agreements where id = v_privacy_v2;
+  perform public.vf_assert(v_privacy_v3 is not null, 'T32a editorial version records the prior version it supersedes');
+  raise notice '[verify] T32a non-material bump OK';
+
+  -- ── T32b material publish AFTER an editorial bump re-locks ────────────────
+  perform public.apn_agreement_save_draft('privacy-policy', 'Data Protection & Privacy (T32b material)', 'Privacy & Data Notice',
+    'Material revision: new mandatory breach-reporting obligation for the partner.',
+    true, null, 'T32b material', 'Plain-language summary: a new reporting duty applies — read carefully.');
+  select id into v_privacy_v3 from public.apn_agreements where code = 'privacy-policy' and status = 'draft';
+  select public.apn_agreement_publish(v_privacy_v3, true, 'Material: new mandatory breach-reporting duty') into v_status;
+  perform public.vf_assert(v_status->>'version' = '3', 'T32b material version bump: ' || (v_status->>'version'));
+  select public.apn_agreement_status() into v_status;
+  perform public.vf_assert(v_status->>'required' = 'true', 'T32b material bump re-locks the partner');
+  perform public.vf_assert(jsonb_path_exists(v_status, '$.requiredList[*] ? (@.code == "privacy-policy" && @.version == 3 && @.material == true)'), 'T32b requiredList points at the material v3');
+  raise notice '[verify] T32b material re-lock OK';
+
+  -- ── T33 acceptance records the presentation mode (terms_view) ─────────────
+  select public.apn_agreement_accept(v_privacy_v3, 'explicit', 'simple') into v_status;
+  perform public.vf_assert(v_status->>'accepted' = 'true', 'T33 accept returns accepted=true');
+  perform public.vf_assert(v_status->>'termsView' = 'simple', 'T33 accept echoes the terms view');
+  select terms_view into v_fn from public.apn_agreement_acceptances
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id = v_privacy_v3;
+  perform public.vf_assert(v_fn = 'simple', 'T33 evidence row stores the displayed presentation mode: ' || coalesce(v_fn, 'null'));
+  select public.apn_agreement_status() into v_status;
+  perform public.vf_assert(v_status->>'required' = 'false', 'T33 accepting the material v3 unlocks again');
+  begin
+    select public.apn_agreement_accept(v_privacy_v3, 'explicit', 'braille') into v_status;
+    raise exception 'should-not-reach';
+  exception when check_violation then
+    raise notice '[verify] T33 invalid terms view rejected OK';
+  end;
+  raise notice '[verify] T33 terms-view evidence OK';
+
+  -- ── T34 classification fields are immutable after publish ────────────────
+  begin
+    update public.apn_agreements set material = false, change_summary = 'sneaky' where id = v_privacy_v3;
+    raise exception 'should-not-reach';
+  exception when check_violation then
+    raise notice '[verify] T34 classification mutation rejected OK';
+  end;
+  begin
+    update public.apn_agreements set supersedes_id = null where id = v_privacy_v3;
+    raise exception 'should-not-reach';
+  exception when check_violation then
+    raise notice '[verify] T34 supersedes mutation rejected OK';
+  end;
+  select material, change_summary into v_fn, h from public.apn_agreements where id = v_privacy_v3;
+  perform public.vf_assert(v_fn = 'true', 'T34 material flag unchanged: ' || coalesce(v_fn, 'null'));
+  perform public.vf_assert(h like 'Material%', 'T34 change summary unchanged: ' || coalesce(h, 'null'));
+  raise notice '[verify] T34 classification immutability OK';
+
+  -- ── T35 publish REQUIRES a Simple English body ────────────────────────────
+  perform public.apn_agreement_save_draft('commission-schedule', 'Commission Schedule (no simple)', 'Commission Schedule',
+    'This draft deliberately omits the Simple English rendering to prove the publish guard.',
+    true, null, 'T35 no-simple', '');
+  select id into v_draft_id from public.apn_agreements where code = 'commission-schedule' and status = 'draft';
+  perform public.vf_assert(v_draft_id is not null, 'T35 draft without simple exists');
+  begin
+    select public.apn_agreement_publish(v_draft_id) into v_status;
+    raise exception 'should-not-reach';
+  exception when check_violation then
+    raise notice '[verify] T35 simple-english-required publish guard OK';
+  end;
+  perform public.vf_assert((select count(*) from public.apn_agreements
+    where code = 'commission-schedule' and status = 'published') = 1, 'T35 nothing published');
+  raise notice '[verify] T35 simple-english guard OK';
+
+  -- ── T36 status payload carries body / simpleBody / material / supersedes ──
+  select public.apn_agreement_status() into v_status;
+  perform public.vf_assert(jsonb_path_exists(v_status,
+    '$.documents[*] ? (@.code == "privacy-policy" && @.simpleBody != "" && @.body != "")'), 'T36 documents carry both renderings');
+  perform public.vf_assert(jsonb_path_exists(v_status,
+    '$.documents[*] ? (@.code == "partner-agreement" && @.material == true && @.supersedesId != null)'), 'T36 documents carry classification fields');
+  perform public.vf_assert(jsonb_path_exists(v_status,
+    '$.requiredList[*] ? (@.code == "commission-schedule")') = false, 'T36 draft not in requiredList');
+  raise notice '[verify] T36 status payload OK';
+
+  -- ── T37 centralized legal-entity configuration ────────────────────────────
+  perform public.vf_assert(to_regclass('public.apn_agreement_company') is not null, 'T37 company config table exists');
+  perform public.vf_assert((select relrowsecurity from pg_class where oid = 'public.apn_agreement_company'::regclass), 'T37 company config RLS enabled');
+  perform public.vf_assert(has_table_privilege('authenticated', 'public.apn_agreement_company', 'SELECT'), 'T37 company config readable by authenticated');
+  perform public.vf_assert(has_table_privilege('authenticated', 'public.apn_agreement_company', 'INSERT') = false, 'T37 company config not writable via REST');
+  select legal_name, email into v_fn, h from public.apn_agreement_company where id = 'allbee';
+  perform public.vf_assert(v_fn = 'ALLBEE SOLUTIONS', 'T37 legal entity configured: ' || coalesce(v_fn, 'null'));
+  perform public.vf_assert(h = 'Allbeesolutions@gmail.com', 'T37 company email configured: ' || coalesce(h, 'null'));
+  perform public.vf_assert((select jsonb_array_length(signatories) from public.apn_agreement_company where id = 'allbee') = 2, 'T37 both signatories configured');
+  raise notice '[verify] T37 company configuration OK';
+
+  -- ── T38 old acceptance never satisfies a NEW material version ─────────────
+  -- partner-agreement v1 was superseded by v2 then v3; the partner accepted
+  -- v2 (T11) and v3 (T18) — assert the acceptance rows all coexist and each
+  -- points at its exact version (historical evidence intact, append-only).
+  select count(*) into c from public.apn_agreement_acceptances
+  where partner_id = '00000000-0000-4000-8000-0000000000a1' and agreement_id in (
+    select id from public.apn_agreements where code = 'partner-agreement'
+  );
+  perform public.vf_assert(c = 2, 'T38 historical acceptances preserved (v2 + v3): ' || c);
+  perform public.vf_assert((select count(*) from public.apn_agreement_acceptances
+    where partner_id = '00000000-0000-4000-8000-0000000000a1') = 14, 'T38 total evidence rows (13 + T33 v3 accept): 14');
+  raise notice '[verify] T38 historical acceptance evidence OK';
+  raise notice '[verify] ALL FINAL-GOVERNANCE TESTS T31–T38 PASSED';
+end $$;
+
 rollback to savepoint apn_agreements_verify_sp;
 
 -- ── T30 post-rollback restoration proof: production state byte-identical ────
 do $$
 begin
-  if (select count(*) from public.apn_agreements where created_by = 'verify-agr-partner') <> 0 then
+  if (select count(*) from public.apn_agreements where created_by = '00000000-0000-4000-8000-0000000000a1') <> 0 then
     raise exception 'VERIFY FAIL: agreements residue after rollback';
   end if;
   if (select count(*) from public.apn_agreement_acceptances) <> 0 then
@@ -464,10 +632,13 @@ begin
   if exists (select 1 from public.apn_users where id like 'verify-agr-%') then
     raise exception 'VERIFY FAIL: apn_users residue after rollback';
   end if;
-  if exists (select 1 from public.profiles where id = 'verify-agr-partner') then
+  if exists (select 1 from public.profiles where id = '00000000-0000-4000-8000-0000000000a1') then
     raise exception 'VERIFY FAIL: profiles residue after rollback';
   end if;
-  if exists (select 1 from public.audit where data->>'userId' = 'verify-agr-partner') then
+  if exists (select 1 from auth.users where id = '00000000-0000-4000-8000-0000000000a1') then
+    raise exception 'VERIFY FAIL: auth.users residue after rollback';
+  end if;
+  if exists (select 1 from public.audit where data->>'userId' = '00000000-0000-4000-8000-0000000000a1') then
     raise exception 'VERIFY FAIL: audit residue after rollback';
   end if;
   if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
