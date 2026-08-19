@@ -477,6 +477,15 @@ const HELPDESK_READS = {
   support_ticket_audit: "id,ticket_id,author_id,author_name,action,metadata,created_at",
 };
 
+// PR-APN agreements — versioned legal documents + per-partner acceptance
+// evidence. Normalized reads; writes go exclusively through the audited
+// apn_agreement_save_draft / publish / accept RPCs (see
+// supabase/pr-apn-partner-agreements.sql).
+const AGREEMENT_READS = {
+  apn_agreements: "id,code,version,title,category,body,content_hash,status,mandatory,reason,effective_from,published_at,published_by,created_by,created_at,updated_at",
+  apn_agreement_acceptances: "id,partner_id,agreement_id,version,content_hash,accepted_at,accepted_by,method,ip,user_agent",
+};
+
 async function fetchReferralData() {
   const out = {};
   await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
@@ -576,6 +585,19 @@ async function fetchHelpdeskData() {
   return out;
 }
 
+async function fetchAgreementData() {
+  const out = {};
+  await Promise.all(Object.entries(AGREEMENT_READS).map(async ([table, columns]) => {
+    const { data, error } = await supabase.from(table).select(columns);
+    if (error) {
+      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
+      throw new Error(`Loading ${table}: ${error.message}`);
+    }
+    out[table] = data || [];
+  }));
+  return out;
+}
+
 async function fetchAll() {
   const db = emptyDB();
   await Promise.all(TABLES.map(async (t) => {
@@ -592,7 +614,7 @@ async function fetchAll() {
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), await fetchClientData(), await fetchHelpdeskData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
+  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), await fetchClientData(), await fetchHelpdeskData(), await fetchAgreementData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
   return db;
 }
 
@@ -983,6 +1005,7 @@ const emptyDB = () => ({
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
   crm_clients: [], crm_leads: [], crm_lead_assignments: [], crm_follow_ups: [], crm_quotations: [], crm_quotation_versions: [], crm_projects: [], crm_revenue_collections: [], crm_activities: [], crm_files: [], crm_reminders: [], crm_audit: [],
   ai_settings: [], ai_insights: [], ai_predictions: [], ai_cache: [], ai_history: [], ai_recommendations: [], ai_reports: [],
+  apn_agreements: [], apn_agreement_acceptances: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -10253,6 +10276,218 @@ function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
   );
 }
 
+/* ── APN agreement governance (pr-apn-partner-agreements) ────────────────
+   Versioned legal documents. Portal access is gated server-side by the
+   apn_agreement_status RPC: while any required document is unaccepted the
+   partner sees APNAgreementGate, not the portal. Acceptance is always
+   recorded through the apn_agreement_accept RPC (identity + version + hash
+   resolved server-side), never through mutate.                               */
+const AGREEMENT_CATEGORIES = ["Agreement", "Terms & Conditions", "Commission Schedule", "Code of Conduct", "Privacy & Data Notice", "IP & Brand", "Confidentiality", "Lead & Client Management", "Quotation & Sales", "Training & Certification", "Suspension & Termination", "Dispute & Grievance"];
+
+function APNAgreementReader({ doc, onClose, footer }) {
+  return (
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ width: "min(94vw, 720px)", maxHeight: "88vh", overflow: "auto", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 16, padding: "20px 22px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div className="cmdk-ic" style={{ flexShrink: 0 }}><ScrollText size={18} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, lineHeight: 1.3 }}>{doc.title}</div>
+            <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{doc.category} · Version {doc.version} · {doc.mandatory ? "Required document" : "Optional"} · Effective {fmtDate(doc.effectiveFrom || doc.effective_from)}</div>
+          </div>
+          <button className="iconbtn" onClick={onClose} aria-label="Close document" title="Close document"><X size={16} /></button>
+        </div>
+        <div style={{ marginTop: 14, fontSize: 14.5, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap" }}>{doc.body}</div>
+        {footer}
+      </div>
+    </div>
+  );
+}
+
+/* ── agreement review gate (step before the portal; amber, distinct from the
+   suspended state's red and the pending state's purple) ──────────────────── */
+function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
+  const [checks, setChecks] = useState(() => ({}));
+  const [agree, setAgree] = useState(false);
+  const [reading, setReading] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const allRead = required.length > 0 && required.every((d) => checks[d.id]);
+  const markRead = (id) => { setReading(null); setChecks((s) => ({ ...s, [id]: true })); haptic([12]); };
+  const acceptAll = async () => {
+    setBusy(true); setErr("");
+    try {
+      for (const d of required) {
+        const { error } = await supabase.rpc("apn_agreement_accept", { p_agreement_id: d.id, p_method: "explicit" });
+        if (error) throw new Error(error.message);
+      }
+      await onAccepted?.();
+    } catch (e) { setErr(e.message || "Your acceptance could not be recorded. Please try again."); setBusy(false); }
+  };
+  return (
+    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+      <style>{CSS}</style><ToastHost />
+      {reading && <APNAgreementReader doc={reading} onClose={() => setReading(null)} footer={<button className="btn primary" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={() => markRead(reading.id)}><Check size={15} />I've read this document</button>} />}
+      <div className="lock-card gate-card" style={{ width: "min(94vw, 540px)", maxHeight: "92vh", overflow: "auto" }}>
+          <div className="lock-badge" style={{ background: "linear-gradient(135deg,#c8901b,#8a5f00)" }}><ScrollText size={26} /></div>
+          <h1>Agreement review required</h1>
+          <div style={{ display: "flex", justifyContent: "center", margin: "2px 0 8px" }}><span className="badge" style={{ background: "var(--accent-soft)", color: "var(--accent)", border: "1px solid var(--accent)" }}><BadgeCheck size={13} />{required.length} REQUIRED {required.length === 1 ? "DOCUMENT" : "DOCUMENTS"}</span></div>
+          <p style={{ textAlign: "left" }}>ALLBEE has published updated partner agreement documents. You must read and accept the current versions below before you can continue using the APN portal.</p>
+          <div style={{ marginTop: 12, textAlign: "left" }}>
+            {required.map((d) => (
+              <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "9px 11px", borderRadius: 10, background: "var(--card)", border: "1px solid var(--border)" }}>
+                <input type="checkbox" checked={!!checks[d.id]} onChange={(e) => setChecks((s) => ({ ...s, [d.id]: e.target.checked }))} aria-label={`${d.title}: marked as read`} />
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5 }}>{d.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · Version {d.version}{d.mandatory ? " · Required" : ""}</div></div>
+                <button className="btn sm" onClick={() => setReading(d)}><BookOpen size={13} />Read</button>
+              </div>
+            ))}
+          </div>
+          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, lineHeight: 1.45, textAlign: "left", marginTop: 4, cursor: "pointer" }}>
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ marginTop: 2 }} />
+            <span><b>I agree</b> to the current versions of the documents above. I acknowledge this acceptance is recorded electronically with my name, the date and device information, and that ALLBEE may rely on it.</span>
+          </label>
+          {err && <div className="auth-msg err" style={{ marginTop: 8 }}>{err}</div>}
+          <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 12 }} disabled={!allRead || !agree || busy} onClick={acceptAll}>{busy ? <RefreshCw size={16} className="spin" /> : <FileCheck2 size={16} />}{busy ? "Recording acceptance…" : allRead && agree ? "I Agree & Continue" : "Read and agree to continue"}</button>
+          <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
+          <div className="hint-line" style={{ fontSize: 11, marginTop: 10, textAlign: "center" }}>Need help? Contact ALLBEE through your usual support channel.</div>
+        </div>
+    </div>
+  );
+}
+
+/* ── agreement center (portal tab): current published docs + accept state ─── */
+function APNAgreementCenter({ db, pid, onRefresh }) {
+  const [reading, setReading] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const published = (db.apn_agreements || []).filter((a) => a.status === "published");
+  const byCode = new Map();
+  for (const a of published) { const cur = byCode.get(a.code); if (!cur || a.version > cur.version) byCode.set(a.code, a); }
+  const docs = Array.from(byCode.values()).sort((a, b) => a.code.localeCompare(b.code));
+  const myAccepts = new Map((db.apn_agreement_acceptances || []).filter((x) => x.partner_id === pid).map((x) => [x.agreement_id, x]));
+  const requiredOpen = docs.filter((d) => d.mandatory && !(myAccepts.get(d.id)?.version === d.version)).length;
+  const accept = async (doc) => {
+    setBusyId(doc.id);
+    const { error } = await supabase.rpc("apn_agreement_accept", { p_agreement_id: doc.id, p_method: "explicit" });
+    setBusyId(null);
+    if (error) emitToast(error.message, "error"); else { emitToast("Accepted — thank you.", "success"); onRefresh?.(); }
+  };
+  return (
+    <div>
+      <div className="apn-section-h">Agreements &amp; policies</div>
+      <div className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 700 }}>{requiredOpen === 0 ? "All agreements accepted" : `${requiredOpen} required agreement${requiredOpen === 1 ? "" : "s"} not yet accepted`}</div><div className="hint-line" style={{ fontSize: 12 }}>Current versions are always binding; older versions are archived automatically.</div></div>
+        {requiredOpen > 0 ? <span className="badge accent">{requiredOpen} Required</span> : <span className="badge pos"><Check size={12} />All accepted</span>}
+      </div>
+      <div className="apn-list">
+        {docs.length === 0 ? <div className="apn-rowcard"><Empty icon={<ScrollText size={22} color="var(--muted)" />} title="No published agreements" text="Published agreements will appear here." /></div>
+          : docs.map((d) => {
+            const acc = myAccepts.get(d.id);
+            const done = !!acc && acc.version === d.version;
+            return (
+              <div key={d.id} className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="cmdk-ic"><ScrollText size={16} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{d.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · Version {d.version}{d.mandatory ? " · Required" : " · Optional"}</div></div>
+                {done ? <span className="badge pos"><Check size={12} />Accepted</span> : d.mandatory ? <span className="badge accent">Required</span> : <span className="badge">Optional</span>}
+                <button className="btn sm" onClick={() => setReading(d)}><BookOpen size={13} />Read</button>
+              </div>
+            );
+          })}
+      </div>
+      {reading && <APNAgreementReader doc={reading} onClose={() => setReading(null)} footer={(() => { const acc = myAccepts.get(reading.id); const done = !!acc && acc.version === reading.version; return (
+        <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {done && <span className="badge pos" style={{ alignSelf: "center" }}><Check size={12} />Accepted · {fmtDate(acc.accepted_at)}</span>}
+          <button className="btn" onClick={() => setReading(null)}><X size={14} />Close</button>
+          {!done && <button className="btn primary" disabled={busyId === reading.id} onClick={() => accept(reading)}>{busyId === reading.id ? <RefreshCw size={14} className="spin" /> : <FileCheck2 size={14} />}{reading.mandatory ? "Accept this document" : "Accept this document (optional)"}</button>}
+        </div>
+      ); })()} />}
+    </div>
+  );
+}
+
+/* ── admin console: drafts → publish → acceptance coverage ──────────────── */
+function APNAdminAgreements({ db, isAdmin, onRefresh }) {
+  const [editing, setEditing] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const rows = (db.apn_agreements || []).slice().sort((a, b) => (a.code === b.code ? (b.version || 0) - (a.version || 0) : a.code.localeCompare(b.code)));
+  const accepts = db.apn_agreement_acceptances || [];
+  const activePartners = (db.apn_users || []).filter((u) => u.status === "active").length;
+  const grouped = [];
+  for (const r of rows) { const g = grouped.find((x) => x.code === r.code); if (g) g.rows.push(r); else grouped.push({ code: r.code, rows: [r] }); }
+  const statusChip = (s) => s === "published" ? <span className="badge pos">Published</span> : s === "superseded" ? <span className="badge">Superseded</span> : <span className="badge accent">Draft</span>;
+  const openEditor = (code, doc) => setEditing({ code, title: doc?.title || "", category: doc?.category || "Agreement", body: doc?.body || "", mandatory: doc ? !!doc.mandatory : true, effective_from: doc?.effective_from || "", reason: "" });
+  const save = async (publish) => {
+    setBusy(true); setErr("");
+    try {
+      if (!editing.title.trim() || !editing.body.trim()) throw new Error("Title and body are required.");
+      const args = { p_code: editing.code, p_title: editing.title.trim(), p_category: editing.category, p_body: editing.body, p_mandatory: editing.mandatory };
+      if (editing.effective_from) args.p_effective_from = editing.effective_from;
+      if (editing.reason) args.p_reason = editing.reason.trim();
+      const { data, error } = await supabase.rpc("apn_agreement_save_draft", args);
+      if (error) throw new Error(error.message);
+      if (publish && !/\[ DRAFT/.test(editing.body) && data?.id) {
+        const { error: perr } = await supabase.rpc("apn_agreement_publish", { p_agreement_id: data.id });
+        if (perr) throw new Error(perr.message);
+      } else if (publish) {
+        throw new Error("This document still contains the [ DRAFT ] placeholder marker. Remove it (or keep only a saved draft) before publishing.");
+      }
+      emitToast(publish ? "Document published — partner gate updated." : "Draft saved.", "success");
+      setEditing(null);
+      onRefresh?.();
+    } catch (e) { setErr(e.message || "That operation failed."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <div className="apn-section-h" style={{ display: "flex", alignItems: "center", gap: 8 }}>Agreements <span className="hint-line" style={{ fontSize: 11 }}>— drafts never block partners; publish activates the gate.</span></div>
+      {grouped.length === 0 ? <div className="apn-rowcard"><Empty icon={<ScrollText size={22} color="var(--muted)" />} title="No agreement documents" text="The seed docs appear after the agreement table is deployed." /></div>
+        : grouped.map((g) => (
+          <div key={g.code} style={{ marginBottom: 16 }}>
+            <div className="apn-section-h" style={{ fontSize: 13, textTransform: "none" }}>{g.code}</div>
+            <div className="apn-list">
+              {g.rows.map((d) => {
+                const cur = g.rows.find((r) => r.status === "published");
+                const coverage = cur ? `${accepts.filter((a) => a.agreement_id === cur.id).length} of ${activePartners} active partners accepted` : null;
+                return (
+                  <div key={d.id} className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div className="cmdk-ic"><ScrollText size={16} /></div>
+                    <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 600 }}>{d.title} <span className="hint-line">v{d.version}</span></div><div className="hint-line" style={{ fontSize: 11 }}>{d.category} · {d.mandatory ? "Required" : "Optional"}{d.effective_from ? " · Effective " + fmtDate(d.effective_from) : ""}{d.status === "published" && coverage ? ` · ${coverage}` : ""}</div></div>
+                    {statusChip(d.status)}
+                    {d.status === "draft" && <div style={{ display: "flex", gap: 6 }}><button className="btn sm" onClick={() => openEditor(g.code, d)}><Pencil size={13} />Edit</button><button className="btn sm primary" onClick={() => { setEditing({ ...d, reason: "" }); }}><Check size={13} />Publish</button></div>}
+                    {d.status === "published" && <button className="btn sm" onClick={() => openEditor(g.code, null)}><Plus size={13} />New version</button>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      {editing && (
+        <Modal title={`${editing.id ? "Edit" : "New version"} — ${editing.code}`} onClose={() => !busy && setEditing(null)} footer={
+          <>
+            <button className="btn" disabled={busy} onClick={() => save(false)}>{busy ? <RefreshCw size={14} className="spin" /> : <Save size={14} />}Save draft</button>
+            <button className="btn primary" disabled={busy} onClick={() => save(true)}>{busy ? <RefreshCw size={14} className="spin" /> : <Check size={14} />}Save &amp; publish</button>
+          </>
+        }>
+          <div className="grid2">
+            <Field label="Title" required><input className="input" value={editing.title} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, title: e.target.value }))} /></Field>
+            <Field label="Category" required>{(() => <select className="input" value={editing.category} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, category: e.target.value }))}>{AGREEMENT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>)()}</Field>
+          </div>
+          <Field label="Body" required hint="Paste the final wording from the business / legal owner. The [ DRAFT ] marker is only allowed while saving drafts — publishing requires final wording."><textarea className="textarea" rows={9} value={editing.body} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, body: e.target.value }))} /></Field>
+          <div className="grid2">
+            <Field label="Effective from"><input className="input" type="date" value={(editing.effective_from || "").slice(0, 10)} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, effective_from: e.target.value ? new Date(e.target.value + "T12:00:00Z").toISOString() : "" }))} /></Field>
+            <Field label="Reason for this version"><input className="input" value={editing.reason} placeholder="e.g. Legal refresh 2026" disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, reason: e.target.value }))} /></Field>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+            <input type="checkbox" checked={editing.mandatory} disabled={busy} onChange={(e) => setEditing((s) => ({ ...s, mandatory: e.target.checked }))} />
+            <span>Required — partners must accept before using the portal</span>
+          </label>
+          {/\[ DRAFT/.test(editing.body) && <div className="auth-msg" style={{ marginTop: 10 }}><AlertTriangle size={13} />This version still contains the [ DRAFT ] placeholder marker — publishing is blocked while it remains.</div>}
+          {err && <div className="auth-msg err" style={{ marginTop: 10 }}>{err}</div>}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 /* ── dashboard ───────────────────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════════════════
    ALLBEE AI (APN partner) + SUPPORT TICKETS
@@ -12021,6 +12256,18 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const [modal, setModal] = useState(null);
   const [finSnap, setFinSnap] = useState(null);
   const [snapTick, setSnapTick] = useState(0);
+  const [agr, setAgr] = useState(null);
+
+  // The agreement gate answer comes from the server-side apn_agreement_status
+  // RPC (single source of truth). While it says REQUIRED, the whole portal is
+  // replaced by APNAgreementGate; acceptance there triggers this refetch.
+  const refreshAgreements = useCallback(async () => {
+    const { data, error } = await supabase.rpc("apn_agreement_status");
+    setAgr(error || !data ? null : data);
+  }, []);
+  useEffect(() => {
+    refreshAgreements().catch(() => {});
+  }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The portal's ONE refresh operation: reload the shared store (which every
   // APN page reads from) and bump the snapshot tick so the wallet facts and
@@ -12052,7 +12299,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   useEffect(() => {
     const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
     const route = parts[0] === "apn" ? parts[1] : parts[0];
-    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "learn", "targets", "documents", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
+    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
   }, []);
 
   if (!meRow) return (
@@ -12071,6 +12318,10 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
   if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} />;
   if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
+  // AGREE-MENT GATE: while any required document is unaccepted the server's
+  // apn_agreement_status says required=true and the portal is fully replaced
+  // by the review screen (visually distinct from account-suspended).
+  if (agr && agr.required) return <APNAgreementGate isDark={isDark} onSignOut={signOut} required={agr.requiredList || []} onAccepted={refreshAgreements} />;
 
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
@@ -12090,6 +12341,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
       case "documents": return <APNDocuments db={db} />;
+      case "agreements": return <APNAgreementCenter db={db} pid={pid} onRefresh={refreshPortal} />;
       case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
       case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
@@ -12105,6 +12357,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ["targets", "Targets", <Target size={20} color="var(--primary)" />, unackTargets],
     ["quotations", "Quotations", <FileText size={20} color="var(--primary)" />, 0],
     ["documents", "Materials", <BookOpen size={20} color="var(--primary)" />, 0],
+    ["agreements", "Agreements", <ScrollText size={20} color="var(--primary)" />, agr?.requiredCount || 0],
     ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
     ["learn", "Learn", <GraduationCap size={20} color="var(--primary)" />, 0],
     ["withdrawals", "Withdrawal Center", <Wallet size={20} color="var(--primary)" />, withdrawalOpenCount],
@@ -12141,7 +12394,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         {primary.map(([k, l, Icon]) => (
           <button key={k} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
         ))}
-        <button className={"apn-tab" + (["targets", "quotations", "documents", "notifications", "withdrawals", "learn", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
+        <button className={"apn-tab" + (["targets", "quotations", "documents", "agreements", "notifications", "withdrawals", "learn", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
           <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
         </button>
       </nav>
@@ -13745,7 +13998,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   };
 
   const actionBadges = apnAdminActionCounts(db, currentUserId);
-  const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["support", "Support", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
+  const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["support", "Support", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["agreements", "Agreements", 0], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
   const selectTab = (nextTab) => {
     setTab(nextTab);
     const action = APN_ACTION_BADGE_MAP.find((item) => item.tab === nextTab);
@@ -13781,6 +14034,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       ); })()}
       {tab === "content" && <APNAdminContent db={db} openModal={setModal} removeRow={removeRow} />}
       {tab === "docs" && <APNAdminDocs db={db} openModal={setModal} removeRow={removeRow} />}
+      {tab === "agreements" && <APNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} />}
       {tab === "notify" && (() => { const list = (db.apn_notifications || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications sent" text="Send updates to all partners, a district, or one partner." action={<button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>} />
           : list.map((n) => { const sender = apnNotificationSender(n); return <div key={n.id} className="card stat" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 10 }}><Avatar name={sender.name} url={sender.avatar} size={28} fontSize={11} /><div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation} · {n.audience === "all" ? "All partners" : n.audience.startsWith("district:") ? n.audience.slice(9) : "One partner"} · {fmtDateTime(n.createdAt)}</div></div><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_notifications", n.id, `deleted APN notification "${n.title}"`)}><Trash2 size={14} /></button></div>; })}</div>
