@@ -14177,10 +14177,11 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
     }
     const { error } = await supabase.from("profiles").update({ name: next.name, email: next.email, mobile: next.mobile, username: next.username, dob: next.dob || null, active: next.status !== "suspended", status: next.status === "suspended" ? "suspended" : "active" }).eq("id", partner.id);
     if (error) throw new Error(error.message);
+    const persistedNext = { ...partner, ...next, updatedAt: Date.now() };
     const profileEvents = [timeline(partner, "profile-edited", "Profile Edited", changes.length ? changes.join(" · ") : "Partner profile reviewed.")];
     if (String(partner.district || "") !== String(next.district || "")) profileEvents.push(timeline(partner, "district-changed", "District Changed", `${partner.district || "Unassigned"} → ${next.district || "Unassigned"}.`));
     const districtChanged = String(partner.district || "") !== String(next.district || "");
-    mutateApn((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? next : u), apn_transfer_history: districtChanged ? [...(d.apn_transfer_history || []), { id: uid(), partnerId: partner.id, previousDistrict: partner.district || "Unassigned", newDistrict: next.district || "Unassigned", effectiveDate: Date.now(), changedBy: currentUser, reason: "Profile edit", createdAt: Date.now() }] : d.apn_transfer_history }), M(`Super Admin updated partner profile${changes.length ? ` · ${changes.join(" · ")}` : ""}`, partner.id, partner, next), profileEvents);
+    mutateApn((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? persistedNext : u), apn_transfer_history: districtChanged ? [...(d.apn_transfer_history || []), { id: uid(), partnerId: partner.id, previousDistrict: partner.district || "Unassigned", newDistrict: persistedNext.district || "Unassigned", effectiveDate: Date.now(), changedBy: currentUser, reason: "Profile edit", createdAt: Date.now() }] : d.apn_transfer_history }), M(`Super Admin updated partner profile${changes.length ? ` · ${changes.join(" · ")}` : ""}`, partner.id, partner, next), profileEvents);
     if (refreshPeople) await refreshPeople();
     setModal(null);
   };
