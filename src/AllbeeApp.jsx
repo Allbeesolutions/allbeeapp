@@ -1606,7 +1606,11 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .prism-status { display:flex; justify-content:center; min-height:22px; margin-top:18px;
   color:var(--muted); font-size:13px; font-weight:600; text-align:center; }
 .prism-status span { animation:msg-in .3s ease; white-space:nowrap; }
-@media (max-width:420px) { .prism { width:48px; height:48px; }
+@media (max-width:420px) {
+  .topbar > .usermenu > .iconbtn[title="Refresh"] { display:none; }
+  .topbar { padding-left:9px; padding-right:9px; gap:6px; }
+  .topbar-title h2 { font-size:13px; }
+  .prism { width:48px; height:48px; }
   .prism-face { border-radius:8px; } .prism-logo { height:21px; }
   .prism-f1 { transform:rotateY(0deg) translateZ(24px); }
   .prism-f2 { transform:rotateY(60deg) translateZ(24px); } .prism-f3 { transform:rotateY(120deg) translateZ(24px); }
@@ -1652,6 +1656,15 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
   .topbar .company-pill .val { font-size:13px; }
 }
 @media (max-width:560px) {
+  /* Admin/internal mobile header: keep the high-value controls on one line.
+     Pull-to-refresh replaces the toolbar refresh action on touch devices, so
+     reclaim that width instead of letting the header wrap/overflow. */
+  .topbar { min-width:0; }
+  .topbar-title { min-width:0; }
+  .topbar .company-pill { display:none; }
+  .topbar .search-trigger { width:34px; height:34px; display:grid; place-items:center; }
+  .topbar .iconbtn { flex:0 0 32px; }
+  .topbar .userchip { flex:0 0 34px; }
   .cards-grid { grid-template-columns:1fr !important; }
   .ai-health-grid, .ai-score-grid { grid-template-columns:1fr 1fr; }
   .ai-command-grid { grid-template-columns:1fr 1fr; }
@@ -5488,14 +5501,19 @@ const DYK_FACTS = [
 
 function DidYouKnow() {
   const [i, setI] = useState(0);
-  const [shown, setShown] = useState([]);
-  // Rotate facts without immediate repeats; reshuffle when the pool is exhausted.
+  // Keep each fact readable. Rotate on a deliberate 6-second cadence, not
+  // through render-driven state updates.
   useEffect(() => {
-    const remaining = DYK_FACTS.map((_, idx) => idx).filter((idx) => !shown.includes(idx));
-    if (remaining.length === 0) { setShown([]); setI(0); return; }
-    const pick = remaining.length === 1 ? remaining[0] : remaining[Math.floor(Math.random() * remaining.length)];
-    setI(pick); setShown((s) => [...s, pick]);
-  }, [shown]);
+    if (DYK_FACTS.length < 2) return undefined;
+    const timer = setInterval(() => {
+      setI((current) => {
+        let next = Math.floor(Math.random() * DYK_FACTS.length);
+        if (next === current) next = (current + 1) % DYK_FACTS.length;
+        return next;
+      });
+    }, 6000);
+    return () => clearInterval(timer);
+  }, []);
   return (
     <div className="dyk-wrap">
       <div className="dyk-card">
@@ -15560,7 +15578,7 @@ export default function App() {
                 <button className="search-trigger" onClick={() => setSearchOpen(true)} title="Search (Ctrl K)">
                   <Search size={16} /><span className="st-lbl" style={{ flex: 1, textAlign: "left" }}>Search…</span><span className="st-kbd">Ctrl K</span>
                 </button>
-                <button className="iconbtn" title="Refresh" disabled={topBusy}
+                <button className="iconbtn topbar-refresh" title="Refresh" disabled={topBusy}
                   onClick={async () => { setTopBusy(true); try { await reload(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
                   <RefreshCw size={18} className={topBusy ? "spin" : ""} />
                 </button>
