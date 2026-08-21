@@ -5518,7 +5518,8 @@ function LoadingScreen({ isDark, note }) {
 }
 
 function DidYouKnow() {
-  const [i, setI] = useState(0);
+  // Pick a fresh fact on every mount/reload; avoid always starting on the founder fact.
+  const [i, setI] = useState(() => Math.floor(Math.random() * DYK_FACTS.length));
   // Keep each fact readable. Rotate on a deliberate 6-second cadence, not
   // through render-driven state updates.
   useEffect(() => {
@@ -15382,7 +15383,7 @@ export default function App() {
   const tncPending = pendingTnc(config, profile, role);
   if (profile && tncPending.length)
     return gateChild(<TermsGate agreements={tncPending} onAccept={acceptTnc} onSignOut={signOut} isDark={isDark} />);
-  if (loading || !db) return <Loading />;
+  if (loading || !db) return <LoadingScreen isDark={isDark} note="Preparing your workspace…" />;
 
   const teamNames = team.length ? team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head" && p.active !== false).map((p) => p.name) : USERS;
   const myTeam = teamOfUser(db?.teams, me.id);
