@@ -5499,6 +5499,24 @@ const DYK_FACTS = [
   { title: "Building tools", body: "ALLBEE continues to build digital tools that make business operations simpler, more transparent, and easier to manage." },
 ];
 
+function LoadingScreen({ isDark, note }) {
+  const prisms = note === "Signing you in…" ? ["Checking your access", "Preparing your workspace", "Almost ready"]
+    : note === "Loading your portal…" || note === "Loading APN…" ? ["Preparing your dashboard", "Syncing data", "Almost ready"]
+    : note === "Preparing your workspace…" ? ["Syncing data", "Almost ready"]
+    : null;
+  return (
+    <div className="allbee" data-theme={isDark ? "dark" : "light"} aria-busy="true" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
+      <style>{CSS}</style><ToastHost />
+      <div className="loading-screen">
+        <div className="loading-card">
+          <PrismFluxLoader status={note || "Loading ALLBEE…"} statusList={prisms} />
+          <DidYouKnow />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DidYouKnow() {
   const [i, setI] = useState(0);
   // Keep each fact readable. Rotate on a deliberate 6-second cadence, not
@@ -15325,23 +15343,9 @@ export default function App() {
     setModal(null);
   };
 
-  const Loading = ({ note }) => {
-    const prisms = note === "Signing you in…" ? ["Checking your access", "Preparing your workspace", "Almost ready"]
-      : note === "Loading your portal…" || note === "Loading APN…" ? ["Preparing your dashboard", "Syncing data", "Almost ready"]
-      : note === "Preparing your workspace…" ? ["Syncing data", "Almost ready"]
-      : null;
-    return (
-      <div className="allbee" data-theme={isDark ? "dark" : "light"} aria-busy="true" style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-        <style>{CSS}</style><ToastHost />
-        <div className="loading-screen">
-          <div className="loading-card">
-            <PrismFluxLoader status={note || "Loading ALLBEE…"} statusList={prisms} />
-            <DidYouKnow />
-          </div>
-        </div>
-      </div>
-    );
-  };
+  // Loading is kept outside App so parent state updates do not remount the
+  // loading surface. Remounting here used to restart Did You Know and made the
+  // fact appear to refresh rapidly while auth/data state was settling.
 
   // Wraps every remote surface in the founder lockdown gate when live (allows
   // tests to force the paused UI with zero network via LOCKDOWN_PAUSE_TEST).
@@ -15350,10 +15354,10 @@ export default function App() {
     : node);
 
   if (publicProposalToken) return gateChild(<ProposalPortal token={publicProposalToken} isDark={isDark} />);
-  if (session === undefined) return <Loading />;
+  if (session === undefined) return <LoadingScreen isDark={isDark} />;
   if (!session) return gateChild(<Lock isDark={isDark} setDark={setIsDark} />);
   if (passwordRecovery) return gateChild(<PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />);
-  if (profile === undefined) return <Loading note="Signing you in…" />;
+  if (profile === undefined) return <LoadingScreen isDark={isDark} note="Signing you in…" />;
   if (profile && profile.active === false && role !== "partner")
     return gateChild(<Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />);
   // new staff & client sign-ups wait for a partner to approve them
@@ -15361,13 +15365,13 @@ export default function App() {
     return gateChild(<ApprovalPending isDark={isDark} name={currentUser} onSignOut={signOut} />);
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
-    if (loading || !db) return <Loading note="Loading your portal…" />;
+    if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading your portal…" />;
     return gateChild(<ClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} />);
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
   if (role === "partner") {
-    if (loading || !db) return <Loading note="Loading APN…" />;
+    if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading APN…" />;
     return gateChild(<APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} reload={reload} />);
   }
   // first login: require the core profile details before anything else
