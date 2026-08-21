@@ -216,7 +216,7 @@ const LOGO_ICON = "/allbee-icon.png";   // square monogram
 // (used on the flagship domain while the launch PR is under review). Tests
 // pass pause (VITE_PAUSE_TEST=1) so the gate renders its lockdown UI
 // immediately with zero network.
-const FOUNDER_LOCKDOWN_LIVE = import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET !== "true";
+const FOUNDER_LOCKDOWN_LIVE = import.meta.env.VITE_FOUNDER_LOCKDOWN_LIVE === "true";
 const LOCKDOWN_PAUSE_TEST = import.meta.env.VITE_PAUSE_TEST === "1";
 // Hidden entrance to the founder authorization flow: 16 idle taps on the gate
 // logo, then a 3-2-1 countdown (taps 17-19), an armed beat (tap 20), and the
@@ -5491,10 +5491,10 @@ function DidYouKnow() {
   const [shown, setShown] = useState([]);
   // Rotate facts without immediate repeats; reshuffle when the pool is exhausted.
   useEffect(() => {
-    const remaining = DYK_FACTS.filter((_, idx) => !shown.includes(idx));
+    const remaining = DYK_FACTS.map((_, idx) => idx).filter((idx) => !shown.includes(idx));
     if (remaining.length === 0) { setShown([]); setI(0); return; }
     const pick = remaining.length === 1 ? remaining[0] : remaining[Math.floor(Math.random() * remaining.length)];
-    setI(() => pick); setShown((s) => [...s, pick]);
+    setI(pick); setShown((s) => [...s, pick]);
   }, [shown]);
   return (
     <div className="dyk-wrap">
