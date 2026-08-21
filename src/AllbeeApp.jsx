@@ -2069,6 +2069,10 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-tc-pane { flex:1; overflow-y:auto; padding:12px; }
 .apn-tc-subnav { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
 .apn-tc-list { display:flex; flex-direction:column; gap:6px; }
+.apn-tc-quick { padding:10px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); }
+.apn-tc-contact { cursor:default; }
+.apn-tc-available { font-size:10px; font-weight:700; color:#16834b; background:#e8f7ee; padding:4px 7px; border-radius:999px; white-space:nowrap; }
+.apn-tc-status { font-size:10px; font-weight:700; color:#16834b; white-space:nowrap; }
 .apn-tc-item { display:flex; align-items:center; gap:10px; padding:9px 8px; border:1px solid var(--border); border-radius:12px; background:var(--surface); cursor:pointer; text-align:left; width:100%; }
 .apn-tc-item:hover { border-color:var(--primary); }
 .apn-tc-chat { display:flex; flex-direction:column; height:calc(100vh - 160px); }
@@ -12451,6 +12455,8 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   const [section, setSection] = useState("person");
   const [conversations, setConversations] = useState([]);          // from apn_list_conversations
   const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
+  const [contacts, setContacts] = useState([]);                      // all active APN partners + always-available admins
+  const [contactSearch, setContactSearch] = useState("");
   const [requests, setRequests] = useState([]);                      // from apn_list_friend_requests
   const [selected, setSelected] = useState(null);                    // {id, subject, participants}
   const [messages, setMessages] = useState([]);
@@ -12478,6 +12484,9 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       const { data, error } = await supabase.rpc("apn_list_conversations");
       if (error) throw new Error(error.message);
       setConversations(data || []);
+      const contactsRes = await supabase.rpc("apn_list_chat_contacts");
+      if (contactsRes.error) throw new Error(contactsRes.error.message);
+      setContacts(contactsRes.data || []);
       const fr = await supabase.rpc("apn_list_friend_requests");
       if (fr.error) throw new Error(fr.error.message);
       setRequests(fr.data || []);
@@ -12485,7 +12494,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       setFriends(accepted.map((r) => ({ id: r.other_id, name: r.other_name, apnId: r.other_apn_id })));
     } catch (e) {
       if (/does not exist|not exist|42P01|PGRST|relation/.test(e.message || "")) {
-        setConversations([]); setRequests([]); setFriends([]);
+        setConversations([]); setRequests([]); setFriends([]); setContacts([]);
       } else { setErr(e.message || String(e)); }
     } finally { setLoading(false); }
   }, []);
@@ -12590,6 +12599,15 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     }
   };
 
+  const openAdminChat = async (admin) => {
+    setErr("");
+    try {
+      const { data, error } = await supabase.rpc("apn_get_or_create_admin_conversation", { p_admin_id: admin.contact_id });
+      if (error) throw new Error(error.message);
+      if (data?.[0]) openConversation({ id: data[0].conversation_id, subject: data[0].subject, conv_type: "person" });
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
   const openPersonChat = async (other) => {
     try {
       const { data, error } = await supabase.rpc("apn_get_or_create_person_conversation", { p_other_apn_id: other.apnId });
@@ -12626,37 +12644,39 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       <div className="apn-tc-body">
         {section === "person" && !selected && (
           <div className="apn-tc-pane">
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>Friend chats</div>
-            {loading && <div className="hint-line">Loading your chats…</div>}
+            {loading && <div className="hint-line">Loading Team Chat contacts…</div>}
             {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
-            <div className="apn-tc-list">
-              {friends.length ? friends.map((f) => (
-                <button key={f.id} className="apn-tc-item" onClick={() => openPersonChat(f)}>
-                  <Avatar name={f.name} size={34} fontSize={13} />
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{f.name}</div><div className="hint-line">{f.apnId}</div></div>
-                  <ChevronRight size={16} color="var(--muted)" />
+            <div className="apn-tc-quick">
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>Quick chats</div>
+              {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => (
+                <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
+                  <Avatar name={a.name} size={34} fontSize={13} />
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{a.contact_type === "superadmin" ? "AllBee Super Admin" : "AllBee Admin"}</div></div>
+                  <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
                 </button>
-              )) : !loading && <Empty icon={<Users size={22} />} title="No friend chats yet" text="Connect with a partner from My Network and accept a friend request to start messaging." />}
+              ))}
             </div>
-            {friends.length > 0 && (
-              <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>Friend requests</div>
-                {requests.filter((r) => r.status === "pending").length ? requests.filter((r) => r.status === "pending").map((r) => (
-                  <div key={r.request_id} className="apn-tc-item" style={{ justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar name={r.other_name} size={30} fontSize={11} />
-                      <div><div style={{ fontWeight: 600 }}>{r.other_name}</div><div className="hint-line">{r.other_apn_id} · {r.direction === "incoming" ? "incoming" : "sent"}</div></div>
-                    </div>
-                    {r.direction === "incoming" && (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className="btn sm primary" onClick={() => acceptRequest(r.request_id)} disabled={!!busyRequests.has(r.request_id)}>{busyRequests.has(r.request_id) ? <RefreshCw size={14} className="spin" /> : "Accept"}</button>
-                        <button className="btn sm" onClick={() => rejectRequest(r.request_id)} disabled={!!busyRequests.has(r.request_id)}>Reject</button>
-                      </div>
-                    )}
-                    {r.direction === "outgoing" && <span className="hint-line">Pending</span>}
-                  </div>
-                )) : <Empty icon={<UserPlus size={20} />} title="No pending requests" text="You have no pending friend requests." />}
-              </div>
-            )}
+            <div style={{ marginTop: 14, fontSize: 12, fontWeight: 800 }}>Available APN partners</div>
+            <div className="hint-line" style={{ margin: "4px 0 8px" }}>Send a friend request to start chatting.</div>
+            <input className="input" value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search partner by name, APN ID or district…" aria-label="Search APN partners" />
+            <div className="apn-tc-list" style={{ marginTop: 8 }}>
+              {contacts.filter((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())).map((c) => {
+                const action = c.relationship === "friend" ? "Chat" : c.relationship === "outgoing" ? "Pending" : c.relationship === "incoming" ? "Accept" : "Add Friend";
+                return <div key={c.contact_id} className="apn-tc-item apn-tc-contact">
+                  <Avatar name={c.name} size={34} fontSize={13} />
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 650 }}>{c.name}</div><div className="hint-line">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div>
+                  <span className="apn-tc-status">Available</span>
+                  {c.relationship === "friend" ? <button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : <button className="btn sm primary" disabled={c.relationship === "outgoing"} onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
+                </div>;
+              })}
+            </div>
+            {requests.filter((r) => r.status === "pending").length > 0 && <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>Friend requests</div>
+              {requests.filter((r) => r.status === "pending").map((r) => <div key={r.request_id} className="apn-tc-item" style={{ justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar name={r.other_name} size={30} fontSize={11} /><div><div style={{ fontWeight: 600 }}>{r.other_name}</div><div className="hint-line">{r.other_apn_id} · {r.direction === "incoming" ? "incoming" : "sent"}</div></div></div>
+                {r.direction === "incoming" ? <div style={{ display: "flex", gap: 6 }}><button className="btn sm primary" onClick={() => acceptRequest(r.request_id)}>Accept</button><button className="btn sm" onClick={() => rejectRequest(r.request_id)}>Reject</button></div> : <span className="hint-line">Pending</span>}
+              </div>)}
+            </div>}
           </div>
         )}
         {section === "district" && !selected && (
