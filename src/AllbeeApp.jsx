@@ -2064,18 +2064,27 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-lvl .bar > i { display:block; height:100%; background:#fff; border-radius:6px; }
 /* APN Team Chat */
 .apn-teamchat { font-size:14px; }
-.apn-tc-header { padding:10px 12px 8px; border-bottom:1px solid var(--border); background:var(--surface); flex: none; }
-.apn-tc-body { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-.apn-tc-pane { flex:1; overflow-y:auto; padding:12px; }
-.apn-tc-subnav { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
-.apn-tc-list { display:flex; flex-direction:column; gap:6px; }
-.apn-tc-quick { padding:10px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); }
-.apn-tc-contact { cursor:default; }
-.apn-tc-available { font-size:10px; font-weight:700; color:#16834b; background:#e8f7ee; padding:4px 7px; border-radius:999px; white-space:nowrap; }
-.apn-tc-status { font-size:10px; font-weight:700; color:#16834b; white-space:nowrap; }
-.apn-tc-item { display:flex; align-items:center; gap:10px; padding:9px 8px; border:1px solid var(--border); border-radius:12px; background:var(--surface); cursor:pointer; text-align:left; width:100%; }
-.apn-tc-item:hover { border-color:var(--primary); }
-.apn-tc-chat { display:flex; flex-direction:column; height:calc(100vh - 160px); }
+.apn-tc-shell { flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px, 390px) minmax(0, 1fr); overflow:hidden; background:var(--bg); }
+.apn-tc-sidebar { min-width:0; overflow-y:auto; padding:14px; border-right:1px solid var(--border); background:var(--surface); }
+.apn-tc-main { min-width:0; min-height:0; display:flex; flex-direction:column; background:var(--bg); }
+.apn-tc-main-empty { flex:1; display:flex; align-items:center; justify-content:center; padding:32px; text-align:center; }
+.apn-tc-main-title { font-size:16px; font-weight:800; color:var(--text); margin-bottom:5px; }
+.apn-tc-sidebar-title { font-size:18px; font-weight:800; margin:0 0 3px; }
+.apn-tc-sidebar-subtitle { color:var(--muted); font-size:12px; margin-bottom:14px; }
+.apn-tc-card { border:1px solid var(--border); border-radius:14px; background:var(--surface); padding:12px; margin-bottom:10px; }
+.apn-tc-card-title { font-size:12px; font-weight:800; margin-bottom:8px; }
+.apn-tc-partner-list { display:flex; flex-direction:column; gap:2px; margin-top:8px; }
+.apn-tc-partner-row { display:flex; align-items:center; gap:9px; padding:8px 5px; border-radius:10px; }
+.apn-tc-partner-row:hover { background:var(--surface-2); }
+.apn-tc-partner-meta { flex:1; min-width:0; }
+.apn-tc-partner-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.apn-tc-partner-location { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.apn-tc-section-label { font-size:12px; font-weight:800; color:var(--muted); margin:15px 0 7px; }
+.apn-tc-quick { padding:0; border:0; background:transparent; }
+.apn-tc-quick .apn-tc-item { margin-bottom:5px; }
+.apn-tc-quick .apn-tc-item:last-child { margin-bottom:0; }
+.apn-tc-chat { flex:1; min-height:0; display:flex; flex-direction:column; height:auto; }
+@media (max-width:760px) { .apn-tc-shell { grid-template-columns:1fr; } .apn-tc-main { display:none; } .apn-tc-shell.has-selection .apn-tc-sidebar { display:none; } .apn-tc-shell.has-selection .apn-tc-main { display:flex; } }
 .apn-tc-chathead { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); background:var(--surface); flex: none; }
 .apn-tc-messages { flex:1; overflow-y:auto; padding:12px 12px 8px; display:flex; flex-direction:column; gap:10px; }
 .apn-tc-msg { display:flex; align-items:flex-end; gap:7px; max-width:82%; }
@@ -12642,41 +12651,71 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
         <div className="seg" style={{ flex: "none" }}>{CHAT_SECTIONS.map((s) => <button key={s} className={section === s ? "on" : ""} onClick={() => { setSection(s); setSelected(null); }}>{CHAT_SECTION_LABEL[s]}{s === "person" && totalUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 5 }}>{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>)}</div>
       </div>
       <div className="apn-tc-body">
-        {section === "person" && !selected && (
-          <div className="apn-tc-pane">
-            {loading && <div className="hint-line">Loading Team Chat contacts…</div>}
-            {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
-            <div className="apn-tc-quick">
-              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>Quick chats</div>
-              {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => (
-                <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
-                  <Avatar name={a.name} size={34} fontSize={13} />
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{a.contact_type === "superadmin" ? "AllBee Super Admin" : "AllBee Admin"}</div></div>
-                  <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
-                </button>
-              ))}
-            </div>
-            <div style={{ marginTop: 14, fontSize: 12, fontWeight: 800 }}>Available APN partners</div>
-            <div className="hint-line" style={{ margin: "4px 0 8px" }}>Send a friend request to start chatting.</div>
-            <input className="input" value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search partner by name, APN ID or district…" aria-label="Search APN partners" />
-            <div className="apn-tc-list" style={{ marginTop: 8 }}>
-              {contacts.filter((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())).map((c) => {
-                const action = c.relationship === "friend" ? "Chat" : c.relationship === "outgoing" ? "Pending" : c.relationship === "incoming" ? "Accept" : "Add Friend";
-                return <div key={c.contact_id} className="apn-tc-item apn-tc-contact">
-                  <Avatar name={c.name} size={34} fontSize={13} />
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 650 }}>{c.name}</div><div className="hint-line">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div>
-                  <span className="apn-tc-status">Available</span>
-                  {c.relationship === "friend" ? <button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : <button className="btn sm primary" disabled={c.relationship === "outgoing"} onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
-                </div>;
-              })}
-            </div>
-            {requests.filter((r) => r.status === "pending").length > 0 && <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>Friend requests</div>
-              {requests.filter((r) => r.status === "pending").map((r) => <div key={r.request_id} className="apn-tc-item" style={{ justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar name={r.other_name} size={30} fontSize={11} /><div><div style={{ fontWeight: 600 }}>{r.other_name}</div><div className="hint-line">{r.other_apn_id} · {r.direction === "incoming" ? "incoming" : "sent"}</div></div></div>
-                {r.direction === "incoming" ? <div style={{ display: "flex", gap: 6 }}><button className="btn sm primary" onClick={() => acceptRequest(r.request_id)}>Accept</button><button className="btn sm" onClick={() => rejectRequest(r.request_id)}>Reject</button></div> : <span className="hint-line">Pending</span>}
-              </div>)}
-            </div>}
+        {section === "person" && (
+          <div className={`apn-tc-shell ${selected ? "has-selection" : ""}`}>
+            <aside className="apn-tc-sidebar">
+              <div className="apn-tc-sidebar-title">Team Chat</div>
+              <div className="apn-tc-sidebar-subtitle">Connect with partners in your network</div>
+              {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
+
+              <div className="apn-tc-card">
+                <div className="apn-tc-card-title">Quick Chats</div>
+                {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => (
+                  <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
+                    <Avatar name={a.name} size={36} fontSize={13} />
+                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{a.contact_type === "superadmin" ? "Chat with AllBee Super Admins" : "Chat with AllBee Admins"}</div></div>
+                    <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
+                  </button>
+                ))}
+                {!contacts.some((c) => c.contact_type === "admin" || c.contact_type === "superadmin") && !loading && <div className="hint-line">No management contacts available.</div>}
+              </div>
+
+              <div className="apn-tc-card">
+                <div className="apn-tc-card-title">Available Partners</div>
+                <div className="hint-line" style={{ marginBottom: 8 }}>Send a friend request to start chatting</div>
+                <input className="input" value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search partner by name, code or district…" aria-label="Search APN partners" />
+                <div className="apn-tc-partner-list">
+                  {loading && <div className="hint-line" style={{ padding: 10 }}>Loading partners…</div>}
+                  {!loading && contacts.filter((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())).map((c) => {
+                    const action = c.relationship === "friend" ? "Chat" : c.relationship === "outgoing" ? "Pending" : c.relationship === "incoming" ? "Accept" : "Add Friend";
+                    return <div key={c.contact_id} className="apn-tc-partner-row">
+                      <Avatar name={c.name} size={34} fontSize={12} />
+                      <div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{c.name}</div><div className="apn-tc-partner-location">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div>
+                      <span className="apn-tc-status">{c.availability === "available" ? "Online" : (c.availability || "Available")}</span>
+                      {c.relationship === "friend" ? <button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : <button className="btn sm primary" disabled={c.relationship === "outgoing"} onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
+                    </div>;
+                  })}
+                  {!loading && !contacts.some((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())) && <div className="hint-line" style={{ padding: 10 }}>No partners found.</div>}
+                </div>
+              </div>
+
+              {requests.filter((r) => r.status === "pending").length > 0 && <div className="apn-tc-card">
+                <div className="apn-tc-card-title">Friend Requests</div>
+                {requests.filter((r) => r.status === "pending").map((r) => <div key={r.request_id} className="apn-tc-partner-row">
+                  <Avatar name={r.other_name} size={32} fontSize={11} /><div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{r.other_name}</div><div className="apn-tc-partner-location">{r.other_apn_id}</div></div>
+                  {r.direction === "incoming" ? <div style={{ display: "flex", gap: 5 }}><button className="btn sm primary" onClick={() => acceptRequest(r.request_id)}>Accept</button><button className="btn sm" onClick={() => rejectRequest(r.request_id)}>Reject</button></div> : <span className="hint-line">Pending</span>}
+                </div>)}
+              </div>}
+            </aside>
+
+            <main className="apn-tc-main">
+              {selected ? (
+                <div className="apn-tc-chat" ref={scrollRef}>
+                  <div className="apn-tc-chathead">
+                    <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
+                    <div style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{selected.subject}</div>
+                  </div>
+                  <div className="apn-tc-messages">
+                    {messages.map((m) => { const isMe = m.sender_id === pid; const ts = m.created_at ? new Date(m.created_at) : null; return <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`}> {!isMe && <Avatar name={m.sender_name || "?"} size={22} fontSize={9} />}<div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}</div></div></div>; })}
+                    {messages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title="No messages yet" text="Send the first message." />}
+                  </div>
+                  <div className="apn-tc-compose">
+                    <textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} />
+                    <button className="btn primary" onClick={sendMessage} disabled={!composer.trim() || !selected}>Send</button>
+                  </div>
+                </div>
+              ) : <div className="apn-tc-main-empty"><div><MessageSquare size={30} color="var(--muted)" /><div className="apn-tc-main-title">Friend chats</div><div className="hint-line">Select a partner from the list to start messaging.</div></div></div>}
+            </main>
           </div>
         )}
         {section === "district" && !selected && (
@@ -12693,30 +12732,14 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
             {!loading && !err && <button className="btn primary" style={{ marginBottom: 12 }} onClick={openState}>Open {me.state || "State"} Chat</button>}
           </div>
         )}
-        {selected && (
+        {selected && section !== "person" && (
           <div className="apn-tc-chat" ref={scrollRef}>
-            <div className="apn-tc-chathead">
-              <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
-              <div style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{selected.subject}</div>
+            <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button><div style={{ fontWeight: 700, flex: 1 }}>{selected.subject}</div></div>
+            <div className="apn-tc-messages">
+              {messages.map((m) => { const isMe=m.sender_id===pid; const ts=m.created_at?new Date(m.created_at):null; return <div key={m.id||m.created_at} className={`apn-tc-msg ${isMe?"mine":"theirs"}`}>{!isMe&&<Avatar name={m.sender_name||"?"} size={22} fontSize={9}/>}<div className="apn-tc-bubble"><div>{m.body}</div><div className="apn-tc-time">{ts?fmtDateTime(ts):""}</div></div></div>; })}
+              {messages.length===0&&!loading&&<Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
             </div>
-            <div className="apn-tc-messages" style={{ flex: 1, overflowY: "auto", padding: "12px 12px 8px" }}>
-              {messages.map((m) => {
-                const isMe = m.sender_id === pid;
-                const ts = m.created_at ? new Date(m.created_at) : null;
-                return (
-                  <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`}>
-                    {!isMe && <Avatar name={m.sender_name || "?"} size={22} fontSize={9} />}
-                    <div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}
-                      {isMe && <span style={{ marginLeft: 4 }}>{m.sender_apn_id === myApnId ? "you" : ""}</span>}</div></div>
-                  </div>
-                );
-              })}
-              {messages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title="No messages yet" text="Send the first message." />}
-            </div>
-            <div className="apn-tc-compose">
-              <textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} />
-              <button className="btn primary" onClick={sendMessage} disabled={!composer.trim() || !selected}>Send</button>
-            </div>
+            <div className="apn-tc-compose"><textarea className="textarea" value={composer} onChange={e=>setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}/><button className="btn primary" onClick={sendMessage} disabled={!composer.trim()||!selected}>Send</button></div>
           </div>
         )}
       </div>
