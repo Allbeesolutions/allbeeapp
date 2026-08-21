@@ -1582,32 +1582,49 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
   animation:skeleton-sheen 1.4s ease-in-out infinite; }
 .skeleton-line { height:12px; }
 @keyframes skeleton-sheen { to { transform:translateX(100%); } }
-/* ── Prism Flux — premium global loader: a six-faced 3D prism built from
-   Lucide Plus marks, spun on the GPU (transform-only), with an honest
-   rotating status line (re-uses msg-in). No fake delays, no JS stepping. ── */
-.prism { position:relative; width:54px; height:54px; margin:6px auto 0; transform-style:preserve-3d;
+/* ── Prism Flux — premium global loader: a six-faced 3D prism built from the
+   ALLBEE monogram logo, spun on the GPU (transform-only), with an honest
+   rotating status line (re-uses msg-in). No fake delays, no JS stepping.
+   Respects prefers-reduced-motion: a paused, static presentation is used. ── */
+.prism { position:relative; width:56px; height:56px; margin:6px auto 0; transform-style:preserve-3d;
   animation:prism-turn 9s linear infinite; will-change:transform; }
+.prism.paused { animation:none; }
 .prism-face { position:absolute; inset:0; display:grid; place-items:center; color:var(--primary);
-  background:color-mix(in srgb, var(--primary) 10%, transparent);
-  border:1.5px solid color-mix(in srgb, var(--primary) 45%, transparent); border-radius:10px; }
-.prism-f1 { transform:rotateY(0deg) translateZ(27px); }
-.prism-f2 { transform:rotateY(60deg) translateZ(27px); }
-.prism-f3 { transform:rotateY(120deg) translateZ(27px); }
-.prism-f4 { transform:rotateY(180deg) translateZ(27px); }
-.prism-f5 { transform:rotateY(240deg) translateZ(27px); }
-.prism-f6 { transform:rotateY(300deg) translateZ(27px); }
+  background:color-mix(in srgb, var(--primary) 8%, transparent);
+  border:1.5px solid color-mix(in srgb, var(--primary) 45%, transparent); border-radius:12px; }
+.prism-logo { height:24px; width:auto; display:block; filter:brightness(0) invert(1) saturate(3) hue-rotate(290deg); }
+.prism-f1 { transform:rotateY(0deg) translateZ(28px); }
+.prism-f2 { transform:rotateY(60deg) translateZ(28px); }
+.prism-f3 { transform:rotateY(120deg) translateZ(28px); }
+.prism-f4 { transform:rotateY(180deg) translateZ(28px); }
+.prism-f5 { transform:rotateY(240deg) translateZ(28px); }
+.prism-f6 { transform:rotateY(300deg) translateZ(28px); }
 @keyframes prism-turn { from { transform:rotateX(-24deg) rotateY(0deg) rotateZ(6deg); }
   to { transform:rotateX(-24deg) rotateY(360deg) rotateZ(6deg); } }
 @keyframes prism-in { from { opacity:0; transform:scale(.6) rotate(-8deg); } to { opacity:1; transform:none; } }
 .prism-wrap { perspective:500px; animation:prism-in .5s cubic-bezier(.2,.7,.3,1) both; }
-.prism-status { display:flex; justify-content:center; min-height:20px; margin-top:16px;
+.prism-status { display:flex; justify-content:center; min-height:22px; margin-top:18px;
   color:var(--muted); font-size:13px; font-weight:600; text-align:center; }
 .prism-status span { animation:msg-in .3s ease; white-space:nowrap; }
-@media (max-width:420px) { .prism { width:46px; height:46px; }
-  .prism-face { border-radius:8px; } .prism-f1 { transform:rotateY(0deg) translateZ(23px); }
-  .prism-f2 { transform:rotateY(60deg) translateZ(23px); } .prism-f3 { transform:rotateY(120deg) translateZ(23px); }
-  .prism-f4 { transform:rotateY(180deg) translateZ(23px); } .prism-f5 { transform:rotateY(240deg) translateZ(23px); }
-  .prism-f6 { transform:rotateY(300deg) translateZ(23px); } }
+@media (max-width:420px) { .prism { width:48px; height:48px; }
+  .prism-face { border-radius:8px; } .prism-logo { height:21px; }
+  .prism-f1 { transform:rotateY(0deg) translateZ(24px); }
+  .prism-f2 { transform:rotateY(60deg) translateZ(24px); } .prism-f3 { transform:rotateY(120deg) translateZ(24px); }
+  .prism-f4 { transform:rotateY(180deg) translateZ(24px); } .prism-f5 { transform:rotateY(240deg) translateZ(24px); }
+  .prism-f6 { transform:rotateY(300deg) translateZ(24px); } }
+@media (prefers-reduced-motion:reduce) { .prism { animation:none; } }
+
+/* ── Did You Know — rotating fact box under the loader. Premium-but-subtle
+   transitions; local-only content so it works offline. Respects reduced motion. ── */
+.dyk-wrap { padding-top:8px; }
+.dyk-card { display:flex; align-items:flex-start; gap:10px; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:12px; padding:11px 12px; box-shadow:var(--shadow);
+  animation:msg-in .3s ease both; }
+.dyk-card:hover { border-color:color-mix(in srgb, var(--primary) 40%, transparent); }
+.dyk-icon { font-size:17px; flex-shrink:0; margin-top:1px; opacity:.85; }
+.dyk-title { display:block; font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+.dyk-text { display:block; margin-top:2px; font-size:13px; color:var(--foreground); line-height:1.45; }
+@media (prefers-reduced-motion:reduce) { .dyk-card { animation:none; } }
 
 @media (max-width:900px) {
   .layout { grid-template-columns:1fr; }
@@ -2010,6 +2027,19 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
   border-radius:14px; background:var(--surface-2); cursor:pointer; font-size:12px; font-weight:600; color:var(--ink); text-align:center;
   transition:border-color .15s ease, background-color .15s ease, color .15s ease, transform .12s ease; }
 .apn-more-item:hover { border-color:var(--primary); }
+/* APN sidebar drawer — the relocated "More" surface. Left overlay, modelled on
+   the Admin UI sidebar. Slides in, outside-click + Escape to close. */
+.apn-sidebar-backdrop { position:fixed; inset:0; z-index:80; background:rgba(10,14,20,.45);
+  backdrop-filter:blur(2px); display:flex; }
+.apn-sidebar { position:relative; width:min(280px, 82vw); max-width:280px; height:100vh;
+  background:var(--surface); border-right:1px solid var(--border); box-shadow:4px 0 24px rgba(0,0,0,.25);
+  display:flex; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  animation:sidebar-in .22s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes sidebar-in { from { transform:translateX(-16px); opacity:.6; } to { transform:none; opacity:1; } }
+.apn-sidebar-head { display:flex; align-items:center; justify-content:space-between;
+  padding:calc(11px + env(safe-area-inset-top)) 16px 11px; border-bottom:1px solid var(--border); }
+.apn-sidebar-grid { display:flex; flex-direction:column; gap:6px; padding:14px 10px calc(24px + env(safe-area-inset-bottom)); }
+@media (max-width:420px) { .apn-sidebar { width:84vw; max-width:300px; } }
 .apn-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .apn-metric { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 14px; box-shadow:var(--shadow); }
 .apn-metric .k { font-size:11px; color:var(--muted); font-weight:600; display:flex; align-items:center; gap:6px; }
@@ -2019,6 +2049,26 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-lvl .rate { font-size:13px; opacity:.9; }
 .apn-lvl .bar { height:8px; border-radius:6px; background:rgba(255,255,255,.28); overflow:hidden; margin-top:12px; }
 .apn-lvl .bar > i { display:block; height:100%; background:#fff; border-radius:6px; }
+/* APN Team Chat */
+.apn-teamchat { font-size:14px; }
+.apn-tc-header { padding:10px 12px 8px; border-bottom:1px solid var(--border); background:var(--surface); flex: none; }
+.apn-tc-body { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.apn-tc-pane { flex:1; overflow-y:auto; padding:12px; }
+.apn-tc-subnav { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+.apn-tc-list { display:flex; flex-direction:column; gap:6px; }
+.apn-tc-item { display:flex; align-items:center; gap:10px; padding:9px 8px; border:1px solid var(--border); border-radius:12px; background:var(--surface); cursor:pointer; text-align:left; width:100%; }
+.apn-tc-item:hover { border-color:var(--primary); }
+.apn-tc-chat { display:flex; flex-direction:column; height:calc(100vh - 160px); }
+.apn-tc-chathead { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); background:var(--surface); flex: none; }
+.apn-tc-messages { flex:1; overflow-y:auto; padding:12px 12px 8px; display:flex; flex-direction:column; gap:10px; }
+.apn-tc-msg { display:flex; align-items:flex-end; gap:7px; max-width:82%; }
+.apn-tc-msg.mine { align-self:flex-end; flex-direction:row-reverse; }
+.apn-tc-msg.theirs { align-self:flex-start; }
+.apn-tc-bubble { background:var(--surface-2); border:1px solid var(--border); border-radius:16px; padding:8px 11px; line-height:1.4; font-size:13.5px; word-break:break-word; }
+.apn-tc-msg.mine .apn-tc-bubble { background:var(--primary); color:#fff; }
+.apn-tc-time { font-size:10px; opacity:.7; margin-top:3px; }
+.apn-tc-compose { display:flex; align-items:flex-end; gap:8px; padding:10px 12px 12px; border-top:1px solid var(--border); background:var(--surface); }
+@media (max-width:420px) { .apn-tc-msg { max-width:88%; } .apn-tc-chat { height:calc(100vh - 120px); } }
 .apn-hero { display:flex; align-items:center; gap:12px; }
 .apn-hero .av { width:46px; height:46px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:19px; flex:none; }
 .apn-section-h { font-size:17px; font-weight:800; margin:2px 0 12px; }
@@ -5385,10 +5435,28 @@ function ApprovalPending({ isDark, name, onSignOut }) {
   );
 }
 
+// Detects the OS-level reduced-motion preference so animation-dependent UI can
+// downgrade to a static/premium-but-subtle presentation. Mirrors the matcher
+// already used for the founder-lockdown tap chip.
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const onChange = (e) => setReduced(e.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+  return reduced;
+}
+
 // Prism Flux — the app's premium global loader visual: a six-faced 3D prism
-// of Lucide Plus marks, GPU-spun via CSS only. Optionally cycles through an
-// honest, neutral status queue underneath (re-uses msg-in; key={i} re-triggers
-// the entrance per message). No fake delays — this never extends the wait.
+// built from the ALLBEE logo (monogram), GPU-spun via CSS only. Optionally
+// cycles through an honest, neutral status queue underneath (re-uses msg-in;
+// key={i} re-triggers the entrance per message). No fake delays — this never
+// extends the wait. When the user prefers reduced motion, the spin pauses and
+// a subtle static presentation is used instead.
 const DEFAULT_PRISM_STATUS = [
   "Preparing AllBee",
   "Loading your workspace",
@@ -5396,7 +5464,53 @@ const DEFAULT_PRISM_STATUS = [
   "Preparing your dashboard",
   "Almost ready",
 ];
+
+// "Did you know?" rotating facts for the loading screen. Local-only (no network
+// required), so the loading screen still works offline. 15 facts; rotation
+// avoids immediate repeats. Concise, truthful, no financial/legal guarantees.
+const DYK_FACTS = [
+  { title: "Founder & CEO", body: "Z. Mohamed Backer Alim Sahib — B.E ECE, DECE, CCNA — Founder & CEO of ALLBEE SOLUTIONS." },
+  { title: "Co-Founder & CFO", body: "Syed Hasan Kuddos Sahib S — BBA (Financial Services), LLB (Hons) — Co-Founder & CFO of ALLBEE SOLUTIONS." },
+  { title: "Zero-upfront referrals", body: "APN provides an opportunity for eligible partners to earn through referrals and business generation without requiring an upfront investment." },
+  { title: "Founded 2025", body: "ALLBEE SOLUTIONS was founded in May 2025." },
+  { title: "Two branches", body: "ALLBEE currently operates through two branches: Nagore and Velankanni." },
+  { title: "Office Admin", body: "N. Saranya (BCA) administers the Nagore office." },
+  { title: "Business Development", body: "Romitha Venkatesan (MBA) leads business development for Chennai." },
+  { title: "Digital focus", body: "ALLBEE focuses on delivering high-quality websites and digital solutions at affordable prices for businesses in Tamil Nadu." },
+  { title: "Services scope", body: "ALLBEE SOLUTIONS provides digital marketing and IT-related services for businesses and learners." },
+  { title: "APN purpose", body: "APN is designed to help partners connect businesses and customers with ALLBEE's services." },
+  { title: "Four strands", body: "ALLBEE combines technology, business development, digital marketing, and partner-driven growth." },
+  { title: "Partner visibility", body: "APN partners can track referrals, projects, revenue, commissions, and wallet information from their portal." },
+  { title: "Activity tracking", body: "APN partners can monitor their activity and partner-network progress from the application." },
+  { title: "District expansion", body: "ALLBEE's APN network is designed to expand district by district across Tamil Nadu." },
+  { title: "Building tools", body: "ALLBEE continues to build digital tools that make business operations simpler, more transparent, and easier to manage." },
+];
+
+function DidYouKnow() {
+  const [i, setI] = useState(0);
+  const [shown, setShown] = useState([]);
+  // Rotate facts without immediate repeats; reshuffle when the pool is exhausted.
+  useEffect(() => {
+    const remaining = DYK_FACTS.filter((_, idx) => !shown.includes(idx));
+    if (remaining.length === 0) { setShown([]); setI(0); return; }
+    const pick = remaining.length === 1 ? remaining[0] : remaining[Math.floor(Math.random() * remaining.length)];
+    setI(() => pick); setShown((s) => [...s, pick]);
+  }, [shown]);
+  return (
+    <div className="dyk-wrap">
+      <div className="dyk-card">
+        <span className="dyk-icon" aria-hidden="true">💡</span>
+        <div className="dyk-body">
+          <span className="dyk-title">{DYK_FACTS[i].title}</span>
+          <span className="dyk-text">{DYK_FACTS[i].body}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PrismFluxLoader({ status, statusList, size = 40, interval = 1700 }) {
+  const reduced = useReducedMotion();
   const [i, setI] = useState(0);
   const list = useMemo(
     () => [status, ...(statusList && statusList.length ? statusList : DEFAULT_PRISM_STATUS)].filter(Boolean),
@@ -5408,11 +5522,11 @@ function PrismFluxLoader({ status, statusList, size = 40, interval = 1700 }) {
     return () => clearInterval(t);
   }, [list, interval]);
   return (
-    <div className="prism-wrap" role="status" aria-live="polite">
-      <div className="prism" aria-hidden="true">
+    <div className="prism-wrap" style={{ animation: reduced ? "none" : undefined }} role="status" aria-live="polite">
+      <div className={`prism${reduced ? " paused" : ""}`} aria-hidden="true">
         {[1, 2, 3, 4, 5, 6].map((f) => (
           <span key={f} className={`prism-face prism-f${f}`}>
-            <Plus size={Math.round(size * 0.5)} strokeWidth={1.6} />
+            <img className="prism-logo" src={LOGO_ICON} alt="" aria-hidden="true" />
           </span>
         ))}
       </div>
@@ -12198,7 +12312,7 @@ function APNSearch({ db, meRow, pid, go, onClose }) {
 // nested scrollers in the app live inside overlays (modals, sheets, drawers,
 // search, dropdowns) and form fields — all blocked below, so this gesture can
 // never hijack a nested scroll.
-const PTR_BLOCKED_SELECTOR = "textarea, input, select, [contenteditable], .apn-top, .topbar, .modal, .overlay, .activity-drawer, .activity-drawer-overlay, .dropdown, .combo-options, .cmdk, .cmdk-overlay, .apn-more, .apn-more-sheet";
+const PTR_BLOCKED_SELECTOR = "textarea, input, select, [contenteditable], .apn-top, .topbar, .modal, .overlay, .activity-drawer, .activity-drawer-overlay, .dropdown, .combo-options, .cmdk, .cmdk-overlay, .apn-more, .apn-more-sheet, .apn-sidebar-backdrop, .apn-sidebar";
 function scrollContainerAt(target) {
   // Walk up from the touched element to find its real vertical scroll
   // container. Plain wrappers fall through to the document; horizontal-only
@@ -12292,12 +12406,274 @@ function GlobalPullToRefresh({ onRefresh, enabled = true }) {
   ) : null;
 }
 
+/* ── team chat (person / district / state) ──────────────────────────────── */
+const CHAT_SECTIONS = ["person", "district", "state"];
+const CHAT_SECTION_LABEL = { person: "Friends", district: "District", state: "State" };
+
+function APNTeamChat({ db, meRow, pid, profile, isOpen, refreshTick, go }) {
+  const [section, setSection] = useState("person");
+  const [conversations, setConversations] = useState([]);          // from apn_list_conversations
+  const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
+  const [requests, setRequests] = useState([]);                      // from apn_list_friend_requests
+  const [selected, setSelected] = useState(null);                    // {id, subject, participants}
+  const [messages, setMessages] = useState([]);
+  const [composer, setComposer] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [busyRequests, setBusyRequests] = useState(new Set());
+  const reduced = useReducedMotion();
+  const scrollRef = useRef(null);
+
+  const me = meRow || { id: pid, name: profile?.name || "Partner" };
+  const myApnId = apnIdFor(meRow) || "-";
+
+  // Switching to District/State auto-opens the group chat (no extra click).
+  useEffect(() => {
+    if (!isOpen) return;
+    if (section === "district") { setSelected(null); openDistrict(); }
+    else if (section === "state") { setSelected(null); openState(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, isOpen]);
+
+  const loadConversations = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const { data, error } = await supabase.rpc("apn_list_conversations");
+      if (error) throw new Error(error.message);
+      setConversations(data || []);
+      const fr = await supabase.rpc("apn_list_friend_requests");
+      if (fr.error) throw new Error(fr.error.message);
+      setRequests(fr.data || []);
+      const accepted = (fr.data || []).filter((r) => r.status === "accepted");
+      setFriends(accepted.map((r) => ({ id: r.other_id, name: r.other_name, apnId: r.other_apn_id })));
+    } catch (e) {
+      if (/does not exist|not exist|42P01|PGRST|relation/.test(e.message || "")) {
+        setConversations([]); setRequests([]); setFriends([]);
+      } else { setErr(e.message || String(e)); }
+    } finally { setLoading(false); }
+  }, []);
+
+  const loadMessages = useCallback(async (conv) => {
+    setSelected(conv);
+    setMessages([]);
+    setErr("");
+    try {
+      const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.id });
+      if (error) throw new Error(error.message);
+      const msgs = data || [];
+      setMessages(msgs);
+      // advance the caller's read cursor to the latest message so the badge clears
+      if (msgs.length) await supabase.rpc("apn_mark_read", { p_conversation_id: conv.id, p_message_id: msgs[msgs.length - 1].id });
+    } catch (e) {
+      setErr(e.message || String(e));
+    }
+  }, []);
+
+  const openConversation = useCallback(async (conv) => {
+    await loadMessages(conv);
+    // scroll to bottom after messages render
+    setTimeout(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, 50);
+  }, [loadMessages]);
+
+  // Load conversations when the tab opens / on refresh ticks.
+  useEffect(() => {
+    if (isOpen) { loadConversations(); setSelected(null); setMessages([]); }
+  }, [isOpen, refreshTick, loadConversations]);
+
+  // Realtime: subscribe to the chat tables (RLS still gates reads). On any
+  // change, refetch the relevant slice rather than trusting client-only updates.
+  useEffect(() => {
+    if (!isOpen) return;
+    const ch = supabase.channel("apn-team-chat");
+    ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests"].forEach((t) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, loadConversations));
+    ch.subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [isOpen, loadConversations]);
+
+  const sendFriendRequest = async (otherApnId) => {
+    setErr("");
+    try {
+      const { error } = await supabase.rpc("apn_send_friend_request", { p_recipient_apn_id: otherApnId });
+      if (error) throw new Error(error.message);
+      loadConversations();
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
+  const acceptRequest = async (requestId) => {
+    setBusyRequests((prev) => new Set(prev).add(requestId));
+    setErr("");
+    try {
+      const { data, error } = await supabase.rpc("apn_accept_friend_request", { p_request_id: requestId });
+      if (error) throw new Error(error.message);
+      const convId = data && data[0] && data[0].conversation_id;
+      await loadConversations();
+      if (convId) {
+        const other = (requests.find((r) => r.request_id === requestId) || {}).other_apn_id;
+        openConversation({ id: convId, subject: "Friend chat", conv_type: "person", participant_apn_id: other });
+      }
+      emitToast("Friend request accepted.", "success");
+    } catch (e) {
+      setErr(e.message || String(e));
+      emitToast(e.message || "Could not accept request.", "error");
+    } finally {
+      setBusyRequests((prev) => { const s = new Set(prev); s.delete(requestId); return s; });
+    }
+  };
+
+  const rejectRequest = async (requestId) => {
+    setBusyRequests((prev) => new Set(prev).add(requestId));
+    setErr("");
+    try {
+      const { error } = await supabase.rpc("apn_reject_friend_request", { p_request_id: requestId });
+      if (error) throw new Error(error.message);
+      await loadConversations();
+      emitToast("Request removed.", "success");
+    } catch (e) {
+      setErr(e.message || String(e));
+      emitToast(e.message || "Could not reject request.", "error");
+    } finally {
+      setBusyRequests((prev) => { const s = new Set(prev); s.delete(requestId); return s; });
+    }
+  };
+
+  const sendMessage = async () => {
+    const body = (composer || "").trim();
+    if (!body || !selected) return;
+    const convId = selected.id;
+    setMessages((prev) => [...prev, { id: "tmp-" + Date.now(), conversation_id: convId, sender_id: pid, sender_name: me.name, sender_apn_id: myApnId, body, created_at: new Date().toISOString() }]);
+    setComposer("");
+    try {
+      const { error } = await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      setErr(e.message || String(e));
+      loadConversations();
+      loadMessages(selected);
+    }
+  };
+
+  const openPersonChat = async (other) => {
+    try {
+      const { data, error } = await supabase.rpc("apn_get_or_create_person_conversation", { p_other_apn_id: other.apnId });
+      if (error) throw new Error(error.message);
+      const conv = { id: data[0].conversation_id, subject: data[0].subject, participant_apn_id: data[0].participant_apn_id };
+      openConversation(conv);
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
+  const openDistrict = async () => {
+    try {
+      const { data, error } = await supabase.rpc("apn_get_district_conversation");
+      if (error) throw new Error(error.message);
+      if (data?.[0]) openConversation({ id: data[0].conversation_id, subject: data[0].subject, conv_type: "district" });
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
+  const openState = async () => {
+    try {
+      const { data, error } = await supabase.rpc("apn_get_state_conversation");
+      if (error) throw new Error(error.message);
+      if (data?.[0]) openConversation({ id: data[0].conversation_id, subject: data[0].subject, conv_type: "state" });
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
+  const totalUnread = conversations.reduce((s, c) => s + Number(c.unread_count || 0), 0)
+    + requests.filter((r) => r.direction === "incoming" && r.status === "pending").length;
+
+  return (
+    <div className="apn apn-teamchat" data-theme={isDark ? "dark" : "light"} style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 100px)" }}>
+      <div className="apn-tc-header">
+        <div className="seg" style={{ flex: "none" }}>{CHAT_SECTIONS.map((s) => <button key={s} className={section === s ? "on" : ""} onClick={() => { setSection(s); setSelected(null); }}>{CHAT_SECTION_LABEL[s]}{s === "person" && totalUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 5 }}>{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>)}</div>
+      </div>
+      <div className="apn-tc-body">
+        {section === "person" && !selected && (
+          <div className="apn-tc-pane">
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>Friend chats</div>
+            {loading && <div className="hint-line">Loading your chats…</div>}
+            {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
+            <div className="apn-tc-list">
+              {friends.length ? friends.map((f) => (
+                <button key={f.id} className="apn-tc-item" onClick={() => openPersonChat(f)}>
+                  <Avatar name={f.name} size={34} fontSize={13} />
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{f.name}</div><div className="hint-line">{f.apnId}</div></div>
+                  <ChevronRight size={16} color="var(--muted)" />
+                </button>
+              )) : !loading && <Empty icon={<Users size={22} />} title="No friend chats yet" text="Connect with a partner from My Network and accept a friend request to start messaging." />}
+            </div>
+            {friends.length > 0 && (
+              <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 8 }}>Friend requests</div>
+                {requests.filter((r) => r.status === "pending").length ? requests.filter((r) => r.status === "pending").map((r) => (
+                  <div key={r.request_id} className="apn-tc-item" style={{ justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar name={r.other_name} size={30} fontSize={11} />
+                      <div><div style={{ fontWeight: 600 }}>{r.other_name}</div><div className="hint-line">{r.other_apn_id} · {r.direction === "incoming" ? "incoming" : "sent"}</div></div>
+                    </div>
+                    {r.direction === "incoming" && (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button className="btn sm primary" onClick={() => acceptRequest(r.request_id)} disabled={!!busyRequests.has(r.request_id)}>{busyRequests.has(r.request_id) ? <RefreshCw size={14} className="spin" /> : "Accept"}</button>
+                        <button className="btn sm" onClick={() => rejectRequest(r.request_id)} disabled={!!busyRequests.has(r.request_id)}>Reject</button>
+                      </div>
+                    )}
+                    {r.direction === "outgoing" && <span className="hint-line">Pending</span>}
+                  </div>
+                )) : <Empty icon={<UserPlus size={20} />} title="No pending requests" text="You have no pending friend requests." />}
+              </div>
+            )}
+          </div>
+        )}
+        {section === "district" && !selected && (
+          <div className="apn-tc-pane">
+            {loading && <div className="hint-line">Opening district chat…</div>}
+            {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
+            {!loading && !err && <button className="btn primary" style={{ marginBottom: 12 }} onClick={openDistrict}>Open {me.district || "District"} Chat</button>}
+          </div>
+        )}
+        {section === "state" && !selected && (
+          <div className="apn-tc-pane">
+            {loading && <div className="hint-line">Opening state chat…</div>}
+            {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
+            {!loading && !err && <button className="btn primary" style={{ marginBottom: 12 }} onClick={openState}>Open {me.state || "State"} Chat</button>}
+          </div>
+        )}
+        {selected && (
+          <div className="apn-tc-chat" ref={scrollRef}>
+            <div className="apn-tc-chathead">
+              <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
+              <div style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{selected.subject}</div>
+            </div>
+            <div className="apn-tc-messages" style={{ flex: 1, overflowY: "auto", padding: "12px 12px 8px" }}>
+              {messages.map((m) => {
+                const isMe = m.sender_id === pid;
+                const ts = m.created_at ? new Date(m.created_at) : null;
+                return (
+                  <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`}>
+                    {!isMe && <Avatar name={m.sender_name || "?"} size={22} fontSize={9} />}
+                    <div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}
+                      {isMe && <span style={{ marginLeft: 4 }}>{m.sender_apn_id === myApnId ? "you" : ""}</span>}</div></div>
+                  </div>
+                );
+              })}
+              {messages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title="No messages yet" text="Send the first message." />}
+            </div>
+            <div className="apn-tc-compose">
+              <textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} />
+              <button className="btn primary" onClick={sendMessage} disabled={!composer.trim() || !selected}>Send</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── portal shell ────────────────────────────────────────────────────── */
 function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const pid = profile.id;
   const meRow = apnMe(db, pid);
   const [tab, setTab] = useState("home");
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const closeSidebar = () => setSidebarOpen(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [finSnap, setFinSnap] = useState(null);
@@ -12345,7 +12721,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   useEffect(() => {
     const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
     const route = parts[0] === "apn" ? parts[1] : parts[0];
-    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
+    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
   }, []);
 
   if (!meRow) return (
@@ -12371,7 +12747,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
 
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
-  const go = (t) => { setTab(t); setMoreOpen(false); };
+  const go = (t) => { setTab(t); setSidebarOpen(false); };
   const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id)).length;
   const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
   const withdrawalOpenCount = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid && ["pending", "under_review", "approved", "processing"].includes(row.status)).length;
@@ -12382,6 +12758,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
       case "wallet": return <APNWallet db={db} pid={pid} stats={stats} snap={finSnap} />;
       case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} refreshTick={snapTick} />;
+      case "chat": return <APNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isOpen={tab === "chat"} refreshTick={snapTick} go={go} />;
       case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
@@ -12414,15 +12791,15 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
     ["profile", "Profile", <User size={20} color="var(--primary)" />, 0],
   ];
-  const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users]];
+  const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users], ["chat", "Team Chat", MessageSquare]];
   const showFab = tab === "leads" || tab === "quotations";
-
   return (
     <div className="allbee apn" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
-      <header className="apn-top">
-        <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><FounderTap className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
-        <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
+       <header className="apn-top">
+         <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><FounderTap className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
+         <button type="button" className="iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" title="Menu" aria-expanded={sidebarOpen} aria-controls="apn-sidebar"><Menu size={19} /></button>
+         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={refreshPortal} />
         <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
         <button className="iconbtn" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
@@ -12434,29 +12811,32 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
-      <GlobalPullToRefresh enabled={!modal && !searchOpen && !moreOpen} onRefresh={refreshPortal} />
+      <GlobalPullToRefresh enabled={!modal && !searchOpen && !sidebarOpen} onRefresh={refreshPortal} />
 
       <nav className="apn-bottomnav">
         {primary.map(([k, l, Icon]) => (
-          <button key={k} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={20} /><span>{l}</span></button>
+          <button key={k} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={k === "chat" ? 22 : 20} strokeWidth={k === "chat" ? 1.6 : 2} /><span>{l}</span></button>
         ))}
-        <button className={"apn-tab" + (["targets", "quotations", "documents", "agreements", "notifications", "withdrawals", "learn", "ai", "support", "achievements", "leaderboard", "district", "profile"].includes(tab) ? " on" : "")} onClick={() => setMoreOpen(true)}>
-          <Menu size={20} /><span>More</span>{(unreadNotif + unackTargets) > 0 && <span className="tb">{unreadNotif + unackTargets}</span>}
-        </button>
       </nav>
 
-      {moreOpen && (
-        <div className="apn-more" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setMoreOpen(false); }}>
-          <div className="apn-more-sheet" role="dialog" aria-modal="true" aria-labelledby="apn-more-title">
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}><div id="apn-more-title" style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>More</div><button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => setMoreOpen(false)} aria-label="Close more menu" title="Close more menu"><X size={16} /></button></div>
-            <div className="apn-more-grid">
+      {/* APN sidebar drawer — the legacy "More" options, relocated.
+          Left overlay, outside-click / Escape close, modeled on the Admin UI. */}
+      {sidebarOpen && (
+        <div className="apn-sidebar-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) closeSidebar(); }} onKeyDown={(e) => { if (e.key === "Escape") closeSidebar(); }}>
+          <div id="apn-sidebar" className="apn-sidebar" role="dialog" aria-modal="true" aria-label="APN menu" aria-labelledby="apn-sidebar-title">
+            <div className="apn-sidebar-head">
+              <div id="apn-sidebar-title" style={{ fontWeight: 800, fontSize: 17 }}>Menu</div>
+              <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={closeSidebar} aria-label="Close menu" title="Close menu"><X size={16} /></button>
+            </div>
+            <div className="apn-sidebar-grid">
               {moreItems.map(([k, l, ic, badge]) => (
                 <button key={k} className="apn-more-item" style={{ position: "relative" }} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge action-badge" style={{ position: "absolute", top: 8, right: 8 }}>{badge > 99 ? "99+" : badge}</span>}</button>
               ))}
             </div>
+            <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}><button className="apn-more-item" style={{ width: "100%" }} onClick={() => { closeSidebar(); signOut(); }}><LogOut size={20} color="var(--neg)" /><span style={{ color: "var(--neg)" }}>Sign out</span></button></div>
           </div>
         </div>
-      )}
+      )};
 
       {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
       {modal?.type === "apnLead" && <APNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} />}
@@ -14938,6 +15318,7 @@ export default function App() {
         <div className="loading-screen">
           <div className="loading-card">
             <PrismFluxLoader status={note || "Loading ALLBEE…"} statusList={prisms} />
+            <DidYouKnow />
           </div>
         </div>
       </div>
