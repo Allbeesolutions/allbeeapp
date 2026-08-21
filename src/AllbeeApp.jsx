@@ -12447,7 +12447,7 @@ function GlobalPullToRefresh({ onRefresh, enabled = true }) {
 const CHAT_SECTIONS = ["person", "district", "state"];
 const CHAT_SECTION_LABEL = { person: "Friends", district: "District", state: "State" };
 
-function APNTeamChat({ db, meRow, pid, profile, isOpen, refreshTick, go }) {
+function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go }) {
   const [section, setSection] = useState("person");
   const [conversations, setConversations] = useState([]);          // from apn_list_conversations
   const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
@@ -12795,7 +12795,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
       case "wallet": return <APNWallet db={db} pid={pid} stats={stats} snap={finSnap} />;
       case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} refreshTick={snapTick} />;
-      case "chat": return <APNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isOpen={tab === "chat"} refreshTick={snapTick} go={go} />;
+      case "chat": return <APNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isDark={isDark} isOpen={tab === "chat"} refreshTick={snapTick} go={go} />;
       case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
