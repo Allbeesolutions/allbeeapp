@@ -2064,9 +2064,9 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-lvl .bar > i { display:block; height:100%; background:#fff; border-radius:6px; }
 /* APN Team Chat */
 .apn-teamchat { font-size:14px; }
-.apn-tc-shell { flex:1; min-height:0; display:grid; grid-template-columns:minmax(300px, 390px) minmax(0, 1fr); overflow:hidden; background:var(--bg); }
+.apn-tc-shell { flex:1; min-height:0; display:grid; grid-template-columns:minmax(360px, 430px) minmax(0, 1fr); overflow:hidden; background:var(--bg); max-width:100%; }
 .apn-tc-sidebar { min-width:0; overflow-y:auto; padding:14px; border-right:1px solid var(--border); background:var(--surface); }
-.apn-tc-main { min-width:0; min-height:0; display:flex; flex-direction:column; background:var(--bg); }
+.apn-tc-main { min-width:0; min-height:0; display:flex; flex-direction:column; background:var(--bg); overflow:hidden; }
 .apn-tc-main-empty { flex:1; display:flex; align-items:center; justify-content:center; padding:32px; text-align:center; }
 .apn-tc-main-title { font-size:16px; font-weight:800; color:var(--text); margin-bottom:5px; }
 .apn-tc-sidebar-title { font-size:18px; font-weight:800; margin:0 0 3px; }
@@ -2083,7 +2083,8 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-tc-quick { padding:0; border:0; background:transparent; }
 .apn-tc-quick .apn-tc-item { margin-bottom:5px; }
 .apn-tc-quick .apn-tc-item:last-child { margin-bottom:0; }
-.apn-tc-chat { flex:1; min-height:0; display:flex; flex-direction:column; height:auto; }
+.apn-tc-chat { flex:1; min-height:0; min-width:0; display:flex; flex-direction:column; height:auto; }
+@media (max-width:900px) { .apn-tc-shell { grid-template-columns:minmax(300px, 42%) minmax(0, 58%); } }
 @media (max-width:760px) { .apn-tc-shell { grid-template-columns:1fr; } .apn-tc-main { display:none; } .apn-tc-shell.has-selection .apn-tc-sidebar { display:none; } .apn-tc-shell.has-selection .apn-tc-main { display:flex; } }
 .apn-tc-chathead { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border); background:var(--surface); flex: none; }
 .apn-tc-messages { flex:1; overflow-y:auto; padding:12px 12px 8px; display:flex; flex-direction:column; gap:10px; }
@@ -2111,6 +2112,7 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-tc-info-row { display:flex; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px solid var(--border); font-size:12px; }
 .apn-tc-info-row span { color:var(--muted); }
 
+.apn-tc-group-pane { flex:1; min-height:0; width:100%; display:flex; flex-direction:column; }
 .apn-tc-compose { display:flex; align-items:flex-end; gap:8px; padding:10px 12px 12px; border-top:1px solid var(--border); background:var(--surface); }
 @media (max-width:420px) { .apn-tc-msg { max-width:88%; } .apn-tc-chat { height:calc(100vh - 120px); } }
 .apn-hero { display:flex; align-items:center; gap:12px; }
@@ -12538,13 +12540,38 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       if (error) throw new Error(error.message);
       setConversations(data || []);
       const contactsRes = await supabase.rpc("apn_list_chat_contacts");
-      if (contactsRes.error) throw new Error(contactsRes.error.message);
-      setContacts(contactsRes.data || []);
+      let contactRows = contactsRes.data || [];
+      if (contactsRes.error) {
+        // Production-safe fallback: an older PostgREST schema cache can retain the
+        // UNION ORDER BY error. Keep Team Chat usable while the database function
+        // cache catches up by reading the same source tables directly.
+        const [partnersRes, adminsRes, presenceRes] = await Promise.all([
+          supabase.from("apn_users").select("id,data").neq("id", pid),
+          supabase.from("profiles").select("id,name,role,photo_url,active,status").neq("id", pid).in("role", ["admin", "superadmin"]),
+          supabase.from("apn_chat_presence").select("user_id,online,last_seen,updated_at")
+        ]);
+        if (partnersRes.error) throw new Error(contactsRes.error.message);
+        const presenceByUser = new Map((presenceRes.data || []).map((r) => [String(r.user_id), r]));
+        const fallbackPartners = (partnersRes.data || []).filter((u) => u?.data?.status === "active").map((u) => {
+          const d = u.data || {}; const pr = presenceByUser.get(String(u.id));
+          const availability = pr?.online && pr?.updated_at && (Date.now() - new Date(pr.updated_at).getTime() < 45000) ? "online" : "offline";
+          return { contact_id: String(u.id), contact_type: "partner", name: d.name || "Partner", apn_id: d.apnId || null, district: d.district || null, state: d.state || null, photo_url: d.profilePicture || d.photo_url || d.photoUrl || null, availability, last_seen: pr?.last_seen || null, relationship: "none" };
+        });
+        const fallbackAdmins = (adminsRes.data || []).filter((a) => a.active && a.status === "active").map((a) => ({ contact_id: String(a.id), contact_type: a.role === "superadmin" ? "superadmin" : "admin", name: a.name || (a.role === "superadmin" ? "Super Admin" : "Admin"), apn_id: null, district: null, state: null, photo_url: a.photo_url || null, availability: "always_available", last_seen: null, relationship: "pre_enabled" }));
+        contactRows = [...fallbackAdmins, ...fallbackPartners];
+      }
+      setContacts(contactRows);
       const fr = await supabase.rpc("apn_list_friend_requests");
       if (fr.error) throw new Error(fr.error.message);
       setRequests(fr.data || []);
       const accepted = (fr.data || []).filter((r) => r.status === "accepted");
       setFriends(accepted.map((r) => ({ id: r.other_id, name: r.other_name, apnId: r.other_apn_id })));
+      const requestRows = fr.data || [];
+      setContacts((rows) => rows.map((c) => {
+        if (c.contact_type !== "partner") return c;
+        const rel = requestRows.find((r) => String(r.other_id) === String(c.contact_id));
+        return rel ? { ...c, relationship: rel.status === "accepted" ? "friend" : rel.direction === "incoming" ? "incoming" : rel.direction === "outgoing" ? "outgoing" : c.relationship } : c;
+      }));
     } catch (e) {
       if (/does not exist|not exist|42P01|PGRST|relation/.test(e.message || "")) {
         setConversations([]); setRequests([]); setFriends([]); setContacts([]);
@@ -12804,14 +12831,14 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
           </div>
         )}
         {section === "district" && !selected && (
-          <div className="apn-tc-pane">
+          <div className="apn-tc-group-pane">
             {loading && <div className="hint-line">Opening district chat…</div>}
             {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
             {!loading && !err && <button className="btn primary" style={{ marginBottom: 12 }} onClick={openDistrict}>Open {me.district || "District"} Chat</button>}
           </div>
         )}
         {section === "state" && !selected && (
-          <div className="apn-tc-pane">
+          <div className="apn-tc-group-pane">
             {loading && <div className="hint-line">Opening state chat…</div>}
             {err && <div className="auth-msg err"><AlertTriangle size={14} />{err}</div>}
             {!loading && !err && <button className="btn primary" style={{ marginBottom: 12 }} onClick={openState}>Open {me.state || "State"} Chat</button>}
