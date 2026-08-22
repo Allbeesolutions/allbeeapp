@@ -2063,7 +2063,10 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-lvl .bar { height:8px; border-radius:6px; background:rgba(255,255,255,.28); overflow:hidden; margin-top:12px; }
 .apn-lvl .bar > i { display:block; height:100%; background:#fff; border-radius:6px; }
 /* APN Team Chat */
-.apn-teamchat { font-size:14px; }
+.apn-teamchat { font-size:14px; width:100%; min-width:0; height:100%; }
+.apn-body:has(.apn-teamchat) { max-width:none; width:100%; padding:0 16px 88px; }
+.apn-body:has(.apn-teamchat) .page-enter { width:100%; min-height:100%; display:flex; flex-direction:column; }
+.apn-teamchat .apn-tc-body { flex:1; min-height:0; width:100%; display:flex; flex-direction:column; }
 .apn-tc-shell { flex:1; min-height:0; display:grid; grid-template-columns:minmax(360px, 430px) minmax(0, 1fr); overflow:hidden; background:var(--bg); max-width:100%; }
 .apn-tc-sidebar { min-width:0; overflow-y:auto; padding:14px; border-right:1px solid var(--border); background:var(--surface); }
 .apn-tc-main { min-width:0; min-height:0; display:flex; flex-direction:column; background:var(--bg); overflow:hidden; }
@@ -12498,6 +12501,8 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   const [chatNow, setChatNow] = useState(Date.now());
   const reduced = useReducedMotion();
   const scrollRef = useRef(null);
+  const selectedRef = useRef(null);
+  selectedRef.current = selected;
 
   const me = meRow || { id: pid, name: profile?.name || "Partner" };
   const myApnId = apnIdFor(meRow) || "-";
@@ -12533,8 +12538,8 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, isOpen]);
 
-  const loadConversations = useCallback(async () => {
-    setLoading(true); setErr("");
+  const loadConversations = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true); setErr("");
     try {
       const { data, error } = await supabase.rpc("apn_list_conversations");
       if (error) throw new Error(error.message);
@@ -12576,7 +12581,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       if (/does not exist|not exist|42P01|PGRST|relation/.test(e.message || "")) {
         setConversations([]); setRequests([]); setFriends([]); setContacts([]);
       } else { setErr(e.message || String(e)); }
-    } finally { setLoading(false); }
+    } finally { if (showLoading) setLoading(false); }
   }, []);
 
   const loadMessages = useCallback(async (conv) => {
@@ -12614,12 +12619,12 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     const ch = supabase.channel("apn-team-chat");
     ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((t) =>
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, async () => {
-        await loadConversations();
-        if (selected) await loadMessages(selected);
+        await loadConversations(false);
+        if (selectedRef.current) await loadMessages(selectedRef.current);
       }));
     ch.subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [isOpen, loadConversations, selected, loadMessages]);
+  }, [isOpen, loadConversations, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
     setErr("");
@@ -13007,7 +13012,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <div className="apn-body" key={tab}><div className="page-enter">{section()}</div></div>
+      <div className="apn-body"><div className="page-enter">{section()}</div></div>
 
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
