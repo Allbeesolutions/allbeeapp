@@ -12584,9 +12584,14 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     } finally { if (showLoading) setLoading(false); }
   }, []);
 
-  const loadMessages = useCallback(async (conv) => {
-    setSelected(conv);
-    setMessages([]);
+  const loadMessages = useCallback(async (conv, { open = true } = {}) => {
+    // Opening a conversation may clear the old thread while it loads. Refreshing
+    // an already-open thread must never clear it first: that blank frame is the
+    // visible flicker users were seeing after every send/realtime event.
+    if (open) {
+      setSelected(conv);
+      setMessages([]);
+    }
     setErr("");
     try {
       const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.id });
@@ -12620,7 +12625,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((t) =>
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, async () => {
         await loadConversations(false);
-        if (selectedRef.current) await loadMessages(selectedRef.current);
+        if (selectedRef.current) await loadMessages(selectedRef.current, { open: false });
       }));
     ch.subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -12681,8 +12686,8 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     try {
       const { data, error } = await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
       if (error) throw new Error(error.message);
-      await loadMessages(selected);
-      await loadConversations();
+      await loadMessages(selected, { open: false });
+      await loadConversations(false);
     } catch (e) {
       setComposer(body);
       setErr(e.message || String(e));
@@ -12694,8 +12699,8 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       const { error } = await supabase.rpc("apn_delete_message", { p_message_id: message.id });
       if (error) throw new Error(error.message);
       setContextMessage(null);
-      await loadMessages(selected);
-      await loadConversations();
+      await loadMessages(selected, { open: false });
+      await loadConversations(false);
       emitToast("Message deleted.", "success");
     } catch (e) { setErr(e.message || String(e)); }
   };
