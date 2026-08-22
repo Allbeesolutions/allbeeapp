@@ -12565,6 +12565,17 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
         const fallbackAdmins = (adminsRes.data || []).filter((a) => a.active && a.status === "active").map((a) => ({ contact_id: String(a.id), contact_type: a.role === "superadmin" ? "superadmin" : "admin", name: a.name || (a.role === "superadmin" ? "Super Admin" : "Admin"), apn_id: null, district: null, state: null, photo_url: a.photo_url || null, availability: "always_available", last_seen: null, relationship: "pre_enabled" }));
         contactRows = [...fallbackAdmins, ...fallbackPartners];
       }
+      // profiles.photo_url is the authoritative app-wide avatar. The APN contact
+      // RPC can still return the older apn_users.data.profilePicture value, so
+      // always overlay the live profile photo when it is available.
+      const contactIds = contactRows.map((c) => String(c.contact_id || "")).filter(Boolean);
+      if (contactIds.length) {
+        const profileRes = await supabase.from("profiles").select("id,photo_url").in("id", contactIds);
+        if (!profileRes.error) {
+          const photos = new Map((profileRes.data || []).map((r) => [String(r.id), r.photo_url || null]));
+          contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null }));
+        }
+      }
       setContacts(contactRows);
       const fr = await supabase.rpc("apn_list_friend_requests");
       if (fr.error) throw new Error(fr.error.message);
@@ -12724,11 +12735,29 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   };
 
   const openPersonChat = async (other) => {
+    setErr("");
     try {
+      // Production-safe fallback for the known PostgREST schema-cache issue:
+      // accepted person chats already have a deterministic conversation slug,
+      // so we can open the existing conversation without relying on the stale
+      // parameterized RPC signature. This is read-only and remains RLS-protected.
+      const ids = [String(pid), String(other.contact_id)].sort();
+      const slug = `person:${ids[0].toLowerCase()}:${ids[1].toLowerCase()}`;
+      const existing = await supabase.from("apn_chat_conversations")
+        .select("id,subject,type")
+        .eq("slug", slug)
+        .maybeSingle();
+      if (!existing.error && existing.data?.id) {
+        openConversation({ id: existing.data.id, subject: existing.data.subject || other.name, conv_type: existing.data.type || "person", participant_apn_id: other.apnId });
+        return;
+      }
+
+      // Newer databases can create the conversation through the RPC. Keep this
+      // path for fresh environments while the direct lookup handles live cache drift.
       const { data, error } = await supabase.rpc("apn_get_or_create_person_conversation", { p_other_apn_id: other.apnId });
       if (error) throw new Error(error.message);
-      const conv = { id: data[0].conversation_id, subject: data[0].subject, participant_apn_id: data[0].participant_apn_id };
-      openConversation(conv);
+      if (!data?.[0]?.conversation_id) throw new Error("Could not open this friend chat.");
+      openConversation({ id: data[0].conversation_id, subject: data[0].subject, participant_apn_id: data[0].participant_apn_id });
     } catch (e) { setErr(e.message || String(e)); }
   };
 
@@ -12768,7 +12797,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
                 <div className="apn-tc-card-title">Quick Chats</div>
                 {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => (
                   <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
-                    <Avatar name={a.name} size={36} fontSize={13} />
+                    <Avatar name={a.name} url={a.photo_url} size={36} fontSize={13} />
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{a.contact_type === "superadmin" ? "Chat with AllBee Super Admins" : "Chat with AllBee Admins"}</div></div>
                     <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
                   </button>
@@ -12785,7 +12814,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
                   {!loading && contacts.filter((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())).map((c) => {
                     const action = c.relationship === "friend" ? "Chat" : c.relationship === "outgoing" ? "Pending" : c.relationship === "incoming" ? "Accept" : "Add Friend";
                     return <div key={c.contact_id} className="apn-tc-partner-row">
-                      <Avatar name={c.name} size={34} fontSize={12} />
+                      <Avatar name={c.name} url={c.photo_url} size={34} fontSize={12} />
                       <div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{c.name}</div><div className="apn-tc-partner-location">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div>
                       <span className={`apn-tc-status ${c.availability === "online" ? "online" : "offline"}`}>{c.contact_type !== "partner" ? "Always available" : c.availability === "online" ? "Online" : `Last seen ${c.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}`}</span>
                       {c.relationship === "friend" ? <button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : <button className="btn sm primary" disabled={c.relationship === "outgoing"} onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
@@ -12798,7 +12827,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
               {requests.filter((r) => r.status === "pending").length > 0 && <div className="apn-tc-card">
                 <div className="apn-tc-card-title">Friend Requests</div>
                 {requests.filter((r) => r.status === "pending").map((r) => <div key={r.request_id} className="apn-tc-partner-row">
-                  <Avatar name={r.other_name} size={32} fontSize={11} /><div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{r.other_name}</div><div className="apn-tc-partner-location">{r.other_apn_id}</div></div>
+                  <Avatar name={r.other_name} url={contacts.find((c) => String(c.contact_id) === String(r.other_id))?.photo_url} size={32} fontSize={11} /><div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{r.other_name}</div><div className="apn-tc-partner-location">{r.other_apn_id}</div></div>
                   {r.direction === "incoming" ? <div style={{ display: "flex", gap: 5 }}><button className="btn sm primary" onClick={() => acceptRequest(r.request_id)}>Accept</button><button className="btn sm" onClick={() => rejectRequest(r.request_id)}>Reject</button></div> : <span className="hint-line">Pending</span>}
                 </div>)}
               </div>}
@@ -12821,7 +12850,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
                       const canDelete = isMe && remaining > 0 && !String(m.id).startsWith("tmp-");
                       const status = isMe ? (m.read_at ? "✓✓" : m.delivered_at ? "✓✓" : "✓") : "";
                       return <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`} onDoubleClick={(e) => { e.stopPropagation(); setContextMessage(m); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMessage(m); }}>
-                        {!isMe && <Avatar name={m.sender_name || "?"} size={22} fontSize={9} />}
+                        {!isMe && <Avatar name={m.sender_name || "?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9} />}
                         <div className="apn-tc-bubble-wrap">
                           <div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div></div>
                           {isMe && remaining > 0 && <div className="apn-tc-delete-timer">Delete available {Math.floor(remaining/60000)}:{String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}</div>}
@@ -12858,7 +12887,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
           <div className="apn-tc-chat" ref={scrollRef}>
             <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button><div style={{ fontWeight: 700, flex: 1 }}>{selected.subject}</div></div>
             <div className="apn-tc-messages">
-              {messages.map((m) => { const isMe=m.sender_id===pid; const ts=m.created_at?new Date(m.created_at):null; return <div key={m.id||m.created_at} className={`apn-tc-msg ${isMe?"mine":"theirs"}`}>{!isMe&&<Avatar name={m.sender_name||"?"} size={22} fontSize={9}/>}<div className="apn-tc-bubble"><div>{m.body}</div><div className="apn-tc-time">{ts?fmtDateTime(ts):""}</div></div></div>; })}
+              {messages.map((m) => { const isMe=m.sender_id===pid; const ts=m.created_at?new Date(m.created_at):null; return <div key={m.id||m.created_at} className={`apn-tc-msg ${isMe?"mine":"theirs"}`}>{!isMe&&<Avatar name={m.sender_name||"?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9}/>}<div className="apn-tc-bubble"><div>{m.body}</div><div className="apn-tc-time">{ts?fmtDateTime(ts):""}</div></div></div>; })}
               {messages.length===0&&!loading&&<Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
             </div>
             <div className="apn-tc-compose"><textarea className="textarea" value={composer} onChange={e=>setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}/><button className="btn primary" onClick={sendMessage} disabled={!composer.trim()||!selected}>Send</button></div>
