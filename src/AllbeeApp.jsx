@@ -2093,6 +2093,24 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-tc-bubble { background:var(--surface-2); border:1px solid var(--border); border-radius:16px; padding:8px 11px; line-height:1.4; font-size:13.5px; word-break:break-word; }
 .apn-tc-msg.mine .apn-tc-bubble { background:var(--primary); color:#fff; }
 .apn-tc-time { font-size:10px; opacity:.7; margin-top:3px; }
+.apn-tc-bubble-wrap { position:relative; }
+.apn-tc-ticks { margin-left:4px; font-weight:800; letter-spacing:-2px; color:rgba(255,255,255,.72); }
+.apn-tc-ticks.read { color:#39a7ff; }
+.apn-tc-delete-timer { font-size:9px; opacity:.7; text-align:right; margin-top:2px; }
+.apn-tc-msg-menu { position:absolute; right:0; bottom:calc(100% + 5px); z-index:20; display:flex; gap:4px; padding:5px; background:var(--surface); border:1px solid var(--border); border-radius:9px; box-shadow:0 8px 25px rgba(0,0,0,.15); }
+.apn-tc-msg-menu button { display:flex; align-items:center; gap:5px; border:0; background:transparent; padding:6px 8px; border-radius:6px; font-size:11px; font-weight:800; cursor:pointer; color:var(--text); }
+.apn-tc-msg-menu button:hover { background:var(--surface-2); }
+.apn-tc-msg-menu button.danger { color:var(--neg); }
+.apn-tc-presence { margin-top:2px; color:var(--muted); font-size:10px; font-weight:500; }
+.apn-tc-online-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#20b26b; margin-right:5px; }
+.apn-tc-status.online { color:#16945a; font-weight:700; }
+.apn-tc-status.offline { color:var(--muted); }
+.apn-tc-info-overlay { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.35); display:grid; place-items:center; padding:20px; }
+.apn-tc-info-card { width:min(420px,100%); background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+.apn-tc-info-head { display:flex; align-items:center; justify-content:space-between; font-size:16px; margin-bottom:10px; }
+.apn-tc-info-row { display:flex; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.apn-tc-info-row span { color:var(--muted); }
+
 .apn-tc-compose { display:flex; align-items:flex-end; gap:8px; padding:10px 12px 12px; border-top:1px solid var(--border); background:var(--surface); }
 @media (max-width:420px) { .apn-tc-msg { max-width:88%; } .apn-tc-chat { height:calc(100vh - 120px); } }
 .apn-hero { display:flex; align-items:center; gap:12px; }
@@ -12473,11 +12491,37 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [busyRequests, setBusyRequests] = useState(new Set());
+  const [messageInfo, setMessageInfo] = useState(null);
+  const [contextMessage, setContextMessage] = useState(null);
+  const [chatNow, setChatNow] = useState(Date.now());
   const reduced = useReducedMotion();
   const scrollRef = useRef(null);
 
   const me = meRow || { id: pid, name: profile?.name || "Partner" };
   const myApnId = apnIdFor(meRow) || "-";
+
+  // Truthful presence: heartbeat while this chat is open and mark offline on cleanup.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let active = true;
+    const beat = async (online) => {
+      if (!active) return;
+      await supabase.rpc("apn_presence_heartbeat", { p_online: online }).catch(() => {});
+    };
+    beat(true);
+    const timer = setInterval(() => beat(true), 15000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      supabase.rpc("apn_presence_heartbeat", { p_online: false }).catch(() => {});
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!selected) return undefined;
+    const timer = setInterval(() => setChatNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [selected]);
 
   // Switching to District/State auto-opens the group chat (no extra click).
   useEffect(() => {
@@ -12517,6 +12561,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       if (error) throw new Error(error.message);
       const msgs = data || [];
       setMessages(msgs);
+      await Promise.all(msgs.filter((m) => m.sender_id !== pid && !m.delivered_at).map((m) => supabase.rpc("apn_mark_delivered", { p_message_id: m.id })));
       // advance the caller's read cursor to the latest message so the badge clears
       if (msgs.length) await supabase.rpc("apn_mark_read", { p_conversation_id: conv.id, p_message_id: msgs[msgs.length - 1].id });
     } catch (e) {
@@ -12540,11 +12585,14 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   useEffect(() => {
     if (!isOpen) return;
     const ch = supabase.channel("apn-team-chat");
-    ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests"].forEach((t) =>
-      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, loadConversations));
+    ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((t) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, async () => {
+        await loadConversations();
+        if (selected) await loadMessages(selected);
+      }));
     ch.subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [isOpen, loadConversations]);
+  }, [isOpen, loadConversations, selected, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
     setErr("");
@@ -12596,16 +12644,37 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     const body = (composer || "").trim();
     if (!body || !selected) return;
     const convId = selected.id;
-    setMessages((prev) => [...prev, { id: "tmp-" + Date.now(), conversation_id: convId, sender_id: pid, sender_name: me.name, sender_apn_id: myApnId, body, created_at: new Date().toISOString() }]);
     setComposer("");
+    setErr("");
     try {
-      const { error } = await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
+      const { data, error } = await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
       if (error) throw new Error(error.message);
+      await loadMessages(selected);
+      await loadConversations();
     } catch (e) {
+      setComposer(body);
       setErr(e.message || String(e));
-      loadConversations();
-      loadMessages(selected);
     }
+  };
+
+  const deleteMessage = async (message) => {
+    try {
+      const { error } = await supabase.rpc("apn_delete_message", { p_message_id: message.id });
+      if (error) throw new Error(error.message);
+      setContextMessage(null);
+      await loadMessages(selected);
+      await loadConversations();
+      emitToast("Message deleted.", "success");
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
+  const showMessageInfo = async (message) => {
+    setContextMessage(null);
+    try {
+      const { data, error } = await supabase.rpc("apn_message_info", { p_message_id: message.id });
+      if (error) throw new Error(error.message);
+      setMessageInfo(data?.[0] || message);
+    } catch (e) { setErr(e.message || String(e)); }
   };
 
   const openAdminChat = async (admin) => {
@@ -12681,7 +12750,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
                     return <div key={c.contact_id} className="apn-tc-partner-row">
                       <Avatar name={c.name} size={34} fontSize={12} />
                       <div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{c.name}</div><div className="apn-tc-partner-location">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div>
-                      <span className="apn-tc-status">{c.availability === "available" ? "Online" : (c.availability || "Available")}</span>
+                      <span className={`apn-tc-status ${c.availability === "online" ? "online" : "offline"}`}>{c.contact_type !== "partner" ? "Always available" : c.availability === "online" ? "Online" : `Last seen ${c.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}`}</span>
                       {c.relationship === "friend" ? <button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : <button className="btn sm primary" disabled={c.relationship === "outgoing"} onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
                     </div>;
                   })}
@@ -12703,10 +12772,26 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
                 <div className="apn-tc-chat" ref={scrollRef}>
                   <div className="apn-tc-chathead">
                     <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
-                    <div style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{selected.subject}</div>
+                    <div style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{selected.subject}
+                      {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
+                    </div>
                   </div>
-                  <div className="apn-tc-messages">
-                    {messages.map((m) => { const isMe = m.sender_id === pid; const ts = m.created_at ? new Date(m.created_at) : null; return <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`}> {!isMe && <Avatar name={m.sender_name || "?"} size={22} fontSize={9} />}<div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}</div></div></div>; })}
+                  <div className="apn-tc-messages" onClick={() => setContextMessage(null)}>
+                    {messages.map((m) => {
+                      const isMe = m.sender_id === pid;
+                      const ts = m.created_at ? new Date(m.created_at) : null;
+                      const remaining = ts ? Math.max(0, 300000 - (chatNow - ts.getTime())) : 0;
+                      const canDelete = isMe && remaining > 0 && !String(m.id).startsWith("tmp-");
+                      const status = isMe ? (m.read_at ? "✓✓" : m.delivered_at ? "✓✓" : "✓") : "";
+                      return <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`} onDoubleClick={(e) => { e.stopPropagation(); setContextMessage(m); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMessage(m); }}>
+                        {!isMe && <Avatar name={m.sender_name || "?"} size={22} fontSize={9} />}
+                        <div className="apn-tc-bubble-wrap">
+                          <div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div></div>
+                          {isMe && remaining > 0 && <div className="apn-tc-delete-timer">Delete available {Math.floor(remaining/60000)}:{String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}</div>}
+                          {contextMessage?.id === m.id && <div className="apn-tc-msg-menu" onClick={(e) => e.stopPropagation()}><button onClick={() => showMessageInfo(m)}>INFO</button>{canDelete && <button className="danger" onClick={() => deleteMessage(m)}><Trash2 size={13}/>Delete</button>}</div>}
+                        </div>
+                      </div>;
+                    })}
                     {messages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title="No messages yet" text="Send the first message." />}
                   </div>
                   <div className="apn-tc-compose">
@@ -12743,6 +12828,15 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
           </div>
         )}
       </div>
+      {messageInfo && <div className="apn-tc-info-overlay" onClick={() => setMessageInfo(null)}>
+        <div className="apn-tc-info-card" onClick={(e) => e.stopPropagation()}>
+          <div className="apn-tc-info-head"><b>Message info</b><button className="linkbtn" onClick={() => setMessageInfo(null)}>×</button></div>
+          <div className="apn-tc-info-row"><span>Sender</span><b>{messageInfo.sender_name || messageInfo.sender_id || "—"}</b></div>
+          <div className="apn-tc-info-row"><span>Sent</span><b>{messageInfo.created_at ? fmtDateTime(new Date(messageInfo.created_at)) : "—"}</b></div>
+          <div className="apn-tc-info-row"><span>Delivered</span><b>{messageInfo.delivered_at ? fmtDateTime(new Date(messageInfo.delivered_at)) : "Not delivered"}</b></div>
+          <div className="apn-tc-info-row"><span>Read</span><b>{messageInfo.read_at ? fmtDateTime(new Date(messageInfo.read_at)) : "Not read"}</b></div>
+        </div>
+      </div>}
     </div>
   );
 }
