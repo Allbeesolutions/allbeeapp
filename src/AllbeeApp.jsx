@@ -2186,6 +2186,9 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .web-ai-fab:hover { transform:translateY(-1px); box-shadow:0 12px 34px rgba(46,59,143,.4); }
 .web-ai-panel { position:fixed; right:20px; bottom:78px; z-index:81; width:min(430px,calc(100vw - 24px)); height:min(680px,calc(100vh - 100px)); display:flex; flex-direction:column; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:20px; box-shadow:0 18px 60px rgba(12,18,32,.24); }
 .web-ai-head { display:flex; align-items:center; gap:10px; padding:15px 16px; color:#fff; background:linear-gradient(135deg,var(--primary),#4756c8); }
+.web-ai-close { position:absolute; top:10px; right:10px; z-index:3; width:44px; height:44px; min-width:44px; min-height:44px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.55); border-radius:12px; background:rgba(0,0,0,.18); color:#fff; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.18); }
+.web-ai-close:hover { background:rgba(0,0,0,.3); }
+.web-ai-close:focus-visible { outline:3px solid rgba(255,255,255,.8); outline-offset:2px; }
 .web-ai-head .web-ai-avatar { width:36px; height:36px; flex:none; display:grid; place-items:center; border-radius:12px; background:rgba(255,255,255,.16); }
 .web-ai-messages { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:12px; background:var(--bg); }
 .web-ai-bubble { max-width:86%; padding:10px 12px; border-radius:14px; line-height:1.45; font-size:13.5px; white-space:pre-wrap; }
@@ -6254,13 +6257,13 @@ function LoginAccessAssistant({ onPick }) {
   if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><LifeBuoy size={18} /><span>Need help signing in?</span></button>;
   return (
     <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI — access and login assistant">
-      <header className="web-ai-head">
+      <header className="web-ai-head" style={{ position: "relative", paddingRight: 68 }}>
         <div className="web-ai-avatar"><LifeBuoy size={18} /></div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800 }}>AllBee AI</div>
           <div style={{ fontSize: 11, opacity: .82 }}>Access &amp; login assistant</div>
         </div>
-        <button className="iconbtn" style={{ color: "#fff", borderColor: "rgba(255,255,255,.35)", minWidth: 44, minHeight: 44 }} onClick={() => setOpen(false)} aria-label="Close AllBee AI"><X size={18} /></button>
+        <button type="button" className="web-ai-close" onClick={() => setOpen(false)} aria-label="Close AllBee AI" title="Close AllBee AI"><X size={20} strokeWidth={2.5} /></button>
       </header>
       <div className="web-ai-messages" aria-live="polite">
         {chat.map((m) => (
