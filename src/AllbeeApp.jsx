@@ -492,63 +492,33 @@ const AGREEMENT_READS = {
 
 async function fetchReferralData() {
   const out = {};
-  await Promise.all(Object.entries(REFERRAL_READS).map(async ([table, columns]) => {
-    const { data, error } = await supabase.from(table).select(columns);
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(REFERRAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchApnActionBadgeReads() {
-  const { data, error } = await supabase.from("apn_action_badge_reads").select(APN_ACTION_BADGE_READS);
-  if (error) {
-    if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) return [];
-    throw new Error(`Loading APN action badge read state: ${error.message}`);
-  }
-  return data || [];
+  return loadTableRows("apn_action_badge_reads", APN_ACTION_BADGE_READS);
 }
 
 async function fetchWithdrawalData() {
   const out = {};
-  await Promise.all(Object.entries(WITHDRAWAL_READS).map(async ([table, columns]) => {
-    const { data, error } = await supabase.from(table).select(columns);
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(WITHDRAWAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchCRMData() {
   const out = {};
-  await Promise.all(Object.entries(CRM_READS).map(async ([table, columns]) => {
-    const { data, error } = await supabase.from(table).select(columns).order("created_at", { ascending: false });
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(CRM_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns, "created_at")]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchAIData() {
   const out = {};
-  await Promise.all(Object.entries(AI_READS).map(async ([table, columns]) => {
-    const orderColumn = table === "ai_settings" ? "updated_at" : "created_at";
-    const { data, error } = await supabase.from(table).select(columns).order(orderColumn, { ascending: false });
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(AI_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns, table === "ai_settings" ? "updated_at" : "created_at")]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
@@ -565,60 +535,98 @@ async function fetchPartnerFinancialSnapshot() {
 
 async function fetchClientData() {
   const out = {};
-  await Promise.all(Object.entries(CLIENT_READS).map(async ([table, columns]) => {
-    const { data, error } = await supabase.from(table).select(columns);
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(CLIENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchHelpdeskData() {
   const out = {};
-  await Promise.all(Object.entries(HELPDESK_READS).map(async ([table, columns]) => {
-    const { data, error } = await supabase.from(table).select(columns);
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(HELPDESK_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchAgreementData() {
   const out = {};
-  await Promise.all(Object.entries(AGREEMENT_READS).map(async ([table, columns]) => {
-    const { data, error } = await supabase.from(table).select(columns);
-    if (error) {
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { out[table] = []; return; }
-      throw new Error(`Loading ${table}: ${error.message}`);
-    }
-    out[table] = data || [];
-  }));
+  const entries = await mapWithConcurrency(Object.entries(AGREEMENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  for (const [table, rows] of entries) out[table] = rows;
   return out;
+}
+
+// ── resilient table loader ───────────────────────────────────────────────
+// Every screen used to load all tables through a single Promise.all that
+// RE-THREW on the first non-"table does not exist" error AND had NO timeout.
+// Under connection-pool pressure (60+ tables queried at once) a single slow,
+// erroring, or hanging table would leave Promise.all unsettled or throw — so
+// fetchAll never returned, `db` stayed null, and the loading screen was shown
+// forever with no retry. Each table now loads independently with its own
+// timeout + one retry; a failing table degrades to an empty collection instead
+// of bricking the whole workspace. RLS still protects the data (an error simply
+// yields no rows); we only stop a transient failure from locking the app out.
+const TABLE_FETCH_TIMEOUT_MS = 15000;
+const TABLE_FETCH_CONCURRENCY = 8;
+
+function pTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout:${label}`)), ms)),
+  ]);
+}
+
+async function mapWithConcurrency(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Awaitable query builder shim: chaining methods return the builder; awaiting
+// it resolves the query. This mirrors how @supabase/supabase-js queries work so
+// callers can use `.select(cols).order(...)` interchangeably.
+function buildQuery(tbl, columns, orderColumn) {
+  let q = supabase.from(tbl).select(columns);
+  if (orderColumn) q = q.order(orderColumn, { ascending: false });
+  return q;
+}
+
+async function loadTableRows(table, columns, orderColumn) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data, error } = await pTimeout(buildQuery(table, columns, orderColumn), TABLE_FETCH_TIMEOUT_MS, table);
+      if (error) {
+        if (attempt === 1) console.warn(`[ALLBEE] table "${table}" unavailable: ${error.message}`);
+        return [];
+      }
+      return data || [];
+    } catch (e) {
+      if (attempt === 0) continue; // one retry — a cold query often succeeds on the second try
+      console.warn(`[ALLBEE] table "${table}" failed to load: ${e.message}`);
+      return [];
+    }
+  }
+  return [];
 }
 
 async function fetchAll() {
   const db = emptyDB();
-  await Promise.all(TABLES.map(async (t) => {
-    const { data, error } = await supabase.from(t).select("id,data");
-    if (error) {
-      // Tolerate a table that hasn't been migrated yet so a partial deploy
-      // (new app, old schema) doesn't brick the whole workspace. Real errors
-      // (RLS, auth, network) still surface.
-      if (/does not exist|find the table|schema cache|PGRST205/i.test(error.message || "")) { db[t] = []; return; }
-      throw new Error(`Loading ${t}: ${error.message}`);
-    }
-    db[t] = (data || [])
+  const loaded = await mapWithConcurrency(TABLES, TABLE_FETCH_CONCURRENCY, async (t) => [t, await loadTableRows(t, "id,data")]);
+  for (const [t, rows] of loaded) {
+    db[t] = (rows || [])
       .map((r) => r.data)
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
-  }));
-  Object.assign(db, await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(), await fetchClientData(), await fetchHelpdeskData(), await fetchAgreementData(), { apn_action_badge_reads: await fetchApnActionBadgeReads() });
+  }
+  Object.assign(db,
+    await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(),
+    await fetchClientData(), await fetchHelpdeskData(), await fetchAgreementData(),
+    { apn_action_badge_reads: await fetchApnActionBadgeReads() });
   return db;
 }
 
@@ -15024,7 +15032,7 @@ export default function App() {
 
   const reload = useCallback(async () => {
     try { setDb(await fetchAll()); setSyncError(null); }
-    catch (e) { setSyncError(e.message || String(e)); }
+    catch (e) { setSyncError(e.message || String(e)); setDb((d) => d || emptyDB()); }
     finally { setLoading(false); }
   }, []);
 
