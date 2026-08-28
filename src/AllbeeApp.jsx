@@ -6343,10 +6343,21 @@ function Lock({ isDark, setDark }) {
     setBusy(true);
     try {
       if (mode === "signin") {
-        const { data, error } = await supabase.functions.invoke("username-login", { body: { action: "sign_in", identifier: email, password: pw } });
-        if (error || !data?.session?.access_token || !data?.session?.refresh_token) throw new Error("Invalid login credentials.");
-        const { error: sessionError } = await supabase.auth.setSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token });
-        if (sessionError) throw sessionError;
+        const { data, error } = await supabase.functions.invoke("username-login", {
+          body: { action: "sign_in", identifier: email, password: pw },
+          timeout: 15000,
+        });
+        if (error) {
+          const msg = String(error?.message || error || "");
+          if (/timeout|abort|fetch/i.test(msg)) throw new Error("Authentication service is not responding. Please wait a moment and try again.");
+          throw new Error("Invalid login credentials.");
+        }
+        if (!data?.session?.access_token || !data?.session?.refresh_token) throw new Error("Invalid login credentials.");
+        const sessionResult = await Promise.race([
+          supabase.auth.setSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Authentication session setup timed out. Please try again.")), 15000)),
+        ]);
+        if (sessionResult?.error) throw sessionResult.error;
       } else {
         const meta = acctType === "owner" ? { name: who, admin_code: code.trim() }
           : acctType === "client" ? { name: name.trim(), role_intent: "client" }
