@@ -6343,10 +6343,14 @@ function Lock({ isDark, setDark }) {
     setBusy(true);
     try {
       if (mode === "signin") {
-        const { data, error } = await supabase.functions.invoke("username-login", {
+        const invokePromise = supabase.functions.invoke("username-login", {
           body: { action: "sign_in", identifier: email, password: pw },
           timeout: 15000,
         });
+        const { data, error } = await Promise.race([
+          invokePromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout:invoke")), 15000)),
+        ]);
         if (error) {
           const msg = String(error?.message || error || "");
           if (/timeout|abort|fetch/i.test(msg)) throw new Error("Authentication service is not responding. Please wait a moment and try again.");
