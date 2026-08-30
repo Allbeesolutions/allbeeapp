@@ -2164,7 +2164,7 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-section-h { font-size:17px; font-weight:800; margin:2px 0 12px; }
 .apn-list { display:flex; flex-direction:column; gap:10px; }
 .apn-rowcard { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 15px; box-shadow:var(--shadow); }
-.apn-ai-chat { display:flex; flex-direction:column; gap:10px; padding-bottom:10px; }
+.apn-ai-chat { display:flex; flex-direction:column; gap:10px; padding-bottom:10px; max-height:360px; overflow-y:auto; overflow-x:hidden; }
 .apn-ai-msg { max-width:86%; padding:10px 13px; border-radius:14px; font-size:13.5px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
 .apn-ai-msg.user { align-self:flex-end; background:var(--primary); color:#fff; border-bottom-right-radius:4px; }
 .apn-ai-msg.bot { align-self:flex-start; background:var(--surface-2); border:1px solid var(--border); border-bottom-left-radius:4px; }
@@ -10838,10 +10838,17 @@ function APNAI({ meRow, go, mutate, pid }) {
   const [asked, setAsked] = useState(null);
   const [ticketDone, setTicketDone] = useState("");
   const [quoteOpen, setQuoteOpen] = useState(false);
-  const endRef = useRef(null);
+  const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy, ticketDone]);
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, [msgs, busy, ticketDone]);
 
   const ask = async (q) => {
     const question = (q || input).trim();
@@ -10913,7 +10920,7 @@ function APNAI({ meRow, go, mutate, pid }) {
       </div>
 
       <div className="apn-rowcard">
-        <div className="apn-ai-chat">
+        <div className="apn-ai-chat" ref={chatContainerRef}>
           {msgs.map((m, i) => (
             <div key={i}>
               <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")}>{m.text}</div>
@@ -10930,7 +10937,6 @@ function APNAI({ meRow, go, mutate, pid }) {
           ))}
           {busy && <div className="apn-ai-msg bot" style={{ color: "var(--muted)" }}><span className="ai-dot" style={{ marginRight: 6 }}>●</span>ALLBEE AI is checking your records…</div>}
           {ticketDone && <div className="apn-ai-msg bot" style={{ borderColor: "var(--pos)" }}>{ticketDone}</div>}
-          <div ref={endRef} />
         </div>
 
         <div className="apn-ai-input" style={{ marginTop: 10 }}>
