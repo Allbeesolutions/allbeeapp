@@ -3614,12 +3614,30 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
     return r;
   }, [db.transactions, view, q]);
 
-  const del = (t) => removeItem("transactions", t, {
-    name: `${t.kind === "income" ? "Income" : "Expense"} ${money(t.amount)}${t.client ? " · " + t.client : ""}`,
-    cascadeRows: t.kind === "income" && t.apnProjectId ? (db.transactions || []).filter((x) => x.id !== t.id && (x.apnCommissionOfIncome === t.id || x.id === "apn-expense:" + t.id)) : [],
-    cascadeLabel: "APN commission expense",
-    audit: `deleted a ${t.kind} of ${money(t.amount)}${(db.transactions || []).some((x) => x.id !== t.id && (x.apnCommissionOfIncome === t.id || x.id === "apn-expense:" + t.id)) ? " and its APN commission expense" : ""}`,
-  });
+  const del = async (t) => {
+    // APN income is a cross-module financial posting. Revoke the APN project
+    // first so the partner wallet/project/collections are reversed before the
+    // finance rows are soft-deleted into the recycle bin.
+    if (t.kind === "income" && t.incomeSource === "apn" && t.apnProjectId) {
+      try {
+        const { error } = await supabase.rpc("apn_finalize_finance_income_revoke", {
+          p_transaction_id: t.id,
+          p_reason: `Finance income entry deleted by ${currentUser || "Finance"}.`,
+        });
+        if (error) throw new Error(error.message);
+        emitToast("APN income revoked and commission reversed.", "success");
+      } catch (e) {
+        emitToast(e.message || "Could not revoke the APN income entry.", "error");
+        return;
+      }
+    }
+    removeItem("transactions", t, {
+      name: `${t.kind === "income" ? "Income" : "Expense"} ${money(t.amount)}${t.client ? " · " + t.client : ""}`,
+      cascadeRows: t.kind === "income" && t.apnProjectId ? (db.transactions || []).filter((x) => x.id !== t.id && (x.apnCommissionOfIncome === t.id || x.id === "apn-expense:" + t.id)) : [],
+      cascadeLabel: "APN commission expense",
+      audit: `deleted a ${t.kind} of ${money(t.amount)}${(db.transactions || []).some((x) => x.id !== t.id && (x.apnCommissionOfIncome === t.id || x.id === "apn-expense:" + t.id)) ? " and its APN commission expense" : ""}`,
+    });
+  };
 
   return (
     <div className="content">
@@ -10433,17 +10451,18 @@ function apnPartnerStats(db, pid) {
   const manual = apnCommsOf(db, pid).filter((c) => c.kind !== "district" && c.source === "manual" && c.status !== APN_COMM_REVERSED);
   const completed = leads.filter((l) => l.projectCompleted).length + manual.length;
   const projectSummaries = apnCommissionProjectsOf(db, pid).map((project) => apnProjectSummary(db, project));
-  const revenue = round2(leads.filter((l) => l.status === "Converted").reduce((s, l) => s + (Number(l.revenue) || 0), 0) + manual.reduce((s, c) => s + (Number(c.revenue) || 0), 0) + projectSummaries.reduce((s, project) => s + project.totalReceived, 0));
+  const activeProjectSummaries = projectSummaries.filter((project) => project.status !== "Cancelled");
+  const revenue = round2(leads.filter((l) => l.status === "Converted").reduce((s, l) => s + (Number(l.revenue) || 0), 0) + manual.reduce((s, c) => s + (Number(c.revenue) || 0), 0) + activeProjectSummaries.reduce((s, project) => s + project.totalReceived, 0));
   const conv = submitted ? Math.round((converted / submitted) * 100) : 0;
   const own = apnCommsOf(db, pid).filter((c) => c.kind !== "district" && c.status !== APN_COMM_REVERSED);
   const sumBy = (st) => round2(own.filter((c) => c.status === st).reduce((s, c) => s + (Number(c.amount) || 0), 0));
-  const projectEarned = round2(projectSummaries.reduce((s, project) => s + project.commissionEarned, 0));
-  const projectPaid = round2(projectSummaries.reduce((s, project) => s + project.totalCommissionPaid, 0));
+  const projectEarned = round2(activeProjectSummaries.reduce((s, project) => s + project.commissionEarned, 0));
+  const projectPaid = round2(activeProjectSummaries.reduce((s, project) => s + project.totalCommissionPaid, 0));
   const earned = round2(own.reduce((s, c) => s + (Number(c.amount) || 0), 0) + projectEarned);
   return {
-    submitted, converted, completed: completed + projectSummaries.filter((project) => project.status === "Completed").length, revenue, conv, level: apnLevelForCompleted(completed + projectSummaries.filter((project) => project.status === "Completed").length),
-    projects: projectSummaries.length, completedProjects: projectSummaries.filter((project) => project.status === "Completed").length, processingProjects: projectSummaries.filter((project) => project.status === "Processing").length, collectionsReceived: projectSummaries.reduce((s, project) => s + project.collections.length, 0), totalIncentives: round2(projectSummaries.reduce((s, project) => s + project.totalIncentives, 0)),
-    commission: { earned, pending: round2(sumBy("Pending") + projectSummaries.reduce((s, project) => s + project.remainingCommission, 0)), approved: sumBy("Approved"), payable: sumBy("Payable"), paid: round2(sumBy("Paid") + projectPaid) },
+    submitted, converted, completed: completed + activeProjectSummaries.filter((project) => project.status === "Completed").length, revenue, conv, level: apnLevelForCompleted(completed + activeProjectSummaries.filter((project) => project.status === "Completed").length),
+    projects: activeProjectSummaries.length, completedProjects: activeProjectSummaries.filter((project) => project.status === "Completed").length, processingProjects: activeProjectSummaries.filter((project) => project.status === "Processing").length, collectionsReceived: activeProjectSummaries.reduce((s, project) => s + project.collections.length, 0), totalIncentives: round2(activeProjectSummaries.reduce((s, project) => s + project.totalIncentives, 0)),
+    commission: { earned, pending: round2(sumBy("Pending") + activeProjectSummaries.reduce((s, project) => s + project.remainingCommission, 0)), approved: sumBy("Approved"), payable: sumBy("Payable"), paid: round2(sumBy("Paid") + projectPaid) },
     districtEarned: round2(apnCommsOf(db, pid).filter((c) => c.kind === "district" && c.status !== APN_COMM_REVERSED).reduce((s, c) => s + (Number(c.amount) || 0), 0)),
   };
 }
