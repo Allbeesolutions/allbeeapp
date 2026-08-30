@@ -487,6 +487,7 @@ const HELPDESK_READS = {
 const AGREEMENT_READS = {
   apn_agreements: "id,code,version,title,category,body,body_simple,content_hash,status,mandatory,reason,effective_from,published_at,published_by,created_by,created_at,updated_at,material,supersedes_id,change_summary",
   apn_agreement_acceptances: "id,partner_id,agreement_id,version,content_hash,accepted_at,accepted_by,method,terms_view,ip,user_agent",
+  apn_hierarchy_assignments: "id,partner_id,district_head_id,state_head_id,status,assigned_by,effective_from,effective_to,created_at,updated_at",
   apn_agreement_company: "id,legal_name,trade_name,address_line1,address_line2,city,state,country,postal_code,email,governance_framework,governing_law,jurisdiction_place,signatories,updated_at",
 };
 
@@ -1011,7 +1012,7 @@ const emptyDB = () => ({
   rewards: [], vault: [], portal_posts: [],
   notifications: [], invoices: [], resignations: [], prompts: [], sheets: [],
   inhouse: [], payroll: [], teams: [], team_chat: [], testing: [], class_students: [],
-  apn_users: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
+  apn_users: [], apn_hierarchy_assignments: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
   apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [], apn_action_badge_reads: [],
   apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
@@ -2269,6 +2270,27 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 @keyframes web-ai-dot { 0%,60%,100% { opacity:.3; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
 @media (max-width:600px) { .web-ai-fab { right:14px; bottom:14px; width:52px; height:52px; padding:0; justify-content:center; border-radius:50%; } .web-ai-fab span { display:none; } .web-ai-panel { right:12px; bottom:74px; width:calc(100vw - 24px); height:min(690px,calc(100vh - 88px)); border-radius:18px; } }
 @media (prefers-reduced-motion:reduce) { .web-ai-fab:hover { transform:none; } .web-ai-progress > i, .web-ai-typing i { animation:none; transition:none; } }
+
+/* APN Head command-center UI */
+.apn-head-cockpit{max-width:1180px;margin:0 auto;padding-bottom:24px}
+.apn-head-cockpit .apn-section-h{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.apn-head-tabs{display:flex;gap:4px;overflow:auto;margin:0 0 14px;border-bottom:1px solid var(--border);padding-bottom:4px}
+.apn-head-tabs button{border:0;background:transparent;color:var(--muted);padding:9px 12px;border-radius:9px;font-weight:700;white-space:nowrap;cursor:pointer}
+.apn-head-tabs button.on{background:var(--primary-soft);color:var(--primary)}
+.apn-head-overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.apn-head-statline{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+.apn-head-statline:last-child{border-bottom:0}
+.apn-head-toolbar{display:flex;gap:8px;margin-bottom:12px;align-items:center}
+.apn-head-toolbar .searchbox{display:flex;align-items:center;gap:8px;flex:1;min-width:180px;border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:0 10px;height:38px}
+.apn-head-toolbar .searchbox input{border:0;outline:0;background:transparent;color:var(--ink);width:100%;min-width:0}
+.apn-head-partner-main{display:flex;align-items:center;gap:10px}
+.apn-head-mini-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}
+.apn-head-mini-grid div{background:var(--surface-2);border-radius:9px;padding:8px;min-width:0}
+.apn-head-mini-grid span{display:block;color:var(--muted);font-size:10px;margin-bottom:2px}
+.apn-head-mini-grid b{font-size:13px}
+.apn-head-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+@media(max-width:760px){.apn-head-overview-grid{grid-template-columns:1fr}.apn-head-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apn-head-toolbar{align-items:stretch;flex-direction:column}.apn-head-toolbar .searchbox{width:100%}.apn-head-toolbar .select{width:100%}}
+
 `;
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -12748,8 +12770,73 @@ function APNLeaderboard({ db, meRow, pid }) {
   );
 }
 
-/* ── district head dashboard ─────────────────────────────────────────── */
+/* ── Head management cockpits ────────────────────────────────────────── */
+const apnDistrictHeadMembers = (db, meRow) => {
+  const rows = db.apn_hierarchy_assignments || [];
+  const assigned = new Set(rows.filter((r) => r.district_head_id === meRow.id && r.status !== "inactive").map((r) => r.partner_id));
+  const district = meRow.district || "";
+  return (db.apn_users || []).filter((u) => u.id !== meRow.id && u.role !== "state_head" && u.status !== "rejected" && u.status !== "banned" && (assigned.has(u.id) || (!assigned.size && u.district === district)));
+};
+const apnStateScope = (db, meRow) => {
+  const rows = db.apn_hierarchy_assignments || [];
+  const assigned = new Set(rows.filter((r) => r.state_head_id === meRow.id && r.status !== "inactive").map((r) => r.partner_id));
+  const direct = (db.apn_users || []).filter((u) => u.id !== meRow.id && u.role !== "state_head" && u.status !== "rejected" && u.status !== "banned" && assigned.has(u.id));
+  if (assigned.size) return direct;
+  const state = String(meRow.state || meRow.zone || "").toLowerCase();
+  const districts = new Set((db.apn_users || []).filter((u) => u.role === "district_head" && state && String(u.state || u.zone || "").toLowerCase() === state).map((u) => u.district).filter(Boolean));
+  return (db.apn_users || []).filter((u) => u.id !== meRow.id && u.status !== "rejected" && u.status !== "banned" && (districts.has(u.district) || (state && String(u.state || u.zone || "").toLowerCase() === state)));
+};
+function APNHeadPartnerCard({ db, partner, mutate, viewer, allowActions = true }) {
+  const stats = apnPartnerStats(db, partner.id);
+  const status = apnEffectiveStatus(partner);
+  const target = (db.apn_targets || []).find((t) => t.partnerId === partner.id);
+  const progress = target ? apnTargetProgress(db, target) : null;
+  const recommend = () => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? { ...u, reactivationRecommended: Date.now(), reactivationRecommendedBy: viewer.name } : u) }), { action: "recommended partner reactivation", module: "APN", entity: "Partner", entityId: partner.id, partnerId: viewer.id });
+  const logCall = () => mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? { ...u, lastHeadCallAt: Date.now(), lastHeadCallBy: viewer.name } : u) }), { action: "logged head call", module: "APN", entity: "Partner", entityId: partner.id, partnerId: viewer.id });
+  return <div className="apn-rowcard apn-head-partner-card">
+    <div className="apn-head-partner-main"><Avatar name={partner.name} size={38} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 750 }}>{partner.name} <span className="badge pri" style={{ marginLeft: 5 }}>{stats.level.name}</span></div><div className="hint-line">{apnIdFor(partner)} · {partner.district || "Unassigned"} · {partner.mobile || "No phone"}</div></div><span className={"badge " + (status === "active" ? "pos" : status === "inactive" ? "neg" : "pri")}>{status}</span></div>
+    <div className="apn-head-mini-grid"><div><span>Revenue</span><b>{money(stats.revenue)}</b></div><div><span>Leads</span><b>{stats.submitted}</b></div><div><span>Converted</span><b>{stats.converted}</b></div><div><span>Commission</span><b>{money(stats.commission.earned)}</b></div>{progress && <div><span>Target</span><b>{progress.pct}%</b></div>}</div>
+    {progress && <div className="progress-track" style={{ marginTop: 8 }}><div className="progress-fill" style={{ width: Math.min(100, Math.max(0, progress.pct)) + "%" }} /></div>}
+    {allowActions && <div className="apn-head-actions"><button className="btn sm" onClick={logCall}><PhoneCall size={13} />Log call</button>{status === "inactive" && !partner.reactivationRecommended && <button className="btn sm" onClick={recommend}><RefreshCw size={13} />Recommend reactivation</button>}</div>}
+  </div>;
+}
 function APNDistrict({ db, meRow, mutate }) {
+  const [query, setQuery] = useState(""); const [status, setStatus] = useState("all"); const [focus, setFocus] = useState("overview");
+  const members = apnDistrictHeadMembers(db, meRow);
+  const visible = members.filter((p) => (!query || `${p.name} ${p.email} ${apnIdFor(p)} ${p.mobile}`.toLowerCase().includes(query.toLowerCase())) && (status === "all" || apnEffectiveStatus(p) === status));
+  const leads = (db.apn_leads || []).filter((l) => members.some((p) => p.id === l.partnerId));
+  const converted = leads.filter((l) => l.status === "Converted");
+  const revenue = round2(converted.reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const heads = (db.apn_users || []).filter((u) => u.role === "district_head");
+  return <div className="apn-head-cockpit">
+    <div className="apn-section-h"><div><b>District Command</b><div className="hint-line">{meRow.district || "Unassigned district"} · {meRow.name}</div></div><span className="badge pri">District Head</span></div>
+    <div className="apn-metrics" style={{ marginBottom: 14 }}><APNMetric k="Partners" v={members.length} icon={<Users size={13} />} /><APNMetric k="Active" v={members.filter((p) => apnEffectiveStatus(p) === "active").length} icon={<UserCheck size={13} />} /><APNMetric k="Revenue" v={money(revenue)} icon={<TrendingUp size={13} />} /><APNMetric k="Leads" v={leads.length} icon={<Lightbulb size={13} />} /><APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} /></div>
+    <div className="apn-head-tabs"><button className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button><button className={focus === "partners" ? "on" : ""} onClick={() => setFocus("partners")}>Partners ({members.length})</button></div>
+    {focus === "overview" ? <div className="apn-head-overview-grid"><div className="apn-rowcard"><div className="lbl"><GaugeCircle size={14} />District performance</div><div className="apn-head-statline"><span>Conversion rate</span><b>{leads.length ? Math.round((converted.length / leads.length) * 100) : 0}%</b></div><div className="apn-head-statline"><span>Inactive / attention</span><b>{members.filter((p) => ["inactive", "suspended"].includes(apnEffectiveStatus(p))).length}</b></div><div className="apn-head-statline"><span>Partners with targets</span><b>{members.filter((p) => (db.apn_targets || []).some((t) => t.partnerId === p.id)).length}</b></div></div><div className="apn-rowcard"><div className="lbl"><ShieldCheck size={14} />Your authority</div><p className="hint-line" style={{ lineHeight: 1.6, margin: "8px 0 0" }}>Monitor and support your assigned partners, log calls, and recommend reactivation. Financial settings, hierarchy changes and final lifecycle decisions remain with administration.</p></div><div className="apn-rowcard"><div className="lbl"><Users size={14} />District Head directory</div>{heads.filter((h) => h.district === meRow.district).map((h) => <div className="apn-head-statline" key={h.id}><span>{h.name}</span><b>{h.id === meRow.id ? "You" : "District Head"}</b></div>)}</div></div> : <div><div className="apn-head-toolbar"><div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, APN ID, phone…" /></div><select className="select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></div><div className="apn-list">{visible.length ? visible.map((p) => <APNHeadPartnerCard key={p.id} db={db} partner={p} mutate={mutate} viewer={meRow} />) : <div className="apn-rowcard"><Empty icon={<Users size={22} />} title="No partners found" text="No partner matches this district and filter." /></div>}</div></div>}
+  </div>;
+}
+function APNStateHead({ db, meRow, mutate }) {
+  const [query, setQuery] = useState(""); const [districtFilter, setDistrictFilter] = useState("all"); const [focus, setFocus] = useState("overview");
+  const members = apnStateScope(db, meRow);
+  const districts = [...new Set(members.map((p) => p.district).filter(Boolean))].sort();
+  const filtered = members.filter((p) => (!query || `${p.name} ${p.email} ${apnIdFor(p)} ${p.mobile} ${p.district}`.toLowerCase().includes(query.toLowerCase())) && (districtFilter === "all" || p.district === districtFilter));
+  const heads = (db.apn_users || []).filter((u) => u.role === "district_head" && districts.includes(u.district));
+  const leads = (db.apn_leads || []).filter((l) => members.some((p) => p.id === l.partnerId)); const converted = leads.filter((l) => l.status === "Converted");
+  const revenue = round2(converted.reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const districtRows = districts.map((district) => { const ps = members.filter((p) => p.district === district); const ls = (db.apn_leads || []).filter((l) => ps.some((p) => p.id === l.partnerId)); const cs = ls.filter((l) => l.status === "Converted"); return { district, partners: ps.length, active: ps.filter((p) => apnEffectiveStatus(p) === "active").length, leads: ls.length, converted: cs.length, revenue: round2(cs.reduce((s, l) => s + (Number(l.revenue) || 0), 0)), head: heads.find((h) => h.district === district)?.name || "Unassigned" }; });
+  return <div className="apn-head-cockpit">
+    <div className="apn-section-h"><div><b>State Command</b><div className="hint-line">{meRow.state || meRow.zone || "State-wide APN network"} · {meRow.name}</div></div><span className="badge pri">State Head</span></div>
+    <div className="apn-metrics" style={{ marginBottom: 14 }}><APNMetric k="Partners" v={members.length} icon={<Users size={13} />} /><APNMetric k="Districts" v={districts.length} icon={<MapPin size={13} />} /><APNMetric k="District Heads" v={heads.length} icon={<UserCheck size={13} />} /><APNMetric k="Revenue" v={money(revenue)} icon={<TrendingUp size={13} />} /><APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} /></div>
+    <div className="apn-head-tabs"><button className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button><button className={focus === "districts" ? "on" : ""} onClick={() => setFocus("districts")}>Districts ({districts.length})</button><button className={focus === "partners" ? "on" : ""} onClick={() => setFocus("partners")}>Partners ({members.length})</button></div>
+    {focus === "overview" && <div className="apn-head-overview-grid"><div className="apn-rowcard"><div className="lbl"><GaugeCircle size={14} />State performance</div><div className="apn-head-statline"><span>Conversion rate</span><b>{leads.length ? Math.round((converted.length / leads.length) * 100) : 0}%</b></div><div className="apn-head-statline"><span>Active partners</span><b>{members.filter((p) => apnEffectiveStatus(p) === "active").length}</b></div><div className="apn-head-statline"><span>Attention required</span><b>{members.filter((p) => ["inactive", "suspended"].includes(apnEffectiveStatus(p))).length}</b></div></div><div className="apn-rowcard"><div className="lbl"><ShieldCheck size={14} />State Head authority</div><p className="hint-line" style={{ lineHeight: 1.6, margin: "8px 0 0" }}>State-wide oversight is read from the APN hierarchy. You can inspect district and partner performance without bypassing administrator-only financial or lifecycle controls.</p></div></div>}
+    {focus === "districts" && <div className="apn-rowcard" style={{ overflowX: "auto" }}><table className="tbl apn-mobile-cards"><thead><tr><th>District</th><th>Head</th><th>Partners</th><th>Active</th><th>Leads</th><th>Converted</th><th>Revenue</th></tr></thead><tbody>{districtRows.length ? districtRows.map((r) => <tr key={r.district}><td data-label="District"><b>{r.district}</b></td><td data-label="Head">{r.head}</td><td data-label="Partners">{r.partners}</td><td data-label="Active">{r.active}</td><td data-label="Leads">{r.leads}</td><td data-label="Converted">{r.converted}</td><td data-label="Revenue" className="mono">{money(r.revenue)}</td></tr>) : <tr><td colSpan="7">No districts are assigned to this State Head yet.</td></tr>}</tbody></table></div>}
+    {focus === "partners" && <div><div className="apn-head-toolbar"><div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, district, APN ID…" /></div><select className="select" value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}><option value="all">All districts</option>{districts.map((d) => <option key={d} value={d}>{d}</option>)}</select></div><div className="apn-list">{filtered.length ? filtered.map((p) => <APNHeadPartnerCard key={p.id} db={db} partner={p} mutate={mutate} viewer={meRow} allowActions={false} />) : <div className="apn-rowcard"><Empty icon={<Users size={22} />} title="No partners found" text="No partner matches this state and filter." /></div>}</div></div>}
+  </div>;
+}
+
+/* ── legacy district view retained as the implementation base; the cockpit above
+   adds scoped management without changing the finance or authorization model. ── */
+function APNDistrictLegacy({ db, meRow, mutate }) {
   const district = meRow.district || "—";
   const state = meRow.state || meRow.zone || "";
   const headRow = meRow.headRow || (state ? state.toUpperCase().split("-")[0] : "A");
@@ -13676,6 +13763,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, reloa
 
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
+  const isStateHead = meRow.role === "state_head";
   const go = (t) => { setTab(t); setSidebarOpen(false); };
   const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id)).length;
   const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
@@ -13699,7 +13787,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, reloa
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
-      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
+      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} snap={finSnap} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} />;
       default: return null;
     }
@@ -13718,6 +13806,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, reloa
     ["achievements", "Achievements", <Award size={20} color="var(--primary)" />, 0],
     ["leaderboard", "Leaderboard", <Trophy size={20} color="var(--primary)" />, 0],
     ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
+    ...(isStateHead ? [["district", "State Command", <MapPin size={20} color="var(--primary)" />, 0]] : []),
     ["profile", "Profile", <User size={20} color="var(--primary)" />, 0],
   ];
   const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users], ["chat", "Team Chat", MessageSquare]];
