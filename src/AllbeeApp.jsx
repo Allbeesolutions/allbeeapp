@@ -2687,7 +2687,7 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
       category: f.category, hajiPct: Number(f.hajiPct), alimPct: Number(f.alimPct),
       notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now(),
       incomeSource: isIncome ? (isAPNIncome ? "apn" : "normal") : undefined,
-      apnProjectId: isAPNIncome ? (f.apnProjectId || null) : null,
+      apnProjectId: isAPNIncome ? (f.apnProjectId || uid()) : null,
     };
     if (isAPNIncome) Object.assign(payload, { apnPartnerId: f.apnPartnerId, apnProjectName: f.apnProjectName.trim(), apnClientName: f.apnClientName.trim(), apnProjectValue, apnCommissionRate: apnRate, apnCollections: apnCollections.map((row) => ({ ...row, receivedAmount: Number(row.receivedAmount), incentive: Number(row.incentive || 0), remarks: String(row.remarks || "").trim() })) });
     if (!isIncome) { payload.scope = f.scope; payload.shareSource = isCompany ? (plan.fallback ? null : plan.sourcePeriod) : null; }
