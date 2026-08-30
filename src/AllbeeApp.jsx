@@ -7221,7 +7221,7 @@ function AIIntelligenceCenter({ db, go, openModal, reload }) {
 }
 
 function PricingKnowledgeCenter({ isAdmin }) {
-  const tabs = [["services", "Services"], ["packages", "Packages"], ["pricing", "Pricing"], ["hosting", "Hosting"], ["maintenance", "AMC"], ["faq", "FAQs"], ["policies", "Policies"], ["discounts", "Discounts"], ["integrations", "Integrations"], ["knowledge", "Knowledge"]];
+  const tabs = [["services", "Services"], ["packages", "Packages"], ["pricing", "Pricing"], ["features", "Features"], ["delivery", "Delivery"], ["hosting", "Hosting"], ["maintenance", "AMC"], ["faq", "FAQs"], ["policies", "Policies"], ["discounts", "Discounts"], ["integrations", "Integrations"], ["knowledge", "Knowledge"]];
   const [tab, setTab] = useState("services");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -7229,8 +7229,21 @@ function PricingKnowledgeCenter({ isAdmin }) {
   const [summary, setSummary] = useState(null);
   const [editor, setEditor] = useState(null);
   const [editorText, setEditorText] = useState("");
+  const [jsonMode, setJsonMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const blankForm = (entity) => {
+    if (entity === "services")  return { name: "", slug: "", description: "", active: true, custom_quote: false };
+    if (entity === "packages")  return { name: "", slug: "", description: "", service_slug: "", active: true, custom_quote: false, hosting_included: false, domain_included: false, ssl_included: true, support_period_days: 15 };
+    if (entity === "pricing")   return { label: "", billing_model: "fixed", amount: "", package_slug: "", service_slug: "", is_base: false, visible: true, active: true };
+    if (entity === "features")  return { name: "", slug: "", description: "", package_slug: "", included: true, sort_order: 0, active: true };
+    if (entity === "delivery")  return { name: "Standard delivery", service_slug: "", package_slug: "", min_days: 10, max_days: 15, priority: "standard", rush_charge: "", active: true };
+    return {};
+  };
+  const [form, setForm] = useState({});
+  const structuredTabs = new Set(["services", "packages", "pricing", "features", "delivery"]);
+
   const load = useCallback(async () => {
     if (!isAdmin) return;
     setBusy(true); setError("");
@@ -7247,8 +7260,125 @@ function PricingKnowledgeCenter({ isAdmin }) {
   }, [isAdmin, page, query, tab]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [tab, query]);
-  const openEditor = (row) => { setEditor(row || { entity: tab }); setEditorText(JSON.stringify(row || {}, null, 2)); };
+
+  const openEditor = (row) => {
+    setEditor(row || { entity: tab });
+    setEditorText(JSON.stringify(row || {}, null, 2));
+    if (structuredTabs.has(tab)) {
+      const f = { ...blankForm(tab), ...(row || {}) };
+      if (f.amount != null) f.amount = String(f.amount);
+      if (f.rush_charge != null) f.rush_charge = String(f.rush_charge);
+      setForm(f);
+      setJsonMode(false);
+    } else {
+      setJsonMode(true);
+    }
+  };
+
+  const formField = (label, key, type = "text", extra = {}) => {
+    const val = form[key] ?? "";
+    const onChange = (e) => setForm((prev) => ({ ...prev, [key]: type === "checkbox" ? e.target.checked : e.target.value }));
+    if (type === "checkbox") return (
+      <div className="field" key={key} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <input type="checkbox" id={`kf-${key}`} checked={!!form[key]} onChange={onChange} />
+        <label htmlFor={`kf-${key}`} style={{ marginBottom: 0, fontWeight: 600 }}>{label}</label>
+      </div>
+    );
+    if (type === "select") return (
+      <Field label={label} key={key}>
+        <select className="select" value={val} onChange={onChange} {...(extra.options ? {} : extra)}>
+          {(extra.options || []).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Field>
+    );
+    return (
+      <Field label={label} key={key}>
+        <input className="input" type={type} value={val} onChange={onChange} placeholder={extra.placeholder || ""} />
+      </Field>
+    );
+  };
+
+  const renderStructuredForm = () => {
+    if (tab === "services") return (
+      <div className="grid2">
+        {formField("Service name", "name")}
+        {formField("Slug (identifier)", "slug")}
+        <div style={{ gridColumn: "1 / -1" }}>{formField("Description", "description")}</div>
+        {formField("Active", "active", "checkbox")}
+        {formField("Custom quote only (no fixed price)", "custom_quote", "checkbox")}
+      </div>
+    );
+    if (tab === "packages") return (
+      <div className="grid2">
+        {formField("Package name", "name")}
+        {formField("Slug (identifier)", "slug")}
+        {formField("Service slug", "service_slug", "text", { placeholder: "website, digital-marketing, training…" })}
+        <div style={{ gridColumn: "1 / -1" }}>{formField("Description", "description")}</div>
+        {formField("Support period (days)", "support_period_days", "number")}
+        {formField("Active", "active", "checkbox")}
+        {formField("Hosting included", "hosting_included", "checkbox")}
+        {formField("Domain included", "domain_included", "checkbox")}
+        {formField("SSL included", "ssl_included", "checkbox")}
+        {formField("Custom quote (no fixed base price)", "custom_quote", "checkbox")}
+      </div>
+    );
+    if (tab === "pricing") return (
+      <div className="grid2">
+        {formField("Label / Item name", "label")}
+        {formField("Billing model", "billing_model", "select", { options: [["fixed","Fixed price"],["per_month","Per month"],["per_year","Per year"],["per_user","Per user"],["custom_quote","Custom quote"],["hidden_price","Hidden / TBD"],["negotiable","Negotiable"]] })}
+        {formField("Amount (₹, blank = included / quote on request)", "amount", "number", { placeholder: "Leave blank if included" })}
+        {formField("Package slug", "package_slug", "text", { placeholder: "website-starter" })}
+        {formField("Service slug (fallback)", "service_slug", "text", { placeholder: "website" })}
+        {formField("Base price (main line item)", "is_base", "checkbox")}
+        {formField("Visible in quotation", "visible", "checkbox")}
+        {formField("Active", "active", "checkbox")}
+      </div>
+    );
+    if (tab === "features") return (
+      <div className="grid2">
+        {formField("Feature name", "name")}
+        {formField("Slug", "slug")}
+        {formField("Package slug", "package_slug", "text", { placeholder: "website-starter" })}
+        <div style={{ gridColumn: "1 / -1" }}>{formField("Description", "description")}</div>
+        {formField("Sort order", "sort_order", "number")}
+        {formField("Included (shown as ✓ in quotation)", "included", "checkbox")}
+        {formField("Active", "active", "checkbox")}
+      </div>
+    );
+    if (tab === "delivery") return (
+      <div className="grid2">
+        {formField("Timeline name", "name")}
+        {formField("Service slug", "service_slug", "text", { placeholder: "website" })}
+        {formField("Package slug (optional, overrides service-level)", "package_slug", "text", { placeholder: "website-starter" })}
+        {formField("Minimum working days", "min_days", "number")}
+        {formField("Maximum working days", "max_days", "number")}
+        {formField("Priority", "priority", "select", { options: [["standard","Standard"],["rush","Rush"],["express","Express"]] })}
+        {formField("Rush charge (₹, optional)", "rush_charge", "number", { placeholder: "Leave blank if none" })}
+        {formField("Active", "active", "checkbox")}
+      </div>
+    );
+    return null;
+  };
+
+  const saveStructured = async () => {
+    const payload = { ...form };
+    if ("amount" in payload) payload.amount = payload.amount === "" ? null : Number(payload.amount);
+    if ("rush_charge" in payload) payload.rush_charge = payload.rush_charge === "" ? null : Number(payload.rush_charge);
+    if ("sort_order" in payload) payload.sort_order = Number(payload.sort_order) || 0;
+    if ("min_days" in payload) payload.min_days = Number(payload.min_days) || 0;
+    if ("max_days" in payload) payload.max_days = Number(payload.max_days) || 0;
+    if ("support_period_days" in payload) payload.support_period_days = Number(payload.support_period_days) || 0;
+    setBusy(true); setError("");
+    try {
+      const { error: saveError } = await supabase.rpc("knowledge_admin_save", { p_entity: tab, p_payload: payload });
+      if (saveError) throw new Error(saveError.message);
+      setEditor(null); await load(); emitToast("Knowledge catalog saved.", "success");
+    } catch (e) { setError(e.message || "Knowledge catalog could not be saved."); }
+    finally { setBusy(false); }
+  };
+
   const save = async () => {
+    if (structuredTabs.has(tab) && !jsonMode) { await saveStructured(); return; }
     let payload;
     try { payload = JSON.parse(editorText); } catch { setError("Enter valid JSON before saving."); return; }
     setBusy(true); setError("");
@@ -7270,17 +7400,35 @@ function PricingKnowledgeCenter({ isAdmin }) {
     const keys = Array.from(new Set(list.flatMap((row) => Object.keys(row))));
     await exportRowsToExcel(`allbee-knowledge-${tab}-${todayISO()}.xlsx`, tab, keys.map((key) => ({ label: key, value: (row) => typeof row[key] === "object" ? JSON.stringify(row[key]) : row[key] ?? "" })), list);
   };
+
   if (!isAdmin) return <div className="content"><div className="card"><Empty icon={<ShieldAlert size={22} />} title="Admin access required" text="The Pricing & Knowledge Center is restricted to administrators." /></div></div>;
   const pages = Math.max(1, Math.ceil((data.total || 0) / (data.page_size || 25)));
   const labelOf = (row) => row.name || row.title || row.question || row.label || row.slug || "Untitled";
+
+  const detailOf = (row) => {
+    if (tab === "pricing")   return `${row.billing_model || ""} · ${row.package_name || row.package_slug || ""} · ${row.service_name || ""}`;
+    if (tab === "features")  return `${row.package_name || row.package_slug || ""} · ${row.included ? "Included" : "Excluded"}`;
+    if (tab === "delivery")  return `${row.service_name || ""} · ${row.min_days ?? "?"}–${row.max_days ?? "?"} days`;
+    if (tab === "packages")  return `${row.service_name || row.service_slug || ""} · support ${row.support_period_days ?? 0}d`;
+    return row.description || row.answer || row.body || row.billing_model || row.category || row.service_slug || "";
+  };
+  const amountOf = (row) => {
+    if (tab === "pricing" || tab === "hosting")  return row.amount != null ? money(row.amount) : "Included / TBD";
+    if (tab === "delivery") return row.min_days != null ? `${row.min_days}–${row.max_days} days` : "—";
+    if (tab === "features") return row.included ? "✓ Included" : "Excluded";
+    return row.amount != null ? money(row.amount) : row.billing_model || row.category || row.service_slug || "—";
+  };
+
   return <div className="content">
-    <div className="page-head"><div><h3><BookOpen size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Pricing & Knowledge Center</h3><div className="hint-line">One maintained source for pricing, service definitions, delivery guidance, FAQs and AI knowledge.</div></div><span className="spacer" /><button className="btn" onClick={exportRows} disabled={busy}><Download size={14} />Export</button><button className="btn primary" onClick={() => openEditor()}><Plus size={15} />New record</button></div>
+    <div className="page-head"><div><h3><BookOpen size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Pricing & Knowledge Center</h3><div className="hint-line">Single source of truth for pricing, features, delivery guidance, FAQs and AI knowledge. Changes reflect immediately in new APN quotations.</div></div><span className="spacer" /><button className="btn" onClick={exportRows} disabled={busy}><Download size={14} />Export</button><button className="btn primary" onClick={() => openEditor()}><Plus size={15} />New record</button></div>
     {error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}<button className="iconbtn" style={{ marginLeft: "auto", width: 26, height: 26 }} onClick={() => setError("")} aria-label="Dismiss knowledge error"><X size={14} /></button></div>}
-    <div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Services", "services"], ["Packages", "packages"], ["Price points", "pricing"], ["FAQs", "faq"], ["Knowledge articles", "knowledge"]].map(([label, key]) => <button key={key} className="card stat" style={{ textAlign: "left", border: 0, cursor: "pointer" }} onClick={() => { setTab(key); setPage(1); }}><div className="lbl"><BookOpen size={14} />{label}</div><div className="num mono">{summary?.[key] ?? "—"}</div></button>)}</div>
+    <div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Services", "services"], ["Packages", "packages"], ["Price points", "pricing"], ["Features", "features"], ["Delivery rules", "delivery"], ["FAQs", "faq"], ["Knowledge articles", "knowledge"]].map(([label, key]) => <button key={key} className="card stat" style={{ textAlign: "left", border: 0, cursor: "pointer" }} onClick={() => { setTab(key); setPage(1); }}><div className="lbl"><BookOpen size={14} />{label}</div><div className="num mono">{summary?.[key] ?? "—"}</div></button>)}</div>
     <div className="seg" style={{ marginBottom: 12, overflowX: "auto" }}>{tabs.map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => { setTab(key); setPage(1); }}>{label}</button>)}</div>
     <div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${tabs.find((x) => x[0] === tab)?.[1].toLowerCase() || "knowledge"}…`} aria-label="Search knowledge catalog" /></div><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button></div>
-    <div className="card"><div className="hint-line" style={{ padding: "0 0 10px" }}>{data.total || 0} records · {busy ? "Loading…" : "DB-backed catalog"}</div>{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Name</th><th>Identifier</th><th>Status</th><th>Details</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id || row.slug}><td><b>{labelOf(row)}</b><div className="hint-line">{row.description || row.answer || row.body || ""}</div></td><td className="mono">{row.slug || row.id || "—"}</td><td><span className={`badge ${row.active === false || row.published === false ? "neg" : "pos"}`}>{row.active === false ? "Archived" : row.published === false ? "Draft" : "Active"}</span></td><td>{row.amount != null ? money(row.amount) : row.billing_model || row.category || row.service_slug || "—"}</td><td><div className="row-actions"><button className="btn sm" onClick={() => openEditor(row)}><Pencil size={13} />Edit</button><button className="btn sm" onClick={() => archive(row)} disabled={busy}>{row.active === false ? "Restore" : "Archive"}</button></div></td></tr>)}</tbody></table></div> : <Empty icon={<BookOpen size={22} />} title={query ? "No matching knowledge" : "No records yet"} text="Create a catalog record or adjust the search to continue." action={!query && <button className="btn primary" onClick={() => openEditor()}><Plus size={15} />Create record</button>} />}{pages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {page} of {pages}</span><button className="btn sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Next</button></div>}</div>
-    {editor && <Modal title={`${editor.id ? "Edit" : "New"} ${tabs.find((x) => x[0] === tab)?.[1] || "record"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save record</button></>}><p className="hint-line">Edit the normalized record as JSON. Changes are versioned and audited transactionally.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={editorText} onChange={(e) => setEditorText(e.target.value)} aria-label="Knowledge record JSON" /></Modal>}
+    <div className="card"><div className="hint-line" style={{ padding: "0 0 10px" }}>{data.total || 0} records · {busy ? "Loading…" : "DB-backed catalog"}</div>{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Name</th><th>Identifier</th><th>Status</th><th>Details</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id || row.slug}><td><b>{labelOf(row)}</b><div className="hint-line">{detailOf(row)}</div></td><td className="mono">{row.slug || row.id || "—"}</td><td><span className={`badge ${row.active === false || row.published === false ? "neg" : "pos"}`}>{row.active === false ? "Archived" : row.published === false ? "Draft" : "Active"}</span></td><td>{amountOf(row)}</td><td><div className="row-actions"><button className="btn sm" onClick={() => openEditor(row)}><Pencil size={13} />Edit</button><button className="btn sm" onClick={() => archive(row)} disabled={busy}>{row.active === false ? "Restore" : "Archive"}</button></div></td></tr>)}</tbody></table></div> : <Empty icon={<BookOpen size={22} />} title={query ? "No matching knowledge" : "No records yet"} text="Create a catalog record or adjust the search to continue." action={!query && <button className="btn primary" onClick={() => openEditor()}><Plus size={15} />Create record</button>} />}{pages > 1 && <div className="apn-pagination"><button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {page} of {pages}</span><button className="btn sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Next</button></div>}</div>
+    {editor && <Modal title={`${editor.id ? "Edit" : "New"} ${tabs.find((x) => x[0] === tab)?.[1] || "record"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button>{structuredTabs.has(tab) && <button className="btn sm" style={{ marginRight: "auto" }} onClick={() => setJsonMode((x) => !x)}>{jsonMode ? "Form view" : "JSON (advanced)"}</button>}<button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save record</button></>}>
+      {structuredTabs.has(tab) && !jsonMode ? <>{renderStructuredForm()}</> : <><p className="hint-line">Edit the normalized record as JSON. Changes are versioned and audited transactionally.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={editorText} onChange={(e) => setEditorText(e.target.value)} aria-label="Knowledge record JSON" /></>}
+    </Modal>}
   </div>;
 }
 
@@ -11474,13 +11622,21 @@ async function downloadQuotePdf(q, meRow) {
     doc.setFont("helvetica", "bold"); doc.setTextColor(26, 32, 44); doc.text("30 Days", rightColX + 110, overviewY + 32);
 
     doc.setFont("helvetica", "normal"); doc.setTextColor(113, 128, 150); doc.text("Est. Duration:", rightColX, overviewY + 46);
-    doc.setFont("helvetica", "bold"); doc.setTextColor(26, 32, 44); doc.text("10-15 working days", rightColX + 110, overviewY + 46);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(26, 32, 44);
+
+    const minDays = q.catalogSnapshot?.deliveryMin ?? 10;
+    const maxDays = q.catalogSnapshot?.deliveryMax ?? 15;
+    const durationText = minDays === 0 ? "Ongoing retainer" : `${minDays}-${maxDays} working days`;
+    doc.text(pdfSafe(durationText), rightColX + 110, overviewY + 46);
 
     // Calculate dynamic expected delivery dates excluding weekends
     const startDate = q.createdAt ? new Date(q.createdAt) : new Date();
-    const dateMin = fmtDate(addWorkingDays(startDate, 10));
-    const dateMax = fmtDate(addWorkingDays(startDate, 15));
-    const expectedDelText = `${dateMin} to ${dateMax}`;
+    let expectedDelText = "Ongoing retainer";
+    if (minDays > 0) {
+      const dateMin = fmtDate(addWorkingDays(startDate, minDays));
+      const dateMax = fmtDate(addWorkingDays(startDate, maxDays));
+      expectedDelText = `${dateMin} to ${dateMax}`;
+    }
 
     doc.setFont("helvetica", "normal"); doc.setTextColor(113, 128, 150); doc.text("Expected Delivery:", rightColX, overviewY + 60);
     doc.setFont("helvetica", "bold"); doc.setTextColor(26, 32, 44); doc.text(pdfSafe(expectedDelText), rightColX + 110, overviewY + 60);
@@ -11498,24 +11654,30 @@ async function downloadQuotePdf(q, meRow) {
 
     let inclusionsY = nextSectionY + 32 + scopeLines.length * 13 + 12;
 
-    // Inclusions Checklist (For Website development)
+    // Inclusions Checklist (For Website development or any package with features)
     let startTableY = inclusionsY;
-    if (q.service === "website") {
+    const featuresList = q.catalogSnapshot?.features || [];
+    if (q.service === "website" || featuresList.length > 0) {
       doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
       doc.text("PACKAGE INCLUDES", 45, inclusionsY);
 
       doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
-      const inclusions = [
-        "✓ Up to 5 website pages",
-        "✓ Responsive design (Mobile/Tablet/Desktop)",
-        "✓ Basic business website structure",
-        "✓ Contact / enquiry submission form",
-        "✓ Basic SEO-friendly structure",
-        "✓ SSL Certificate / HTTPS setup",
-        "✓ Website deployment",
-        "✓ Support for 15 days (Post Delivery)"
-      ];
-      
+      let inclusions = [];
+      if (featuresList.length > 0) {
+        inclusions = featuresList.map((f) => `✓ ${f.name}`);
+      } else {
+        inclusions = [
+          "✓ Up to 5 website pages",
+          "✓ Responsive design (Mobile/Tablet/Desktop)",
+          "✓ Basic business website structure",
+          "✓ Contact / enquiry submission form",
+          "✓ Basic SEO-friendly structure",
+          "✓ SSL Certificate / HTTPS setup",
+          "✓ Website deployment",
+          "✓ Support for 15 days (Post Delivery)"
+        ];
+      }
+
       for (let idx = 0; idx < inclusions.length; idx++) {
         const colIdx = idx % 2;
         const rowIdx = Math.floor(idx / 2);
@@ -11523,14 +11685,31 @@ async function downloadQuotePdf(q, meRow) {
         const itemY = inclusionsY + 14 + rowIdx * 14;
         doc.text(inclusions[idx], itemX, itemY);
       }
-      
+
       startTableY = inclusionsY + 14 + Math.ceil(inclusions.length / 2) * 14 + 18;
     }
 
     // Dynamic 4-column detailed commercial rows building
     const tableRows = [];
-    if (q.service === "website") {
-      const baseItem = (q.items || []).find(it => it.label.toLowerCase().includes("website") || it.label.toLowerCase().includes("base") || it.label.toLowerCase().includes("starter"));
+    if (q.catalogSnapshot) {
+      let index = 1;
+      for (const it of (q.items || [])) {
+        let details = "Service requirement / package item";
+        if (it.label.toLowerCase().includes("domain")) details = "Approx. subject to name availability & extension";
+        else if (it.label.toLowerCase().includes("hosting")) details = "Standard web hosting package for 1 year";
+        else if (it.label.toLowerCase().includes("ssl")) details = "SSL Certificate (HTTPS) configuration & setup";
+        else if (it.isBase) details = q.catalogSnapshot.packageDesc || "Base package development";
+        else details = "Additional custom requirement / addon";
+
+        tableRows.push([
+          String(index++),
+          pdfSafe(it.label),
+          pdfSafe(details),
+          it.amount == null ? "Quote on request" : inr(it.amount)
+        ]);
+      }
+    } else if (q.service === "website") {
+      const baseItem = (q.items || []).find((it) => it.label.toLowerCase().includes("website") || it.label.toLowerCase().includes("base") || it.label.toLowerCase().includes("starter"));
       const baseAmount = baseItem ? baseItem.amount : (q.subtotal || 0);
 
       tableRows.push([
@@ -11557,8 +11736,8 @@ async function downloadQuotePdf(q, meRow) {
         "SSL Certificate (HTTPS) configuration & setup",
         "Included"
       ]);
-      
-      const otherItems = (q.items || []).filter(it => it.id !== baseItem?.id && !it.label.toLowerCase().includes("starter"));
+
+      const otherItems = (q.items || []).filter((it) => it.id !== baseItem?.id && !it.label.toLowerCase().includes("starter"));
       let index = 5;
       for (const it of otherItems) {
         tableRows.push([
@@ -11667,13 +11846,14 @@ async function downloadQuotePdf(q, meRow) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(46, 59, 143);
     doc.text("PAYMENT TERMS", 60, noteY + 18);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(74, 85, 104);
-    doc.text("50% advance at project start,\n50% on final delivery.", 60, noteY + 32);
+    const paymentTermsText = q.catalogSnapshot?.paymentTerms?.description || "50% advance at project start,\n50% on final delivery.";
+    doc.text(paymentTermsText, 60, noteY + 32);
 
     // Disclaimer / Notes (Right column of the box)
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(46, 59, 143);
     doc.text("IMPORTANT NOTES", 295, noteY + 18);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(113, 128, 150);
-    const discLines = doc.splitTextToSize(pdfSafe(QUOTE_DISCLAIMER), 240);
+    const discLines = doc.splitTextToSize(pdfSafe(q.catalogSnapshot?.disclaimer || QUOTE_DISCLAIMER), 240);
     doc.text(discLines, 295, noteY + 32);
 
     // --- Post-Generation Header & Footer Pages Drawing Loop ---
@@ -11723,7 +11903,12 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
     setService(key); setAddons([]); setSiteType(null); setTech(null); setDone(null);
     setPriceBusy(true);
     supabase.rpc("knowledge_get_pricing", { p_service: key }).then(({ data, error }) => {
-      setPrice(error || !data ? QUOTE_CATALOG[key] : { base: Number(data.base) || 0, baseLabel: data.baseLabel || QUOTE_CATALOG[key].baseLabel, options: (data.options && data.options.length ? data.options : QUOTE_CATALOG[key].options) });
+      if (error || !data || data.base === null) {
+        emitToast("Could not load official pricing. Please check your network connection.", "error");
+        setPrice(null);
+      } else {
+        setPrice(data);
+      }
       setPriceBusy(false);
     });
     setStep(key === "website" ? 1 : 3);
@@ -11732,15 +11917,51 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
   const itemId = () => `qi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const items = (() => {
     if (!service || !price) return [];
-    const lines = [{ id: itemId(), label: price.baseLabel || QUOTE_SERVICE_LABEL[service], amount: Number(price.base) || 0 }];
-    if (isWeb) {
-      if (siteType === "ecommerce" && optOf("ecommerce")) lines.push({ id: itemId(), label: optOf("ecommerce").label, amount: Number(optOf("ecommerce").amount) || 0 });
-      if (siteType === "dynamic") lines.push({ id: itemId(), label: "Dynamic website build (modules and content)", amount: null });
-      if (siteType === "custom") lines.push({ id: itemId(), label: "Custom build engineering", amount: null });
-      if (addons.includes("business_email")) lines.push({ id: itemId(), label: QUOTE_BUSINESS_EMAIL.label, amount: QUOTE_BUSINESS_EMAIL.amount });
-      if (addons.includes("source_code")) lines.push({ id: itemId(), label: "Source code handover", amount: null });
+    const lines = [];
+
+    // Use full catalog line items if available, else fall back to base
+    if (price.lineItems && price.lineItems.length) {
+      for (const li of price.lineItems) {
+        lines.push({
+          id: itemId(),
+          label: li.label,
+          amount: li.amount !== null ? Number(li.amount) : null,
+          isBase: !!li.isBase
+        });
+      }
+    } else {
+      lines.push({ id: itemId(), label: price.baseLabel || QUOTE_SERVICE_LABEL[service], amount: price.base !== null ? Number(price.base) : null });
     }
-    for (const k of addons) { const o = optOf(k); if (o) lines.push({ id: itemId(), label: o.label, amount: Number(o.amount) || 0 }); }
+
+    if (isWeb) {
+      if (siteType === "ecommerce" && optOf("ecommerce")) {
+        lines.push({ id: itemId(), label: optOf("ecommerce").label, amount: Number(optOf("ecommerce").amount) || 0 });
+      }
+      if (siteType === "dynamic") {
+        lines.push({ id: itemId(), label: "Dynamic website build (modules and content)", amount: null });
+      }
+      if (siteType === "custom") {
+        lines.push({ id: itemId(), label: "Custom build engineering", amount: null });
+      }
+      if (addons.includes("business_email")) {
+        const opt = optOf("business_email");
+        if (opt) {
+          // Handled by the addons loop below
+        } else if (!lines.some((l) => l.label.includes("Business Email"))) {
+          lines.push({ id: itemId(), label: QUOTE_BUSINESS_EMAIL.label, amount: QUOTE_BUSINESS_EMAIL.amount });
+        }
+      }
+      if (addons.includes("source_code")) {
+        lines.push({ id: itemId(), label: "Source code handover", amount: null });
+      }
+    }
+
+    for (const k of addons) {
+      const o = optOf(k);
+      if (o) {
+        lines.push({ id: itemId(), label: o.label, amount: o.amount !== null ? Number(o.amount) : null });
+      }
+    }
     return lines;
   })();
   const subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
@@ -11762,6 +11983,22 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
       requirements, items, subtotal, total,
       quoteNo: "QT" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + id.slice(0, 4).toUpperCase(),
       status, createdAt: Date.now(),
+      catalogSnapshot: price ? {
+        packageName: price.package,
+        packageSlug: price.packageSlug,
+        packageDesc: price.packageDesc,
+        features: price.features || [],
+        limits: price.limits || [],
+        deliveryMin: price.deliveryMin,
+        deliveryMax: price.deliveryMax,
+        deliveryNote: price.deliveryNote,
+        paymentTerms: price.paymentTerms,
+        hostingIncluded: !!price.hostingIncluded,
+        domainIncluded: !!price.domainIncluded,
+        sslIncluded: !!price.sslIncluded,
+        supportDays: price.supportDays || 0,
+        disclaimer: price.disclaimer
+      } : null
     };
     onSave(qq, status);
     setSaving(false);
@@ -11777,7 +12014,7 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
       {sub && <div className="hint-line" style={{ marginTop: 4, fontSize: 12 }}>{sub}</div>}
     </button>
   );
-  const canContinue = step === 0 ? !!service : step === 1 ? !!siteType : step === 2 ? !!tech : step === 3 ? true : step === 4 ? urgent != null : step === 5 ? !!clientName.trim() : true;
+  const canContinue = !price ? false : (step === 0 ? !!service : step === 1 ? !!siteType : step === 2 ? !!tech : step === 3 ? true : step === 4 ? urgent != null : step === 5 ? !!clientName.trim() : true);
   return (
     <Modal title="Generate Quotation" onClose={onClose}
       footer={step === 7 ? <><button className="btn" onClick={onClose}>Done</button></>
