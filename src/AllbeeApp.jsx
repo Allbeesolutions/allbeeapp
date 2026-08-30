@@ -11356,78 +11356,109 @@ async function downloadQuotePdf(q, meRow) {
     // Page 1 Background
     doc.addImage(img, "PNG", 0, 0, W, H);
 
-    // Title Section
-    let y = 150;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(22); doc.setTextColor(46, 59, 143);
-    doc.text("QUOTATION", 40, y);
+    // Title Section (breathing room from letterhead header)
+    let y = 145;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(46, 59, 143);
+    doc.text("QUOTATION", 45, y);
 
-    // Quote Meta info
-    y += 24;
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(74, 85, 104);
-    doc.text(pdfSafe(`Quotation No: ${q.quoteNo || ""}`), 40, y);
-    doc.text(pdfSafe(`Date: ${q.createdAt ? fmtDate(new Date(q.createdAt)) : fmtDate(new Date())}`), W - 40, y, { align: "right" });
+    // Quote Meta info (aligned right, same row height)
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(100, 110, 130);
+    doc.text(pdfSafe(`No: ${q.quoteNo || ""}`), W - 45, y - 8, { align: "right" });
+    doc.text(pdfSafe(`Date: ${q.createdAt ? fmtDate(new Date(q.createdAt)) : fmtDate(new Date())}`), W - 45, y + 4, { align: "right" });
 
-    // Divider Line
-    y += 10;
-    doc.setDrawColor(226, 232, 240); doc.setLineWidth(1);
-    doc.line(40, y, W - 40, y);
+    // Header Divider Line
+    y += 15;
+    doc.setDrawColor(46, 59, 143); doc.setLineWidth(1.5);
+    doc.line(45, y, W - 45, y);
 
-    // Columns: Prepared For vs Prepared By
-    y += 22;
-    // Left Column: Client
-    doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(46, 59, 143);
-    doc.text("PREPARED FOR", 40, y);
+    // Prepared For / Prepared By Columns
+    y += 18;
+    
+    // Left Column: Client info card
+    doc.setFillColor(248, 250, 252);
+    doc.rect(45, y, 240, 78, "F");
+    doc.setFillColor(46, 59, 143);
+    doc.rect(45, y, 3, 78, "F"); // brand accent border
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+    doc.text("PREPARED FOR", 58, y + 16);
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(26, 32, 44);
-    doc.text(pdfSafe(q.clientName || "Client"), 40, y + 16);
+    doc.text(pdfSafe(q.clientName || "Client"), 58, y + 32);
 
-    let clientY = y + 29;
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(74, 85, 104);
-    if (q.business) { doc.text(pdfSafe(q.business), 40, clientY); clientY += 13; }
-    if (q.contact) { doc.text(pdfSafe(q.contact), 40, clientY); clientY += 13; }
+    let clientY = y + 46;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
+    if (q.business) { doc.text(pdfSafe(q.business), 58, clientY); clientY += 13; }
+    if (q.contact) { doc.text(pdfSafe(q.contact), 58, clientY); clientY += 13; }
 
-    // Right Column: Partner
-    doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(46, 59, 143);
-    doc.text("PREPARED BY", 330, y);
+    // Right Column: Partner info card
+    doc.setFillColor(248, 250, 252);
+    doc.rect(310, y, 240, 78, "F");
+    doc.setFillColor(46, 59, 143);
+    doc.rect(310, y, 3, 78, "F"); // brand accent border
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+    doc.text("PREPARED BY", 323, y + 16);
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(26, 32, 44);
-    doc.text(pdfSafe(meRow?.name || "APN Partner"), 330, y + 16);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(74, 85, 104);
-    doc.text(pdfSafe(`APN ID: ${meRow?.apnId || ""}`), 330, y + 29);
-    doc.text(pdfSafe(`Service: ${QUOTE_SERVICE_LABEL[q.service] || q.service || ""}`), 330, y + 42);
+    doc.text(pdfSafe(meRow?.name || "APN Partner"), 323, y + 32);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
+    doc.text(pdfSafe(`ID: ${meRow?.apnId || ""}`), 323, y + 46);
+    doc.text(pdfSafe(`Service: ${QUOTE_SERVICE_LABEL[q.service] || q.service || ""}`), 323, y + 59);
 
-    let startTableY = Math.max(clientY, y + 55) + 12;
+    let startTableY = y + 78 + 20;
 
     // Scope of Work Section
     if (q.requirements) {
-      let scopeY = Math.max(clientY, y + 55);
-      doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(46, 59, 143);
-      doc.text("SCOPE OF WORK", 40, scopeY);
+      let scopeY = y + 78 + 15;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+      doc.text("PROJECT SCOPE & REQUIREMENTS", 45, scopeY + 12);
 
-      doc.setFont("helvetica", "normal"); doc.setFontSize(9.5);
-      const scopeLines = doc.splitTextToSize(pdfSafe(q.requirements), W - 92);
+      const scopeLines = doc.splitTextToSize(pdfSafe(q.requirements), W - 105);
+      const boxHeight = scopeLines.length * 13 + 14;
 
-      // Light gray accent background box for Scope
-      const boxHeight = scopeLines.length * 13 + 12;
       doc.setFillColor(248, 250, 252);
-      doc.rect(40, scopeY + 6, W - 80, boxHeight, "F");
+      doc.rect(45, scopeY + 20, W - 90, boxHeight, "F");
       doc.setFillColor(46, 59, 143);
-      doc.rect(40, scopeY + 6, 3, boxHeight, "F"); // Brand color accent bar on left
+      doc.rect(45, scopeY + 20, 3, boxHeight, "F"); // brand accent bar
 
-      doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(74, 85, 104);
-      doc.text(scopeLines, 52, scopeY + 18);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
+      doc.text(scopeLines, 58, scopeY + 32);
 
-      startTableY = scopeY + 6 + boxHeight + 20;
+      startTableY = scopeY + 20 + boxHeight + 20;
     }
 
     // Invoice-style Table
     autoTable(doc, {
       startY: startTableY,
-      head: [["Item Description", "Amount"]],
-      body: (q.items || []).map((it) => [pdfSafe(it.label || ""), it.amount == null ? "To be confirmed (scope review)" : inr(it.amount)]),
-      theme: "plain",
-      styles: { fontSize: 9.5, cellPadding: 8, textColor: [45, 55, 72], font: "helvetica" },
-      headStyles: { fillColor: [46, 59, 143], textColor: 255, fontStyle: "bold", halign: "left" },
-      columnStyles: { 0: { halign: "left" }, 1: { halign: "right", fontStyle: "bold" } },
-      margin: { left: 40, right: 40 },
+      head: [["ITEM / DESCRIPTION", "AMOUNT"]],
+      body: (q.items || []).map((it) => [
+        pdfSafe(it.label || ""),
+        it.amount == null ? "To be confirmed (scope review)" : inr(it.amount)
+      ]),
+      theme: "striped",
+      styles: {
+        fontSize: 9.5,
+        cellPadding: { top: 10, bottom: 10, left: 12, right: 12 },
+        textColor: [45, 55, 72],
+        font: "helvetica",
+        lineColor: [226, 232, 240],
+        lineWidth: 0.5
+      },
+      headStyles: {
+        fillColor: [46, 59, 143],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 9,
+        halign: "left",
+        valign: "middle"
+      },
+      columnStyles: {
+        0: { halign: "left" },
+        1: { halign: "right", fontStyle: "bold", textColor: [26, 32, 44] }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      margin: { left: 45, right: 45 },
       willDrawPage: (data) => {
         // Draw letterhead background on every additional page
         if (data.pageNumber > 1) {
@@ -11436,61 +11467,67 @@ async function downloadQuotePdf(q, meRow) {
       }
     });
 
-    let tailY = doc.lastAutoTable.finalY + 15;
+    let tailY = doc.lastAutoTable.finalY + 20;
 
     // Check if totals fit on the page, otherwise wrap
-    if (tailY > 680) {
+    if (tailY > 670) {
       doc.addPage();
       doc.addImage(img, "PNG", 0, 0, W, H);
-      tailY = 160;
+      tailY = 150;
     }
 
     // Totals calculations
     doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(74, 85, 104);
     doc.text("Subtotal", W - 180, tailY, { align: "right" });
     doc.setFont("helvetica", "bold"); doc.setTextColor(26, 32, 44);
-    doc.text(inr(q.subtotal ?? (q.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)), W - 40, tailY, { align: "right" });
+    doc.text(inr(q.subtotal ?? (q.items || []).reduce((s, it) => s + (Number(it.amount) || 0), 0)), W - 45, tailY, { align: "right" });
 
     if (q.urgent) {
-      tailY += 16;
+      tailY += 18;
       doc.setFont("helvetica", "normal"); doc.setTextColor(74, 85, 104);
       doc.text("Urgent Delivery Surcharge (+10%)", W - 180, tailY, { align: "right" });
-      doc.setFont("helvetica", "bold"); doc.setTextColor(26, 32, 44);
-      doc.text(inr(Math.round((q.subtotal || 0) * QUOTE_URGENT_RATE)), W - 40, tailY, { align: "right" });
+      doc.setFont("helvetica", "bold"); doc.setTextColor(229, 62, 62);
+      doc.text(inr(Math.round((q.subtotal || 0) * QUOTE_URGENT_RATE)), W - 45, tailY, { align: "right" });
     }
 
-    tailY += 20;
-    doc.setDrawColor(226, 232, 240); doc.setLineWidth(1);
-    doc.line(W - 220, tailY - 12, W - 40, tailY - 12);
+    tailY += 22;
+    doc.setDrawColor(226, 232, 240); doc.setLineWidth(1.5);
+    doc.line(W - 220, tailY - 12, W - 45, tailY - 12);
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(46, 59, 143);
-    doc.text("Total", W - 180, tailY, { align: "right" });
-    doc.text(inr(q.total || 0), W - 40, tailY, { align: "right" });
+    doc.text("TOTAL AMOUNT", W - 180, tailY, { align: "right" });
+    doc.text(inr(q.total || 0), W - 45, tailY, { align: "right" });
 
-    // Terms & Notes block
-    let noteY = tailY + 34;
-    if (noteY > 650) {
+    // Terms & Notes block (balanced horizontal design)
+    let noteY = tailY + 28;
+    if (noteY > 640) {
       doc.addPage();
       doc.addImage(img, "PNG", 0, 0, W, H);
-      noteY = 160;
+      noteY = 150;
     }
 
-    // Payment Terms
-    doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(46, 59, 143);
-    doc.text("PAYMENT TERMS", 40, noteY);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(74, 85, 104);
-    doc.text("50% advance at project start, 50% on delivery.", 40, noteY + 14);
+    // Combined block container box
+    doc.setFillColor(248, 250, 252);
+    doc.rect(45, noteY, W - 90, 80, "F");
+    doc.setFillColor(46, 59, 143);
+    doc.rect(45, noteY, 3, 80, "F"); // left border accent
 
-    // Disclaimer
-    doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(46, 59, 143);
-    doc.text("IMPORTANT NOTE", 40, noteY + 42);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(113, 128, 150);
-    const discLines = doc.splitTextToSize(pdfSafe(QUOTE_DISCLAIMER), W - 80);
-    doc.text(discLines, 40, noteY + 54);
+    // Payment Terms (Left column of the box)
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+    doc.text("PAYMENT TERMS", 60, noteY + 18);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
+    doc.text("50% advance at project start,\n50% on final delivery.", 60, noteY + 32);
+
+    // Disclaimer (Right column of the box)
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+    doc.text("IMPORTANT NOTE", 295, noteY + 18);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(113, 128, 150);
+    const discLines = doc.splitTextToSize(pdfSafe(QUOTE_DISCLAIMER), 240);
+    doc.text(discLines, 295, noteY + 32);
 
     // Watermark watermark right above letterhead footer line
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 174, 192);
-    doc.text("Generated by the ALLBEE APN quotation assistant.", 40, 740);
+    doc.text("Generated by the ALLBEE APN quotation assistant.", 45, 740);
 
     // Save filename
     doc.save(`allbee-quotation-${(q.clientName || "client").replace(/[^\w-]+/g, "-").slice(0, 24)}-${todayISO()}.pdf`);
