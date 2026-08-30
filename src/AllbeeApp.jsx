@@ -487,7 +487,7 @@ const HELPDESK_READS = {
 const AGREEMENT_READS = {
   apn_agreements: "id,code,version,title,category,body,body_simple,content_hash,status,mandatory,reason,effective_from,published_at,published_by,created_by,created_at,updated_at,material,supersedes_id,change_summary",
   apn_agreement_acceptances: "id,partner_id,agreement_id,version,content_hash,accepted_at,accepted_by,method,terms_view,ip,user_agent",
-  apn_hierarchy_assignments: "id,partner_id,district_head_id,state_head_id,status,assigned_by,effective_from,effective_to,created_at,updated_at",
+  apn_hierarchy_assignments: "partner_id,district_head_id,state_head_id,status,assigned_by,effective_from,assigned_at",
   apn_agreement_company: "id,legal_name,trade_name,address_line1,address_line2,city,state,country,postal_code,email,governance_framework,governing_law,jurisdiction_place,signatories,updated_at",
 };
 
@@ -12775,18 +12775,22 @@ const apnDistrictHeadMembers = (db, meRow) => {
   const rows = db.apn_hierarchy_assignments || [];
   const assigned = new Set(rows.filter((r) => r.district_head_id === meRow.id && r.status !== "inactive").map((r) => r.partner_id));
   const district = meRow.district || "";
-  return (db.apn_users || []).filter((u) => u.id !== meRow.id && u.role !== "state_head" && u.status !== "rejected" && u.status !== "banned" && (assigned.has(u.id) || (!assigned.size && u.district === district)));
+  return (db.apn_users || []).filter((u) => u.id !== meRow.id && u.role === "partner" && u.status !== "rejected" && u.status !== "banned" && (assigned.has(u.id) || (!assigned.size && u.district === district)));
 };
 const apnStateScope = (db, meRow) => {
   const rows = db.apn_hierarchy_assignments || [];
-  const assigned = new Set(rows.filter((r) => r.state_head_id === meRow.id && r.status !== "inactive").map((r) => r.partner_id));
-  const direct = (db.apn_users || []).filter((u) => u.id !== meRow.id && u.role !== "state_head" && u.status !== "rejected" && u.status !== "banned" && assigned.has(u.id));
-  if (assigned.size) return direct;
-  const state = String(meRow.state || meRow.zone || "").toLowerCase();
-  const districts = new Set((db.apn_users || []).filter((u) => u.role === "district_head" && state && String(u.state || u.zone || "").toLowerCase() === state).map((u) => u.district).filter(Boolean));
-  return (db.apn_users || []).filter((u) => u.id !== meRow.id && u.status !== "rejected" && u.status !== "banned" && (districts.has(u.district) || (state && String(u.state || u.zone || "").toLowerCase() === state)));
+  const assigned = new Set(rows.filter((r) => r.state_head_id === meRow.id && r.status !== "reassigned").map((r) => r.partner_id));
+  const state = String(meRow.state || "").trim().toLowerCase();
+  const namespace = String(meRow.apnId || "").toUpperCase().split("-").slice(0, 2).join("-");
+  const districts = new Set((db.apn_users || []).filter((u) => u.role === "district_head" && state && String(u.state || "").trim().toLowerCase() === state).map((u) => u.district).filter(Boolean));
+  return (db.apn_users || []).filter((u) => {
+    if (u.id === meRow.id || u.role !== "partner" || u.status === "rejected" || u.status === "banned") return false;
+    const uState = String(u.state || "").trim().toLowerCase();
+    const uNamespace = String(u.apnId || "").toUpperCase().split("-").slice(0, 2).join("-");
+    return assigned.has(u.id) || (state && uState === state) || (districts.has(u.district)) || (namespace && uNamespace === namespace);
+  });
 };
-function APNHeadPartnerCard({ db, partner, mutate, viewer, allowActions = true }) {
+function APNHeadPartnerCard({ db, partner, mutate, viewer, allowActions = true, onApprove, onReject }) {
   const stats = apnPartnerStats(db, partner.id);
   const status = apnEffectiveStatus(partner);
   const target = (db.apn_targets || []).find((t) => t.partnerId === partner.id);
@@ -12797,7 +12801,7 @@ function APNHeadPartnerCard({ db, partner, mutate, viewer, allowActions = true }
     <div className="apn-head-partner-main"><Avatar name={partner.name} size={38} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 750 }}>{partner.name} <span className="badge pri" style={{ marginLeft: 5 }}>{stats.level.name}</span></div><div className="hint-line">{apnIdFor(partner)} · {partner.district || "Unassigned"} · {partner.mobile || "No phone"}</div></div><span className={"badge " + (status === "active" ? "pos" : status === "inactive" ? "neg" : "pri")}>{status}</span></div>
     <div className="apn-head-mini-grid"><div><span>Revenue</span><b>{money(stats.revenue)}</b></div><div><span>Leads</span><b>{stats.submitted}</b></div><div><span>Converted</span><b>{stats.converted}</b></div><div><span>Commission</span><b>{money(stats.commission.earned)}</b></div>{progress && <div><span>Target</span><b>{progress.pct}%</b></div>}</div>
     {progress && <div className="progress-track" style={{ marginTop: 8 }}><div className="progress-fill" style={{ width: Math.min(100, Math.max(0, progress.pct)) + "%" }} /></div>}
-    {allowActions && <div className="apn-head-actions"><button className="btn sm" onClick={logCall}><PhoneCall size={13} />Log call</button>{status === "inactive" && !partner.reactivationRecommended && <button className="btn sm" onClick={recommend}><RefreshCw size={13} />Recommend reactivation</button>}</div>}
+    {allowActions && <div className="apn-head-actions">{viewer.role === "state_head" && status === "pending" && <><button className="btn sm primary" onClick={() => onApprove?.(partner)}><Check size={13} />Approve</button><button className="btn sm danger" onClick={() => onReject?.(partner)}><X size={13} />Reject</button></>}<button className="btn sm" onClick={logCall}><PhoneCall size={13} />Log call</button>{status === "inactive" && !partner.reactivationRecommended && <button className="btn sm" onClick={recommend}><RefreshCw size={13} />Recommend reactivation</button>}</div>}
   </div>;
 }
 function APNDistrict({ db, meRow, mutate }) {
@@ -12815,12 +12819,22 @@ function APNDistrict({ db, meRow, mutate }) {
     {focus === "overview" ? <div className="apn-head-overview-grid"><div className="apn-rowcard"><div className="lbl"><GaugeCircle size={14} />District performance</div><div className="apn-head-statline"><span>Conversion rate</span><b>{leads.length ? Math.round((converted.length / leads.length) * 100) : 0}%</b></div><div className="apn-head-statline"><span>Inactive / attention</span><b>{members.filter((p) => ["inactive", "suspended"].includes(apnEffectiveStatus(p))).length}</b></div><div className="apn-head-statline"><span>Partners with targets</span><b>{members.filter((p) => (db.apn_targets || []).some((t) => t.partnerId === p.id)).length}</b></div></div><div className="apn-rowcard"><div className="lbl"><ShieldCheck size={14} />Your authority</div><p className="hint-line" style={{ lineHeight: 1.6, margin: "8px 0 0" }}>Monitor and support your assigned partners, log calls, and recommend reactivation. Financial settings, hierarchy changes and final lifecycle decisions remain with administration.</p></div><div className="apn-rowcard"><div className="lbl"><Users size={14} />District Head directory</div>{heads.filter((h) => h.district === meRow.district).map((h) => <div className="apn-head-statline" key={h.id}><span>{h.name}</span><b>{h.id === meRow.id ? "You" : "District Head"}</b></div>)}</div></div> : <div><div className="apn-head-toolbar"><div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, APN ID, phone…" /></div><select className="select" value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></div><div className="apn-list">{visible.length ? visible.map((p) => <APNHeadPartnerCard key={p.id} db={db} partner={p} mutate={mutate} viewer={meRow} />) : <div className="apn-rowcard"><Empty icon={<Users size={22} />} title="No partners found" text="No partner matches this district and filter." /></div>}</div></div>}
   </div>;
 }
-function APNStateHead({ db, meRow, mutate }) {
+function APNStateHead({ db, meRow, mutate, openModal }) {
   const [query, setQuery] = useState(""); const [districtFilter, setDistrictFilter] = useState("all"); const [focus, setFocus] = useState("overview");
   const members = apnStateScope(db, meRow);
   const districts = [...new Set(members.map((p) => p.district).filter(Boolean))].sort();
   const filtered = members.filter((p) => (!query || `${p.name} ${p.email} ${apnIdFor(p)} ${p.mobile} ${p.district}`.toLowerCase().includes(query.toLowerCase())) && (districtFilter === "all" || p.district === districtFilter));
   const heads = (db.apn_users || []).filter((u) => u.role === "district_head" && districts.includes(u.district));
+  const approvePartner = async (partner) => {
+    try {
+      const { data, error } = await supabase.rpc("apn_state_head_approve_partner", { p_partner_id: partner.id });
+      if (error) throw error;
+      const at = Date.now();
+      mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? { ...u, status: "active", approvedAt: at, approvedBy: meRow.name, rejectedAt: null, rejectReason: null } : u), apn_notifications: [...(d.apn_notifications || []), withSender(apnNotify(apnApprovalNotification(partner, meRow)))] }), { action: `approved APN partner "${partner.name}"`, module: "APN", partnerId: partner.id });
+      emitToast(`Approved ${data?.name || partner.name}.`, "success");
+    } catch (e) { emitToast(e?.message || "Could not approve partner.", "error"); }
+  };
+  const rejectPartner = (partner) => openModal?.({ type: "apnReject", partner, stateHead: true });
   const leads = (db.apn_leads || []).filter((l) => members.some((p) => p.id === l.partnerId)); const converted = leads.filter((l) => l.status === "Converted");
   const revenue = round2(converted.reduce((s, l) => s + (Number(l.revenue) || 0), 0));
   const districtRows = districts.map((district) => { const ps = members.filter((p) => p.district === district); const ls = (db.apn_leads || []).filter((l) => ps.some((p) => p.id === l.partnerId)); const cs = ls.filter((l) => l.status === "Converted"); return { district, partners: ps.length, active: ps.filter((p) => apnEffectiveStatus(p) === "active").length, leads: ls.length, converted: cs.length, revenue: round2(cs.reduce((s, l) => s + (Number(l.revenue) || 0), 0)), head: heads.find((h) => h.district === district)?.name || "Unassigned" }; });
@@ -12830,7 +12844,7 @@ function APNStateHead({ db, meRow, mutate }) {
     <div className="apn-head-tabs"><button className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button><button className={focus === "districts" ? "on" : ""} onClick={() => setFocus("districts")}>Districts ({districts.length})</button><button className={focus === "partners" ? "on" : ""} onClick={() => setFocus("partners")}>Partners ({members.length})</button></div>
     {focus === "overview" && <div className="apn-head-overview-grid"><div className="apn-rowcard"><div className="lbl"><GaugeCircle size={14} />State performance</div><div className="apn-head-statline"><span>Conversion rate</span><b>{leads.length ? Math.round((converted.length / leads.length) * 100) : 0}%</b></div><div className="apn-head-statline"><span>Active partners</span><b>{members.filter((p) => apnEffectiveStatus(p) === "active").length}</b></div><div className="apn-head-statline"><span>Attention required</span><b>{members.filter((p) => ["inactive", "suspended"].includes(apnEffectiveStatus(p))).length}</b></div></div><div className="apn-rowcard"><div className="lbl"><ShieldCheck size={14} />State Head authority</div><p className="hint-line" style={{ lineHeight: 1.6, margin: "8px 0 0" }}>State-wide oversight is read from the APN hierarchy. You can inspect district and partner performance without bypassing administrator-only financial or lifecycle controls.</p></div></div>}
     {focus === "districts" && <div className="apn-rowcard" style={{ overflowX: "auto" }}><table className="tbl apn-mobile-cards"><thead><tr><th>District</th><th>Head</th><th>Partners</th><th>Active</th><th>Leads</th><th>Converted</th><th>Revenue</th></tr></thead><tbody>{districtRows.length ? districtRows.map((r) => <tr key={r.district}><td data-label="District"><b>{r.district}</b></td><td data-label="Head">{r.head}</td><td data-label="Partners">{r.partners}</td><td data-label="Active">{r.active}</td><td data-label="Leads">{r.leads}</td><td data-label="Converted">{r.converted}</td><td data-label="Revenue" className="mono">{money(r.revenue)}</td></tr>) : <tr><td colSpan="7">No districts are assigned to this State Head yet.</td></tr>}</tbody></table></div>}
-    {focus === "partners" && <div><div className="apn-head-toolbar"><div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, district, APN ID…" /></div><select className="select" value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}><option value="all">All districts</option>{districts.map((d) => <option key={d} value={d}>{d}</option>)}</select></div><div className="apn-list">{filtered.length ? filtered.map((p) => <APNHeadPartnerCard key={p.id} db={db} partner={p} mutate={mutate} viewer={meRow} allowActions={false} />) : <div className="apn-rowcard"><Empty icon={<Users size={22} />} title="No partners found" text="No partner matches this state and filter." /></div>}</div></div>}
+    {focus === "partners" && <div><div className="apn-head-toolbar"><div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, district, APN ID…" /></div><select className="select" value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}><option value="all">All districts</option>{districts.map((d) => <option key={d} value={d}>{d}</option>)}</select></div><div className="apn-list">{filtered.length ? filtered.map((p) => <APNHeadPartnerCard key={p.id} db={db} partner={p} mutate={mutate} viewer={meRow} allowActions={true} onApprove={approvePartner} onReject={rejectPartner} />) : <div className="apn-rowcard"><Empty icon={<Users size={22} />} title="No partners found" text="No partner matches this state and filter." /></div>}</div></div>}
   </div>;
 }
 
@@ -13787,7 +13801,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, reloa
       case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
-      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
+      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} openModal={setModal} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} snap={finSnap} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} />;
       default: return null;
     }
@@ -15486,7 +15500,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       ); })()}
       {tab === "board" && <APNAdminLeaderboard db={db} />}
 
-      {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={(reason) => act.reject(modal.partner, reason)} onClose={() => setModal(null)} />}
+      {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={modal.stateHead ? async (reason) => { setModal(null); try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); mutateApn((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason, rejectedBy: currentUser, rejectedAt: at } : u) }), M(`rejected APN application "${modal.partner.name}"${reason ? ` · ${reason}` : ""}`, modal.partner.id), timeline(modal.partner, "rejected", "Application Rejected", reason || "The application was rejected.", at)); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } } : (reason) => act.reject(modal.partner, reason)} onClose={() => setModal(null)} /> }
       {modal?.type === "apnPartnerProfile" && <APNPartnerProfile fullPage={!!modal.fullPage} partner={modal.partner} db={db} people={people} isSuper={isSuper} initialSection={modal.section} onSave={(next) => { setModal(null); setPendingAction({ kind: "saveProfile", partner: modal.partner, next }); }} onAction={runAction} onWarning={(p) => setModal({ type: "apnWarning", partner: p })} onResolveWarning={(warning) => resolveWarning(modal.partner, warning)} onDeleteWarning={(warning) => setPendingAction({ kind: "deleteWarning", partner: modal.partner, warning })} onNote={(p) => setModal({ type: "apnNote", partner: p })} onEditNote={(note) => setModal({ type: "apnNote", partner: modal.partner, initial: note })} onTags={(p) => setModal({ type: "apnTags", partner: p })} onDocuments={(p) => setModal({ type: "apnDocument", partner: p })} onDocumentDownload={downloadPartnerDocument} onCommunication={(p) => setModal({ type: "apnCommunication", partner: p })} onExport={(p) => exportApnPartnerReport(p)} onOpenFullPage={() => setModal((current) => ({ ...current, fullPage: true }))} onClose={() => setModal(null)} />}
       {modal?.type === "apnResetPassword" && <APNResetPasswordForm partner={modal.partner} onClose={() => setModal(null)} onSave={(password) => withActionError(async () => { const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "reset_password", userId: modal.partner.id, password } }); if (error) throw new Error(error.message); if (data?.error) throw new Error(data.error); mutate((d) => d, M(`reset password for APN partner "${modal.partner.name}"`, modal.partner.id)); setModal(null); })} />}
       {modal?.type === "apnSuspend" && <APNSuspendForm partner={modal.partner} onClose={() => setModal(null)} onSave={({ reason, notes }) => { const p = modal.partner; setModal(null); withActionError(async () => { const at = Date.now(); await updateProfileStatus(p, false, "suspended"); mutateApn((d) => ({ ...d, apn_users: d.apn_users.map((u) => u.id === p.id ? { ...u, status: "suspended", suspensionReason: reason, suspensionNotes: notes, suspendedBy: currentUser, suspendedAt: at, updatedAt: at } : u) }), M(`suspended APN partner "${p.name}" · ${reason}`, p.id), timeline(p, "suspended", "Suspended", notes ? `${reason}: ${notes}` : reason, at)); }); }} />}

@@ -132,11 +132,13 @@ describe("APN Head Cockpits", () => {
       { id: "dh", name: "District Head", role: "district_head", status: "active", district: "Chennai", state: "Tamil Nadu" },
       { id: "p1", name: "Assigned Partner", role: "partner", status: "active", district: "Chennai", state: "Tamil Nadu" },
       { id: "p2", name: "Foreign Partner", role: "partner", status: "active", district: "Madurai", state: "Tamil Nadu" },
+      { id: "p3", name: "Pending Partner", role: "partner", status: "pending", district: "Chennai", state: "Tamil Nadu" },
       { id: "sh", name: "State Head", role: "state_head", status: "active", state: "Tamil Nadu" },
     ],
     apn_hierarchy_assignments: [
       { id: "h1", partner_id: "p1", district_head_id: "dh", state_head_id: "sh", status: "active" },
       { id: "h2", partner_id: "p2", district_head_id: null, state_head_id: "sh", status: "active" },
+      { id: "h3", partner_id: "p3", district_head_id: null, state_head_id: "sh", status: "active" },
     ],
     apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [], apn_leads: [],
     apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [],
@@ -157,8 +159,10 @@ describe("APN Head Cockpits", () => {
     window.location.hash = "#/apn/district";
     render(<APNPortal db={baseDb} profile={{ id: "sh", role: "state_head", active: true, approved: true, status: "active" }} session={{ user: { id: "sh" } }} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("State Command")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /Partners \(2\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Partners \(3\)/i }));
     expect(screen.getByText("Assigned Partner")).toBeTruthy();
     expect(screen.getByText("Foreign Partner")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
   });
 });
