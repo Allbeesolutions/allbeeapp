@@ -10407,7 +10407,19 @@ async function ensureApnProfile(user, existingRows) {
 }
 
 /* ── APN shared UI + gates ───────────────────────────────────────────── */
-function APNGate({ isDark, icon, title, body, name, tone, onSignOut }) {
+function APNGate({ isDark, icon, title, body, name, tone, onSignOut, onRefresh }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+      emitToast("Status checked successfully", "success");
+    } catch (e) {
+      emitToast("Failed to check status", "error");
+    } finally {
+      setRefreshing(false);
+    }
+  };
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <style>{CSS}</style><ToastHost />
@@ -10415,6 +10427,12 @@ function APNGate({ isDark, icon, title, body, name, tone, onSignOut }) {
         <div className="lock-badge" style={tone === "neg" ? { background: "linear-gradient(135deg,var(--neg),#a92a2a)" } : undefined}>{icon}</div>
         <h1>{title}</h1>
         <p>{body}</p>
+        {onRefresh && (
+          <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw size={15} className={refreshing ? "spin" : ""} />
+            {refreshing ? "Checking status…" : "Check status"}
+          </button>
+        )}
         <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
       </div>
     </div>
@@ -13001,10 +13019,10 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
     </div>
   );
 
-  const eff = meRow.status === "rejected" ? "rejected" : profile.active === false ? "suspended" : apnEffectiveStatus(meRow);
-  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Application received" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) is pending approval from an admin. You'll get full access as soon as it's approved.`} onSignOut={signOut} />;
+  const eff = meRow.status === "rejected" ? "rejected" : (profile.active === false && profile.status !== "pending") ? "suspended" : apnEffectiveStatus(meRow);
+  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Waiting for Approval" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) was successfully submitted and is awaiting admin approval. You'll get full access as soon as it's approved.`} onSignOut={signOut} onRefresh={refreshPortal} />;
   if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
-  if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} />;
+  if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} onRefresh={refreshPortal} />;
   if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
   // AGREE-MENT GATE: while any required document is unaccepted the server's
   // apn_agreement_status says required=true and the portal is fully replaced

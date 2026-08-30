@@ -2,6 +2,13 @@
 -- This makes the application visible to admins even when email confirmation
 -- means the new user has no authenticated browser session yet.
 
+-- Fix check constraint on profiles to allow 'pending' status
+alter table public.profiles drop constraint if exists profiles_status_check;
+alter table public.profiles add constraint profiles_status_check
+  check (status in ('active','on_leave','suspended','resigned','terminated','pending')) not valid;
+alter table public.profiles validate constraint profiles_status_check;
+
+
 create or replace function public.apn_users_guard()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
