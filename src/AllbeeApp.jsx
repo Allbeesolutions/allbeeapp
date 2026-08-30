@@ -2672,8 +2672,13 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
   const sum = (Number(f.hajiPct) || 0) + (Number(f.alimPct) || 0);
   const splitOK = sum === 100;
   const valid = amt > 0 && (isCompany || splitOK) && f.date && (!isAPNIncome || (apnPartner && f.apnProjectName?.trim() && f.apnClientName?.trim() && String(f.apnProjectValue).trim() !== "" && apnProjectValue > 0 && Number.isFinite(apnRate) && apnRate >= 0 && apnRate <= 100 && apnTotal <= apnProjectValue && apnCollections.every((row) => Number(row.receivedAmount) > 0 && row.receivedDate)));
-  const hShare = round2((amt * (Number(f.hajiPct) || 0)) / 100);
-  const aShare = round2((amt * (Number(f.alimPct) || 0)) / 100);
+  // APN commission is an automatic finance expense, so the partner commission
+  // must be deducted from the gross collection before the Haji/Alim profit
+  // split is shown. The RPC records the same expense using the same split,
+  // producing the identical net result in Share & accounts.
+  const apnNetShareAmount = round2(Math.max(0, amt - apnCommissionPreview));
+  const hShare = round2(((isAPNIncome ? apnNetShareAmount : amt) * (Number(f.hajiPct) || 0)) / 100);
+  const aShare = round2(((isAPNIncome ? apnNetShareAmount : amt) * (Number(f.alimPct) || 0)) / 100);
 
   const save = async () => {
     setTouched(true);
@@ -2762,7 +2767,12 @@ function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProject
 
       {amt > 0 && splitOK && (
         <div className="calc-box">
-          <div className="calc-row" style={{ color: "var(--muted)", fontSize: 12 }}>This entry will {isIncome ? "credit" : "debit"}:</div>
+          {isAPNIncome && (<>
+            <div className="calc-row"><span>Gross income</span><b className="mono">{money(amt)}</b></div>
+            <div className="calc-row"><span>Less: APN commission expense</span><b className="mono neg-txt">−{money(apnCommissionPreview)}</b></div>
+            <div className="calc-row" style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 8 }}><span><b>Net amount to share</b></span><b className="mono">{money(apnNetShareAmount)}</b></div>
+          </>)}
+          <div className="calc-row" style={{ color: "var(--muted)", fontSize: 12, marginTop: isAPNIncome ? 8 : 0 }}>This entry will {isIncome ? "credit" : "debit"}:</div>
           <div className="calc-row"><span style={{ display: "flex", alignItems: "center", gap: 7 }}><span className="dot" style={{ background: "var(--haji)" }} />Haji</span>
             <span className={"mono " + (isIncome ? "pos-txt" : "neg-txt")} style={{ fontWeight: 700 }}>{money(isIncome ? hShare : -hShare, { sign: isIncome })}</span></div>
           <div className="calc-row"><span style={{ display: "flex", alignItems: "center", gap: 7 }}><span className="dot" style={{ background: "var(--alim)" }} />Alim</span>
