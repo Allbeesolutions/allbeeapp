@@ -11506,12 +11506,14 @@ async function downloadQuotePdf(q, meRow) {
 
       doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
       const inclusions = [
-        "✓ Up to 5 pages development",
-        "✓ Responsive design (Mobile / Tablet / Desktop)",
+        "✓ Up to 5 website pages",
+        "✓ Responsive design (Mobile/Tablet/Desktop)",
         "✓ Basic business website structure",
         "✓ Contact / enquiry submission form",
-        "✓ Basic SEO-ready setup",
-        "✓ SSL Certificate & deployment"
+        "✓ Basic SEO-friendly structure",
+        "✓ SSL Certificate / HTTPS setup",
+        "✓ Website deployment",
+        "✓ Support for 15 days (Post Delivery)"
       ];
       
       for (let idx = 0; idx < inclusions.length; idx++) {
@@ -11525,36 +11527,68 @@ async function downloadQuotePdf(q, meRow) {
       startTableY = inclusionsY + 14 + Math.ceil(inclusions.length / 2) * 14 + 18;
     }
 
-    // Dynamic detailed commercial rows building
+    // Dynamic 4-column detailed commercial rows building
     const tableRows = [];
     if (q.service === "website") {
       const baseItem = (q.items || []).find(it => it.label.toLowerCase().includes("website") || it.label.toLowerCase().includes("base") || it.label.toLowerCase().includes("starter"));
       const baseAmount = baseItem ? baseItem.amount : (q.subtotal || 0);
 
-      tableRows.push(["Website Design & Development (Starter Package)", baseAmount != null ? inr(baseAmount) : "Quote on request"]);
-      tableRows.push(["Domain Registration — 1 Year (Approx. subject to extension)", "Included"]);
-      tableRows.push(["Web Hosting & Infrastructure — 1 Year", "Included"]);
-      tableRows.push(["SSL Certificate & HTTPS Security Configuration", "Included"]);
+      tableRows.push([
+        "1",
+        "Website Design & Development",
+        pdfSafe(baseItem?.label || "Starter static website — up to 5 pages"),
+        baseAmount != null ? inr(baseAmount) : "Quote on request"
+      ]);
+      tableRows.push([
+        "2",
+        "Domain Registration (1 Year)",
+        "Approx. subject to name availability & extension",
+        "Included*"
+      ]);
+      tableRows.push([
+        "3",
+        "Web Hosting (1 Year)",
+        "Standard web hosting package for 1 year",
+        "Included"
+      ]);
+      tableRows.push([
+        "4",
+        "SSL Certificate & Security",
+        "SSL Certificate (HTTPS) configuration & setup",
+        "Included"
+      ]);
       
       const otherItems = (q.items || []).filter(it => it.id !== baseItem?.id && !it.label.toLowerCase().includes("starter"));
+      let index = 5;
       for (const it of otherItems) {
-        tableRows.push([pdfSafe(it.label), it.amount == null ? "Quote on request" : inr(it.amount)]);
+        tableRows.push([
+          String(index++),
+          pdfSafe(it.label),
+          "Additional custom requirement / addon",
+          it.amount == null ? "Quote on request" : inr(it.amount)
+        ]);
       }
     } else {
+      let index = 1;
       for (const it of (q.items || [])) {
-        tableRows.push([pdfSafe(it.label), it.amount == null ? "Quote on request" : inr(it.amount)]);
+        tableRows.push([
+          String(index++),
+          pdfSafe(it.label),
+          "Service requirement / package item",
+          it.amount == null ? "Quote on request" : inr(it.amount)
+        ]);
       }
     }
 
-    // Striped Commercial Breakdown Table
+    // Striped 4-Column Commercial Breakdown Table
     autoTable(doc, {
       startY: startTableY,
-      head: [["ITEM / DESCRIPTION", "AMOUNT"]],
+      head: [["S.No.", "ITEM / DESCRIPTION", "DETAILS", "AMOUNT"]],
       body: tableRows,
       theme: "striped",
       styles: {
-        fontSize: 9.5,
-        cellPadding: { top: 8, bottom: 8, left: 12, right: 12 },
+        fontSize: 9,
+        cellPadding: { top: 8, bottom: 8, left: 10, right: 10 },
         textColor: [45, 55, 72],
         font: "helvetica",
         lineColor: [226, 232, 240],
@@ -11564,13 +11598,15 @@ async function downloadQuotePdf(q, meRow) {
         fillColor: [46, 59, 143],
         textColor: [255, 255, 255],
         fontStyle: "bold",
-        fontSize: 9,
+        fontSize: 8.5,
         halign: "left",
         valign: "middle"
       },
       columnStyles: {
-        0: { halign: "left" },
-        1: { halign: "right", fontStyle: "bold", textColor: [26, 32, 44] }
+        0: { halign: "center", fontStyle: "normal", width: 40 },
+        1: { halign: "left", fontStyle: "bold", width: 140 },
+        2: { halign: "left", fontStyle: "normal", width: 220 },
+        3: { halign: "right", fontStyle: "bold", textColor: [26, 32, 44], width: 100 }
       },
       alternateRowStyles: {
         fillColor: [248, 250, 252]
@@ -11579,6 +11615,13 @@ async function downloadQuotePdf(q, meRow) {
     });
 
     let tailY = doc.lastAutoTable.finalY + 18;
+
+    // Show domain disclaimer if relevant right below table
+    if (q.service === "website") {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(113, 128, 150);
+      doc.text("* Domain charges are approximate and subject to domain-name availability and the selected extension (.com, .in, etc.).", 45, tailY);
+      tailY += 16;
+    }
 
     // Spacing guard to keep totals block and notes block together
     if (tailY > 660) {
