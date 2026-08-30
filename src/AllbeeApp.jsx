@@ -2126,6 +2126,28 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-tc-group-pane { flex:1; min-height:0; width:100%; display:flex; flex-direction:column; }
 .apn-tc-compose { display:flex; align-items:flex-end; gap:8px; padding:10px 12px 12px; border-top:1px solid var(--border); background:var(--surface); }
 @media (max-width:420px) { .apn-tc-msg { max-width:88%; } .apn-tc-chat { height:calc(100vh - 120px); } }
+/* Team Chat polish */
+.apn-tc-search { display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 11px; margin-bottom:12px; }
+.apn-tc-search input { flex:1; border:0; background:transparent; font:inherit; font-size:13px; color:var(--text); outline:none; }
+.apn-tc-search input::placeholder { color:var(--muted); }
+.apn-tc-partner-row { display:flex; align-items:center; gap:10px; padding:9px 6px; border-radius:11px; cursor:pointer; transition:background .13s ease; }
+.apn-tc-partner-row:hover { background:var(--surface-2); }
+.apn-tc-partner-row:active { background:var(--border); }
+.apn-tc-partner-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13.5px; }
+.apn-tc-partner-location { color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+.apn-tc-badge-pending { display:inline-flex; align-items:center; gap:3px; background:rgba(255,181,0,.12); color:#b37e00; font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px; letter-spacing:.2px; }
+.apn-tc-badge-friend { display:inline-flex; align-items:center; gap:3px; background:rgba(32,178,107,.12); color:#16945a; font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px; }
+.apn-tc-online-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#20b26b; animation:tc-pulse 2.2s ease-in-out infinite; flex:none; }
+@keyframes tc-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(32,178,107,.45); } 50% { box-shadow:0 0 0 5px rgba(32,178,107,0); } }
+.apn-tc-section-label { font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.7px; margin:16px 0 6px; }
+.apn-tc-card { border:1px solid var(--border); border-radius:14px; background:var(--surface); padding:13px 14px; margin-bottom:10px; }
+.apn-tc-card-title { font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px; }
+/* Page-enter animation on tab switch (key={tab} forces replay) */
+@keyframes apn-tab-enter { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:none; } }
+.apn-body .page-enter { animation:apn-tab-enter .19s cubic-bezier(.2,.8,.4,1) both; }
+/* Smooth tab icon active scale */
+.apn-tab.on svg { transform:scale(1.09); }
+.apn-tab:not(.on):hover svg { transform:scale(1.06); opacity:.85; }
 .apn-hero { display:flex; align-items:center; gap:12px; }
 .apn-hero .av { width:46px; height:46px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:19px; flex:none; }
 .apn-section-h { font-size:17px; font-weight:800; margin:2px 0 12px; }
@@ -12548,6 +12570,12 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   const selectedRef = useRef(null);
   selectedRef.current = selected;
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const me = meRow || { id: pid, name: profile?.name || "Partner" };
   const myApnId = apnIdFor(meRow) || "-";
 
@@ -12583,12 +12611,14 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   }, [section, isOpen]);
 
   const loadConversations = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true); setErr("");
+    if (showLoading) { setLoading(true); setErr(""); }
     try {
       const { data, error } = await supabase.rpc("apn_list_conversations");
       if (error) throw new Error(error.message);
+      if (!mountedRef.current) return;
       setConversations(data || []);
       const contactsRes = await supabase.rpc("apn_list_chat_contacts");
+      if (!mountedRef.current) return;
       let contactRows = contactsRes.data || [];
       if (contactsRes.error) {
         // Production-safe fallback: an older PostgREST schema cache can retain the
@@ -12599,6 +12629,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
           supabase.from("profiles").select("id,name,role,photo_url,active,status").neq("id", pid).in("role", ["admin", "superadmin"]),
           supabase.from("apn_chat_presence").select("user_id,online,last_seen,updated_at")
         ]);
+        if (!mountedRef.current) return;
         if (partnersRes.error) throw new Error(contactsRes.error.message);
         const presenceByUser = new Map((presenceRes.data || []).map((r) => [String(r.user_id), r]));
         const fallbackPartners = (partnersRes.data || []).filter((u) => u?.data?.status === "active").map((u) => {
@@ -12615,13 +12646,16 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       const contactIds = contactRows.map((c) => String(c.contact_id || "")).filter(Boolean);
       if (contactIds.length) {
         const profileRes = await supabase.from("profiles").select("id,photo_url").in("id", contactIds);
+        if (!mountedRef.current) return;
         if (!profileRes.error) {
           const photos = new Map((profileRes.data || []).map((r) => [String(r.id), r.photo_url || null]));
           contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null }));
         }
       }
+      if (!mountedRef.current) return;
       setContacts(contactRows);
       const fr = await supabase.rpc("apn_list_friend_requests");
+      if (!mountedRef.current) return;
       if (fr.error) throw new Error(fr.error.message);
       setRequests(fr.data || []);
       const accepted = (fr.data || []).filter((r) => r.status === "accepted");
@@ -12633,10 +12667,11 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
         return rel ? { ...c, relationship: rel.status === "accepted" ? "friend" : rel.direction === "incoming" ? "incoming" : rel.direction === "outgoing" ? "outgoing" : c.relationship } : c;
       }));
     } catch (e) {
+      if (!mountedRef.current) return;
       if (/does not exist|not exist|42P01|PGRST|relation/.test(e.message || "")) {
         setConversations([]); setRequests([]); setFriends([]); setContacts([]);
       } else { setErr(e.message || String(e)); }
-    } finally { if (showLoading) setLoading(false); }
+    } finally { if (showLoading && mountedRef.current) setLoading(false); }
   }, []);
 
   const loadMessages = useCallback(async (conv, { open = true } = {}) => {
@@ -12650,6 +12685,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     setErr("");
     try {
       const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.id });
+      if (!mountedRef.current) return;
       if (error) throw new Error(error.message);
       const msgs = data || [];
       setMessages(msgs);
@@ -12657,7 +12693,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
       // advance the caller's read cursor to the latest message so the badge clears
       if (msgs.length) await supabase.rpc("apn_mark_read", { p_conversation_id: conv.id, p_message_id: msgs[msgs.length - 1].id });
     } catch (e) {
-      setErr(e.message || String(e));
+      if (mountedRef.current) setErr(e.message || String(e));
     }
   }, []);
 
@@ -12674,16 +12710,19 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
 
   // Realtime: subscribe to the chat tables (RLS still gates reads). On any
   // change, refetch the relevant slice rather than trusting client-only updates.
+  // Use a pid-namespaced name to prevent duplicate-channel errors on rapid remounts.
   useEffect(() => {
     if (!isOpen) return;
-    const ch = supabase.channel("apn-team-chat");
+    const chName = `apn-team-chat:${pid}`;
+    const ch = supabase.channel(chName);
     ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((t) =>
       ch.on("postgres_changes", { event: "*", schema: "public", table: t }, async () => {
+        if (!mountedRef.current) return;
         await loadConversations(false);
-        if (selectedRef.current) await loadMessages(selectedRef.current, { open: false });
+        if (mountedRef.current && selectedRef.current) await loadMessages(selectedRef.current, { open: false });
       }));
     ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { supabase.removeChannel(ch).catch(() => {}); };
   }, [isOpen, loadConversations, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
@@ -12951,8 +12990,29 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
   );
 }
 
+/* ── tab error boundary ──────────────────────────────────────────────── */
+class APNTabErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error("[APN] Tab render error:", error, info?.componentStack?.slice(0, 400)); }
+  render() {
+    if (this.state.hasError) {
+      const msg = this.state.error?.message || "An unexpected error occurred.";
+      return (
+        <div style={{ padding: "40px 24px", textAlign: "center" }}>
+          <div style={{ color: "var(--neg)", marginBottom: 12 }}><AlertTriangle size={32} /></div>
+          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 16 }}>Something went wrong</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, maxWidth: 320, margin: "0 auto 20px" }}>{msg}</div>
+          <button className="btn primary" onClick={() => this.setState({ hasError: false, error: null })}>Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /* ── portal shell ────────────────────────────────────────────────────── */
-function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
+export function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
   const pid = profile.id;
   const meRow = apnMe(db, pid);
   const [tab, setTab] = useState("home");
@@ -13090,7 +13150,7 @@ function APNPortal({ db, profile, session, signOut, isDark, mutate, reload }) {
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <div className="apn-body"><div className="page-enter">{section()}</div></div>
+      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{section()}</APNTabErrorBoundary></div></div>
 
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
