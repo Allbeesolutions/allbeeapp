@@ -1753,7 +1753,18 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 .seg button { transition:color .18s ease, background-color .18s ease, box-shadow .18s ease; }
 .apn-seg-scroll button { transition:color .15s ease, background-color .15s ease, border-color .15s ease; }
 .preset { transition:border-color .15s ease, color .15s ease, background-color .15s ease; }
+.preset.active { border-color:var(--primary) !important; background:var(--primary-soft) !important; color:var(--primary) !important; box-shadow:0 0 0 1px var(--primary); }
 .apn-quiz-opt { transition:border-color .15s ease, background-color .15s ease; }
+
+/* ── Generate Quotation wizard — premium card & step interactions ── */
+.apn-rowcard.wizard-card { transition:border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .12s ease; cursor:pointer; text-align:left; width:100%; }
+.apn-rowcard.wizard-card:hover { border-color:var(--primary) !important; background:var(--surface-2) !important; transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.08); }
+.apn-rowcard.wizard-card:active { transform:scale(.99); }
+.apn-rowcard.wizard-card.wizard-card-active { border-color:var(--primary) !important; background:var(--primary-soft) !important; box-shadow:0 0 0 1px var(--primary); }
+@keyframes wizard-step-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+.wizard-step { animation:wizard-step-in .2s cubic-bezier(.2,.8,.4,1) both; min-height:240px; display:flex; flex-direction:column; gap:14px; }
+@keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
+.overlay { animation:overlay-in .18s ease-out; }
 
 /* Search affordances */
 .search { transition:border-color .15s ease, box-shadow .15s ease; }
@@ -11445,6 +11456,7 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
   const toggleAddon = (k) => setAddons((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
   const startOver = () => { setService(null); setPrice(null); setSiteType(null); setTech(null); setAddons([]); setUrgent(null); setClientName(""); setBusiness(""); setContact(""); setDone(null); setStep(0); };
   const saveQuote = (status) => {
+    if (saving) return;
     if (!clientName.trim()) { emitToast("Add the client's name to save the quotation.", "error"); return; }
     setSaving(true);
     const id = uid();
@@ -11462,7 +11474,7 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
     setStep(7);
   };
   const chip = (active, onClick, label, sub) => (
-    <button type="button" className="apn-rowcard" style={{ textAlign: "left", cursor: "pointer", borderColor: active ? "var(--primary)" : "var(--border)", background: active ? "var(--primary-soft)" : "var(--card)", opacity: 1 }} onClick={onClick}>
+    <button type="button" className={`apn-rowcard wizard-card${active ? " wizard-card-active" : ""}`} onClick={onClick}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontWeight: 700, flex: 1 }}>{label}</span>
         {active && <Check size={16} color="var(--primary)" />}
@@ -11470,7 +11482,7 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
       {sub && <div className="hint-line" style={{ marginTop: 4, fontSize: 12 }}>{sub}</div>}
     </button>
   );
-  const canContinue = step === 0 ? !!service : step === 1 ? !!siteType : step === 2 ? !!tech : step === 3 ? true : step === 4 ? urgent != null : step === 5 ? true : true;
+  const canContinue = step === 0 ? !!service : step === 1 ? !!siteType : step === 2 ? !!tech : step === 3 ? true : step === 4 ? urgent != null : step === 5 ? !!clientName.trim() : true;
   return (
     <Modal title="Generate Quotation" onClose={onClose}
       footer={step === 7 ? <><button className="btn" onClick={onClose}>Done</button></>
@@ -11480,7 +11492,8 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
       </div>
       <div className="hint-line" style={{ margin: "-8px 0 12px" }}>Step {Math.min(step + 1, 7)} of 7 — {QUOTE_STEP_LABELS[Math.min(step, 6)]}</div>
 
-      {step === 0 && <>
+      <div className="wizard-step" key={step}>
+        {step === 0 && <>
         <div style={{ display: "grid", gap: 10 }}>
           {APN_SERVICES.map(([k, l]) => chip(service === k, () => chooseService(k), l, k === "website" ? "Business websites and landing pages" : k === "marketing" ? "Monthly retainer for ads, content and social media" : "Course admission and training programs"))}
         </div>
@@ -11496,16 +11509,16 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
       {step === 2 && <>
         <div className="hint-line" style={{ marginBottom: 10 }}>Which technology does the client prefer? {"No Preference"} means ALLBEE picks the best fit for the scope.</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {QUOTE_TECHS.map((t) => <button key={t} type="button" className="preset" style={tech === t ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => setTech(t)}>{t}</button>)}
+          {QUOTE_TECHS.map((t) => <button key={t} type="button" className={`preset${tech === t ? " active" : ""}`} onClick={() => setTech(t)}>{t}</button>)}
         </div>
       </>}
 
       {step === 3 && <>
         <div className="hint-line" style={{ marginBottom: 10 }}>Select any add-ons required — you can edit every line in the summary.</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {(price?.options || []).map((o) => <button key={o.key} type="button" className="preset" style={addons.includes(o.key) ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => toggleAddon(o.key)}>+ {o.label} (₹{(Number(o.amount) || 0).toLocaleString("en-IN")})</button>)}
-          {isWeb && <button type="button" className="preset" style={addons.includes("business_email") ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => toggleAddon("business_email")}>+ {QUOTE_BUSINESS_EMAIL.label} (₹{QUOTE_BUSINESS_EMAIL.amount})</button>}
-          {isWeb && <button type="button" className="preset" style={addons.includes("source_code") ? { borderColor: "var(--primary)", background: "var(--primary-soft)", color: "var(--primary)" } : undefined} onClick={() => toggleAddon("source_code")}>+ Source code handover (quote on request)</button>}
+          {(price?.options || []).map((o) => <button key={o.key} type="button" className={`preset${addons.includes(o.key) ? " active" : ""}`} onClick={() => toggleAddon(o.key)}>+ {o.label} (₹{(Number(o.amount) || 0).toLocaleString("en-IN")})</button>)}
+          {isWeb && <button type="button" className={`preset${addons.includes("business_email") ? " active" : ""}`} onClick={() => toggleAddon("business_email")}>+ {QUOTE_BUSINESS_EMAIL.label} (₹{QUOTE_BUSINESS_EMAIL.amount})</button>}
+          {isWeb && <button type="button" className={`preset${addons.includes("source_code") ? " active" : ""}`} onClick={() => toggleAddon("source_code")}>+ Source code handover (quote on request)</button>}
         </div>
       </>}
 
@@ -11561,6 +11574,7 @@ function APNQuoteWizard({ meRow, onSave, onClose, go }) {
           <button className="btn" onClick={() => go?.("quotations")}><FileText size={14} />My quotations</button>
         </div>
       </>}
+      </div>
     </Modal>
   );
 }

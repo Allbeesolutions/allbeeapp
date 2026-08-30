@@ -22,7 +22,7 @@
 //     receive the service-role key and never logs request bodies.
 //
 // Response shape is unchanged: { text } on success, { error } on failure.
-// The model is chosen here (GROQ_MODEL secret, default llama-3.3-70b-versatile);
+// The model is chosen here (GROQ_MODEL secret, default openai/gpt-oss-120b);
 // the app's "Model" setting is ignored, as before.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
     const key = Deno.env.get("GROQ_API_KEY");
     if (!key) return json({ error: "GROQ_API_KEY is not set on the function." }, 200);
 
-    const model = Deno.env.get("GROQ_MODEL") || "llama-3.3-70b-versatile";
+    const model = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
     const { system, chat, maxTokens } = sanitizePayload(await req.json().catch(() => ({})));
     if (chat.length === 0 && !system) return json({ error: "Empty request." }, 400);
 
