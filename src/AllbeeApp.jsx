@@ -12585,14 +12585,24 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     let active = true;
     const beat = async (online) => {
       if (!active) return;
-      await supabase.rpc("apn_presence_heartbeat", { p_online: online }).catch(() => {});
+      try {
+        await supabase.rpc("apn_presence_heartbeat", { p_online: online });
+      } catch (e) {
+        // ignore
+      }
     };
     beat(true);
     const timer = setInterval(() => beat(true), 15000);
     return () => {
       active = false;
       clearInterval(timer);
-      supabase.rpc("apn_presence_heartbeat", { p_online: false }).catch(() => {});
+      (async () => {
+        try {
+          await supabase.rpc("apn_presence_heartbeat", { p_online: false });
+        } catch (e) {
+          // ignore
+        }
+      })();
     };
   }, [isOpen]);
 
@@ -12722,7 +12732,7 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
         if (mountedRef.current && selectedRef.current) await loadMessages(selectedRef.current, { open: false });
       }));
     ch.subscribe();
-    return () => { supabase.removeChannel(ch).catch(() => {}); };
+    return () => { supabase.removeChannel(ch); };
   }, [isOpen, loadConversations, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
