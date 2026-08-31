@@ -2288,6 +2288,66 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-tc-card { border:1px solid var(--border); border-radius:14px; background:var(--surface); padding:13px 14px; margin-bottom:10px; }
 .apn-tc-card-title { font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px; }
 /* Page-enter animation on tab switch (key={tab} forces replay) */
+/* ── Team Chat 2.0 — Apple-inspired, calm, compact UI ─────────────── */
+.apn-teamchat { font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif; letter-spacing:-.01em; }
+.apn-teamchat .apn-tc-header { display:flex; align-items:center; justify-content:center; padding:10px 14px 12px; background:color-mix(in srgb,var(--bg) 88%,transparent); border-bottom:1px solid color-mix(in srgb,var(--border) 65%,transparent); }
+.apn-teamchat .apn-tc-header .seg { display:flex; gap:2px; padding:3px; border:1px solid color-mix(in srgb,var(--border) 70%,transparent); border-radius:12px; background:color-mix(in srgb,var(--surface) 88%,transparent); box-shadow:0 1px 4px rgba(0,0,0,.05); }
+.apn-teamchat .apn-tc-header .seg button { min-width:92px; border:0; border-radius:9px; background:transparent; color:var(--muted); padding:7px 14px; font-size:12px; font-weight:650; }
+.apn-teamchat .apn-tc-header .seg button.on { background:var(--surface); color:var(--text); box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.apn-tc-shell { grid-template-columns:minmax(330px,390px) minmax(0,1fr); background:var(--bg); }
+.apn-tc-sidebar { padding:18px 14px 24px; border-right:1px solid color-mix(in srgb,var(--border) 70%,transparent); background:color-mix(in srgb,var(--surface) 92%,transparent); }
+.apn-tc-sidebar-title { font-size:21px; letter-spacing:-.035em; font-weight:780; }
+.apn-tc-sidebar-subtitle { font-size:12px; margin-bottom:16px; color:var(--muted); }
+.apn-tc-card { border:0; border-radius:16px; background:transparent; padding:0; margin:0 0 20px; }
+.apn-tc-card-title { padding:0 8px; margin-bottom:7px; color:var(--muted); font-size:10px; font-weight:750; letter-spacing:.8px; text-transform:uppercase; }
+.apn-tc-card .input { height:38px; border-radius:11px; background:var(--surface); border-color:color-mix(in srgb,var(--border) 70%,transparent); box-shadow:0 1px 3px rgba(0,0,0,.03); }
+.apn-tc-item.apn-tc-contact { width:100%; display:flex; align-items:center; gap:10px; padding:10px 9px; border:0; border-radius:13px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.apn-tc-item.apn-tc-contact:hover { background:var(--surface-2); }
+.apn-tc-item .apn-tc-available { margin-left:auto; font-size:10px; color:var(--muted); white-space:nowrap; }
+.apn-tc-partner-list { margin-top:7px; padding:4px; border-radius:15px; background:color-mix(in srgb,var(--surface) 82%,transparent); border:1px solid color-mix(in srgb,var(--border) 58%,transparent); }
+.apn-tc-partner-row { min-height:54px; padding:8px 7px; border-radius:11px; }
+.apn-tc-partner-row:hover { background:var(--surface-2); }
+.apn-tc-partner-meta { min-width:0; }
+.apn-tc-partner-name { font-size:13px; font-weight:680; }
+.apn-tc-partner-location { font-size:10.5px; opacity:.9; }
+.apn-tc-status { font-size:9.5px; max-width:105px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.apn-tc-partner-row .btn.sm { min-height:30px; padding:5px 10px; border-radius:9px; font-size:11px; box-shadow:none; }
+.apn-tc-main { background:radial-gradient(circle at 50% -10%,color-mix(in srgb,var(--surface) 88%,transparent),transparent 52%),var(--bg); }
+.apn-tc-main-empty { color:var(--muted); }
+.apn-tc-main-empty svg { opacity:.35; margin-bottom:10px; }
+.apn-tc-main-title { font-size:17px; letter-spacing:-.025em; font-weight:720; }
+.apn-tc-chathead { min-height:62px; padding:10px 18px; background:color-mix(in srgb,var(--surface) 88%,transparent); backdrop-filter:blur(18px); border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent); }
+.apn-tc-chathead .linkbtn { width:32px; height:32px; border-radius:10px; }
+.apn-tc-messages { padding:20px clamp(16px,5vw,72px) 12px; gap:7px; }
+.apn-tc-msg { max-width:min(70%,620px); }
+.apn-tc-bubble { border:0; border-radius:18px; padding:8px 12px; background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.05); font-size:13px; }
+.apn-tc-msg.mine .apn-tc-bubble { background:var(--primary); box-shadow:0 2px 7px color-mix(in srgb,var(--primary) 22%,transparent); }
+.apn-tc-time { font-size:9px; margin-top:3px; }
+.apn-tc-compose { gap:7px; padding:10px 18px calc(12px + env(safe-area-inset-bottom)); background:color-mix(in srgb,var(--surface) 90%,transparent); backdrop-filter:blur(18px); border-top:1px solid color-mix(in srgb,var(--border) 55%,transparent); }
+.apn-tc-compose .textarea { min-height:40px; max-height:120px; border-radius:18px; padding:10px 13px; resize:none; background:var(--surface); border-color:color-mix(in srgb,var(--border) 68%,transparent); box-shadow:inset 0 1px 2px rgba(0,0,0,.025); }
+.apn-tc-compose .btn.primary { min-width:64px; height:40px; border-radius:14px; box-shadow:none; }
+.apn-tc-info-overlay { background:rgba(0,0,0,.22); backdrop-filter:blur(8px); }
+.apn-tc-info-card { border:0; border-radius:20px; box-shadow:0 24px 70px rgba(0,0,0,.2); }
+.apn-teamchat .auth-msg.err { border:0; border-radius:12px; background:color-mix(in srgb,var(--neg) 8%,var(--surface)); color:var(--neg); font-size:11px; }
+.apn-teamchat .auth-msg.err button { border-radius:9px; }
+@media (max-width:760px) {
+  .apn-teamchat .apn-tc-header { padding-top:7px; }
+  .apn-teamchat .apn-tc-header .seg button { min-width:78px; padding-inline:10px; }
+  .apn-tc-sidebar { padding:14px 12px 20px; }
+  .apn-tc-chathead { padding-inline:12px; }
+  .apn-tc-messages { padding-inline:12px; }
+  .apn-tc-msg { max-width:86%; }
+}
+
+/* Recent chat list */
+.apn-tc-recent-list { display:flex; flex-direction:column; gap:2px; }
+.apn-tc-recent-row { width:100%; display:flex; align-items:center; gap:9px; padding:8px; border:0; border-radius:12px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.apn-tc-recent-row:hover { background:var(--surface-2); }
+.apn-tc-recent-avatar { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; flex:none; background:var(--primary-soft); color:var(--primary); }
+.apn-tc-recent-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.apn-tc-recent-copy b { font-size:12px; font-weight:680; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.apn-tc-recent-copy span { font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.apn-tc-unread { min-width:19px; height:19px; padding:0 5px; border-radius:10px; display:grid; place-items:center; background:var(--primary); color:#fff; font-size:9px; font-weight:750; }
 @keyframes apn-tab-enter { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:none; } }
 .apn-body .page-enter { animation:apn-tab-enter .19s cubic-bezier(.2,.8,.4,1) both; }
 /* Smooth tab icon active scale */
@@ -13721,29 +13781,41 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
 
   const openPersonChat = async (other) => {
     setErr("");
+    const otherApnId = other?.apnId || other?.apn_id || "";
+    if (!otherApnId) { setErr("This partner is missing a valid APN ID."); return; }
     try {
-      // Production-safe fallback for the known PostgREST schema-cache issue:
-      // accepted person chats already have a deterministic conversation slug,
-      // so we can open the existing conversation without relying on the stale
-      // parameterized RPC signature. This is read-only and remains RLS-protected.
-      const ids = [String(pid), String(other.contact_id)].sort();
-      const slug = `person:${ids[0].toLowerCase()}:${ids[1].toLowerCase()}`;
-      const existing = await supabase.from("apn_chat_conversations")
-        .select("id,subject,type")
-        .eq("slug", slug)
-        .maybeSingle();
-      if (!existing.error && existing.data?.id) {
-        openConversation({ id: existing.data.id, subject: existing.data.subject || other.name, conv_type: existing.data.type || "person", participant_apn_id: other.apnId });
+      // Use the hardened RPC first. The previous RPC name had accumulated
+      // PostgREST overload/cache drift in production even though the database
+      // itself contained the correct text signature.
+      const primary = await supabase.rpc("apn_open_person_chat", { p_other_apn_id: otherApnId });
+      if (!primary.error && primary.data?.[0]?.conversation_id) {
+        openConversation({
+          id: primary.data[0].conversation_id,
+          subject: primary.data[0].subject || other.name,
+          conv_type: "person",
+          participant_apn_id: primary.data[0].participant_apn_id || otherApnId,
+        });
         return;
       }
 
-      // Newer databases can create the conversation through the RPC. Keep this
-      // path for fresh environments while the direct lookup handles live cache drift.
-      const { data, error } = await supabase.rpc("apn_get_or_create_person_conversation", { p_other_apn_id: other.apnId });
-      if (error) throw new Error(error.message);
-      if (!data?.[0]?.conversation_id) throw new Error("Could not open this friend chat.");
-      openConversation({ id: data[0].conversation_id, subject: data[0].subject, participant_apn_id: data[0].participant_apn_id });
-    } catch (e) { setErr(e.message || String(e)); }
+      // Compatibility path for databases that have not yet received the
+      // hardening migration. Never expose raw PostgREST internals to the user.
+      const legacy = await supabase.rpc("apn_get_or_create_person_conversation", { p_other_apn_id: otherApnId });
+      if (!legacy.error && legacy.data?.[0]?.conversation_id) {
+        openConversation({
+          id: legacy.data[0].conversation_id,
+          subject: legacy.data[0].subject || other.name,
+          conv_type: "person",
+          participant_apn_id: legacy.data[0].participant_apn_id || otherApnId,
+        });
+        return;
+      }
+      throw new Error(primary.error?.message || legacy.error?.message || "Could not open this friend chat.");
+    } catch (e) {
+      setErr(/schema cache|without parameters|PGRST202/i.test(e.message || "")
+        ? "Chat service is refreshing. Please try again in a moment."
+        : (e.message || "Could not open this friend chat."));
+    }
   };
 
   const openDistrict = async () => {
@@ -13778,8 +13850,23 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
               <div className="apn-tc-sidebar-subtitle">Connect with partners in your network</div>
               {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
 
+              {conversations.filter((c) => c.conv_type === "person").length > 0 && (
+                <div className="apn-tc-card">
+                  <div className="apn-tc-card-title">Recent Chats</div>
+                  <div className="apn-tc-recent-list">
+                    {conversations.filter((c) => c.conv_type === "person").slice(0, 8).map((c) => (
+                      <button key={c.conversation_id} className="apn-tc-recent-row" onClick={() => openConversation({ id: c.conversation_id, subject: c.subject || "Chat", conv_type: "person" })}>
+                        <div className="apn-tc-recent-avatar"><MessageCircle size={15} /></div>
+                        <div className="apn-tc-recent-copy"><b>{c.subject || "Chat"}</b><span>{c.last_message || "No messages yet"}</span></div>
+                        {Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{Number(c.unread_count) > 99 ? "99+" : c.unread_count}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="apn-tc-card">
-                <div className="apn-tc-card-title">Quick Chats</div>
+                <div className="apn-tc-card-title">AllBee Support</div>
                 {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => (
                   <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
                     <Avatar name={a.name} url={a.photo_url} size={36} fontSize={13} />

@@ -110,7 +110,7 @@ describe("APN Portal Navigation", () => {
 
     // Verify we are on Team Chat tab
     await waitFor(() => {
-      expect(screen.getByText("Quick Chats")).toBeTruthy();
+      expect(screen.getByText("AllBee Support")).toBeTruthy();
     });
 
     // Click back to Home tab
