@@ -15289,7 +15289,13 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
   const deleteCommissionProject = (project) => withActionError(async () => {
     if (!isSuper) throw new Error("Only a Super Admin can delete commission projects.");
     try {
-      const { data, error } = await supabase.rpc("apn_delete_commission_project", { p_project_id: project.id });
+      // Cancelled projects have already had their finance impact reversed. They
+      // use the explicit purge path so the project, collections, reversal
+      // transaction, notifications and projections disappear together.
+      const rpcName = project.status === "Cancelled"
+        ? "apn_delete_cancelled_commission_project"
+        : "apn_delete_commission_project";
+      const { data, error } = await supabase.rpc(rpcName, { p_project_id: project.id });
       if (error) throw new Error(error.message);
       if (!data?.deleted) throw new Error("The production delete operation did not confirm deletion.");
       onCommissionDeleted?.(project);
