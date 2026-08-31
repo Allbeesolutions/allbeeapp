@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
       ...sanitized.chat,
     ];
 
-    const model = Deno.env.get("APN_AI_MODEL") || "openai/gpt-oss-120b";
+    const model = "openai/gpt-oss-120b";
     const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },

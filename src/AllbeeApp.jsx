@@ -790,13 +790,15 @@ const AI_DEFAULT_ENDPOINT = "https://api.anthropic.com/v1/messages";
 function aiConfigOf(config) {
   let raw = {};
   try { raw = JSON.parse((config && config.ai) || "{}") || {}; } catch { raw = {}; }
+  // Production ALLBEE AI is always server-side. Ignore legacy/direct settings
+  // so an old browser-stored llama model can never break the shared assistant.
   return {
     enabled: !!raw.enabled,
-    mode: raw.mode === "direct" ? "direct" : "function",
-    functionName: (raw.functionName || "ai-chat").trim() || "ai-chat",
-    endpoint: (raw.endpoint || AI_DEFAULT_ENDPOINT).trim() || AI_DEFAULT_ENDPOINT,
-    model: raw.mode === "direct" ? ((raw.model || AI_DEFAULT_MODEL).trim() || AI_DEFAULT_MODEL) : AI_RUNTIME_MODEL,
-    apiKey: raw.apiKey || "",
+    mode: "function",
+    functionName: "ai-chat",
+    endpoint: AI_DEFAULT_ENDPOINT,
+    model: AI_RUNTIME_MODEL,
+    apiKey: "",
   };
 }
 // Ready to answer? Function mode just needs a name (we can't see if it's deployed
@@ -4976,7 +4978,7 @@ function AISettings({ config, saveAI }) {
   const [done, setDone] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDone(false); };
-  const save = async () => { setBusy(true); try { await saveAI(f); setDone(true); } finally { setBusy(false); } };
+  const save = async () => { setBusy(true); try { await saveAI({ ...f, enabled: !!f.enabled, mode: "function", functionName: "ai-chat", model: AI_RUNTIME_MODEL, apiKey: "" }); setDone(true); } finally { setBusy(false); } };
   return (
     <div className="card stat" style={{ marginBottom: 14 }}>
       <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: 7 }}>
@@ -4992,35 +4994,15 @@ function AISettings({ config, saveAI }) {
       </label>
 
       <Field label="How the app reaches the AI">
-        <select className="select" value={f.mode} onChange={(e) => set("mode", e.target.value)}>
-          <option value="function">Supabase Edge Function (recommended — key stays on the server)</option>
-          <option value="direct">Direct API key (quick start — key is stored in settings)</option>
-        </select>
+        <div className="input mono" style={{ background: "var(--surface-2)", color: "var(--ink)" }}>Supabase Edge Function · server-side · secure</div>
       </Field>
 
-      {f.mode === "function" ? (
-        <Field label="Edge Function name" hint="Deploy the ai-chat function (code in the project README) and set its ANTHROPIC_API_KEY secret.">
-          <input className="input mono" value={f.functionName} onChange={(e) => set("functionName", e.target.value)} placeholder="ai-chat" />
-        </Field>
-      ) : (
-        <>
-          <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 12, background: "var(--neg-soft)" }}>
-            <AlertTriangle size={15} /> A direct key is downloaded to every signed-in browser and can be read by staff. Use this only for internal testing — prefer the Edge Function for anything shared.
-          </div>
-          <Field label="API endpoint">
-            <input className="input mono" value={f.endpoint} onChange={(e) => set("endpoint", e.target.value)} placeholder={AI_DEFAULT_ENDPOINT} />
-          </Field>
-          <Field label="API key">
-            <div style={{ display: "flex", gap: 8 }}>
-              <input className="input mono" type={showKey ? "text" : "password"} value={f.apiKey} onChange={(e) => set("apiKey", e.target.value)} placeholder="sk-ant-…" style={{ flex: 1 }} />
-              <button className="iconbtn" type="button" title={showKey ? "Hide" : "Show"} onClick={() => setShowKey((s) => !s)} style={{ width: 40 }}>{showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-            </div>
-          </Field>
-        </>
-      )}
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 12, background: "var(--primary-soft)" }}>
+        <Sparkles size={15} /> Production AI is routed through the <b>ai-chat</b> Supabase Edge Function. The API key never reaches the browser.
+      </div>
 
-      <Field label="Model" hint={f.mode === "function" ? "Server-side model: OpenAI GPT-OSS 120B via Groq. The old client-side model setting is ignored in secure function mode." : "Set this to a model your API key can use."}>
-        <input className="input mono" value={f.mode === "function" ? AI_RUNTIME_MODEL : f.model} onChange={(e) => set("model", e.target.value)} readOnly={f.mode === "function"} />
+      <Field label="Model" hint="Production model is fixed server-side so legacy model settings cannot break ALLBEE AI.">
+        <div className="input mono" style={{ background: "var(--surface-2)", color: "var(--ink)" }}>OpenAI GPT-OSS 120B · Groq</div>
       </Field>
 
       <button className="btn primary" onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}{done ? "Saved" : "Save AI settings"}</button>
@@ -11263,7 +11245,9 @@ function APNAI({ meRow, go, mutate, pid }) {
         <div className="apn-ai-chat" ref={chatContainerRef}>
           {msgs.map((m, i) => (
             <div key={i}>
-              <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")}>{m.text}</div>
+              <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")} style={{ lineHeight: 1.55 }}>
+                {m.role === "user" || m.err ? m.text : renderAIText(m.text)}
+              </div>
               {m.uncertain && asked && asked.msgIdx === i && (
                 <div style={{ marginTop: 8, marginLeft: "4%" }}>
                   <div className="hint-line" style={{ fontSize: 12, marginBottom: 6 }}>Would you like me to create a support ticket?</div>
