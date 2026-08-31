@@ -1809,6 +1809,20 @@ table.tbl tbody tr:focus-visible { outline:2px solid var(--primary); outline-off
 @keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
 .overlay { animation:overlay-in .18s ease-out; }
 
+/* APN AI workspace: keep the free-text composer anchored toward the lower work area
+   so the quotation launcher and service choices remain visually unobstructed. */
+.apn-ai { min-height:calc(100vh - 150px); display:flex; flex-direction:column; }
+.apn-ai > .apn-rowcard:last-of-type { margin-top:auto; }
+/* Quotation dialogs should always remain fully reachable inside the viewport. */
+.overlay { align-items:center; padding:16px; }
+.modal { max-height:calc(100dvh - 32px); }
+@media (max-width:700px) {
+  .apn-ai { min-height:calc(100dvh - 125px); }
+  .apn-ai > .apn-rowcard:last-of-type { margin-top:20px; }
+  .overlay { align-items:flex-start; padding:10px; }
+  .modal { max-height:calc(100dvh - 20px); }
+}
+
 /* Search affordances */
 .search { transition:border-color .15s ease, box-shadow .15s ease; }
 
