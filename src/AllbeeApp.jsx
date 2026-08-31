@@ -2034,8 +2034,11 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 @media (max-width:900px) {
   .apn-nav-shell { display:block; }
   .apn-desktop-sidebar { display:none; }
+  .apn-nav-shell.menu-open .apn-desktop-sidebar { display:flex; position:fixed; left:0; top:0; bottom:0; width:min(264px, 86vw); height:100vh; z-index:80; box-shadow:18px 0 40px rgba(0,0,0,.22); }
 }
 @media (min-width:901px) {
+  .apn-nav-shell.menu-open { grid-template-columns:1fr; }
+  .apn-nav-shell.menu-open .apn-desktop-sidebar { display:none; }
   .apn-nav-shell .apn-top { position:sticky; }
   .apn-nav-shell .apn-bottomnav { display:none; }
   .apn-nav-shell .apn-body { max-width:none; width:100%; padding:18px 22px 40px; }
@@ -2083,19 +2086,6 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
   border-radius:14px; background:var(--surface-2); cursor:pointer; font-size:12px; font-weight:600; color:var(--ink); text-align:center;
   transition:border-color .15s ease, background-color .15s ease, color .15s ease, transform .12s ease; }
 .apn-more-item:hover { border-color:var(--primary); }
-/* APN sidebar drawer — the relocated "More" surface. Left overlay, modelled on
-   the Admin UI sidebar. Slides in, outside-click + Escape to close. */
-.apn-sidebar-backdrop { position:fixed; inset:0; z-index:80; background:rgba(10,14,20,.45);
-  backdrop-filter:blur(2px); display:flex; }
-.apn-sidebar { position:relative; width:min(280px, 82vw); max-width:280px; height:100vh;
-  background:var(--surface); border-right:1px solid var(--border); box-shadow:4px 0 24px rgba(0,0,0,.25);
-  display:flex; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch;
-  animation:sidebar-in .22s cubic-bezier(.2,.7,.3,1) both; }
-@keyframes sidebar-in { from { transform:translateX(-16px); opacity:.6; } to { transform:none; opacity:1; } }
-.apn-sidebar-head { display:flex; align-items:center; justify-content:space-between;
-  padding:calc(11px + env(safe-area-inset-top)) 16px 11px; border-bottom:1px solid var(--border); }
-.apn-sidebar-grid { display:flex; flex-direction:column; gap:6px; padding:14px 10px calc(24px + env(safe-area-inset-bottom)); }
-@media (max-width:420px) { .apn-sidebar { width:84vw; max-width:300px; } }
 .apn-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .apn-metric { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:13px 14px; box-shadow:var(--shadow); }
 .apn-metric .k { font-size:11px; color:var(--muted); font-weight:600; display:flex; align-items:center; gap:6px; }
@@ -13736,7 +13726,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const meRow = apnMe(db, pid);
   const [tab, setTab] = useState("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const closeSidebar = () => setSidebarOpen(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [finSnap, setFinSnap] = useState(null);
@@ -13859,7 +13848,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users], ["chat", "Team Chat", MessageSquare]];
   const showFab = tab === "leads" || tab === "quotations";
   return (
-    <div className="allbee apn apn-nav-shell" data-theme={isDark ? "dark" : "light"}>
+    <div className={`allbee apn apn-nav-shell${sidebarOpen ? " menu-open" : ""}`} data-theme={isDark ? "dark" : "light"}>
       <aside className="apn-desktop-sidebar" aria-label="APN navigation">
         <div className="apn-side-brand" role="button" tabIndex={0} onClick={() => go("home")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("home"); } }}>
           <FounderTap className="brand-logo" src={LOGO_ICON} alt="ALLBEE" />
@@ -13881,7 +13870,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       <style>{CSS}</style><ToastHost />
        <header className="apn-top">
          <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><FounderTap className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
-         <button type="button" className="iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" title="Menu" aria-expanded={sidebarOpen} aria-controls="apn-sidebar"><Menu size={19} /></button>
+         <button type="button" className="iconbtn" onClick={() => setSidebarOpen((v) => !v)} aria-label={sidebarOpen ? "Close menu" : "Open menu"} title="Menu" aria-expanded={sidebarOpen}><Menu size={19} /></button>
          <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={refreshPortal} />
         <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
@@ -13902,25 +13891,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
         ))}
       </nav>
       </div>
-
-      {/* APN sidebar drawer — the mobile menu, styled to match the Admin navigation.
-          Left overlay, outside-click / Escape close, modeled on the Admin UI. */}
-      {sidebarOpen && (
-        <div className="apn-sidebar-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) closeSidebar(); }} onKeyDown={(e) => { if (e.key === "Escape") closeSidebar(); }}>
-          <div id="apn-sidebar" className="apn-sidebar" role="dialog" aria-modal="true" aria-label="APN menu" aria-labelledby="apn-sidebar-title">
-            <div className="apn-sidebar-head">
-              <div id="apn-sidebar-title" style={{ fontWeight: 800, fontSize: 17 }}>Menu</div>
-              <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={closeSidebar} aria-label="Close menu" title="Close menu"><X size={16} /></button>
-            </div>
-            <div className="apn-sidebar-grid">
-              {moreItems.map(([k, l, ic, badge]) => (
-                <button key={k} className="apn-more-item" style={{ position: "relative" }} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge action-badge" style={{ position: "absolute", top: 8, right: 8 }}>{badge > 99 ? "99+" : badge}</span>}</button>
-              ))}
-            </div>
-            <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}><button className="apn-more-item" style={{ width: "100%" }} onClick={() => { closeSidebar(); signOut(); }}><LogOut size={20} color="var(--neg)" /><span style={{ color: "var(--neg)" }}>Sign out</span></button></div>
-          </div>
-        </div>
-      )};
 
       {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
       {modal?.type === "apnLead" && <APNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} />}
