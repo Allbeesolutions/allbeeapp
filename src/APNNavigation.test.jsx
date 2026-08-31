@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { APNPortal } from "./AllbeeApp.jsx";
+import { supabase } from "./supabaseClient.js";
 
 // Mock matchMedia for jsdom
 window.matchMedia = window.matchMedia || function() {
@@ -104,7 +105,7 @@ describe("APN Portal Navigation", () => {
     expect(screen.getByText("Revenue generated")).toBeTruthy();
 
     // Click on Team Chat tab
-    const chatTabButton = screen.getByRole("button", { name: /team chat/i });
+    const chatTabButton = screen.getAllByRole("button", { name: /team chat/i })[0];
     fireEvent.click(chatTabButton);
 
     // Verify we are on Team Chat tab
@@ -113,7 +114,7 @@ describe("APN Portal Navigation", () => {
     });
 
     // Click back to Home tab
-    const homeTabButton = screen.getByRole("button", { name: /^home$/i });
+    const homeTabButton = screen.getAllByRole("button", { name: /^home$/i })[0];
     fireEvent.click(homeTabButton);
 
     // Verify we are successfully back on Home tab (no crash)
@@ -158,11 +159,27 @@ describe("APN Head Cockpits", () => {
   it("routes a State Head to State Command with state-wide partner oversight", async () => {
     window.location.hash = "#/apn/district";
     render(<APNPortal db={baseDb} profile={{ id: "sh", role: "state_head", active: true, approved: true, status: "active" }} session={{ user: { id: "sh" } }} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("State Command")).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText("State Command")[1]).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /Partners \(3\)/i }));
     expect(screen.getByText("Assigned Partner")).toBeTruthy();
     expect(screen.getByText("Foreign Partner")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
+  });
+
+  it("lets the State Head approve and reject pending partners through the secured RPCs", async () => {
+    window.location.hash = "#/apn/district";
+    render(<APNPortal db={baseDb} profile={{ id: "sh", role: "state_head", active: true, approved: true, status: "active" }} session={{ user: { id: "sh" } }} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
+    await waitFor(() => expect(screen.getAllByText("State Command")[1]).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Partners \(3\)/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_state_head_approve_partner", { p_partner_id: "p3" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Reject application" })).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText("e.g. Incomplete details"), { target: { value: "Incomplete documents" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reject application" }));
+    await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_state_head_reject_partner", { p_partner_id: "p3", p_reason: "Incomplete documents" }));
   });
 });

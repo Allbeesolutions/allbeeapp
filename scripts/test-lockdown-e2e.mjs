@@ -16,7 +16,7 @@ const work = mkdtempSync(join(tmpdir(), "lockdown-e2e-"));
 
 const run = (cmd, args, opts = {}) =>
   new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...opts.env }, shell: true, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(cmd, args, { cwd: root, env: { ...process.env, ...opts.env }, shell: false, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     p.stdout.on("data", (d) => { out += d; });
     p.stderr.on("data", (d) => { out += d; });
@@ -32,7 +32,11 @@ const waitForPort = async (port, tries = 40) => {
 };
 
 const server = async (port, dir) => {
-  const p = spawn("npx", ["vite", "preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort", "--outDir", dir], { cwd: root, shell: true, stdio: "ignore" });
+  // `vite preview` has no --outDir option; it serves the `dist` directory
+  // relative to its working directory. The old test therefore always served
+  // the normal build even when it had just built the paused variant.
+  const viteBin = join(root, "node_modules", ".bin", "vite");
+  const p = spawn(viteBin, ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], { cwd: dir, shell: false, stdio: "ignore" });
   await waitForPort(port);
   return p;
 };
@@ -45,8 +49,8 @@ const check = (name, ok, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  
 
 // ── Build 1: paused lockdown UI (VITE_PAUSE_TEST=1) ──────────────────────────────
 console.log("Building paused variant (VITE_PAUSE_TEST=1)…");
-await run("npx", ["vite", "build", "--outDir", join(work, "dist-paused")], { env: { VITE_PAUSE_TEST: "1" } });
-const s1 = await server(4173, join(work, "dist-paused"));
+await run("npx", ["vite", "build", "--outDir", join(work, "paused", "dist")], { env: { VITE_PAUSE_TEST: "1" } });
+const s1 = await server(4173, join(work, "paused"));
 const page1 = await browser.newPage();
 await page1.goto("http://127.0.0.1:4173/", { waitUntil: "domcontentloaded" });
 
@@ -61,7 +65,7 @@ const input = page1.getByLabel("Authorization code");
 await input.fill("111111");
 const authorizeBtn = page1.getByRole("button", { name: "Authorize" });
 await authorizeBtn.click();
-await page1.waitForSelector("text=Could not reach the authorization service", { timeout: 8000 });
+await page1.waitForFunction(() => document.body.innerText.includes("Incorrect authorization code") || document.body.innerText.includes("Could not reach the authorization service"), { timeout: 8000 });
 check("typed code + Authorize produces a visible rejection (no crash)", true);
 
 await page1.screenshot({ path: join(work, "paused-gate.png") });
@@ -70,8 +74,8 @@ s1.kill();
 
 // ── Build 2: live pass-through (standard build) ─────────────────────────────
 console.log("Building standard variant…");
-await run("npx", ["vite", "build", "--outDir", join(work, "dist-live")], {});
-const s2 = await server(4174, join(work, "dist-live"));
+await run("npx", ["vite", "build", "--outDir", join(work, "live", "dist")], {});
+const s2 = await server(4174, join(work, "live"));
 const page2 = await browser.newPage();
 await page2.goto("http://127.0.0.1:4174/", { waitUntil: "domcontentloaded" });
 
