@@ -617,13 +617,19 @@ async function loadTableRows(table, columns, orderColumn) {
 
 async function fetchAll() {
   const db = emptyDB();
-  const loaded = await mapWithConcurrency(TABLES, TABLE_FETCH_CONCURRENCY, async (t) => [t, await loadTableRows(t, "id,data")]);
+  // `audit` is intentionally excluded from the generic loader. Supabase/PostgREST
+  // caps an un-ranged select at the API row limit (currently 1,000), and the old
+  // generic path therefore silently loaded only the oldest ~1,000 audit events.
+  // That made the Audit Log appear to stop around 20-Aug even though newer rows
+  // existed in production. Audit has its own paginated loader below.
+  const loaded = await mapWithConcurrency(TABLES.filter((t) => t !== "audit"), TABLE_FETCH_CONCURRENCY, async (t) => [t, await loadTableRows(t, "id,data")]);
   for (const [t, rows] of loaded) {
     db[t] = (rows || [])
       .map((r) => r.data)
       .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
       .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
   }
+  db.audit = await fetchAuditRows();
   Object.assign(db,
     await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(),
     await fetchClientData(), await fetchHelpdeskData(), await fetchAgreementData(),
@@ -632,9 +638,23 @@ async function fetchAll() {
 }
 
 async function fetchAuditRows() {
-  const { data, error } = await supabase.from("audit").select("id,data");
-  if (error) throw new Error(`Loading audit: ${error.message}`);
-  return (data || [])
+  // Audit is append-only and can grow beyond the API's default 1,000-row limit.
+  // Page newest-first so the UI always gets the complete history, then restore
+  // chronological order for consumers that expect ascending source data.
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("audit")
+      .select("id,data,updated_at")
+      .order("updated_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`Loading audit: ${error.message}`);
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows
     .map((r) => ({ ...(r.data || {}), id: r.id }))
     .filter((x) => x && typeof x === "object")
     .sort((a, b) => (a?.ts || 0) - (b?.ts || 0));
