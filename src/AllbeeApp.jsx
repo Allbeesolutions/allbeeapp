@@ -13969,6 +13969,13 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
   }, []);
 
+  const markNotificationsSeen = useCallback(async () => {
+    const seenAt = new Date().toISOString();
+    const { error } = await supabase.rpc("mark_apn_action_badge_seen", { p_action_type: "notification_unread" });
+    if (error) { console.warn("[ALLBEE] notification read state could not be saved:", error.message); return; }
+    patchDb((d) => ({ ...d, apn_action_badge_reads: [...(d.apn_action_badge_reads || []).filter((r) => !(r.user_id === pid && r.action_type === "notification_unread")), { user_id: pid, action_type: "notification_unread", seen_at: seenAt, updated_at: seenAt }] }));
+  }, [pid, patchDb]);
+
   if (!meRow) return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
       <style>{CSS}</style>
@@ -13993,13 +14000,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
   const isStateHead = meRow.role === "state_head";
-  const markNotificationsSeen = useCallback(async () => {
-    const seenAt = new Date().toISOString();
-    const { error } = await supabase.rpc("mark_apn_action_badge_seen", { p_action_type: "notification_unread" });
-    if (error) { console.warn("[ALLBEE] notification read state could not be saved:", error.message); return; }
-    patchDb((d) => ({ ...d, apn_action_badge_reads: [...(d.apn_action_badge_reads || []).filter((r) => !(r.user_id === pid && r.action_type === "notification_unread")), { user_id: pid, action_type: "notification_unread", seen_at: seenAt, updated_at: seenAt }] }));
-  }, [pid, patchDb]);
-
   const go = (t) => {
     if (t === "notifications") markNotificationsSeen().catch(() => {});
     setTab(t);
