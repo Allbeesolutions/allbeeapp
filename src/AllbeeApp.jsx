@@ -11703,19 +11703,36 @@ async function downloadQuotePdf(q, meRow) {
     const H = doc.internal.pageSize.getHeight();
     const inr = (n) => pdfSafe("Rs. " + (Number(n) || 0).toLocaleString("en-IN"));
 
-    // Header drawing helper (recreates letterhead brand assets natively)
+    // Header drawing helper — use the supplied ALLBEE logo asset and brand blue.
+    let quoteLogoData = null;
+    try {
+      const logoResponse = await fetch("/allbee-quotation-logo.png");
+      if (logoResponse.ok) {
+        const logoBlob = await logoResponse.blob();
+        quoteLogoData = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(logoBlob);
+        });
+      }
+    } catch (logoError) {
+      console.warn("Quotation logo could not be loaded; using text fallback.", logoError);
+    }
+
     const drawHeader = (pageDoc) => {
       const logoX = W / 2;
-      
-      // Draw centered brand mark (vector blue circle + bold monogram)
-      pageDoc.setFillColor(46, 59, 143);
-      pageDoc.circle(logoX, 48, 14, "F");
-      pageDoc.setTextColor(255);
-      pageDoc.setFont("helvetica", "bold"); pageDoc.setFontSize(12);
-      pageDoc.text("AB", logoX, 52, { align: "center" });
+      if (quoteLogoData) {
+        pageDoc.addImage(quoteLogoData, "PNG", logoX - 22, 28, 44, 44, undefined, "FAST");
+      } else {
+        pageDoc.setFillColor(112, 176, 210);
+        pageDoc.circle(logoX, 48, 14, "F");
+        pageDoc.setTextColor(255);
+        pageDoc.setFont("helvetica", "bold"); pageDoc.setFontSize(12);
+        pageDoc.text("AB", logoX, 52, { align: "center" });
+      }
 
       // Company Name
-      pageDoc.setFont("helvetica", "bold"); pageDoc.setFontSize(14); pageDoc.setTextColor(46, 59, 143);
+      pageDoc.setFont("helvetica", "bold"); pageDoc.setFontSize(14); pageDoc.setTextColor(112, 176, 210);
       pageDoc.text("ALLBEE SOLUTIONS", logoX, 76, { align: "center" });
 
       // Tagline
@@ -11723,7 +11740,7 @@ async function downloadQuotePdf(q, meRow) {
       pageDoc.text("DIGITAL MARKETING & IT SOLUTIONS", logoX, 88, { align: "center" });
 
       // Elegant divider accent line
-      pageDoc.setDrawColor(74, 144, 226); pageDoc.setLineWidth(1);
+      pageDoc.setDrawColor(112, 176, 210); pageDoc.setLineWidth(1);
       pageDoc.line(W/2 - 60, 96, W/2 + 60, 96);
     };
 
@@ -11750,7 +11767,7 @@ async function downloadQuotePdf(q, meRow) {
 
     // Title Section
     let y = 132;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(112, 176, 210);
     doc.text("QUOTATION", W / 2, y, { align: "center" });
 
     // Quote Meta (Date & ID on the same row)
@@ -11770,10 +11787,10 @@ async function downloadQuotePdf(q, meRow) {
     // Left Box: Client details card
     doc.setFillColor(248, 250, 252);
     doc.rect(45, y, 240, 72, "F");
-    doc.setFillColor(46, 59, 143);
+    doc.setFillColor(112, 176, 210);
     doc.rect(45, y, 3, 72, "F"); // brand color bar
 
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(112, 176, 210);
     doc.text("PREPARED FOR", 58, y + 16);
     doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(26, 32, 44);
     doc.text(pdfSafe(q.clientName || "Client"), 58, y + 32);
@@ -11786,10 +11803,10 @@ async function downloadQuotePdf(q, meRow) {
     // Right Box: Partner details card
     doc.setFillColor(248, 250, 252);
     doc.rect(310, y, 240, 72, "F");
-    doc.setFillColor(46, 59, 143);
+    doc.setFillColor(112, 176, 210);
     doc.rect(310, y, 3, 72, "F"); // brand color bar
 
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(112, 176, 210);
     doc.text("PREPARED BY", 323, y + 16);
     doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(26, 32, 44);
     doc.text(pdfSafe(meRow?.name || "APN Partner"), 323, y + 32);
@@ -11799,7 +11816,7 @@ async function downloadQuotePdf(q, meRow) {
 
     // Project Overview Section
     let overviewY = y + 72 + 15;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(112, 176, 210);
     doc.text("PROJECT OVERVIEW", 45, overviewY + 12);
     doc.setDrawColor(226, 232, 240);
     doc.line(45, overviewY + 18, W - 45, overviewY + 18);
@@ -11843,7 +11860,7 @@ async function downloadQuotePdf(q, meRow) {
 
     // Scope & Description Section
     let nextSectionY = overviewY + 74;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(112, 176, 210);
     doc.text("SCOPE OF WORK & DETAILS", 45, nextSectionY + 12);
     doc.setDrawColor(226, 232, 240);
     doc.line(45, nextSectionY + 18, W - 45, nextSectionY + 18);
@@ -11858,7 +11875,7 @@ async function downloadQuotePdf(q, meRow) {
     let startTableY = inclusionsY;
     const featuresList = q.catalogSnapshot?.features || [];
     if (q.service === "website" || featuresList.length > 0) {
-      doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(46, 59, 143);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(112, 176, 210);
       doc.text("PACKAGE INCLUDES", 45, inclusionsY);
 
       doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(74, 85, 104);
@@ -11974,7 +11991,7 @@ async function downloadQuotePdf(q, meRow) {
         lineWidth: 0.5
       },
       headStyles: {
-        fillColor: [46, 59, 143],
+        fillColor: [112, 176, 210],
         textColor: [255, 255, 255],
         fontStyle: "bold",
         fontSize: 8.5,
@@ -12026,7 +12043,7 @@ async function downloadQuotePdf(q, meRow) {
     doc.setDrawColor(226, 232, 240); doc.setLineWidth(1.5);
     doc.line(W - 220, tailY - 12, W - 45, tailY - 12);
 
-    doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.setTextColor(112, 176, 210);
     doc.text("TOTAL AMOUNT", W - 180, tailY, { align: "right" });
     doc.text(inr(q.total || 0), W - 45, tailY, { align: "right" });
 
@@ -12039,18 +12056,18 @@ async function downloadQuotePdf(q, meRow) {
 
     doc.setFillColor(248, 250, 252);
     doc.rect(45, noteY, W - 90, 80, "F");
-    doc.setFillColor(46, 59, 143);
+    doc.setFillColor(112, 176, 210);
     doc.rect(45, noteY, 3, 80, "F"); // brand left highlight
 
     // Payment Terms (Left column of the box)
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(112, 176, 210);
     doc.text("PAYMENT TERMS", 60, noteY + 18);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(74, 85, 104);
     const paymentTermsText = q.catalogSnapshot?.paymentTerms?.description || "50% advance at project start,\n50% on final delivery.";
     doc.text(paymentTermsText, 60, noteY + 32);
 
     // Disclaimer / Notes (Right column of the box)
-    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(46, 59, 143);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(112, 176, 210);
     doc.text("IMPORTANT NOTES", 295, noteY + 18);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(113, 128, 150);
     const discLines = doc.splitTextToSize(pdfSafe(q.catalogSnapshot?.disclaimer || QUOTE_DISCLAIMER), 240);
