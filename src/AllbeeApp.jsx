@@ -8301,7 +8301,7 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
   {isAdmin && chatChannel === "apn" ? <AdminAPNChat me={me} onUnreadChange={setApnUnread} /> : employeeView}</>);
 }
 
-function AdminAPNChat({ me, onUnreadChange }) {
+export function AdminAPNChat({ me, onUnreadChange }) {
   const [conversations, setConversations] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -8313,6 +8313,7 @@ function AdminAPNChat({ me, onUnreadChange }) {
   const [err, setErr] = useState("");
   const mounted = useRef(true);
   const scrollRef = useRef(null);
+  const openRequestRef = useRef(0);
 
   useEffect(() => () => { mounted.current = false; }, []);
 
@@ -8335,10 +8336,11 @@ function AdminAPNChat({ me, onUnreadChange }) {
   }, [onUnreadChange]);
 
   const open = useCallback(async (conv) => {
-    setSelected(conv); setMessages([]); setErr("");
+    const requestId = ++openRequestRef.current;
+    setSelected(conv); setErr("");
     const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.conversation_id || conv.id });
-    if (error) { setErr(error.message); return; }
-    if (!mounted.current) return;
+    if (error) { if (requestId === openRequestRef.current) setErr(error.message); return; }
+    if (!mounted.current || requestId !== openRequestRef.current) return;
     const rows = data || [];
     setMessages(rows);
     const last = rows[rows.length - 1];
@@ -8348,15 +8350,19 @@ function AdminAPNChat({ me, onUnreadChange }) {
   }, [load]);
 
   useEffect(() => { load(); }, [load]);
+  const selectedRef = useRef(null);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+
   useEffect(() => {
     const ch = supabase.channel(`admin-apn-team-chat:${me.id}`);
     ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, async () => {
       await load(true);
-      if (selected) await open(selected);
+      const current = selectedRef.current;
+      if (current) await open(current);
     }).subscribe();
     const timer = setInterval(() => load(true), 10000);
     return () => { clearInterval(timer); supabase.removeChannel(ch); };
-  }, [load, open, selected, me.id]);
+  }, [load, open, me.id]);
 
   const send = async () => {
     const body = text.trim(); if (!body || !selected) return;
