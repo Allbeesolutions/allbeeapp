@@ -13867,13 +13867,20 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
 
               <div className="apn-tc-card">
                 <div className="apn-tc-card-title">AllBee Support</div>
-                {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => (
-                  <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
-                    <Avatar name={a.name} url={a.photo_url} size={36} fontSize={13} />
-                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{a.contact_type === "superadmin" ? "Chat with AllBee Super Admins" : "Chat with AllBee Admins"}</div></div>
-                    <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
-                  </button>
-                ))}
+                {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => {
+                  const supportLabel = /mohamed\s+backer\s+alim/i.test(a.name || "")
+                    ? "Chat with AllBee Founder and CEO"
+                    : /^haji$/i.test((a.name || "").trim())
+                      ? "Chat with AllBee Cofounder and CFO"
+                      : "Chat with AllBee Admins";
+                  return (
+                    <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
+                      <Avatar name={a.name} url={a.photo_url} size={36} fontSize={13} />
+                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{supportLabel}</div></div>
+                      <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
+                    </button>
+                  );
+                })}
                 {!contacts.some((c) => c.contact_type === "admin" || c.contact_type === "superadmin") && !loading && <div className="hint-line">No management contacts available.</div>}
               </div>
 
