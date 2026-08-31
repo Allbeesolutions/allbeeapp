@@ -795,7 +795,7 @@ function aiConfigOf(config) {
   return {
     enabled: !!raw.enabled,
     mode: "function",
-    functionName: "ai-chat",
+    functionName: "ai-chat-v2",
     endpoint: AI_DEFAULT_ENDPOINT,
     model: AI_RUNTIME_MODEL,
     apiKey: "",
@@ -813,7 +813,7 @@ function aiConfigured(cfg) {
 async function callAI(cfg, system, messages) {
   const model = cfg.model || AI_DEFAULT_MODEL;
   if (cfg.mode !== "direct") {
-    const { data, error } = await supabase.functions.invoke(cfg.functionName || "ai-chat", {
+    const { data, error } = await supabase.functions.invoke(cfg.functionName || "ai-chat-v2", {
       body: { system, model, max_tokens: 1400, messages },
     });
     if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function. Is it deployed?`);
@@ -4978,7 +4978,7 @@ function AISettings({ config, saveAI }) {
   const [done, setDone] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDone(false); };
-  const save = async () => { setBusy(true); try { await saveAI({ ...f, enabled: !!f.enabled, mode: "function", functionName: "ai-chat", model: AI_RUNTIME_MODEL, apiKey: "" }); setDone(true); } finally { setBusy(false); } };
+  const save = async () => { setBusy(true); try { await saveAI({ ...f, enabled: !!f.enabled, mode: "function", functionName: "ai-chat-v2", model: AI_RUNTIME_MODEL, apiKey: "" }); setDone(true); } finally { setBusy(false); } };
   return (
     <div className="card stat" style={{ marginBottom: 14 }}>
       <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: 7 }}>
@@ -4998,7 +4998,7 @@ function AISettings({ config, saveAI }) {
       </Field>
 
       <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 12, background: "var(--primary-soft)" }}>
-        <Sparkles size={15} /> Production AI is routed through the <b>ai-chat</b> Supabase Edge Function. The API key never reaches the browser.
+        <Sparkles size={15} /> Production AI is routed through the <b>ai-chat-v2</b> Supabase Edge Function. The API key never reaches the browser.
       </div>
 
       <Field label="Model" hint="Production model is fixed server-side so legacy model settings cannot break ALLBEE AI.">
