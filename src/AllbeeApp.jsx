@@ -8203,6 +8203,8 @@ function Knowledge({ db, mutate, openModal, removeItem, isAdmin }) {
 }
 
 function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
+  const [chatChannel, setChatChannel] = useState("employee");
+  const [apnUnread, setApnUnread] = useState(0);
   const [text, setText] = useState("");
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -8249,7 +8251,7 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
   const deleteNow = () => { if (!confirmDelete) return; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? { ...x, deleted: true, text: "", attachment: null, deletedBy: me.name } : x) }), null); setConfirmDelete(null); };
   // Names of teammates who've seen one of my messages.
   const seenNames = (m) => (m.seenBy || []).filter((u) => u !== me.id).map((u) => ((team || []).find((p) => p.id === u)?.name) || "Someone").filter(Boolean);
-  return (<>
+  const employeeView = (<>
     <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
       <div className="page-head"><h3>Team chat</h3><span className="spacer" />{onlineCount > 0 && <span className="hint-line" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginRight: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--pos)", display: "inline-block" }} />{onlineCount} online</span>}<button className="btn sm" onClick={refresh} disabled={refreshing} title="Refresh messages"><RefreshCw size={14} className={refreshing ? "spin" : ""} />Refresh</button></div>
       <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -8289,7 +8291,126 @@ function Chat({ db, mutate, me, team, onRefresh, isAdmin }) {
     {confirmDelete && <Confirm title="Delete message?" body={`Delete ${confirmDelete.userId === me.id ? "your message" : `${confirmDelete.userName}'s message`} for everyone?`} onConfirm={deleteNow} onClose={() => setConfirmDelete(null)} />}
     </>
   );
+
+  return (<>{isAdmin && <div className="content" style={{ paddingBottom: 10 }}>
+    <div className="seg" style={{ maxWidth: 430 }}>
+      <button className={chatChannel === "employee" ? "on" : ""} onClick={() => setChatChannel("employee")}>Employee</button>
+      <button className={chatChannel === "apn" ? "on" : ""} onClick={() => setChatChannel("apn")}>APN{apnUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 6 }}>{apnUnread > 99 ? "99+" : apnUnread}</span>}</button>
+    </div>
+  </div>}
+  {isAdmin && chatChannel === "apn" ? <AdminAPNChat me={me} onUnreadChange={setApnUnread} /> : employeeView}</>);
 }
+
+function AdminAPNChat({ me, onUnreadChange }) {
+  const [conversations, setConversations] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const mounted = useRef(true);
+  const scrollRef = useRef(null);
+
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    try {
+      const [cv, ct] = await Promise.all([
+        supabase.rpc("apn_list_conversations"),
+        supabase.rpc("apn_list_chat_contacts")
+      ]);
+      if (cv.error) throw new Error(cv.error.message);
+      if (!mounted.current) return;
+      setConversations(cv.data || []);
+      if (!ct.error) setContacts(ct.data || []);
+      const unread = (cv.data || []).reduce((n, c) => n + Number(c.unread_count || 0), 0);
+      onUnreadChange?.(unread);
+    } catch (e) {
+      if (mounted.current) setErr(e.message || "Could not load APN chats.");
+    } finally { if (mounted.current) setLoading(false); }
+  }, [onUnreadChange]);
+
+  const open = useCallback(async (conv) => {
+    setSelected(conv); setMessages([]); setErr("");
+    const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.conversation_id || conv.id });
+    if (error) { setErr(error.message); return; }
+    if (!mounted.current) return;
+    const rows = data || [];
+    setMessages(rows);
+    const last = rows[rows.length - 1];
+    if (last) await supabase.rpc("apn_admin_mark_read", { p_conversation_id: conv.conversation_id || conv.id, p_message_id: last.id });
+    await load(true);
+    requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; });
+  }, [load]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ch = supabase.channel(`admin-apn-team-chat:${me.id}`);
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, async () => {
+      await load(true);
+      if (selected) await open(selected);
+    }).subscribe();
+    const timer = setInterval(() => load(true), 10000);
+    return () => { clearInterval(timer); supabase.removeChannel(ch); };
+  }, [load, open, selected, me.id]);
+
+  const send = async () => {
+    const body = text.trim(); if (!body || !selected) return;
+    setText(""); setErr("");
+    const { error } = await supabase.rpc("apn_admin_send_message", { p_conversation_id: selected.conversation_id || selected.id, p_body: body });
+    if (error) { setText(body); setErr(error.message); return; }
+    await open(selected);
+  };
+
+  const startPartnerChat = async (contact) => {
+    const apnId = contact?.apn_id;
+    if (!apnId) return;
+    const { data, error } = await supabase.rpc("apn_admin_open_partner_chat", { p_partner_apn_id: apnId });
+    if (error) { setErr(error.message); return; }
+    if (data?.[0]) await open({ conversation_id: data[0].conversation_id, conv_type: "person", subject: data[0].subject, participant_apn_id: apnId });
+  };
+
+  const filtered = conversations.filter((c) => filter === "all" || c.conv_type === filter)
+    .filter((c) => `${c.subject || ""} ${c.last_message || ""}`.toLowerCase().includes(search.toLowerCase().trim()));
+  const partners = contacts.filter((c) => c.contact_type === "partner").filter((c) => `${c.name} ${c.apn_id} ${c.district || ""}`.toLowerCase().includes(search.toLowerCase().trim()));
+  const unread = conversations.reduce((n, c) => n + Number(c.unread_count || 0), 0);
+
+  return (
+    <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+      <div className="page-head"><h3>APN chat</h3><span className="spacer" />{unread > 0 && <span className="badge action-badge" style={{ marginRight: 8 }}>{unread > 99 ? "99+" : unread} new</span>}<button className="btn sm" onClick={() => load()}><RefreshCw size={14} />Refresh</button></div>
+      {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
+      <div className="card" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: selected ? "330px 1fr" : "1fr", overflow: "hidden" }}>
+        <aside style={{ overflowY: "auto", padding: 12, borderRight: selected ? "1px solid var(--border)" : "none" }}>
+          <div className="seg" style={{ marginBottom: 10 }}>
+            {[['all','All'],['person','Partner chats'],['district','District'],['state','State']].map(([k,l]) => <button key={k} className={filter === k ? "on" : ""} onClick={() => setFilter(k)}>{l}</button>)}
+          </div>
+          <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search APN chats or partners…" />
+          {loading && <div className="hint-line" style={{ padding: 10 }}>Loading APN chats…</div>}
+          {filtered.map(c => <button key={c.conversation_id} className="apn-tc-recent-row" style={{ width: "100%", marginTop: 6 }} onClick={() => open(c)}>
+            <div className="apn-tc-recent-avatar"><MessageCircle size={15} /></div><div className="apn-tc-recent-copy"><b>{c.subject || "APN chat"}</b><span>{c.last_message || "No messages yet"}</span></div>{Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{c.unread_count}</span>}
+          </button>)}
+          {!loading && filtered.length === 0 && <div className="hint-line" style={{ padding: 10 }}>No APN conversations found.</div>}
+          <div className="apn-tc-card" style={{ marginTop: 12 }}><div className="apn-tc-card-title">Start partner chat</div>
+            {partners.slice(0, 12).map(c => <div key={c.contact_id} className="apn-tc-partner-row"><Avatar name={c.name} url={c.photo_url} size={32} fontSize={11}/><div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{c.name}</div><div className="apn-tc-partner-location">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div><button className="btn sm" onClick={() => startPartnerChat(c)}>Chat</button></div>)}
+          </div>
+        </aside>
+        {selected ? <main className="apn-tc-chat" ref={scrollRef}>
+          <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }}><ArrowLeft size={17}/></button><div style={{fontWeight:700,flex:1}}>{selected.subject || "APN chat"}<div className="apn-tc-presence">{selected.conv_type === "person" ? "Partner conversation" : `${selected.conv_type || "APN"} conversation`}</div></div></div>
+          <div className="apn-tc-messages">
+            {messages.map(m => { const mine = String(m.sender_id) === String(me.id); return <div key={m.id} className={`apn-tc-msg ${mine ? "mine" : "theirs"}`}><div className="apn-tc-bubble-wrap"><div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{m.created_at ? fmtDateTime(new Date(m.created_at)) : ""}</div></div></div></div>; })}
+            {messages.length === 0 && <Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
+          </div>
+          <div className="apn-tc-compose"><textarea className="textarea" value={text} onChange={e => setText(e.target.value)} placeholder="Message the APN partner…" rows={2} maxLength={2000} onKeyDown={e => { if(e.key === "Enter" && !e.shiftKey){e.preventDefault();send();} }}/><button className="btn primary" onClick={send} disabled={!text.trim()}>Send</button></div>
+        </main> : <div className="apn-tc-main-empty"><div><MessageSquare size={30} color="var(--muted)"/><div className="apn-tc-main-title">APN conversations</div><div className="hint-line">Select a partner conversation, district chat, or state chat.</div></div></div>}
+      </div>
+    </div>
+  );
+}
+
 
 function Performance({ db, team }) {
   const month = new Date();
