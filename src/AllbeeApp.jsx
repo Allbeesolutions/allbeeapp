@@ -8818,6 +8818,21 @@ function Notifications({ db, mutate, openModal, removeItem, isAdmin, me, profile
       avatar: n.senderAvatar || person?.photo_url || "",
     };
   };
+  // Opening Notifications is itself an acknowledgement: once the user has
+  // intentionally opened the notification center, its unread badge must clear
+  // immediately and persist across refreshes/devices.
+  useEffect(() => {
+    if (!me?.id) return;
+    const unread = visible.filter((n) => !(n.reads || []).includes(me.id)).map((n) => n.id);
+    if (!unread.length) return;
+    mutate((d) => ({
+      ...d,
+      notifications: d.notifications.map((x) => unread.includes(x.id)
+        ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) }
+        : x),
+    }), null);
+  }, [visible.length, me?.id, isAdmin]);
+
   const markRead = (n) => { if ((n.reads || []).includes(me.id)) return; mutate((d) => ({ ...d, notifications: d.notifications.map((x) => x.id === n.id ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) } : x) }), null); };
   const del = (n) => removeItem("notifications", n, { name: n.title, audit: `deleted notification "${n.title}"` });
   return (
@@ -13982,7 +13997,26 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
   const isStateHead = meRow.role === "state_head";
-  const go = (t) => { setTab(t); setSidebarOpen(false); };
+  const go = (t) => {
+    // Opening the APN notification center acknowledges every notification the
+    // partner can see. This clears the badge immediately instead of requiring
+    // a second action, and the same read state is persisted through mutate().
+    if (t === "notifications") {
+      const unread = (db.apn_notifications || [])
+        .filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id))
+        .map((n) => n.id);
+      if (unread.length) {
+        mutate((d) => ({
+          ...d,
+          apn_users: (d.apn_users || []).map((u) => u.id === pid
+            ? { ...u, notifReads: Array.from(new Set([...(u.notifReads || []), ...unread])) }
+            : u),
+        }), { action: "opened APN notifications", module: "APN", entity: "APN Notification", entityId: unread[0], partnerId: pid, metadata: { notificationIds: unread } });
+      }
+    }
+    setTab(t);
+    setSidebarOpen(false);
+  };
   const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id)).length;
   const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
   const withdrawalOpenCount = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid && ["pending", "under_review", "approved", "processing"].includes(row.status)).length;
