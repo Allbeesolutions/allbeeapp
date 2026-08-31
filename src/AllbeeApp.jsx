@@ -565,8 +565,18 @@ async function fetchAgreementData() {
 // timeout + one retry; a failing table degrades to an empty collection instead
 // of bricking the whole workspace. RLS still protects the data (an error simply
 // yields no rows); we only stop a transient failure from locking the app out.
-const TABLE_FETCH_TIMEOUT_MS = 15000;
-const TABLE_FETCH_CONCURRENCY = 8;
+// Startup is deliberately split into a small critical payload and a background
+// hydration pass. The old boot path waited for 70+ database reads before showing
+// the workspace; on mobile/slow networks that made the premium loader sit there
+// for 30+ seconds even though the shell itself was ready.
+const TABLE_FETCH_TIMEOUT_MS = 8000;
+const TABLE_FETCH_CONCURRENCY = 10;
+const BOOTSTRAP_TABLES = Object.freeze([
+  "transactions", "tasks", "attendance", "leave", "updates", "announcements",
+  "notifications", "chat", "projects", "clients", "invoices", "payroll"
+]);
+const BOOTSTRAP_TIMEOUT_MS = 4500;
+
 
 function pTimeout(promise, ms, label) {
   return Promise.race([
@@ -597,22 +607,34 @@ function buildQuery(tbl, columns, orderColumn) {
   return q;
 }
 
-async function loadTableRows(table, columns, orderColumn) {
-  for (let attempt = 0; attempt < 2; attempt++) {
+async function loadTableRows(table, columns, orderColumn, timeoutMs = TABLE_FETCH_TIMEOUT_MS, retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const { data, error } = await pTimeout(buildQuery(table, columns, orderColumn), TABLE_FETCH_TIMEOUT_MS, table);
+      const { data, error } = await pTimeout(buildQuery(table, columns, orderColumn), timeoutMs, table);
       if (error) {
-        if (attempt === 1) console.warn(`[ALLBEE] table "${table}" unavailable: ${error.message}`);
-        return [];
+        if (attempt === retries) console.warn(`[ALLBEE] table "${table}" unavailable: ${error.message}`);
+        continue;
       }
       return data || [];
     } catch (e) {
-      if (attempt === 0) continue; // one retry — a cold query often succeeds on the second try
-      console.warn(`[ALLBEE] table "${table}" failed to load: ${e.message}`);
-      return [];
+      if (attempt === retries) console.warn(`[ALLBEE] table "${table}" failed to load: ${e.message}`);
     }
   }
   return [];
+}
+
+async function fetchBootstrapData() {
+  const db = emptyDB();
+  const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
+    t, await loadTableRows(t, "id,data", undefined, BOOTSTRAP_TIMEOUT_MS, 0)
+  ]);
+  for (const [t, rows] of loaded) {
+    db[t] = (rows || [])
+      .map((r) => r.data)
+      .filter((x) => x && typeof x === "object")
+      .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
+  }
+  return db;
 }
 
 async function fetchAll() {
@@ -15866,6 +15888,31 @@ export default function App() {
     finally { setLoading(false); }
   }, []);
 
+  // Fast first paint: load only the collections needed by the common dashboard
+  // and then hydrate the rest without holding the user behind the loader.
+  const bootstrap = useCallback(async () => {
+    const started = performance.now();
+    try {
+      const initial = await fetchBootstrapData();
+      setDb(initial);
+      setLoading(false);
+      setSyncError(null);
+      // Full hydration is intentionally detached from the first paint. It fills
+      // APN/CRM/AI/referral/audit data after the shell is already interactive.
+      fetchAll().then((full) => {
+        setDb((current) => {
+          if (!current) return full;
+          return full;
+        });
+      }).catch((e) => setSyncError(e.message || String(e)));
+      console.info(`[ALLBEE] fast bootstrap ready in ${Math.round(performance.now() - started)}ms`);
+    } catch (e) {
+      setDb((current) => current || emptyDB());
+      setLoading(false);
+      setSyncError(e.message || String(e));
+    }
+  }, []);
+
   const markApnActionBadgeSeen = useCallback(async (actionType) => {
     if (!profile?.id || !APN_ACTION_BADGE_MAP.some((item) => item.actionType === actionType)) return;
     const seenAt = new Date().toISOString();
@@ -15902,7 +15949,7 @@ export default function App() {
   useEffect(() => {
     if (!session) { setDb(null); setLoading(false); return; }
     setLoading(true);
-    reload();
+    bootstrap();
     const ch = supabase.channel("allbee-db-sync");
     TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
     Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
@@ -15918,7 +15965,7 @@ export default function App() {
     });
     ch.subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [session, reload]);
+  }, [session, reload, bootstrap]);
 
   // If an admin changes my role or the modules I'm granted while I'm signed in,
   // my row-level access changes — so refetch everything under the new permissions
