@@ -12912,12 +12912,8 @@ function APNDocuments({ db }) {
 }
 
 /* ── notifications ───────────────────────────────────────────────────── */
-function APNNotifications({ db, meRow, pid, mutate }) {
+function APNNotifications({ db, meRow }) {
   const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  React.useEffect(() => {
-    const unread = list.filter((n) => !(meRow.notifReads || []).includes(n.id)).map((n) => n.id);
-    if (unread.length) mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, notifReads: [...(u.notifReads || []), ...unread] } : u) }), { action: "read APN notifications", module: "APN", entity: "APN Notification", entityId: unread[0], partnerId: pid, metadata: { notificationIds: unread } });
-  }, []); // eslint-disable-line
   return (
     <div>
       <div className="apn-section-h">Notifications</div>
@@ -13997,27 +13993,19 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
   const isStateHead = meRow.role === "state_head";
+  const markNotificationsSeen = useCallback(async () => {
+    const seenAt = new Date().toISOString();
+    const { error } = await supabase.rpc("mark_apn_action_badge_seen", { p_action_type: "notification_unread" });
+    if (error) { console.warn("[ALLBEE] notification read state could not be saved:", error.message); return; }
+    patchDb((d) => ({ ...d, apn_action_badge_reads: [...(d.apn_action_badge_reads || []).filter((r) => !(r.user_id === pid && r.action_type === "notification_unread")), { user_id: pid, action_type: "notification_unread", seen_at: seenAt, updated_at: seenAt }] }));
+  }, [pid, patchDb]);
+
   const go = (t) => {
-    // Opening the APN notification center acknowledges every notification the
-    // partner can see. This clears the badge immediately instead of requiring
-    // a second action, and the same read state is persisted through mutate().
-    if (t === "notifications") {
-      const unread = (db.apn_notifications || [])
-        .filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id))
-        .map((n) => n.id);
-      if (unread.length) {
-        mutate((d) => ({
-          ...d,
-          apn_users: (d.apn_users || []).map((u) => u.id === pid
-            ? { ...u, notifReads: Array.from(new Set([...(u.notifReads || []), ...unread])) }
-            : u),
-        }), { action: "opened APN notifications", module: "APN", entity: "APN Notification", entityId: unread[0], partnerId: pid, metadata: { notificationIds: unread } });
-      }
-    }
+    if (t === "notifications") markNotificationsSeen().catch(() => {});
     setTab(t);
     setSidebarOpen(false);
   };
-  const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && !(meRow.notifReads || []).includes(n.id)).length;
+  const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && apnActionRowTime(n) > apnActionReadTime(db, pid, "notification_unread")).length;
   const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
   const withdrawalOpenCount = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid && ["pending", "under_review", "approved", "processing"].includes(row.status)).length;
 
@@ -14036,7 +14024,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       case "agreements": return <APNAgreementCenter db={db} pid={pid} onRefresh={refreshPortal} />;
       case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
       case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
-      case "notifications": return <APNNotifications db={db} meRow={meRow} pid={pid} mutate={mutate} />;
+      case "notifications": return <APNNotifications db={db} meRow={meRow} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
       case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
