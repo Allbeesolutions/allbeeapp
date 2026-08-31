@@ -22,8 +22,8 @@
 //     receive the service-role key and never logs request bodies.
 //
 // Response shape is unchanged: { text } on success, { error } on failure.
-// The model is chosen here (GROQ_MODEL secret, default openai/gpt-oss-120b);
-// the app's "Model" setting is ignored, as before.
+// The production model is fixed here to openai/gpt-oss-120b so stale/unsupported GROQ_MODEL secrets cannot break the shared assistant.
+// The app's "Model" setting is ignored in secure function mode.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
     const key = Deno.env.get("GROQ_API_KEY");
     if (!key) return json({ error: "GROQ_API_KEY is not set on the function." }, 200);
 
-    const model = Deno.env.get("GROQ_MODEL") || "openai/gpt-oss-120b";
+    const model = "openai/gpt-oss-120b";
     const { system, chat, maxTokens } = sanitizePayload(await req.json().catch(() => ({})));
     if (chat.length === 0 && !system) return json({ error: "Empty request." }, 400);
 

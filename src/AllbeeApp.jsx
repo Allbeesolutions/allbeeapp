@@ -784,7 +784,8 @@ async function saveConfig(patch) {
      • mode "direct" (quick start / internal use): the browser calls the model
        API directly with a key stored in config. The key is visible to anyone
        who can open the app, so prefer the function for anything shared. */
-const AI_DEFAULT_MODEL = "claude-sonnet-4-5";
+const AI_RUNTIME_MODEL = "openai/gpt-oss-120b";
+const AI_DEFAULT_MODEL = AI_RUNTIME_MODEL;
 const AI_DEFAULT_ENDPOINT = "https://api.anthropic.com/v1/messages";
 function aiConfigOf(config) {
   let raw = {};
@@ -794,7 +795,7 @@ function aiConfigOf(config) {
     mode: raw.mode === "direct" ? "direct" : "function",
     functionName: (raw.functionName || "ai-chat").trim() || "ai-chat",
     endpoint: (raw.endpoint || AI_DEFAULT_ENDPOINT).trim() || AI_DEFAULT_ENDPOINT,
-    model: (raw.model || AI_DEFAULT_MODEL).trim() || AI_DEFAULT_MODEL,
+    model: raw.mode === "direct" ? ((raw.model || AI_DEFAULT_MODEL).trim() || AI_DEFAULT_MODEL) : AI_RUNTIME_MODEL,
     apiKey: raw.apiKey || "",
   };
 }
@@ -866,6 +867,39 @@ function scrubText(v) {
 }
 // A compact, bounded snapshot of the workspace so the assistant can answer
 // questions and draft quotations/replies grounded in real ALLBEE data.
+function renderAIInline(text, keyPrefix = "ai") {
+  const parts = String(text ?? "").split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((part, i) => {
+    if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={`${keyPrefix}-b-${i}`} style={{ color: "var(--ink)", fontWeight: 800 }}>{part.slice(2, -2)}</strong>;
+    if (/^`[^`]+`$/.test(part)) return <code key={`${keyPrefix}-c-${i}`} style={{ padding: "2px 5px", borderRadius: 5, background: "var(--primary-soft)", color: "var(--primary)", fontSize: "0.92em" }}>{part.slice(1, -1)}</code>;
+    return <React.Fragment key={`${keyPrefix}-t-${i}`}>{part}</React.Fragment>;
+  });
+}
+
+function renderAIText(text) {
+  const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+  const nodes = [];
+  let bullets = [];
+  let numbered = [];
+  const flushList = () => {
+    if (bullets.length) { nodes.push(<ul key={`ul-${nodes.length}`} style={{ margin: "6px 0 10px 20px", padding: 0 }}>{bullets.map((x, i) => <li key={i} style={{ margin: "4px 0" }}>{renderAIInline(x, `li-${nodes.length}-${i}`)}</li>)}</ul>); bullets = []; }
+    if (numbered.length) { nodes.push(<ol key={`ol-${nodes.length}`} style={{ margin: "6px 0 10px 20px", padding: 0 }}>{numbered.map((x, i) => <li key={i} style={{ margin: "4px 0" }}>{renderAIInline(x, `oli-${nodes.length}-${i}`)}</li>)}</ol>); numbered = []; }
+  };
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    if (!t) { flushList(); nodes.push(<div key={`sp-${i}`} style={{ height: 7 }} />); return; }
+    if (/^[-*]\s+/.test(t)) { numbered.length && flushList(); bullets.push(t.replace(/^[-*]\s+/, "")); return; }
+    if (/^\d+[.)]\s+/.test(t)) { bullets.length && flushList(); numbered.push(t.replace(/^\d+[.)]\s+/, "")); return; }
+    flushList();
+    const heading = t.match(/^(#{1,3})\s+(.+)/);
+    if (heading) { nodes.push(<div key={`h-${i}`} style={{ fontWeight: 800, fontSize: heading[1].length === 1 ? 17 : 15, margin: "9px 0 5px", color: "var(--ink)" }}>{renderAIInline(heading[2], `h-${i}`)}</div>); return; }
+    if (/^>\s?/.test(t)) { nodes.push(<div key={`q-${i}`} style={{ borderLeft: "3px solid var(--primary)", padding: "5px 10px", margin: "6px 0", background: "var(--primary-soft)", borderRadius: "0 7px 7px 0" }}>{renderAIInline(t.replace(/^>\s?/, ""), `q-${i}`)}</div>); return; }
+    nodes.push(<div key={`p-${i}`} style={{ margin: "3px 0" }}>{renderAIInline(t, `p-${i}`)}</div>);
+  });
+  flushList();
+  return nodes;
+}
+
 function buildAIContext(db, company) {
   const cap = (arr, n) => (Array.isArray(arr) ? arr.slice(-n).reverse() : []);
   const co = company || {};
@@ -919,6 +953,34 @@ function buildAIContext(db, company) {
   if (db.inhouse?.length) counts.push(`in-house projects ${db.inhouse.length}`);
   if (db.planned?.length) counts.push(`planned expenses ${db.planned.length}`);
   if (counts.length) L.push(`\nOTHER COUNTS: ${counts.join(" · ")}`);
+  const apn = cap(db.apn_users, 60);
+  if (apn.length) {
+    L.push(`\nAPN PARTNER NETWORK (${db.apn_users.length} total):`);
+    apn.forEach((a) => L.push(`- ${a.name || a.username || "Partner"} · ${a.apnId || a.apn_id || "—"} · ${a.level || "—"} · ${a.status || "—"}${a.district ? " · district " + a.district : ""}${a.state ? " · state " + a.state : ""}${a.commissionRate != null ? " · commission " + a.commissionRate + "%" : ""}`));
+  }
+  const tx = cap(db.transactions, 50);
+  if (tx.length) {
+    L.push(`\nFINANCE TRANSACTIONS (${db.transactions.length} total, newest first):`);
+    tx.forEach((x) => L.push(`- ${x.date || x.ts || "—"} · ${x.type || x.category || "transaction"} · ${x.description || x.client || "—"} · ${money(x.amount || x.value || 0)} · ${x.status || "—"}`));
+  }
+  const withdrawals = cap(db.withdrawals, 30);
+  if (withdrawals.length) {
+    L.push(`\nWITHDRAWALS (${db.withdrawals.length} total):`);
+    withdrawals.forEach((w) => L.push(`- ${w.userName || w.user || "—"} · ${money(w.amount || 0)} · ${w.status || "—"} · ${w.requestedAt || w.date || "—"}`));
+  }
+  const audit = cap(db.audit, 50);
+  if (audit.length) {
+    L.push(`\nRECENT AUDIT ACTIVITY (${db.audit.length} total):`);
+    audit.forEach((a) => L.push(`- ${a.ts ? new Date(a.ts).toLocaleString("en-IN") : "—"} · ${a.user || "System"} · ${a.module || "—"} · ${a.action || "—"} · ${scrubText(a.description || "")}`));
+  }
+  const genericModules = [
+    ["tasks", "Tasks"], ["attendance", "Attendance"], ["leave", "Leave"], ["updates", "Daily updates"],
+    ["team_chat", "Team chat"], ["projects", "Projects"], ["inhouse", "In-house projects"], ["marketing", "Marketing"],
+    ["students", "Course students"], ["class_students", "Class students"], ["concepts", "Ideas"], ["notifications", "Notifications"],
+    ["agreements", "Agreements"], ["materials", "Materials"], ["targets", "Targets"], ["rewards", "Rewards"],
+  ];
+  const moduleCounts = genericModules.filter(([k]) => Array.isArray(db[k])).map(([k, label]) => `${label}: ${db[k].length}`);
+  if (moduleCounts.length) L.push(`\nMODULE COUNTS: ${moduleCounts.join(" · ")}`);
   L.push(`\nNOTE: Client/lead phone numbers and emails in this snapshot are masked; free-text notes and item descriptions are scrubbed for contact details. Ask the user for a full contact when one is needed.`);
 
   let out = L.join("\n");
@@ -4812,6 +4874,7 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
     <div className="content">
       <div className="page-head">
         <h3><Sparkles size={18} style={{ verticalAlign: -3, marginRight: 6, color: "var(--primary)" }} />ALLBEE AI</h3>
+        <span className="tag" style={{ marginLeft: 8 }}>GPT-OSS 120B · Groq</span>
         <span className="spacer" />
         {messages.length > 0 && <button className="btn sm" onClick={() => { setMessages([]); setError(""); }}><RotateCcw size={13} />New chat</button>}
       </div>
@@ -4846,9 +4909,15 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
                     borderBottomRightRadius: m.role === "user" ? 4 : 14,
                     borderBottomLeftRadius: m.role === "user" ? 14 : 4,
                   }}>
-                    {m.content}
+                    {m.role === "assistant" ? renderAIText(m.content) : m.content}
                     {m.role === "assistant" && (
-                      <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        <span className="hint-line" style={{ fontSize: 11 }}>Quick follow-up</span>
+                        {["Explain this", "Make it a checklist", "Draft the reply"].map((q) => <button key={q} className="btn sm" onClick={() => send(`${q}: ${m.content.slice(0, 700)}`)} style={{ borderRadius: 999, padding: "3px 8px" }}>{q}</button>)}
+                      </div>
+                    )}
+                    {m.role === "assistant" && (
+                      <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end" }}>
                         <button className="btn sm" onClick={() => copy(m.content, i)} style={{ padding: "3px 8px" }}>
                           {copied === i ? <><Check size={12} />Copied</> : <><Copy size={12} />Copy</>}
                         </button>
@@ -4890,7 +4959,10 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
           </button>
         </div>
       </div>
-      <p className="hint-line" style={{ marginTop: 10, lineHeight: 1.5 }}>
+      <div className="hint-line" style={{ marginTop: 10, lineHeight: 1.5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span><b style={{ color: "var(--ink)" }}>Model:</b> OpenAI GPT-OSS 120B, served through Groq for fast responses. It uses a read-only live workspace snapshot plus the central pricing/knowledge catalog.</span>
+      </div>
+      <p className="hint-line" style={{ marginTop: 7, lineHeight: 1.5 }}>
         ALLBEE AI can make mistakes — double-check figures and client details before sending anything out. It reads a read-only snapshot of your workspace and doesn't change any records.
       </p>
     </div>
@@ -4947,8 +5019,8 @@ function AISettings({ config, saveAI }) {
         </>
       )}
 
-      <Field label="Model" hint="Set this to a model your API key can use. Change it if you get a model-not-found error.">
-        <input className="input mono" value={f.model} onChange={(e) => set("model", e.target.value)} placeholder={AI_DEFAULT_MODEL} />
+      <Field label="Model" hint={f.mode === "function" ? "Server-side model: OpenAI GPT-OSS 120B via Groq. The old client-side model setting is ignored in secure function mode." : "Set this to a model your API key can use."}>
+        <input className="input mono" value={f.mode === "function" ? AI_RUNTIME_MODEL : f.model} onChange={(e) => set("model", e.target.value)} readOnly={f.mode === "function"} />
       </Field>
 
       <button className="btn primary" onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}{done ? "Saved" : "Save AI settings"}</button>
