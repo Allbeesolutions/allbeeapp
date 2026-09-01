@@ -8,8 +8,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // Keep third-party code out of the application chunk. Use package
-          // boundaries that cannot form circular manual chunks.
+          // Split the two large, independently cacheable runtime packages.
+          // Keep React and the remaining dependency graph together to avoid
+          // circular manual chunks.
+          if (id.includes("node_modules/lucide-react")) return "vendor-icons";
+          if (id.includes("node_modules/@supabase")) return "vendor-supabase";
           if (id.includes("node_modules")) return "vendor";
         },
       },
