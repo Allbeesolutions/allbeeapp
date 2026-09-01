@@ -41,6 +41,7 @@ const LazyAPNLeads = React.lazy(() => import("./APNLeads.jsx"));
 const LazyAPNLeadForm = React.lazy(() => import("./APNLeadForm.jsx"));
 const LazyAPNWithdrawalCenter = React.lazy(() => import("./APNWithdrawalCenter.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
+const LazyLock = React.lazy(() => import("./Lock.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -11771,7 +11772,7 @@ export default function App() {
 
   if (publicProposalToken) return gateChild(<ProposalPortal token={publicProposalToken} isDark={isDark} />);
   if (session === undefined) return <LoadingScreen isDark={isDark} />;
-  if (!session) return gateChild(<Lock isDark={isDark} setDark={setIsDark} />);
+  if (!session) return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyLock isDark={isDark} setDark={setIsDark} runtime={{ supabase, useUsernameAvailability, useEmailAvailability, emitToast, FounderTap, ToastHost, SearchableSelect, PasswordField, LoginAccessAssistant, LOGO_FULL, TN_DISTRICTS, USERS, avatarColor, Users, Building2, GaugeCircle, ArrowLeft, AlertTriangle, Check, RefreshCw, LogIn, Mail, Sun, Moon }} /></React.Suspense>);
   if (passwordRecovery) return gateChild(<PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />);
   if (profile === undefined) return <LoadingScreen isDark={isDark} note="Signing you in…" />;
   if (profile && profile.active === false && role !== "partner")
