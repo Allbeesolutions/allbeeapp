@@ -11257,46 +11257,7 @@ function APNTrainingForm({ initial, onSave, onClose }) {
     </Modal>
   );
 }
-function APNQuizForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || { category: "website", title: "", passPct: 60, questions: [{ id: uid(), q: "", options: ["", "", "", ""], answer: 0 }] });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const setQ = (qi, patch) => setF((s) => ({ ...s, questions: s.questions.map((q, i) => i === qi ? { ...q, ...patch } : q) }));
-  const setOpt = (qi, oi, v) => setF((s) => ({ ...s, questions: s.questions.map((q, i) => i === qi ? { ...q, options: q.options.map((o, j) => j === oi ? v : o) } : q) }));
-  const addQ = () => setF((s) => ({ ...s, questions: [...s.questions, { id: uid(), q: "", options: ["", "", "", ""], answer: 0 }] }));
-  const rmQ = (qi) => setF((s) => ({ ...s, questions: s.questions.filter((_, i) => i !== qi) }));
-  const save = () => {
-    const questions = f.questions.filter((q) => q.q.trim() && q.options.filter((o) => o.trim()).length >= 2);
-    if (!f.title.trim() || !questions.length) return;
-    onSave({ ...initial, id: initial?.id || uid(), category: f.category, title: f.title.trim(), passPct: Number(f.passPct) || 60, questions, createdAt: initial?.createdAt || Date.now() });
-    onClose();
-  };
-  return (
-    <Modal title={initial?.id ? "Edit quiz" : "Create quiz"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save quiz</button></>}>
-      <div className="grid2">
-        <Field label="Category" hint="Passing unlocks this category's leads."><select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-        <Field label="Pass %"><input className="input mono" type="number" min="1" max="100" value={f.passPct} onChange={(e) => set("passPct", e.target.value)} /></Field>
-      </div>
-      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Website sales quiz" /></Field>
-      {f.questions.map((q, qi) => (
-        <div key={q.id} className="bug-card">
-          <div style={{ display: "flex", gap: 8 }}>
-            <input className="input" value={q.q} onChange={(e) => setQ(qi, { q: e.target.value })} placeholder={`Question ${qi + 1}`} style={{ flex: 1 }} />
-            {f.questions.length > 1 && <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmQ(qi)}><X size={14} /></button>}
-          </div>
-          {q.options.map((o, oi) => (
-            <div key={oi} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="radio" checked={q.answer === oi} onChange={() => setQ(qi, { answer: oi })} title="Correct answer" />
-              <input className="input" value={o} onChange={(e) => setOpt(qi, oi, e.target.value)} placeholder={`Option ${oi + 1}`} style={{ flex: 1 }} />
-            </div>
-          ))}
-          <div className="hint-line" style={{ fontSize: 11 }}>Select the radio next to the correct answer.</div>
-        </div>
-      ))}
-      <button className="btn" onClick={addQ}><Plus size={15} />Add question</button>
-    </Modal>
-  );
-}
+
 function APNDocForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || { title: "", category: "Sales script", url: "", notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
