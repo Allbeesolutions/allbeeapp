@@ -65,6 +65,7 @@ const LazyPlannedForm = React.lazy(() => import("./PlannedForm.jsx"));
 const LazyPromptForm = React.lazy(() => import("./PromptForm.jsx"));
 const LazyKbForm = React.lazy(() => import("./KbForm.jsx"));
 const LazyWithdrawForm = React.lazy(() => import("./WithdrawForm.jsx"));
+const LazyLeadForm = React.lazy(() => import("./LeadForm.jsx"));
 const LazyLeaveForm = React.lazy(() => import("./LeaveForm.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
@@ -4459,40 +4460,6 @@ function NamePicker({ isDark, onChoose }) {
 /* ══════════════════════════════════════════════════════════════════════
    PHASE 2–6 — FORMS
 ══════════════════════════════════════════════════════════════════════ */
-function LeadForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || { name: "", company: "", phone: "", email: "", source: "Referral", referredBy: "", leadOwner: "", service: "Website", stage: "New", value: "", notes: "" });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const save = () => {
-    if (!f.name.trim()) { setErr("Add the lead's name."); return; }
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), name: f.name.trim(), value: Number(f.value) || 0 });
-  };
-  return (
-    <Modal title={f.id ? "Edit lead" : "New lead"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save lead</button></>}>
-      <Field label="Name" required error={err}><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Person or business" /></Field>
-      <div className="grid2">
-        <Field label="Phone"><input className="input" value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+91 …" /></Field>
-        <Field label="Email"><input className="input" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email" /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="Source"><SelectOther value={f.source} onChange={(v) => set("source", v)} options={LEAD_SOURCES.filter((s) => s !== "Other")} placeholder="e.g. Ajis, Saranya…" /></Field>
-        <Field label="Stage"><select className="select" value={f.stage} onChange={(e) => set("stage", e.target.value)}>{LEAD_STAGES.map((s) => <option key={s}>{s}</option>)}</select></Field>
-      </div>
-      <div className="grid2">
-        <Field label="Company"><input className="input" value={f.company || ""} onChange={(e) => set("company", e.target.value)} placeholder="Business name" /></Field>
-        <Field label="Service interested"><SelectOther value={f.service || "Website"} onChange={(v) => set("service", v)} options={LEAD_SERVICES.filter((x) => x !== "Other")} placeholder="Custom service…" /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="Referred by"><input className="input" value={f.referredBy || ""} onChange={(e) => set("referredBy", e.target.value)} placeholder="Who referred them?" /></Field>
-        <Field label="Lead owner"><input className="input" value={f.leadOwner || ""} onChange={(e) => set("leadOwner", e.target.value)} placeholder="Who owns this lead?" /></Field>
-      </div>
-      <Field label="Estimated value (₹)"><input className="input" type="number" value={f.value} onChange={(e) => set("value", e.target.value)} placeholder="0" /></Field>
-      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="What do they need?" /></Field>
-    </Modal>
-  );
-}
-
 // Shared prompt library — a place to keep the prompts the team reuses and copy
 // them in one tap. Backed by the `prompts` table (run allbee-prompts.sql once).
 function Prompts({ db, openModal, removeItem }) {
@@ -10452,7 +10419,7 @@ export default function App() {
         {modal?.type === "classStudent" && <React.Suspense fallback={<LoadingScreen />}><LazyClassStudentForm initial={modal.initial} onSave={saveClassStudent} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO, CLASS_COURSES, CLASS_MODES }} /></React.Suspense>}
         {modal?.type === "marketing" && <React.Suspense fallback={<LoadingScreen />}><LazyMarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
         {modal?.type === "concept" && <React.Suspense fallback={<LoadingScreen />}><LazyConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
-        {modal?.type === "lead" && <LeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "lead" && <React.Suspense fallback={<LoadingScreen />}><LazyLeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, SelectOther, Check, uid, LEAD_SOURCES, LEAD_STAGES, LEAD_SERVICES }} /></React.Suspense>}
         {modal?.type === "client" && <React.Suspense fallback={<LoadingScreen />}><LazyClientForm initial={modal.initial} existing={db.clients} onSave={(x) => { saveOwned("clients", x); }} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
         {modal?.type === "quotation" && <React.Suspense fallback={<LoadingScreen />}><LazyQuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, X, Plus, RefreshCw, Upload, uid, round2, money, uploadAttachment, QUOTE_STATUS }} /></React.Suspense>}
         {modal?.type === "invoice" && <React.Suspense fallback={<LoadingScreen />}><LazyInvoiceForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("invoices", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO, INVOICE_STATUS }} /></React.Suspense>}
