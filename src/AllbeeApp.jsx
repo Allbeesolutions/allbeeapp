@@ -53,6 +53,7 @@ const LazyDocForm = React.lazy(() => import("./DocForm.jsx"));
 const LazyInvoiceForm = React.lazy(() => import("./InvoiceForm.jsx"));
 const LazyAnnouncementForm = React.lazy(() => import("./AnnouncementForm.jsx"));
 const LazyPortalPostForm = React.lazy(() => import("./PortalPostForm.jsx"));
+const LazyRewardForm = React.lazy(() => import("./RewardForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -5227,33 +5228,6 @@ function SelectOther({ value, onChange, options, placeholder = "Type here…" })
       </select>
       {custom && <input className="input" style={{ marginTop: 8 }} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoFocus />}
     </>
-  );
-}
-
-function RewardForm({ initial, onSave, onClose, team }) {
-  const staff = (team || []).filter((p) => ["staff", "intern", "admin", "accountant"].includes(p.role));
-  const [f, setF] = useState(initial || { userId: staff[0]?.id || "", kind: "Star performer", points: 10, note: "", date: todayISO() });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const save = () => {
-    if (!f.userId) { setErr("Pick a team member."); return; }
-    const person = staff.find((p) => p.id === f.userId);
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), userName: person?.name || "", points: Number(f.points) || 0 });
-  };
-  return (
-    <Modal title={f.id ? "Edit recognition" : "Give recognition"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Award size={15} />Award</button></>}>
-      <Field label="To" required error={err}>
-        <select className="select" value={f.userId} onChange={(e) => set("userId", e.target.value)}>
-          {staff.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </Field>
-      <div className="grid2">
-        <Field label="For"><SelectOther value={f.kind} onChange={(v) => set("kind", v)} options={REWARD_KINDS} placeholder="Custom recognition…" /></Field>
-        <Field label="Points"><input className="input" type="number" value={f.points} onChange={(e) => set("points", e.target.value)} /></Field>
-      </div>
-      <Field label="Note"><textarea className="textarea" value={f.note} onChange={(e) => set("note", e.target.value)} placeholder="What did they do well?" /></Field>
-    </Modal>
   );
 }
 
@@ -11246,7 +11220,7 @@ export default function App() {
         {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
         {modal?.type === "prompt" && <PromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} />}
         {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "reward" && <RewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "reward" && <React.Suspense fallback={<LoadingScreen />}><LazyRewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Award, Check, uid, todayISO, REWARD_KINDS }} /></React.Suspense>}
         {modal?.type === "notification" && <React.Suspense fallback={<LoadingScreen />}><LazyNotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SearchableSelect, Bell, uid, NOTIF_LEVELS, NOTIF_AUDIENCES, ROLE_LABEL }} /></React.Suspense>}
         {modal?.type === "announcement" && <React.Suspense fallback={<LoadingScreen />}><LazyAnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, MegaphoneIcon, uid }} /></React.Suspense>}
         {modal?.type === "portalPost" && <React.Suspense fallback={<LoadingScreen />}><LazyPortalPostForm initial={modal.initial} portalClients={portalClients} onSave={(x) => saveOwned("portal_posts", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Send, RefreshCw, Upload, uid, uploadAttachment }} /></React.Suspense>}
