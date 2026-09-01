@@ -462,6 +462,8 @@ const REFERRAL_READS = {
   apn_referral_activities: "id,partner_id,actor_id,event_type,title,description,metadata,created_at",
   apn_referral_monthly_summary: "partner_id,month_start,referral_count,active_count,revenue,earnings,updated_at",
   apn_referral_analytics_monthly: "partner_id,month_start,conversion_rate,referral_count,active_count,revenue,earnings,updated_at",
+  apn_referral_settings: "id,enabled,default_percent,updated_at,updated_by",
+  apn_referral_snapshots: "id,earning_id,referral_percent,settings_enabled,captured_at,snapshot",
 };
 
 // APN admin action badges use a per-user watermark. The source records remain
@@ -499,11 +501,13 @@ const WITHDRAWAL_READS = {
 const CRM_READS = {
   crm_clients: "id,client_key,customer_name,company,mobile,email,location,address,city,district,state,country,pincode,business_type,notes,created_by,created_at,updated_at",
   crm_leads: "id,lead_number,source,lead_owner_id,assigned_employee_id,assigned_partner_id,assigned_district_head_id,assigned_state_head_id,company,customer_name,mobile,email,location,address,city,district,state,country,pincode,business_type,project_category,expected_budget,expected_closing_date,priority,lead_score,status,remarks,tags,created_by,created_at,updated_at,converted_at,client_id,quotation_id,project_id",
+  crm_lead_assignments: "id,lead_id,employee_id,partner_id,district_head_id,state_head_id,assigned_by,created_at",
   crm_follow_ups: "id,lead_id,follow_up_date,follow_up_time,reminder_at,priority,notes,outcome,next_follow_up,completed_by,completed_at,status,created_by,created_at,updated_at",
   crm_quotations: "id,quote_number,lead_id,client_id,service_type,title,items,subtotal,discount,tax,gst,grand_total,validity_until,status,version,approval_status,approved_by,approved_at,created_by,created_at,updated_at",
   crm_quotation_versions: "id,quotation_id,version,snapshot,created_by,created_at",
   crm_projects: "id,project_number,lead_id,quotation_id,client_id,name,service_type,project_value,status,assigned_employee_id,assigned_partner_id,apn_project_id,created_by,created_at,updated_at",
   crm_revenue_collections: "id,project_id,received_amount,received_at,commission_generated,incentive,status,remarks,created_by,created_at",
+  crm_project_milestones: "id,project_id,proposal_id,name,sort_order,due_date,percentage,status,created_at",
   crm_activities: "id,lead_id,project_id,event_type,title,description,actor_id,actor_name,metadata,created_at",
   crm_files: "id,lead_id,project_id,quotation_id,file_name,file_url,file_type,file_size,uploaded_by,created_at",
   crm_reminders: "id,lead_id,reminder_day,due_at,priority,status,created_at",
