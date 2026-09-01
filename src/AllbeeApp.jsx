@@ -16617,6 +16617,29 @@ export default function App() {
   // Every mutation gets one standardized activity event. Explicit audit
   // descriptions remain authoritative; older paths without one receive a
   // backward-compatible event derived from the changed collection.
+  const persistQueueRef = useRef(Promise.resolve());
+  const persistNeedsRebaseRef = useRef(false);
+  const enqueuePersist = useCallback((prev, next) => {
+    const job = persistQueueRef.current.catch(() => {}).then(async () => {
+      // If the preceding write failed, its optimistic state may not exist in
+      // the database. Rebase this queued mutation against the latest committed
+      // snapshot so a later save cannot accidentally preserve the stale gap.
+      let base = prev;
+      if (persistNeedsRebaseRef.current) {
+        base = await fetchAll();
+        persistNeedsRebaseRef.current = false;
+      }
+      try {
+        await persistWithRetry(base, next);
+      } catch (e) {
+        persistNeedsRebaseRef.current = true;
+        throw e;
+      }
+    });
+    persistQueueRef.current = job.catch(() => {});
+    return job;
+  }, []);
+
   const mutate = useCallback((updater, audit) => {
     setDb((prev) => {
       if (!prev) return prev;
@@ -16627,10 +16650,10 @@ export default function App() {
         const event = activityEntry({ id: uid(), ts: Date.now(), ...supplied }, { user: currentUser || "—", userId: me.id, avatar: profile?.photo_url });
         next = { ...next, audit: [...(next.audit || []), event] };
       }
-      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
+      enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
       return next;
     });
-  }, [currentUser, me.id, profile?.photo_url]);
+  }, [currentUser, me.id, profile?.photo_url, enqueuePersist]);
 
   const patchDb = useCallback((updater) => { setDb((prev) => (prev ? updater(prev) : prev)); }, []);
 
@@ -16684,10 +16707,10 @@ export default function App() {
       const keep = prev.recycle.filter((r) => (r.deletedAt || 0) >= cutoff);
       if (keep.length === prev.recycle.length) return prev;
       const next = { ...prev, recycle: keep };
-      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
+      enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
       return next;
     });
-  }, []);
+  }, [enqueuePersist]);
 
   // Retention: drop testing screenshots older than 30 days (references + the
   // underlying storage objects) so QA images don't grow storage forever. Runs
@@ -16716,10 +16739,10 @@ export default function App() {
       if (!changed) return prev;
       if (toRemove.length) { try { supabase.storage.from("attachments").remove(toRemove); } catch { /* best effort */ } }
       const next = { ...prev, testing };
-      persistWithRetry(prev, next).catch((e) => setSyncError(e.message || String(e)));
+      enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
       return next;
     });
-  }, []);
+  }, [enqueuePersist]);
 
   useEffect(() => {
     if (isAdmin && !loading && db && !purgedRef.current) { purgedRef.current = true; purgeExpired(); purgeTestImages(); }
