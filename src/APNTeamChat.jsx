@@ -154,7 +154,7 @@ export default function APNTeamChat(props) {
         setConversations([]); setRequests([]); setFriends([]); setContacts([]);
       } else { setErr(e.message || String(e)); }
     } finally { if (showLoading && mountedRef.current) setLoading(false); }
-  }, []);
+  }, [pid]);
 
   const loadMessages = useCallback(async (conv, { open = true } = {}) => {
     // Opening a conversation may clear the old thread while it loads. Refreshing
@@ -177,7 +177,7 @@ export default function APNTeamChat(props) {
     } catch (e) {
       if (mountedRef.current) setErr(e.message || String(e));
     }
-  }, []);
+  }, [pid]);
 
   const openConversation = useCallback(async (conv) => {
     await loadMessages(conv);
@@ -223,7 +223,7 @@ export default function APNTeamChat(props) {
       queued = false;
       supabase.removeChannel(ch);
     };
-  }, [isOpen, loadConversations, loadMessages]);
+  }, [isOpen, pid, loadConversations, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
     setErr("");
