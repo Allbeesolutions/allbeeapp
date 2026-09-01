@@ -56,6 +56,7 @@ const LazyPortalPostForm = React.lazy(() => import("./PortalPostForm.jsx"));
 const LazyRewardForm = React.lazy(() => import("./RewardForm.jsx"));
 const LazyInHouseForm = React.lazy(() => import("./InHouseForm.jsx"));
 const LazyTeamConfigForm = React.lazy(() => import("./TeamConfigForm.jsx"));
+const LazyProjectForm = React.lazy(() => import("./ProjectForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -1848,32 +1849,6 @@ function WithdrawForm({ balances, defaultUser, onSave, onClose }) {
         <div className="hint-line">Balance after withdrawal: <b className="mono">{money(after)}</b></div>
       )}
       <Field label="Notes"><textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason / reference" /></Field>
-    </Modal>
-  );
-}
-
-function ProjectForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(() => ({ client: "", name: "", type: "Website", cost: "", start: todayISO(), expected: "", stage: "Lead", notes: "", ...initial }));
-  const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.name.trim().length > 0;
-  const save = () => { if (!valid) return; onSave({ ...initial, id: initial?.id || uid(), client: f.client.trim(), name: f.name.trim(), type: f.type, cost: Number(f.cost) || 0, start: f.start, expected: f.expected, stage: f.stage, notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now() }); onClose(); };
-  return (
-    <Modal title={initial?.id ? "Edit project" : "New project"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />Save project</button></>}>
-      <div className="grid2">
-        <Field label="Project name" required><input className="input" value={f.name} onChange={(e) => up("name", e.target.value)} placeholder="E-commerce site" /></Field>
-        <Field label="Client name"><input className="input" value={f.client} onChange={(e) => up("client", e.target.value)} /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="Project type"><SelectOther value={f.type} onChange={(v) => up("type", v)} options={["Website", "Mobile App", "Software"]} placeholder="Custom type…" /></Field>
-        <Field label="Cost"><input className="input mono" type="number" min="0" value={f.cost} onChange={(e) => up("cost", e.target.value)} placeholder="50000" /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="Start date"><input className="input" type="date" value={f.start} onChange={(e) => up("start", e.target.value)} /></Field>
-        <Field label="Expected completion"><input className="input" type="date" value={f.expected} onChange={(e) => up("expected", e.target.value)} /></Field>
-      </div>
-      <Field label="Stage"><select className="select" value={f.stage} onChange={(e) => up("stage", e.target.value)}>{PROJECT_STAGES.map((s) => <option key={s}>{s}</option>)}</select></Field>
-      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => up("notes", e.target.value)} /></Field>
     </Modal>
   );
 }
@@ -11127,7 +11102,7 @@ export default function App() {
         {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
         {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
         {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
-        {modal?.type === "project" && <ProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} />}
+        {modal?.type === "project" && <React.Suspense fallback={<LoadingScreen />}><LazyProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, todayISO, PROJECT_STAGES }} /></React.Suspense>}
         {modal?.type === "inhouse" && <React.Suspense fallback={<LoadingScreen />}><LazyInHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, todayISO, INHOUSE_CATEGORIES, PRIORITIES, INHOUSE_STAGES, ExternalLink }} /></React.Suspense>}
         {modal?.type === "testSession" && <React.Suspense fallback={<LoadingScreen />}><LazyTestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid }} /></React.Suspense>}
         {modal?.type === "teamcfg" && <React.Suspense fallback={<LoadingScreen />}><LazyTeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, AlertTriangle, Avatar, uid, ROLE_LABEL }} /></React.Suspense>}
