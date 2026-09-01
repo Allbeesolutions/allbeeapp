@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
+import { createRealtimeReconnect } from "./realtimeReconnect.js";
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -16730,6 +16731,7 @@ export default function App() {
         });
       }, 150);
     };
+    let realtime = null;
     const ch = supabase.channel("allbee-db-sync");
     TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
     Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
@@ -16743,8 +16745,25 @@ export default function App() {
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
       fetchAuditRows().then((audit) => setDb((prev) => prev ? { ...prev, audit } : prev)).catch((e) => setSyncError(e.message || String(e)));
     });
-    ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
+    ch.on("system", { event: "*" }, () => {});
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") { scheduleReload(); return; }
+      if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status) && !realtime) {
+        // Supabase's own realtime client normally reconnects. A bounded explicit
+        // resubscribe is used only when the channel lifecycle definitively fails,
+        // and the old channel is removed before creating a replacement.
+        realtime = createRealtimeReconnect({
+          createChannel: () => {
+            const replacement = supabase.channel(`allbee-db-sync-retry:${Date.now()}`);
+            TABLES.filter((t) => t !== "audit").forEach((t) => replacement.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+            return { unsubscribe: () => supabase.removeChannel(replacement), replacement };
+          },
+          onReconnect: () => scheduleReload(),
+          onError: (e) => console.warn("[ALLBEE] realtime reconnect:", e),
+        });
+      }
+    });
+    return () => { if (realtime) realtime.stop(); supabase.removeChannel(ch); };
   }, [session, reload, bootstrap]);
 
   // If an admin changes my role or the modules I'm granted while I'm signed in,
