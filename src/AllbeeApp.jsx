@@ -68,6 +68,7 @@ const LazyWithdrawForm = React.lazy(() => import("./WithdrawForm.jsx"));
 const LazyLeadForm = React.lazy(() => import("./LeadForm.jsx"));
 const LazyLeaveForm = React.lazy(() => import("./LeaveForm.jsx"));
 const LazyResignForm = React.lazy(() => import("./ResignForm.jsx"));
+const LazyIncentiveForm = React.lazy(() => import("./IncentiveForm.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -5415,29 +5416,6 @@ function InHouse({ db, mutate, openModal, removeItem, isAdmin, me, team = [] }) 
 }
 
 /* ── Staff salary (admin) ──────────────────────────────────────────────── */
-function IncentiveForm({ person, onAdd, onClose }) {
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [date, setDate] = useState(todayISO());
-  const [err, setErr] = useState("");
-  const save = () => {
-    const amt = Number(amount) || 0;
-    if (amt <= 0) { setErr("Enter an amount greater than zero."); return; }
-    onAdd({ id: uid(), amount: round2(amt), note: note.trim(), date, createdAt: Date.now() });
-  };
-  return (
-    <Modal title={`Add incentive — ${person.name}`} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Plus size={15} />Add incentive</button></>}>
-      <div className="banner" style={{ margin: "0 0 12px" }}><Gift size={15} /> A one-off bonus — a festival bonus, a spot reward, a performance incentive. It's added to what this person has earned to date.</div>
-      <div className="grid2">
-        <Field label="Amount" required error={err}><input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 5000" autoFocus /></Field>
-        <Field label="Date"><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      </div>
-      <Field label="Reason (optional)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Diwali bonus, top performer" /></Field>
-    </Modal>
-  );
-}
-
 function SalaryRow({ person, db, payroll, onSave }) {
   const cfg = payrollFor(payroll, person.id);
   const [fixed, setFixed] = useState(cfg?.fixedMonthly != null ? String(cfg.fixedMonthly) : "");
@@ -5490,7 +5468,7 @@ function SalaryRow({ person, db, payroll, onSave }) {
         {saved && <span className="hint-line" style={{ color: "var(--pos)" }}><Check size={13} style={{ verticalAlign: -2 }} /> Saved</span>}
         {!E.configured && !dirty && <span className="hint-line">No pay set yet</span>}
       </div>
-      {adding && <IncentiveForm person={person} onAdd={addIncentive} onClose={() => setAdding(false)} />}
+      {adding && <React.Suspense fallback={<LoadingScreen />}><LazyIncentiveForm person={person} onAdd={addIncentive} onClose={() => setAdding(false)} runtime={{ useState, Modal, Field, Gift, Plus, todayISO, uid, round2 }} /></React.Suspense>}
     </div>
   );
 }
