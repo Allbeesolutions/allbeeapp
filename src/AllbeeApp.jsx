@@ -14,6 +14,33 @@ import {
 import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 
+export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
+  let timer = null;
+  let disposed = false;
+  const run = () => {
+    if (disposed || timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      if (!disposed) refresh?.().catch?.(() => {});
+    }, 250);
+  };
+  const online = () => { onOnline?.(); run(); };
+  const offline = () => { onOffline?.(); };
+  if (typeof window !== "undefined") {
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+  }
+  return () => {
+    disposed = true;
+    if (timer) clearTimeout(timer);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    }
+  };
+}
+
+
 /* ──────────────────────────────────────────────────────────────────────────
    ALLBEE — Business management app for Haji & Alim (ALLBEE SOLUTIONS)
    React app backed by Supabase: email/password auth, a shared Postgres
@@ -16596,6 +16623,23 @@ export default function App() {
       if (generation === reloadGenerationRef.current) setLoading(false);
     }
   }, []);
+
+  // Recover after network restoration / laptop wake without forcing a full
+  // remount. The existing reload generation + queue provide the race safety.
+  useEffect(() => {
+    if (!session) return undefined;
+    const cleanup = createConnectivityRecovery({
+      onOnline: () => setSyncError(null),
+      onOffline: () => setSyncError("You are offline. Changes will retry when the connection returns."),
+      refresh: () => reload(),
+    });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && navigator.onLine !== false) reload().catch(() => {});
+    };
+    window.addEventListener("visibilitychange", onVisibility);
+    return () => { cleanup(); window.removeEventListener("visibilitychange", onVisibility); };
+  }, [session, reload]);
+
 
   // Fast first paint: load only the collections needed by the common dashboard
   // and then hydrate the rest without holding the user behind the loader.
