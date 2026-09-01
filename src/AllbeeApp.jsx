@@ -64,6 +64,7 @@ const LazyVaultForm = React.lazy(() => import("./VaultForm.jsx"));
 const LazyPlannedForm = React.lazy(() => import("./PlannedForm.jsx"));
 const LazyPromptForm = React.lazy(() => import("./PromptForm.jsx"));
 const LazyKbForm = React.lazy(() => import("./KbForm.jsx"));
+const LazyWithdrawForm = React.lazy(() => import("./WithdrawForm.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -1821,49 +1822,6 @@ function Avatar({ name, url, size = 26, fontSize, style }) {
 /* ══════════════════════════════════════════════════════════════════════
    FORMS
 ══════════════════════════════════════════════════════════════════════ */
-function WithdrawForm({ balances, defaultUser, onSave, onClose }) {
-  const [user, setUser] = useState(defaultUser || "Haji");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(todayISO());
-  const [notes, setNotes] = useState("");
-  const [touched, setTouched] = useState(false);
-
-  const avail = balances[user] || 0;
-  const amt = Number(amount) || 0;
-  const over = amt > avail;
-  const valid = amt > 0 && !over;
-  const after = round2(avail - amt);
-
-  const save = () => {
-    setTouched(true);
-    if (!valid) return;
-    onSave({ id: uid(), user, amount: amt, date, notes: notes.trim(), createdAt: Date.now() });
-    onClose();
-  };
-  return (
-    <Modal title="Record withdrawal" onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />Withdraw</button></>}>
-      <Field label="Who is withdrawing" required>
-        <div className="seg">{USERS.map((u) => <button key={u} className={user === u ? "on" : ""} onClick={() => setUser(u)}>{u}</button>)}</div>
-      </Field>
-      <div className="calc-box"><div className="calc-row"><span style={{ color: "var(--muted)" }}>{user}'s available balance</span>
-        <span className="mono" style={{ fontWeight: 700 }}>{money(avail)}</span></div></div>
-      <div className="grid2">
-        <Field label="Amount" required error={touched && amt <= 0 ? "Enter an amount" : over ? `Can't exceed available balance (${money(avail)})` : ""}>
-          <input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="500" />
-        </Field>
-        <Field label="Date" required><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      </div>
-      {amt > 0 && !over && (
-        <div className="hint-line">Balance after withdrawal: <b className="mono">{money(after)}</b></div>
-      )}
-      <Field label="Notes"><textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason / reference" /></Field>
-    </Modal>
-  );
-}
-
-
 
 /* ══════════════════════════════════════════════════════════════════════
    PAGES
@@ -10507,7 +10465,7 @@ export default function App() {
         {/* MODALS */}
         {modal?.type === "income" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
         {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
-        {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
+        {modal?.type === "withdraw" && <React.Suspense fallback={<LoadingScreen />}><LazyWithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, USERS, todayISO, round2, uid, money }} /></React.Suspense>}
         {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
         {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
         {modal?.type === "project" && <React.Suspense fallback={<LoadingScreen />}><LazyProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, todayISO, PROJECT_STAGES }} /></React.Suspense>}
