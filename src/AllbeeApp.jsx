@@ -65,6 +65,7 @@ const LazyPlannedForm = React.lazy(() => import("./PlannedForm.jsx"));
 const LazyPromptForm = React.lazy(() => import("./PromptForm.jsx"));
 const LazyKbForm = React.lazy(() => import("./KbForm.jsx"));
 const LazyWithdrawForm = React.lazy(() => import("./WithdrawForm.jsx"));
+const LazyLeaveForm = React.lazy(() => import("./LeaveForm.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -3172,31 +3173,6 @@ function AttendanceEditModal({ member, record, date, onSave, onClear, onClose })
         <Field label="Check in" required><input className="input" type="time" value={inT} onChange={(e) => setInT(e.target.value)} /></Field>
         <Field label="Check out"><input className="input" type="time" value={outT} onChange={(e) => setOutT(e.target.value)} /></Field>
       </div>
-    </Modal>
-  );
-}
-
-function LeaveForm({ initial, me, onSave, onClose }) {
-  const [f, setF] = useState(() => ({ type: "Casual", fromDate: todayISO(), toDate: todayISO(), reason: "", ...initial }));
-  const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const days = daysBetween(f.fromDate, f.toDate);
-  const valid = f.fromDate && f.toDate && f.toDate >= f.fromDate && f.reason.trim().length > 0 && (f.type !== "Other" || (f.customType || "").trim().length > 0);
-  const save = () => {
-    if (!valid) return;
-    onSave({ ...initial, id: initial?.id || uid(), userId: me.id, userName: me.name, type: f.type === "Other" ? ((f.customType || "").trim() || "Other") : f.type, fromDate: f.fromDate, toDate: f.toDate, days, reason: f.reason.trim(), status: initial?.status || "Pending", createdAt: initial?.createdAt || Date.now() });
-    onClose();
-  };
-  return (
-    <Modal title={initial?.id ? "Edit leave request" : "Request leave"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />Submit request</button></>}>
-      <Field label="Leave type"><SelectOther value={f.type} onChange={(v) => up("type", v)} options={LEAVE_TYPES.filter((t) => t !== "Other")} placeholder="Other reason…" /></Field>
-      {f.type === "Other" && <Field label="Specify type" required><input className="input" value={f.customType || ""} onChange={(e) => up("customType", e.target.value)} placeholder="e.g. Bereavement" /></Field>}
-      <div className="grid2">
-        <Field label="From" required><input className="input" type="date" value={f.fromDate} onChange={(e) => up("fromDate", e.target.value)} /></Field>
-        <Field label="To" required><input className="input" type="date" value={f.toDate} min={f.fromDate} onChange={(e) => up("toDate", e.target.value)} /></Field>
-      </div>
-      <div className="hint-line" style={{ marginBottom: 12 }}>{days > 0 ? `${days} day${days > 1 ? "s" : ""}` : "Pick valid dates"}{f.toDate < f.fromDate ? " · end date is before start" : ""}</div>
-      <Field label="Reason" required><textarea className="textarea" value={f.reason} onChange={(e) => up("reason", e.target.value)} placeholder="Briefly, why you need this leave." /></Field>
     </Modal>
   );
 }
@@ -10467,7 +10443,7 @@ export default function App() {
         {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
         {modal?.type === "withdraw" && <React.Suspense fallback={<LoadingScreen />}><LazyWithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, USERS, todayISO, round2, uid, money }} /></React.Suspense>}
         {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
-        {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
+        {modal?.type === "leave" && <React.Suspense fallback={<LoadingScreen />}><LazyLeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, SelectOther, Check, uid, todayISO, daysBetween, LEAVE_TYPES }} /></React.Suspense>}
         {modal?.type === "project" && <React.Suspense fallback={<LoadingScreen />}><LazyProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, todayISO, PROJECT_STAGES }} /></React.Suspense>}
         {modal?.type === "inhouse" && <React.Suspense fallback={<LoadingScreen />}><LazyInHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, todayISO, INHOUSE_CATEGORIES, PRIORITIES, INHOUSE_STAGES, ExternalLink }} /></React.Suspense>}
         {modal?.type === "testSession" && <React.Suspense fallback={<LoadingScreen />}><LazyTestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid }} /></React.Suspense>}
