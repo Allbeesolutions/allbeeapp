@@ -47,6 +47,7 @@ const LazyClientPortal = React.lazy(() => import("./ClientPortal.jsx"));
 const LazyShareForm = React.lazy(() => import("./ShareForm.jsx"));
 const LazyNotificationForm = React.lazy(() => import("./NotificationForm.jsx"));
 const LazyTestSessionForm = React.lazy(() => import("./TestSessionForm.jsx"));
+const LazyTaskForm = React.lazy(() => import("./TaskForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -1816,83 +1817,6 @@ function WithdrawForm({ balances, defaultUser, onSave, onClose }) {
         <div className="hint-line">Balance after withdrawal: <b className="mono">{money(after)}</b></div>
       )}
       <Field label="Notes"><textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason / reference" /></Field>
-    </Modal>
-  );
-}
-
-function TaskForm({ initial, onSave, onClose, currentUser, team = USERS, people = [], isAdmin = true }) {
-  // Everyone (admins, staff AND interns) can assign a task to one or more
-  // teammates. The roster always includes the person creating it, so they can
-  // assign work to themselves too.
-  const roster = team.includes(currentUser) ? team : [currentUser, ...team];
-  // name → stable user id, so a saved task keeps pointing at the right person
-  // even if their display name is edited later (fixes assigned tasks that stop
-  // showing up for the assignee). Legacy tasks with no ids still match by name.
-  const idByName = useMemo(() => {
-    const m = {};
-    (people || []).forEach((p) => { if (p && p.name && p.id) m[p.name] = p.id; });
-    return m;
-  }, [people]);
-  const initialAssignees = () => {
-    if (Array.isArray(initial?.assignees) && initial.assignees.length) return initial.assignees.slice();
-    if (initial?.assignedTo === COMBINED) return USERS.slice();
-    if (initial?.assignedTo) return [initial.assignedTo];
-    return [currentUser];
-  };
-  const [f, setF] = useState(() => ({
-    title: "", desc: "", assignedBy: currentUser,
-    priority: "Medium", due: "", notes: "", ...initial,
-    assignees: initialAssignees(),
-  }));
-  const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const toggleAssignee = (name) => setF((s) => ({
-    ...s,
-    assignees: s.assignees.includes(name) ? s.assignees.filter((x) => x !== name) : [...s.assignees, name],
-  }));
-  const valid = f.title.trim().length > 0 && f.assignees.length > 0;
-  const save = () => {
-    if (!valid) return;
-    const assignees = f.assignees.slice();
-    // Keep a readable `assignedTo` string for older/simple views, and preserve
-    // the special two-partner label so existing combined-task behaviour is unchanged.
-    const bothPartners = assignees.length === USERS.length && USERS.every((u) => assignees.includes(u));
-    const assignedTo = assignees.length === 1 ? assignees[0] : bothPartners ? COMBINED : assignees.join(", ");
-    // Attach stable ids next to the names (missing when someone isn't in the
-    // roster yet — matching then simply falls back to the name).
-    const assigneeIds = assignees.map((n) => idByName[n]).filter(Boolean);
-    const assignedById = idByName[f.assignedBy] || initial?.assignedById || null;
-    onSave({
-      ...initial, id: initial?.id || uid(), title: f.title.trim(), desc: f.desc.trim(),
-      assignedBy: f.assignedBy, assignedById, assignedTo, assignees, assigneeIds, priority: f.priority, due: f.due,
-      notes: f.notes.trim(), status: initial?.status || "Created", progress: initial?.progress ?? 0,
-      history: initial?.history || [{ status: "Created", at: Date.now(), by: f.assignedBy }],
-      comments: initial?.comments || [], attachments: initial?.attachments || [], accepts: initial?.accepts || [],
-      createdAt: initial?.createdAt || Date.now(),
-    });
-    onClose();
-  };
-  return (
-    <Modal title={initial?.id ? "Edit task" : "New task"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />{initial?.id ? "Save task" : "Create task"}</button></>}>
-      <Field label="Task title" required><input className="input" value={f.title} onChange={(e) => up("title", e.target.value)} placeholder="Design the landing page" /></Field>
-      <Field label="Description"><textarea className="textarea" value={f.desc} onChange={(e) => up("desc", e.target.value)} placeholder="Full, detailed instructions — write as much as you need." /></Field>
-      <Field label="Assigned by"><input className="input" value={f.assignedBy} disabled style={{ opacity: .7 }} /></Field>
-      <Field label={`Assign to${f.assignees.length > 1 ? ` · ${f.assignees.length} people` : ""}`} required
-        hint={f.assignees.length > 1 ? "Everyone selected must accept before the task can start; any of them can complete it." : undefined}>
-        <div className="perm-list">
-          {roster.map((n) => (
-            <label key={n} className="perm-item">
-              <input type="checkbox" checked={f.assignees.includes(n)} onChange={() => toggleAssignee(n)} />{n}{n === currentUser ? " (you)" : ""}
-            </label>
-          ))}
-        </div>
-      </Field>
-      <div className="grid2">
-        <Field label="Priority"><select className="select" value={f.priority} onChange={(e) => up("priority", e.target.value)}>{PRIORITIES.map((p) => <option key={p}>{p}</option>)}</select></Field>
-        <Field label="Due date"><input className="input" type="date" value={f.due} onChange={(e) => up("due", e.target.value)} /></Field>
-      </div>
-      <Field label="Notes"><textarea className="textarea" style={{ minHeight: 60 }} value={f.notes} onChange={(e) => up("notes", e.target.value)} /></Field>
     </Modal>
   );
 }
@@ -11457,7 +11381,7 @@ export default function App() {
         {modal?.type === "income" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
         {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
         {modal?.type === "withdraw" && <WithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} />}
-        {modal?.type === "task" && <TaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} />}
+        {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
         {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
         {modal?.type === "project" && <ProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} />}
         {modal?.type === "inhouse" && <InHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} />}
