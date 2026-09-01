@@ -63,6 +63,7 @@ const LazyClientForm = React.lazy(() => import("./ClientForm.jsx"));
 const LazyVaultForm = React.lazy(() => import("./VaultForm.jsx"));
 const LazyPlannedForm = React.lazy(() => import("./PlannedForm.jsx"));
 const LazyPromptForm = React.lazy(() => import("./PromptForm.jsx"));
+const LazyKbForm = React.lazy(() => import("./KbForm.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -4554,26 +4555,6 @@ function LeadForm({ initial, onSave, onClose }) {
       </div>
       <Field label="Estimated value (₹)"><input className="input" type="number" value={f.value} onChange={(e) => set("value", e.target.value)} placeholder="0" /></Field>
       <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="What do they need?" /></Field>
-    </Modal>
-  );
-}
-
-function KbForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || { title: "", category: "How-to", body: "" });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const save = () => {
-    if (!f.title.trim()) { setErr("Add a title."); return; }
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), title: f.title.trim() });
-  };
-  return (
-    <Modal title={f.id ? "Edit article" : "New article"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
-      <div className="grid2">
-        <Field label="Title" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. How to onboard a client" /></Field>
-        <Field label="Category"><SelectOther value={f.category} onChange={(v) => set("category", v)} options={KB_CATEGORIES.filter((c) => c !== "Other")} placeholder="Custom category…" /></Field>
-      </div>
-      <Field label="Content"><textarea className="textarea" style={{ minHeight: 180 }} value={f.body} onChange={(e) => set("body", e.target.value)} placeholder="Write the guide…" /></Field>
     </Modal>
   );
 }
@@ -10544,7 +10525,7 @@ export default function App() {
         {modal?.type === "planned" && <React.Suspense fallback={<LoadingScreen />}><LazyPlannedForm initial={modal.initial} onSave={(x) => saveOwned("planned", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, EXPENSE_CATEGORIES, EXPENSE_RECURRENCE, PLANNED_STATUS }} /></React.Suspense>}
         {modal?.type === "vault" && <React.Suspense fallback={<LoadingScreen />}><LazyVaultForm initial={modal.initial} onSave={(x) => saveOwned("vault", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, VAULT_CATEGORIES, Eye, EyeOff }} /></React.Suspense>}
         {modal?.type === "document" && <React.Suspense fallback={<LoadingScreen />}><LazyDocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, SelectOther, RefreshCw, Upload, uid, uploadAttachment, DOC_CATEGORIES }} /></React.Suspense>}
-        {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "knowledge" && <React.Suspense fallback={<LoadingScreen />}><LazyKbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, KB_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "prompt" && <React.Suspense fallback={<LoadingScreen />}><LazyPromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, PROMPT_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "sheet" && <React.Suspense fallback={<LoadingScreen />}><LazySheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, SHEET_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "reward" && <React.Suspense fallback={<LoadingScreen />}><LazyRewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Award, Check, uid, todayISO, REWARD_KINDS }} /></React.Suspense>}
