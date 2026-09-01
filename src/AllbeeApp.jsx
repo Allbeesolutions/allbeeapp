@@ -735,6 +735,20 @@ async function fetchAll() {
   return db;
 }
 
+// Build a backup from a fresh normalized read as well as the legacy in-memory
+// collections. This keeps exports complete even when a user exports before a
+// background hydration/realtime refresh has populated every normalized key.
+async function buildBackupSnapshot(db) {
+  const snapshot = { ...(db || {}) };
+  Object.assign(snapshot,
+    await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(),
+    await fetchAIData(), await fetchClientData(), await fetchHelpdeskData(),
+    await fetchAgreementData(),
+    { apn_action_badge_reads: await fetchApnActionBadgeReads() }
+  );
+  return snapshot;
+}
+
 async function fetchAuditRows() {
   // Audit is append-only and can grow beyond the API's default 1,000-row limit.
   // Page newest-first so the UI always gets the complete history, then restore
@@ -2172,13 +2186,14 @@ async function exportRowsToExcel(filename, sheetName, columns, rows) {
 // Excel or Google Sheets (File → Import) and doubles as a keep-safe snapshot.
 async function exportFullBackupXLSX(db) {
   try {
+    const snapshot = await buildBackupSnapshot(db);
     const mod = await import(/* @vite-ignore */ EXPORT_CDN.xlsx);
     const XLSX = mod.utils ? mod : (mod.default || mod);
     const wb = XLSX.utils.book_new();
     const used = new Set();
     let any = false;
-    for (const t of TABLES) {
-      const rows = db[t] || [];
+    for (const t of Object.keys(snapshot)) {
+      const rows = snapshot[t] || [];
       if (!rows.length) continue;
       const keys = Array.from(rows.reduce((s, r) => { Object.keys(r || {}).forEach((k) => s.add(k)); return s; }, new Set()));
       const aoa = [keys, ...rows.map((r) => keys.map((k) => { const v = r ? r[k] : undefined; return v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v); }))];
@@ -3414,12 +3429,18 @@ function AISettings({ config, saveAI }) {
 function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCount, sessionEmail, config, saveTnc, saveRoleTnc, saveCompany, saveAI }) {
   const fileRef = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
-  const exportJSON = () => {
-    const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `allbee-backup-${todayISO()}.json`; a.click();
-    URL.revokeObjectURL(url);
+  const exportJSON = async () => {
+    try {
+      const snapshot = await buildBackupSnapshot(db);
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `allbee-backup-${todayISO()}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      emitToast("Couldn't build the JSON backup — check your connection and try again.", "error");
+    }
   };
   const importJSON = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -3448,10 +3469,10 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
       <div className="card stat" style={{ marginBottom: 14 }}>
         <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Backup & restore</div>
         <p className="hint-line" style={{ lineHeight: 1.55, marginBottom: 14 }}>
-          Export a full copy of your database. <b>Excel backup</b> writes one sheet per module — open it in Excel or import it into Google Sheets (File → Import) for a spreadsheet backup. <b>JSON backup</b> is for re-importing here later. JSON restore is performed atomically on the server, so a failed restore leaves the existing data unchanged.
+          Export a full copy of your ALLBEE workspace data. <b>Excel backup</b> writes one sheet per module — open it in Excel or import it into Google Sheets (File → Import) for a spreadsheet backup. <b>JSON backup</b> is for re-importing here later. JSON restore is performed atomically on the server, so a failed restore leaves the existing data unchanged.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn primary" onClick={() => exportFullBackupXLSX(db)}><Sheet size={16} />Excel backup (all data)</button>
+          <button className="btn primary" onClick={() => exportFullBackupXLSX(db)}><Sheet size={16} />Excel backup (workspace)</button>
           <button className="btn" onClick={exportJSON}><Download size={16} />JSON backup</button>
           <button className="btn" onClick={() => fileRef.current?.click()}><Upload size={16} />Import JSON</button>
           <input ref={fileRef} type="file" accept="application/json" onChange={importJSON} style={{ display: "none" }} />
