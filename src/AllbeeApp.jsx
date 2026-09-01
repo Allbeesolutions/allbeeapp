@@ -26,6 +26,9 @@ const LazyCourses = React.lazy(() => import("./Courses.jsx"));
 const LazyMarketing = React.lazy(() => import("./Marketing.jsx"));
 const LazyProjects = React.lazy(() => import("./Projects.jsx"));
 const LazyAttendance = React.lazy(() => import("./Attendance.jsx"));
+const LazyDocuments = React.lazy(() => import("./Documents.jsx"));
+const LazySheets = React.lazy(() => import("./Sheets.jsx"));
+const LazyKnowledge = React.lazy(() => import("./Knowledge.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -6857,48 +6860,6 @@ function SheetForm({ initial, onSave, onClose }) {
   );
 }
 
-function Sheets({ db, openModal, removeItem }) {
-  const [q, setQ] = useState("");
-  const [cat, setCat] = useState("all");
-  const [copiedId, setCopiedId] = useState(null);
-  const all = [...(db.sheets || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const cats = Array.from(new Set(all.map((p) => p.category).filter(Boolean)));
-  const list = all.filter((p) => (cat === "all" || p.category === cat) && (!q.trim() || (p.title + " " + (p.note || "") + " " + (p.category || "")).toLowerCase().includes(q.trim().toLowerCase())));
-  const copy = async (p) => { try { await navigator.clipboard.writeText(p.url || ""); setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500); } catch { emitToast("Couldn't copy the link.", "error"); } };
-  const del = (p) => removeItem("sheets", p, { name: p.title, audit: `deleted sheet link "${p.title}"` });
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Sheets</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "sheet" })}><Plus size={16} />Add link</button></div>
-      <p className="hint-line" style={{ marginTop: -8, marginBottom: 14 }}>Keep all your Google Sheets links in one place — trackers, reports, old workbooks. Open or copy any of them in one tap.</p>
-      <div className="filterbar">
-        <Field label="Search"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search sheets…" /></Field>
-        {cats.length > 0 && <Field label="Category"><select className="select" value={cat} onChange={(e) => setCat(e.target.value)}><option value="all">All categories</option>{cats.map((c) => <option key={c}>{c}</option>)}</select></Field>}
-      </div>
-      {list.length === 0 ? <div className="card"><Empty icon={<Sheet size={22} color="var(--muted)" />} title="No sheet links yet" text="Paste your Google Sheets links here so the whole team can find them." action={<button className="btn primary" onClick={() => openModal({ type: "sheet" })}><Plus size={16} />Add link</button>} /></div>
-        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>{list.map((p) => (
-          <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Sheet size={16} color="var(--pos)" style={{ flex: "none" }} />
-              <span style={{ fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</span>
-              {p.category && <span className="tag">{p.category}</span>}
-            </div>
-            {p.note && <div className="hint-line" style={{ fontSize: 13, lineHeight: 1.5 }}>{p.note}</div>}
-            <div className="hint-line" style={{ fontSize: 12, color: "var(--primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.url}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-              <button className="btn sm primary" onClick={() => window.open(p.url, "_blank", "noopener")}><ExternalLink size={13} />Open</button>
-              <button className="btn sm" onClick={() => copy(p)}>{copiedId === p.id ? <><Check size={13} />Copied</> : <><Copy size={13} />Copy</>}</button>
-              <button className="btn sm" onClick={() => openModal({ type: "sheet", initial: p })}><Pencil size={13} /></button>
-              <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete sheet link?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>
-            </div>
-          </div>
-        ))}</div>}
-    </div>
-  );
-}
-
-// A <select> whose last entry is "Other…", which reveals a text box so you can
-// type a custom value. Drop-in for any preset dropdown that should also accept
-// free text. `value` is the current string; `options` are the presets.
 function SelectOther({ value, onChange, options, placeholder = "Type here…" }) {
   const [custom, setCustom] = useState(() => !!value && !options.includes(value));
   const onSel = (e) => {
@@ -7304,87 +7265,6 @@ function Announcements({ db, mutate, openModal, removeItem, isAdmin, me }) {
             </div>
           </div>
         ))}</div>}
-    </div>
-  );
-}
-
-function Documents({ db, mutate, openModal, removeItem, isAdmin, me }) {
-  const [cat, setCat] = useState("All");
-  const all = [...db.documents].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const canSee = (d) => {
-    if (isAdmin || d.ownerId === me?.id) return true;
-    const aud = d.audience || "internal";
-    if (aud === "internal") return true;
-    if (aud === "members") return (d.userIds || []).includes(me?.id);
-    return false; // client-targeted documents appear in the client portal, not the internal list
-  };
-  const visibleDocs = all.filter(canSee);
-  const list = cat === "All" ? visibleDocs : visibleDocs.filter((d) => d.category === cat);
-  const audLabel = (d) => { const a = d.audience || "internal"; return a === "client" ? "Client" : a === "members" ? `${(d.userIds || []).length} member${(d.userIds || []).length === 1 ? "" : "s"}` : null; };
-  const del = (d) => removeItem("documents", d, { name: d.title, audit: `deleted document "${d.title}"` });
-  const canManage = (d) => isAdmin || d.ownerId === me?.id;
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Documents</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "document" })}><Plus size={16} />Add document</button></div>
-      <div className="toolbar"><div className="seg">{["All", ...DOC_CATEGORIES].map((c) => <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(c)}>{c}</button>)}</div></div>
-      <div className="card">
-        {list.length === 0 ? <Empty icon={<FileText size={22} color="var(--muted)" />} title="No documents" text="Keep shared contracts, templates and brand files (as links) in one place." action={<button className="btn primary" onClick={() => openModal({ type: "document" })}><Plus size={16} />Add document</button>} />
-          : list.map((d) => (
-            <div key={d.id} className="item-row">
-              <div className="empty" style={{ padding: 0 }}><div className="ic" style={{ width: 40, height: 40, margin: 0 }}><FileText size={18} color="var(--muted)" /></div></div>
-              <div className="item-main">
-                <div className="item-title"><a href={d.url} target="_blank" rel="noreferrer" style={{ color: "var(--ink)", textDecoration: "none" }}>{d.title}</a></div>
-                <div className="item-meta"><span className="tag">{d.category}</span>{audLabel(d) && <span className="badge accent" style={{ fontSize: 10.5 }}>{audLabel(d)}</span>}{d.owner && <span>by {d.owner}</span>}{d.notes && <span>{d.notes}</span>}<span>{fmtDate(new Date(d.createdAt).toISOString().slice(0, 10))}</span></div>
-              </div>
-              <div className="row-actions" style={{ alignItems: "center" }}>
-                <a className="btn sm" href={d.url} target="_blank" rel="noreferrer"><ExternalLink size={13} />Open</a>
-                {canManage(d) && <><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "document", initial: d })}><Pencil size={14} /></button><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete document?", body: `Delete "${d.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(d) })}><Trash2 size={14} /></button></>}
-              </div>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function Knowledge({ db, mutate, openModal, removeItem, isAdmin }) {
-  const [open, setOpen] = useState(null);
-  const [cat, setCat] = useState("All");
-  const all = [...db.knowledge].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const list = cat === "All" ? all : all.filter((k) => k.category === cat);
-  const del = (k) => removeItem("knowledge", k, { name: k.title, audit: `deleted article "${k.title}"` });
-  // PRD: knowledge can be shared through Notifications / Tasks. Each opens the
-  // matching composer pre-filled, so the admin still picks audience / assignee.
-  const shareKb = (k, how) => {
-    const excerpt = (k.body || "").slice(0, 600);
-    if (how === "notify") openModal({ type: "notification", initial: { title: "📚 " + k.title, body: excerpt + ((k.body || "").length > 600 ? "…" : ""), level: "General", audience: "all" } });
-    else openModal({ type: "task", initial: { title: "Read: " + k.title, desc: k.body || "" } });
-  };
-  const article = open ? db.knowledge.find((k) => k.id === open) : null;
-  if (article) return (
-    <div className="content">
-      <button className="backlink" onClick={() => setOpen(null)}><ArrowLeft size={15} />Back to knowledge base</button>
-      <div className="detail-head"><div><h3>{article.title}</h3><div className="item-meta" style={{ marginTop: 6 }}><span className="tag">{article.category}</span><span>{fmtDate(new Date(article.createdAt).toISOString().slice(0, 10))}</span></div></div>
-        {isAdmin && <div className="row-actions"><button className="btn sm" onClick={() => shareKb(article, "notify")}><Bell size={13} />Share as notification</button><button className="btn sm" onClick={() => shareKb(article, "task")}><ListTodo size={13} />Make a task</button></div>}
-      </div>
-      <div className="card stat" style={{ lineHeight: 1.65, whiteSpace: "pre-wrap", fontSize: 14.5 }}>{article.body || "No content yet."}</div>
-    </div>
-  );
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Knowledge base</h3><span className="spacer" />{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "knowledge" })}><Plus size={16} />New article</button>}</div>
-      <div className="toolbar"><div className="seg">{["All", ...KB_CATEGORIES].map((c) => <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(c)}>{c}</button>)}</div></div>
-      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
-        {list.length === 0 ? <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<BookOpen size={22} color="var(--muted)" />} title="No articles yet" text={isAdmin ? "Write down how-tos, policies and onboarding guides for the team." : "Guides from your team will show up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "knowledge" })}><Plus size={16} />New article</button>} /></div>
-          : list.map((k) => (
-            <div key={k.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 8, cursor: "pointer" }} onClick={() => setOpen(k.id)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}><BookOpen size={16} color="var(--primary)" /><span className="tag">{k.category}</span></div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{k.title}</div>
-              <div className="sub" style={{ lineHeight: 1.5 }}>{(k.body || "").slice(0, 110)}{(k.body || "").length > 110 ? "…" : ""}</div>
-              {isAdmin && <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={(e) => e.stopPropagation()}><button className="btn sm" title="Share with the team as a notification" onClick={() => shareKb(k, "notify")}><Bell size={13} />Share</button><button className="btn sm" onClick={() => openModal({ type: "knowledge", initial: k })}><Pencil size={13} /></button><button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete article?", body: `Delete "${k.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(k) })}><Trash2 size={13} /></button></div>}
-            </div>
-          ))}
-      </div>
     </div>
   );
 }
@@ -15729,10 +15609,10 @@ export default function App() {
       case "vault": return <Vault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
       case "notifications": return <Notifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} />;
       case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
-      case "documents": return <Documents db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
-      case "knowledge": return <Knowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} />;
+      case "documents": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading documents…</div></div>}> <LazyDocuments db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
+      case "knowledge": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading knowledge…</div></div>}> <LazyKnowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
       case "prompts": return <Prompts db={db} openModal={openModal} removeItem={removeItem} />;
-      case "sheets": return <Sheets db={db} openModal={openModal} removeItem={removeItem} />;
+      case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
       case "chat": return <Chat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} />;
