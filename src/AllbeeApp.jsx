@@ -45,6 +45,8 @@ const LazyLock = React.lazy(() => import("./Lock.jsx"));
 const LazyTestDetail = React.lazy(() => import("./TestDetail.jsx"));
 const LazyClientPortal = React.lazy(() => import("./ClientPortal.jsx"));
 const LazyShareForm = React.lazy(() => import("./ShareForm.jsx"));
+const LazyNotificationForm = React.lazy(() => import("./NotificationForm.jsx"));
+const LazyTestSessionForm = React.lazy(() => import("./TestSessionForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -6196,25 +6198,6 @@ function Notifications({ db, mutate, openModal, removeItem, isAdmin, me, profile
   );
 }
 
-function NotificationForm({ initial, team, onSave, onClose }) {
-  const [f, setF] = useState(initial || { title: "", body: "", level: "General", audience: "all" });
-  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const [err, setErr] = useState("");
-  const people = (team || []).filter((p) => p.role !== "client");
-  const save = () => { if (!f.title.trim()) { setErr("Add a title."); return; } onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), title: f.title.trim(), reads: f.reads || [] }); };
-  return (
-    <Modal title={f.id ? "Edit notification" : "New notification"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Bell size={15} />Send</button></>}>
-      <Field label="Title" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Office closed Friday" /></Field>
-      <Field label="Message"><textarea className="textarea" value={f.body} onChange={(e) => set("body", e.target.value)} placeholder="Details\u2026" /></Field>
-      <div className="grid2">
-        <Field label="Priority"><select className="select" value={f.level} onChange={(e) => set("level", e.target.value)}>{NOTIF_LEVELS.map((l) => <option key={l}>{l}</option>)}</select></Field>
-        <div className="field"><label>Send to</label><SearchableSelect value={f.audience} onChange={(value) => set("audience", value)} ariaLabel="Notification recipients" options={[...NOTIF_AUDIENCES.map(([k, l]) => ({ value: k, label: l })), ...people.map((p) => ({ value: "user:" + p.id, label: p.name, meta: ROLE_LABEL[p.role] || p.role }))]} /></div>
-      </div>
-    </Modal>
-  );
-}
-
 function Invoices({ db, mutate, openModal, removeItem, portalClients }) {
   const [status, setStatus] = useState("All");
   const all = [...db.invoices].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -6850,72 +6833,6 @@ const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" :
 
 // Create / edit a test session (admin). Seeds a checklist from one-item-per-line
 // text and links the session to a project so its history belongs to that project.
-function TestSessionForm({ initial, projects = [], team = [], onSave, onClose }) {
-  const [f, setF] = useState(() => ({
-    title: "", projectId: "", projectName: "", assignedTo: "", assignedToId: "", notes: "",
-    checklistText: (Array.isArray(initial?.checklist) ? initial.checklist.map((i) => i.text).join("\n") : ""),
-    ...initial,
-  }));
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const roster = (team || []).filter((p) => p.role !== "client" && p.active !== false);
-  const save = () => {
-    if (!f.title.trim()) { setErr("Give the test session a title."); return; }
-    const proj = projects.find((p) => p.id === f.projectId);
-    const tester = roster.find((p) => p.id === f.assignedToId);
-    // preserve existing checklist state; only add/rename from the text box
-    const prev = Array.isArray(initial?.checklist) ? initial.checklist : [];
-    const lines = f.checklistText.split("\n").map((l) => l.trim()).filter(Boolean);
-    const checklist = lines.map((text, i) => {
-      const match = prev[i] && prev[i].text === text ? prev[i] : prev.find((p) => p.text === text);
-      return match || { id: uid(), text, done: false, note: "", by: "", at: 0 };
-    });
-    onSave({
-      ...initial, id: initial?.id || uid(),
-      title: f.title.trim(),
-      projectId: proj ? proj.id : (f.projectId || ""),
-      projectName: proj ? proj.name : (f.projectName || ""),
-      assignedTo: tester ? tester.name : (f.assignedTo || ""),
-      assignedToId: tester ? tester.id : (f.assignedToId || ""),
-      checklist,
-      bugs: Array.isArray(initial?.bugs) ? initial.bugs : [],
-      result: initial?.result || "Pending",
-      notes: f.notes.trim(),
-      createdAt: initial?.createdAt || Date.now(),
-    });
-    onClose();
-  };
-  return (
-    <Modal title={initial?.id ? "Edit test session" : "New test session"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={16} />Save session</button></>}>
-      <Field label="Title" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. AllBee App — release check" /></Field>
-      <div className="grid2">
-        <Field label="Project" hint="Testing history belongs to this project.">
-          {projects.length ? (
-            <select className="select" value={f.projectId} onChange={(e) => set("projectId", e.target.value)}>
-              <option value="">— General / no project —</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          ) : (
-            <input className="input" value={f.projectName} onChange={(e) => set("projectName", e.target.value)} placeholder="Project name" />
-          )}
-        </Field>
-        <Field label="Assign tester">
-          <select className="select" value={f.assignedToId} onChange={(e) => set("assignedToId", e.target.value)}>
-            <option value="">— Unassigned —</option>
-            {roster.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </Field>
-      </div>
-      <Field label="Checklist" hint="One item per line — add as many as you like.">
-        <textarea className="textarea" style={{ minHeight: 130 }} value={f.checklistText} onChange={(e) => set("checklistText", e.target.value)}
-          placeholder={"Login works\nDashboard works\nTasks working\nNotifications working\nMobile responsive\nSearch working\nDark mode working\nAttendance working"} />
-      </Field>
-      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything the tester should know…" /></Field>
-    </Modal>
-  );
-}
-
 // Full session view: checklist, bug reports with screenshots, result. Looks up
 // the live session from db by id so edits from either partner stay in sync.
 // Master list + dashboard. Admins see and create every session; a tester sees
@@ -11544,7 +11461,7 @@ export default function App() {
         {modal?.type === "leave" && <LeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} />}
         {modal?.type === "project" && <ProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} />}
         {modal?.type === "inhouse" && <InHouseForm initial={modal.initial} team={team} onSave={(x) => saveOwned("inhouse", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "testSession" && <TestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} />}
+        {modal?.type === "testSession" && <React.Suspense fallback={<LoadingScreen />}><LazyTestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid }} /></React.Suspense>}
         {modal?.type === "teamcfg" && <TeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} />}
         {modal?.type === "student" && <StudentForm initial={modal.initial} onSave={(s) => saveGeneric("students", s, "student")} onClose={() => setModal(null)} />}
         {modal?.type === "classStudent" && <ClassStudentForm initial={modal.initial} onSave={saveClassStudent} onClose={() => setModal(null)} />}
@@ -11561,7 +11478,7 @@ export default function App() {
         {modal?.type === "prompt" && <PromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} />}
         {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
         {modal?.type === "reward" && <RewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "notification" && <NotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "notification" && <React.Suspense fallback={<LoadingScreen />}><LazyNotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SearchableSelect, Bell, uid, NOTIF_LEVELS, NOTIF_AUDIENCES, ROLE_LABEL }} /></React.Suspense>}
         {modal?.type === "announcement" && <AnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} />}
         {modal?.type === "portalPost" && <PortalPostForm initial={modal.initial} portalClients={portalClients} onSave={(x) => saveOwned("portal_posts", x)} onClose={() => setModal(null)} />}
         {modal?.type === "resign" && <ResignForm existing={(db.resignations || []).filter((r) => r.userId === me.id)} onSave={(r) => { mutate((d) => ({ ...d, resignations: [...(d.resignations || []), { ...r, id: uid(), userId: me.id, userName: currentUser, status: "Pending", createdAt: Date.now() }] }), { action: "submitted a resignation request", module: "Team" }); setModal(null); }} onClose={() => setModal(null)} />}
