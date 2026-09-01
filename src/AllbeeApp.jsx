@@ -60,6 +60,7 @@ const LazyProjectForm = React.lazy(() => import("./ProjectForm.jsx"));
 const LazyStudentForm = React.lazy(() => import("./StudentForm.jsx"));
 const LazyClassStudentForm = React.lazy(() => import("./ClassStudentForm.jsx"));
 const LazyClientForm = React.lazy(() => import("./ClientForm.jsx"));
+const LazyVaultForm = React.lazy(() => import("./VaultForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
 
@@ -4576,35 +4577,6 @@ function PlannedForm({ initial, onSave, onClose }) {
       </div>
       <Field label="Status"><select className="select" value={f.status || "Planned"} onChange={(e) => set("status", e.target.value)}>{PLANNED_STATUS.map((x) => <option key={x}>{x}</option>)}</select></Field>
       <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Optional" /></Field>
-    </Modal>
-  );
-}
-
-function VaultForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || { service: "", category: "Social", username: "", password: "", url: "", notes: "" });
-  const [show, setShow] = useState(false);
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const save = () => {
-    if (!f.service.trim()) { setErr("Name the service."); return; }
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), service: f.service.trim() });
-  };
-  return (
-    <Modal title={f.id ? "Edit credential" : "New credential"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
-      <div className="grid2">
-        <Field label="Service" required error={err}><input className="input" value={f.service} onChange={(e) => set("service", e.target.value)} placeholder="e.g. Instagram" /></Field>
-        <Field label="Category"><SelectOther value={f.category} onChange={(v) => set("category", v)} options={VAULT_CATEGORIES.filter((c) => c !== "Other")} placeholder="Custom category…" /></Field>
-      </div>
-      <Field label="Username / email"><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="login@…" /></Field>
-      <Field label="Password">
-        <div style={{ display: "flex", gap: 6 }}>
-          <input className="input" type={show ? "text" : "password"} value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="••••••••" />
-          <button className="iconbtn" onClick={() => setShow((v) => !v)} type="button" aria-label="Show/hide">{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-        </div>
-      </Field>
-      <Field label="Login URL"><input className="input" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://…" /></Field>
-      <Field label="Notes" hint="Recovery email, 2FA backup codes, etc."><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
     </Modal>
   );
 }
@@ -10637,7 +10609,7 @@ export default function App() {
         {modal?.type === "quotation" && <React.Suspense fallback={<LoadingScreen />}><LazyQuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, X, Plus, RefreshCw, Upload, uid, round2, money, uploadAttachment, QUOTE_STATUS }} /></React.Suspense>}
         {modal?.type === "invoice" && <React.Suspense fallback={<LoadingScreen />}><LazyInvoiceForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("invoices", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO, INVOICE_STATUS }} /></React.Suspense>}
         {modal?.type === "planned" && <PlannedForm initial={modal.initial} onSave={(x) => saveOwned("planned", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "vault" && <VaultForm initial={modal.initial} onSave={(x) => saveOwned("vault", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "vault" && <React.Suspense fallback={<LoadingScreen />}><LazyVaultForm initial={modal.initial} onSave={(x) => saveOwned("vault", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, VAULT_CATEGORIES, Eye, EyeOff }} /></React.Suspense>}
         {modal?.type === "document" && <React.Suspense fallback={<LoadingScreen />}><LazyDocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, SelectOther, RefreshCw, Upload, uid, uploadAttachment, DOC_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
         {modal?.type === "prompt" && <PromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} />}
