@@ -16,7 +16,7 @@ vi.mock("./supabaseClient", () => {
     const builder = {
       tbl,
       select: () => builder, order: () => builder, eq: () => builder, in: () => builder,
-      neq: () => builder, limit: () => builder, filter: () => builder, single: () => builder,
+      neq: () => builder, limit: () => builder, filter: () => builder, range: () => builder, single: () => builder,
       insert: () => builder, update: () => builder, upsert: () => builder, delete: () => builder,
       then: (resolve, reject) => {
         if (ctrl.failTable && tbl === ctrl.failTable) {

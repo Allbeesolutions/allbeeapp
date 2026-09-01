@@ -16490,12 +16490,14 @@ export default function App() {
   }, [session, loadPeople]);
 
   const reloadGenerationRef = useRef(0);
+  const reloadInFlightRef = useRef(null);
   const reload = useCallback(async () => {
     const generation = ++reloadGenerationRef.current;
-    // Every caller gets a generation. If a newer reload starts first, an older
-    // response is ignored, so only the newest completed snapshot may replace
-    // React state.
-    const request = fetchAll();
+    // Coalesce concurrent callers into one physical snapshot request. Every
+    // caller still receives the same promise, while the generation ensures an
+    // older snapshot can never overwrite a newer one.
+    const request = reloadInFlightRef.current || fetchAll();
+    reloadInFlightRef.current = request;
     try {
       const fresh = await request;
       if (generation !== reloadGenerationRef.current) return fresh;
@@ -16509,6 +16511,7 @@ export default function App() {
       }
       throw e;
     } finally {
+      if (reloadInFlightRef.current === request) reloadInFlightRef.current = null;
       if (generation === reloadGenerationRef.current) setLoading(false);
     }
   }, []);
@@ -16525,11 +16528,15 @@ export default function App() {
       // Full hydration is intentionally detached from the first paint. It fills
       // APN/CRM/AI/referral/audit data after the shell is already interactive.
       const hydrationGeneration = ++reloadGenerationRef.current;
-      fetchAll().then((full) => {
+      const hydrationRequest = fetchAll();
+      reloadInFlightRef.current = hydrationRequest;
+      hydrationRequest.then((full) => {
         if (hydrationGeneration !== reloadGenerationRef.current) return;
         setDb(full);
       }).catch((e) => {
         if (hydrationGeneration === reloadGenerationRef.current) setSyncError(e.message || String(e));
+      }).finally(() => {
+        if (reloadInFlightRef.current === hydrationRequest) reloadInFlightRef.current = null;
       });
       console.info(`[ALLBEE] fast bootstrap ready in ${Math.round(performance.now() - started)}ms`);
     } catch (e) {
