@@ -16583,14 +16583,34 @@ export default function App() {
     if (!session) { setDb(null); setLoading(false); return; }
     setLoading(true);
     bootstrap();
+    // Realtime can emit several row events for one logical action (and chat/
+    // notification activity can arrive in bursts). Never start a full database
+    // reload for every event. Coalesce the burst into one reload on the next
+    // event-loop turn, while preserving the latest requested refresh.
+    let reloadTimer = null;
+    let reloadInFlight = null;
+    let reloadQueued = false;
+    const scheduleReload = () => {
+      reloadQueued = true;
+      if (reloadTimer || reloadInFlight) return;
+      reloadTimer = setTimeout(async () => {
+        reloadTimer = null;
+        if (!reloadQueued) return;
+        reloadQueued = false;
+        reloadInFlight = reload().catch(() => {}).finally(() => {
+          reloadInFlight = null;
+          if (reloadQueued) scheduleReload();
+        });
+      }, 150);
+    };
     const ch = supabase.channel("allbee-db-sync");
-    TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    Object.keys(AI_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    Object.keys(CLIENT_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, reload));
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, reload);
+    TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+    Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+    Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+    Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+    Object.keys(AI_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+    Object.keys(CLIENT_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
     // Activity is a high-frequency feed. Refresh only the audit collection so
     // a new event does not reload the entire application state.
     ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
