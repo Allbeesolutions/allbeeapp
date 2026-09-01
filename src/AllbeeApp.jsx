@@ -16489,10 +16489,28 @@ export default function App() {
     return () => { supabase.removeChannel(ch); };
   }, [session, loadPeople]);
 
+  const reloadGenerationRef = useRef(0);
   const reload = useCallback(async () => {
-    try { setDb(await fetchAll()); setSyncError(null); }
-    catch (e) { setSyncError(e.message || String(e)); setDb((d) => d || emptyDB()); }
-    finally { setLoading(false); }
+    const generation = ++reloadGenerationRef.current;
+    // Every caller gets a generation. If a newer reload starts first, an older
+    // response is ignored, so only the newest completed snapshot may replace
+    // React state.
+    const request = fetchAll();
+    try {
+      const fresh = await request;
+      if (generation !== reloadGenerationRef.current) return fresh;
+      setDb(fresh);
+      setSyncError(null);
+      return fresh;
+    } catch (e) {
+      if (generation === reloadGenerationRef.current) {
+        setSyncError(e.message || String(e));
+        setDb((d) => d || emptyDB());
+      }
+      throw e;
+    } finally {
+      if (generation === reloadGenerationRef.current) setLoading(false);
+    }
   }, []);
 
   // Fast first paint: load only the collections needed by the common dashboard
@@ -16506,12 +16524,13 @@ export default function App() {
       setSyncError(null);
       // Full hydration is intentionally detached from the first paint. It fills
       // APN/CRM/AI/referral/audit data after the shell is already interactive.
+      const hydrationGeneration = ++reloadGenerationRef.current;
       fetchAll().then((full) => {
-        setDb((current) => {
-          if (!current) return full;
-          return full;
-        });
-      }).catch((e) => setSyncError(e.message || String(e)));
+        if (hydrationGeneration !== reloadGenerationRef.current) return;
+        setDb(full);
+      }).catch((e) => {
+        if (hydrationGeneration === reloadGenerationRef.current) setSyncError(e.message || String(e));
+      });
       console.info(`[ALLBEE] fast bootstrap ready in ${Math.round(performance.now() - started)}ms`);
     } catch (e) {
       setDb((current) => current || emptyDB());
