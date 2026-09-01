@@ -5,17 +5,33 @@ function createRealtimeReconnect({ createChannel, onReconnect, onError = () => {
   let attempt = 0;
   const connect = () => {
     if (stopped) return;
-    channel = createChannel(() => {
-      attempt = 0;
-      onReconnect?.();
-    }, (error) => {
-      onError?.(error);
+    channel = createChannel((status) => {
+      if (status === "SUBSCRIBED") {
+        attempt = 0;
+        onReconnect?.();
+        return;
+      }
+      if (!["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) return;
+      onError?.(new Error(`realtime:${status}`));
       if (stopped || timer) return;
       const delay = Math.min(retryMaxMs, retryBaseMs * (2 ** attempt++));
-      timer = setTimeout(() => { timer = null; connect(); }, delay);
+      const failed = channel;
+      timer = setTimeout(() => {
+        timer = null;
+        failed?.unsubscribe?.();
+        connect();
+      }, delay);
     });
   };
   connect();
-  return { getChannel: () => channel, stop: () => { stopped = true; if (timer) clearTimeout(timer); timer = null; channel?.unsubscribe?.(); } };
+  return {
+    getChannel: () => channel,
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      channel?.unsubscribe?.();
+    },
+  };
 }
 export { createRealtimeReconnect };

@@ -16731,39 +16731,27 @@ export default function App() {
         });
       }, 150);
     };
-    let realtime = null;
-    const ch = supabase.channel("allbee-db-sync");
-    TABLES.filter((t) => t !== "audit").forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-    Object.keys(REFERRAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-    Object.keys(WITHDRAWAL_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-    Object.keys(CRM_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-    Object.keys(AI_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-    Object.keys(CLIENT_READS).forEach((t) => ch.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
-    // Activity is a high-frequency feed. Refresh only the audit collection so
-    // a new event does not reload the entire application state.
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
-      fetchAuditRows().then((audit) => setDb((prev) => prev ? { ...prev, audit } : prev)).catch((e) => setSyncError(e.message || String(e)));
+    const configureChannel = (name, statusHandler) => {
+      const channel = supabase.channel(name);
+      TABLES.filter((t) => t !== "audit").forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(REFERRAL_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(WITHDRAWAL_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(CRM_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(AI_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(CLIENT_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
+        fetchAuditRows().then((audit) => setDb((prev) => prev ? { ...prev, audit } : prev)).catch((e) => setSyncError(e.message || String(e)));
+      });
+      channel.subscribe(statusHandler);
+      return { unsubscribe: () => supabase.removeChannel(channel) };
+    };
+    let realtime = createRealtimeReconnect({
+      createChannel: (statusHandler) => configureChannel(`allbee-db-sync:${Date.now()}`, statusHandler),
+      onReconnect: () => scheduleReload(),
+      onError: (e) => console.warn("[ALLBEE] realtime reconnect:", e),
     });
-    ch.on("system", { event: "*" }, () => {});
-    ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") { scheduleReload(); return; }
-      if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status) && !realtime) {
-        // Supabase's own realtime client normally reconnects. A bounded explicit
-        // resubscribe is used only when the channel lifecycle definitively fails,
-        // and the old channel is removed before creating a replacement.
-        realtime = createRealtimeReconnect({
-          createChannel: () => {
-            const replacement = supabase.channel(`allbee-db-sync-retry:${Date.now()}`);
-            TABLES.filter((t) => t !== "audit").forEach((t) => replacement.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-            return { unsubscribe: () => supabase.removeChannel(replacement), replacement };
-          },
-          onReconnect: () => scheduleReload(),
-          onError: (e) => console.warn("[ALLBEE] realtime reconnect:", e),
-        });
-      }
-    });
-    return () => { if (realtime) realtime.stop(); supabase.removeChannel(ch); };
+    return () => { realtime.stop(); };
   }, [session, reload, bootstrap]);
 
   // If an admin changes my role or the modules I'm granted while I'm signed in,
