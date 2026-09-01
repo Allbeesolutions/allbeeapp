@@ -737,20 +737,20 @@ async function persistWithRetry(prev, next) {
 }
 
 // Replace the entire database (used by "Import backup").
+// IMPORTANT: restore is a single server-side transaction. Never perform the
+// delete/insert loop in the browser: a mid-restore failure must roll back every
+// table, otherwise an apparently valid backup can leave production half-empty.
 async function replaceAll(clean) {
-  const stamp = new Date().toISOString();
-  for (const t of TABLES) {
-    // Backups may restore business data, but the global activity feed is an
-    // immutable historical record and must never be erased or overwritten.
-    if (t === "audit") continue;
-    const del = await supabase.from(t).delete().neq("id", "");
-    if (del.error) throw new Error(`Clearing ${t}: ${del.error.message}`);
-    const rows = (clean[t] || []).map((x) => ({ id: x.id, data: x, updated_at: stamp }));
-    if (rows.length) {
-      const up = await supabase.from(t).upsert(rows);
-      if (up.error) throw new Error(`Restoring ${t}: ${up.error.message}`);
-    }
+  if (!clean || typeof clean !== "object" || Array.isArray(clean)) {
+    throw new Error("Invalid ALLBEE backup: expected a JSON object.");
   }
+  if (!Array.isArray(clean.transactions)) {
+    throw new Error("Invalid ALLBEE backup: the transactions collection is missing or malformed.");
+  }
+  const { data, error } = await supabase.rpc("admin_restore_json_backup", { p_backup: clean });
+  if (error) throw new Error(`Backup restore failed: ${error.message}`);
+  if (!data?.ok) throw new Error("Backup restore failed: the server did not confirm a complete restore.");
+  return data;
 }
 
 /* ── people (profiles / roles) ────────────────────────────────────────── */
@@ -5296,7 +5296,18 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
   const importJSON = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const r = new FileReader();
-    r.onload = () => { try { const d = JSON.parse(r.result); if (d && d.transactions) replaceDB(d); } catch { emitToast("That file couldn't be read as an ALLBEE backup.", "error"); } };
+    r.onload = async () => {
+      try {
+        const d = JSON.parse(r.result);
+        if (!d || typeof d !== "object" || Array.isArray(d) || !Array.isArray(d.transactions)) {
+          throw new Error("Invalid ALLBEE backup: the transactions collection is missing or malformed.");
+        }
+        await replaceDB(d);
+      } catch (err) {
+        emitToast(err?.message || "That file couldn't be read as an ALLBEE backup.", "error");
+      }
+    };
+    r.onerror = () => emitToast("That backup file could not be read.", "error");
     r.readAsText(file); e.target.value = "";
   };
   const counts = { "Team members": teamCount || 0, Transactions: db.transactions.length, Withdrawals: db.withdrawals.length, Tasks: db.tasks.length, Projects: db.projects.length, Students: db.students.length, "Marketing clients": db.marketing.length, "Leave requests": db.leave.length, "Daily updates": db.updates.length };
@@ -5307,7 +5318,7 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
       <div className="card stat" style={{ marginBottom: 14 }}>
         <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Backup & restore</div>
         <p className="hint-line" style={{ lineHeight: 1.55, marginBottom: 14 }}>
-          Export a full copy of your database. <b>Excel backup</b> writes one sheet per module — open it in Excel or import it into Google Sheets (File → Import) for a spreadsheet backup. <b>JSON backup</b> is for re-importing here later. Importing JSON replaces the current data.
+          Export a full copy of your database. <b>Excel backup</b> writes one sheet per module — open it in Excel or import it into Google Sheets (File → Import) for a spreadsheet backup. <b>JSON backup</b> is for re-importing here later. JSON restore is performed atomically on the server, so a failed restore leaves the existing data unchanged.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button className="btn primary" onClick={() => exportFullBackupXLSX(db)}><Sheet size={16} />Excel backup (all data)</button>
@@ -16700,9 +16711,19 @@ export default function App() {
 
   const replaceDB = useCallback(async (d) => {
     const clean = { ...emptyDB(), ...d };
-    try { await replaceAll(clean); setDb(clean); setSyncError(null); }
-    catch (e) { setSyncError(e.message || String(e)); }
-  }, []);
+    try {
+      await replaceAll(clean);
+      // Re-read the database after the transaction commits. Do not trust the
+      // imported client snapshot because audit/normalized tables are intentionally
+      // managed by their own server-side paths. The UI must reflect committed data.
+      await reload();
+      setSyncError(null);
+      emitToast("ALLBEE backup restored successfully.", "success");
+    } catch (e) {
+      setSyncError(e.message || String(e));
+      throw e;
+    }
+  }, [reload]);
 
   const changeProfile = useCallback(async (id, patch, auditAction) => {
     try {
