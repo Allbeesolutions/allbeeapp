@@ -12063,13 +12063,6 @@ function APNAdminReferrals({ db, isSuper, onRefresh }) {
   </div>;
 }
 
-function APNWithdrawalApprovalModal({ request, onClose, onSave }) {
-  const [amount, setAmount] = useState(String(request.requested_amount || ""));
-  const [reason, setReason] = useState("");
-  const value = Number(amount) || 0;
-  const valid = value > 0 && value <= Number(request.requested_amount || 0);
-  return <Modal title="Approve withdrawal" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={() => onSave(value, reason)}>Approve {money(value)}</button></>}><div className="calc-box"><div className="calc-row"><span>Requested</span><b className="mono">{money(request.requested_amount)}</b></div><div className="calc-row"><span>Wallet</span><b>{apnWalletLabel(request.wallet_type)}</b></div></div><Field label="Approved amount" required error={amount && !valid ? "Amount must be above ₹0 and no more than the request." : ""}><input className="input mono" type="number" min="0" max={request.requested_amount} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field><Field label="Approval note"><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note for the partner" /></Field>{valid && value < Number(request.requested_amount || 0) && <div className="banner" style={{ margin: 0 }}><UnlockIcon size={15} />{money(Number(request.requested_amount) - value)} will be released back to the wallet.</div>}</Modal>;
-}
 
 export function RemoteLockGate({ isDark, signOut, pause, children }) {
   const [status, setStatus] = useState("checking"); // checking | locked | unlocked | offline
