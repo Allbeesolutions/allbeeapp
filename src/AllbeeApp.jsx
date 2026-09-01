@@ -51,6 +51,7 @@ const LazyTaskForm = React.lazy(() => import("./TaskForm.jsx"));
 const LazyQuotationForm = React.lazy(() => import("./QuotationForm.jsx"));
 const LazyDocForm = React.lazy(() => import("./DocForm.jsx"));
 const LazyInvoiceForm = React.lazy(() => import("./InvoiceForm.jsx"));
+const LazyAnnouncementForm = React.lazy(() => import("./AnnouncementForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -5300,24 +5301,6 @@ function PortalPostForm({ initial, onSave, onClose, portalClients }) {
           )}
           <Field label="Meeting link (optional)" hint="Paste a Google Meet / Zoom / Teams link — the client gets a Join button in their portal."><input className="input" value={f.meetingLink || ""} onChange={(e) => set("meetingLink", e.target.value)} placeholder="https://meet.google.com/…" /></Field>
         </>}
-    </Modal>
-  );
-}
-
-function AnnouncementForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || { title: "", body: "" });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const save = () => {
-    if (!f.title.trim()) { setErr("Add a headline."); return; }
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), title: f.title.trim(), meetingLink: (f.meetingLink || "").trim() });
-  };
-  return (
-    <Modal title={f.id ? "Edit announcement" : "New announcement"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><MegaphoneIcon size={15} />Post</button></>}>
-      <Field label="Headline" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Office closed on Friday" /></Field>
-      <Field label="Details"><textarea className="textarea" style={{ minHeight: 120 }} value={f.body} onChange={(e) => set("body", e.target.value)} placeholder="The full message…" /></Field>
-      <Field label="Meeting link (optional)" hint="Paste a Google Meet / Zoom / Teams link — everyone gets a Join button."><input className="input" value={f.meetingLink || ""} onChange={(e) => set("meetingLink", e.target.value)} placeholder="https://meet.google.com/…" /></Field>
     </Modal>
   );
 }
@@ -11313,7 +11296,7 @@ export default function App() {
         {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
         {modal?.type === "reward" && <RewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} />}
         {modal?.type === "notification" && <React.Suspense fallback={<LoadingScreen />}><LazyNotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SearchableSelect, Bell, uid, NOTIF_LEVELS, NOTIF_AUDIENCES, ROLE_LABEL }} /></React.Suspense>}
-        {modal?.type === "announcement" && <AnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "announcement" && <React.Suspense fallback={<LoadingScreen />}><LazyAnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, MegaphoneIcon, uid }} /></React.Suspense>}
         {modal?.type === "portalPost" && <PortalPostForm initial={modal.initial} portalClients={portalClients} onSave={(x) => saveOwned("portal_posts", x)} onClose={() => setModal(null)} />}
         {modal?.type === "resign" && <ResignForm existing={(db.resignations || []).filter((r) => r.userId === me.id)} onSave={(r) => { mutate((d) => ({ ...d, resignations: [...(d.resignations || []), { ...r, id: uid(), userId: me.id, userName: currentUser, status: "Pending", createdAt: Date.now() }] }), { action: "submitted a resignation request", module: "Team" }); setModal(null); }} onClose={() => setModal(null)} />}
         {modal?.type === "confirm" && <Confirm title={modal.title} body={modal.body} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
