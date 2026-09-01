@@ -42,6 +42,8 @@ const LazyAPNLeads = React.lazy(() => import("./APNLeads.jsx"));
 const LazyAPNLeadForm = React.lazy(() => import("./APNLeadForm.jsx"));
 const LazyAPNWithdrawalCenter = React.lazy(() => import("./APNWithdrawalCenter.jsx"));
 const LazyAPNWalletDetailModal = React.lazy(() => import("./APNWalletDetailModal.jsx"));
+const LazyAPNQuoteForm = React.lazy(() => import("./APNQuoteForm.jsx"));
+const LazyAPNQuizTaker = React.lazy(() => import("./APNQuizTaker.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
 const LazyLock = React.lazy(() => import("./Lock.jsx"));
 const LazyTestDetail = React.lazy(() => import("./TestDetail.jsx"));
@@ -7106,68 +7108,6 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
 
 /* ── leads ───────────────────────────────────────────────────────────── */
 
-function APNQuoteForm({ meRow, initial, onSave, onClose }) {
-  const [service, setService] = useState(initial?.service || "website");
-  const [price, setPrice] = useState(null);
-  const [priceBusy, setPriceBusy] = useState(true);
-  const [clientName, setClientName] = useState(initial?.clientName || "");
-  const [requirements, setRequirements] = useState(initial?.requirements || "");
-  const [tieUp, setTieUp] = useState(initial?.tieUp || "");
-  const [items, setItems] = useState(initial?.items || null);
-  React.useEffect(() => {
-    let alive = true;
-    setPriceBusy(true);
-    supabase.rpc("knowledge_get_pricing", { p_service: service }).then(({ data, error }) => {
-      if (!alive) return;
-      setPrice(error ? { base: null, baseLabel: "Custom quotation", options: [], customQuote: true } : (data || { base: null, baseLabel: "Custom quotation", options: [], customQuote: true }));
-      setPriceBusy(false);
-    });
-    return () => { alive = false; };
-  }, [service]);
-  React.useEffect(() => {
-    if (!initial && price && !priceBusy) setItems(price.base == null ? [] : [{ id: uid(), label: price.baseLabel || "Base service", amount: Number(price.base) || 0 }]);
-  }, [initial, price, priceBusy]);
-  const base = items || (price?.base == null ? [] : [{ id: uid(), label: price.baseLabel || "Base service", amount: Number(price.base) || 0 }]);
-  const list = items || base;
-  const total = list.reduce((s, it) => s + (Number(it.amount) || 0), 0);
-  const addOpt = (label, amount) => setItems((prev) => [...(prev || base), { id: uid(), label, amount }]);
-  const upItem = (id, k, v) => setItems((prev) => (prev || base).map((it) => it.id === id ? { ...it, [k]: k === "amount" ? Number(v) || 0 : v } : it));
-  const rmItem = (id) => setItems((prev) => (prev || base).filter((it) => it.id !== id));
-  const save = (status) => {
-    if (!clientName.trim()) return;
-    onSave({ id: initial?.id || uid(), partnerId: meRow.id, partnerName: meRow.name, clientName: clientName.trim(), service, requirements: requirements.trim(), tieUp, items: list, total: round2(total), status, createdAt: initial?.createdAt || Date.now() });
-    onClose();
-  };
-  return (
-    <Modal title={initial?.id ? "Edit quotation" : "Generate quotation"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn" onClick={() => save("Draft")} disabled={!clientName.trim()}>Save draft</button><button className="btn primary" onClick={() => save("Sent for approval")} disabled={!clientName.trim()}><Send size={15} />Send for approval</button></>}>
-      <div className="grid2">
-        <Field label="Client name" required><input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client / business" /></Field>
-        <Field label="Service"><select className="select" value={service} onChange={(e) => setService(e.target.value)} disabled={!!initial?.id}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-      </div>
-      <Field label="Requirements"><textarea className="textarea" value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="What does the client need?" /></Field>
-      <Field label="Tie-up with the client" hint="Express an optional tie-up — reciprocal deals govern both sides of the relationship.">
-        <select className="select" value={tieUp} onChange={(e) => setTieUp(e.target.value)}>
-          <option value="">No tie-up</option>
-          {(APN_TIEUPS[service] || []).map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-      </Field>
-      <Field label="Add-ons" hint={priceBusy ? "Loading official pricing…" : price?.customQuote ? "This service is quoted after scope review." : "Tap to add an official add-on — you can edit every line below."}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{(price?.options || []).map((option) => <button key={option.key} type="button" className="preset" disabled={priceBusy} onClick={() => addOpt(option.label, Number(option.amount) || 0)}>+ {option.label} {option.amount != null ? `(₹${Number(option.amount).toLocaleString("en-IN")})` : "(custom quote)"}</button>)}</div>
-      </Field>
-      <Field label="Quotation lines">
-        <div className="apn-list">{list.map((it) => (
-          <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input className="input" value={it.label} onChange={(e) => upItem(it.id, "label", e.target.value)} style={{ flex: 1 }} />
-            <input className="input mono" type="number" value={it.amount} onChange={(e) => upItem(it.id, "amount", e.target.value)} style={{ width: 110 }} />
-            <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmItem(it.id)}><X size={14} /></button>
-          </div>
-        ))}</div>
-        <div className="calc-box" style={{ marginTop: 10 }}><div className="calc-row"><b>Total</b><b className="mono">{money(total)}</b></div></div>
-      </Field>
-    </Modal>
-  );
-}
 function APNQuotations({ db, meRow, pid, openModal }) {
   const list = (db.apn_quotations || []).filter((q) => q.partnerId === pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const tone = (s) => s === "Approved" ? "pos" : s === "Rejected" ? "neg" : s === "Sent for approval" ? "accent" : "";
@@ -7244,39 +7184,6 @@ function APNReferralMetric({ label, value, icon, tone }) {
   return <APNMetric k={label} v={value} icon={icon} tone={tone} />;
 }
 
-function APNQuizTaker({ quiz, onPass, onClose }) {
-  const [ans, setAns] = useState({});
-  const [result, setResult] = useState(null);
-  const qs = quiz.questions || [];
-  const submit = () => {
-    const correct = qs.filter((q, i) => ans[i] === q.answer).length;
-    const pct = qs.length ? Math.round((correct / qs.length) * 100) : 0;
-    setResult({ pct, correct, pass: pct >= (quiz.passPct || 60) });
-    if (pct >= (quiz.passPct || 60)) onPass(pct);
-  };
-  return (
-    <Modal title={quiz.title || "Quiz"} onClose={onClose}
-      footer={result ? <button className="btn primary" onClick={onClose}>Done</button> : <><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={submit} disabled={Object.keys(ans).length < qs.length}><Check size={15} />Submit quiz</button></>}>
-      {result ? (
-        <div style={{ textAlign: "center", padding: "10px 0" }}>
-          <div style={{ fontSize: 40 }}>{result.pass ? "🎉" : "😕"}</div>
-          <h3 style={{ margin: "8px 0" }}>{result.pct}% — {result.pass ? "Passed!" : "Not passed"}</h3>
-          <p className="hint-line">{result.pass ? `${APN_SERVICE_LABEL[quiz.category]} leads are now unlocked.` : `You need ${quiz.passPct || 60}% to pass. Review the training and try again.`}</p>
-        </div>
-      ) : qs.map((q, i) => (
-        <div key={i} style={{ marginBottom: 8 }}>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>{i + 1}. {q.q}</div>
-          {(q.options || []).map((opt, oi) => (
-            <div key={oi} className={"apn-quiz-opt" + (ans[i] === oi ? " sel" : "")} onClick={() => setAns((s) => ({ ...s, [i]: oi }))}>
-              <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (ans[i] === oi ? "var(--primary)" : "var(--border)"), background: ans[i] === oi ? "var(--primary)" : "transparent", flex: "none" }} />
-              <span>{opt}</span>
-            </div>
-          ))}
-        </div>
-      ))}
-    </Modal>
-  );
-}
 function APNTraining({ db, meRow, pid, mutate }) {
   const [cat, setCat] = useState("website");
   const [quiz, setQuiz] = useState(null);
@@ -7306,7 +7213,7 @@ function APNTraining({ db, meRow, pid, mutate }) {
               : <span className="badge">No quiz</span>}
         </div>
       </div>
-      {quiz && <APNQuizTaker quiz={quiz} onPass={passQuiz} onClose={() => setQuiz(null)} />}
+      {quiz && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading quiz…</div></div>}><LazyAPNQuizTaker quiz={quiz} onPass={passQuiz} onClose={() => setQuiz(null)} runtime={{ useState, Modal, Check, APN_SERVICE_LABEL }} /></React.Suspense>}
     </div>
   );
 }
@@ -8544,7 +8451,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
 
       {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
       {modal?.type === "apnLead" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading lead form…</div></div>}><LazyAPNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ APN_SERVICES, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO }} /></React.Suspense>}
-      {modal?.type === "apnQuote" && <APNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} />}
+      {modal?.type === "apnQuote" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading quotation form…</div></div>}><LazyAPNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ useState, supabase, uid, round2, money, Modal, Field, APN_SERVICES, APN_TIEUPS, Send, X }} /></React.Suspense>}
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={async (reason) => { try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason || null, rejectedBy: meRow.name, rejectedAt: at } : u) })); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } finally { setModal(null); } }} onClose={() => setModal(null)} />}
     </div>
   );
