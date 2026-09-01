@@ -3,6 +3,7 @@ const LazyAPNAdminWithdrawals = React.lazy(() => import("./APNAdminWithdrawals.j
 const LazyAPNAdminReferrals = React.lazy(() => import("./APNAdminReferrals.jsx"));
 const LazyAPNAdminDocs = React.lazy(() => import("./APNAdminDocs.jsx"));
 const LazyAPNAdminContent = React.lazy(() => import("./APNAdminContent.jsx"));
+const LazyAPNAdminAgreements = React.lazy(() => import("./APNAdminAgreements.jsx"));
 const LazyAPNAdminLeaderboard = React.lazy(() => import("./APNAdminLeaderboard.jsx"));
 
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
@@ -436,7 +437,7 @@ export default function APNAdmin(props) {
       ); })()}
       {tab === "content" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading content…</div>}><LazyAPNAdminContent db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
       {tab === "docs" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading documents…</div>}><LazyAPNAdminDocs db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
-      {tab === "agreements" && <APNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} />}
+      {tab === "agreements" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading agreements…</div>}><LazyAPNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
       {tab === "notify" && (() => { const list = (db.apn_notifications || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications sent" text="Send updates to all partners, a district, or one partner." action={<button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>} />
           : list.map((n) => { const sender = apnNotificationSender(n); return <div key={n.id} className="card stat" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 10 }}><Avatar name={sender.name} url={sender.avatar} size={28} fontSize={11} /><div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation} · {n.audience === "all" ? "All partners" : n.audience.startsWith("district:") ? n.audience.slice(9) : "One partner"} · {fmtDateTime(n.createdAt)}</div></div><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_notifications", n.id, `deleted APN notification "${n.title}"`)}><Trash2 size={14} /></button></div>; })}</div>
