@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createPersistQueue } from "./AllbeeApp.jsx";
+import { createPersistQueue } from "./persistQueue.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 

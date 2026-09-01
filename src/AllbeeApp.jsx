@@ -13,6 +13,7 @@ const {
 import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 import { createRealtimeReconnect } from "./realtimeReconnect.js";
+import { createPersistQueue } from "./persistQueue.js";
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
 const LazyAPNAdmin = React.lazy(() => import("./APNAdmin.jsx"));
 const LazyEnterpriseCRM = React.lazy(() => import("./EnterpriseCRM.jsx"));
@@ -12505,24 +12506,6 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
 // for the previous one. If a write fails, the next job rebases against the
 // latest committed snapshot before persisting, preventing optimistic state from
 // carrying an uncommitted/failed change into the next database write.
-export function createPersistQueue({ persist, rebase }) {
-  let tail = Promise.resolve();
-  let needsRebase = false;
-  return (prev, next) => {
-    const job = tail.catch(() => {}).then(async () => {
-      const base = needsRebase ? await rebase() : prev;
-      needsRebase = false;
-      try {
-        await persist(base, next);
-      } catch (error) {
-        needsRebase = true;
-        throw error;
-      }
-    });
-    tail = job.catch(() => {});
-    return job;
-  };
-}
 
 export default function App() {
   const [db, setDb] = useState(null);
