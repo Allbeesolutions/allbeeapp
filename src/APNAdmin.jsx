@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 const LazyAPNAdminWithdrawals = React.lazy(() => import("./APNAdminWithdrawals.jsx"));
 const LazyAPNAdminReferrals = React.lazy(() => import("./APNAdminReferrals.jsx"));
+const LazyAPNAdminDocs = React.lazy(() => import("./APNAdminDocs.jsx"));
 const LazyAPNAdminLeaderboard = React.lazy(() => import("./APNAdminLeaderboard.jsx"));
 
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
@@ -433,7 +434,7 @@ export default function APNAdmin(props) {
           </table></div>}</div>
       ); })()}
       {tab === "content" && <APNAdminContent db={db} openModal={setModal} removeRow={removeRow} />}
-      {tab === "docs" && <APNAdminDocs db={db} openModal={setModal} removeRow={removeRow} />}
+      {tab === "docs" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading documents…</div>}><LazyAPNAdminDocs db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
       {tab === "agreements" && <APNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} />}
       {tab === "notify" && (() => { const list = (db.apn_notifications || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications sent" text="Send updates to all partners, a district, or one partner." action={<button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>} />

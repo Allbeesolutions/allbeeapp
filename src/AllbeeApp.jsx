@@ -11449,26 +11449,6 @@ function APNAdminContent({ db, openModal, removeRow }) {
     </div>
   );
 }
-function APNAdminDocs({ db, openModal, removeRow }) {
-  const list = (db.apn_documents || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return (
-    <div>
-      <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Sales materials</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnDoc" })}><Plus size={15} />Upload</button></div>
-      <div className="apn-list">
-        {list.length === 0 ? <div className="card stat"><Empty icon={<FileText size={20} color="var(--muted)" />} title="No materials" text="Upload scripts, price lists, brochures and posters for partners." /></div>
-          : list.map((d) => (
-            <div key={d.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="tag">{d.category}</span>
-              <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{d.title}</div>
-              <a className="iconbtn" style={{ width: 30, height: 30 }} href={d.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnDoc", initial: d })}><Pencil size={14} /></button>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_documents", d.id, `deleted APN material "${d.title}"`)}><Trash2 size={14} /></button>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
 
 export function RemoteLockGate({ isDark, signOut, pause, children }) {
   const [status, setStatus] = useState("checking"); // checking | locked | unlocked | offline
@@ -12513,7 +12493,7 @@ export default function App() {
       case "apn": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
           <LazyAPNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
-            runtime={{ supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
+            runtime={{ supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminAgreements, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
         </React.Suspense>
       );
       case "activity": return <LastSeen team={team} />;
