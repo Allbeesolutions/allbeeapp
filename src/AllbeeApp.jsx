@@ -5078,11 +5078,21 @@ function AuditLog({ db, isSuper, onOpenActivity }) {
   );
 }
 
-function AllbeeAI({ db, config, me, role, isAdmin, go }) {
-  return <LazyAllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} />;
-}
+const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 
-const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx").then((m) => ({ default: (props) => <m.default {...props} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /> })));
+function AllbeeAI({ db, config, me, role, isAdmin, go }) {
+  return (
+    <LazyAllbeeAI
+      db={db}
+      config={config}
+      me={me}
+      role={role}
+      isAdmin={isAdmin}
+      go={go}
+      runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }}
+    />
+  );
+}
 function AISettings({ config, saveAI }) {
   const init = aiConfigOf(config);
   const [f, setF] = useState(init);
