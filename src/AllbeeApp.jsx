@@ -12,6 +12,7 @@ import {
   Zap, Handshake, ShieldHalf, Ban, UploadCloud, FileUp, ListChecks, Globe2, Headset, LifeBuoy,
 } from "lucide-react";
 import { supabase, SUPABASE_URL } from "./supabaseClient";
+import { createSessionRecovery } from "./sessionRecovery.js";
 
 /* ──────────────────────────────────────────────────────────────────────────
    ALLBEE — Business management app for Haji & Alim (ALLBEE SOLUTIONS)
@@ -16502,8 +16503,25 @@ export default function App() {
   }, []);
 
   // ── auth session ──────────────────────────────────────────────────────
+  const handleAuthRecovery = useMemo(() => createSessionRecovery(
+    async () => {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) throw error;
+      return data.session ?? null;
+    },
+    (e) => {
+      setSyncError(e?.message || "Your session expired. Please sign in again.");
+      setSession(null);
+    },
+  ), []);
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) { setSyncError(error.message || "Could not restore your session."); return; }
+      setSession(data.session ?? null);
+    }).catch((e) => { if (mounted) setSyncError(e?.message || "Could not restore your session."); });
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
       if (_evt === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       // Record a fresh sign-in time (best-effort; the column may not exist yet).
@@ -16518,6 +16536,7 @@ export default function App() {
       // page — wiping anything you were typing. Only update when the actual signed-in
       // user changes (sign in / sign out / switch account); ignore pure token
       // refreshes by returning the previous reference so React skips the update.
+      if (_evt === "SIGNED_OUT") authRecoveryRef.current = false;
       setSession((prev) => {
         const prevId = prev && prev.user ? prev.user.id : null;
         const nextId = s && s.user ? s.user.id : null;
@@ -16525,7 +16544,7 @@ export default function App() {
         return s ?? null;
       });
     });
-    return () => sub.subscription.unsubscribe();
+    return () => { mounted = false; sub.subscription.unsubscribe(); };
   }, []);
 
   // ── load my profile + the team + config, with live updates ────────────
@@ -16639,6 +16658,8 @@ export default function App() {
       };
     });
   }, []);
+
+
 
 // ── load data + live sync while signed in ─────────────────────────────
   useEffect(() => {
