@@ -2484,6 +2484,219 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-head-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
 @media(max-width:760px){.apn-head-overview-grid{grid-template-columns:1fr}.apn-head-mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apn-head-toolbar{align-items:stretch;flex-direction:column}.apn-head-toolbar .searchbox{width:100%}.apn-head-toolbar .select{width:100%}}
 
+/* ── Universal responsive layer ──────────────────────────────────────────
+   The application has many modules built over time. Keep their desktop
+   layouts intact, then use one final mobile/tablet layer to make every
+   surface fit narrow viewports, respect safe areas, and remain touch-friendly.
+   This intentionally targets shared primitives rather than individual pages. */
+html, body { margin:0; min-width:320px; width:100%; overflow-x:hidden; }
+.allbee { width:100%; max-width:100%; overflow-x:hidden; }
+.main, .apn-main, .apn-body, .content { min-width:0; }
+img, video, canvas, svg { max-width:100%; }
+.input, .select, .textarea, button { max-width:100%; }
+
+@media (max-width:1024px) {
+  .content { max-width:none; }
+  .crm-kanban { grid-template-columns:repeat(7,minmax(175px,1fr)); }
+  .ai-health-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .apn-nav-shell { grid-template-columns:220px minmax(0,1fr); }
+  .apn-desktop-sidebar { padding-inline:10px; }
+  .apn-body { max-width:none; }
+  .page-head h3 { max-width:100%; }
+  .table-wrap { max-width:100%; overflow-x:auto; }
+}
+
+@media (max-width:900px) {
+  .layout { grid-template-columns:1fr; }
+  .main { min-width:0; width:100%; }
+  .content { width:100%; padding:16px; }
+  .sidebar { width:min(300px,86vw); padding:18px 12px calc(18px + env(safe-area-inset-bottom)); }
+  .topbar { padding-top:max(8px, env(safe-area-inset-top)); min-height:50px; }
+  .toolbar, .page-head, .detail-head { align-items:stretch; }
+  .toolbar > .search, .toolbar > .search-trigger { flex:1 1 220px; }
+  .row-actions { flex-wrap:wrap; }
+  .row-actions .btn { min-height:38px; }
+  .item-row { flex-wrap:wrap; }
+  .item-row > .row-actions { width:100%; justify-content:flex-end; }
+  .modal { width:min(100%,620px); }
+}
+
+@media (max-width:760px) {
+  /* Touch geometry + iOS zoom prevention. */
+  .allbee button, .allbee .btn, .allbee .iconbtn, .allbee .navitem,
+  .allbee .apn-tab, .allbee .apn-side-link { min-height:44px; }
+  .allbee .btn.sm { min-height:40px; }
+  .allbee .iconbtn { width:40px; min-width:40px; }
+  .allbee input, .allbee select, .allbee textarea { font-size:16px; }
+  .allbee .input, .allbee .select { min-height:44px; }
+  .allbee .textarea { min-height:100px; }
+
+  /* Give pages full usable width and remove desktop-only gutters. */
+  .content { padding:14px 12px calc(24px + env(safe-area-inset-bottom)); }
+  .banner { margin-left:12px; margin-right:12px; }
+  .page-head { gap:8px; margin-bottom:12px; }
+  .page-head h3, .detail-head h3 { font-size:18px; line-height:1.25; }
+  .page-head > .spacer { display:none; }
+  .page-head > .btn, .detail-head > .btn { flex:1 1 140px; }
+  .toolbar > * { min-width:0 !important; }
+  .toolbar > .btn { flex:1 1 120px; }
+  .toolbar > .search { flex-basis:100%; width:100%; }
+  .filterbar { grid-template-columns:1fr; }
+  .grid2, .activity-detail-grid { grid-template-columns:1fr; }
+  .sumrow { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .sumrow .card { min-width:0; padding:12px; }
+  .sumrow .v { font-size:18px; overflow-wrap:anywhere; }
+  .meta-grid { grid-template-columns:1fr 1fr; }
+  .meta-grid > div { padding:10px 11px; min-width:0; overflow-wrap:anywhere; }
+  .cards-grid { grid-template-columns:1fr !important; min-width:0; }
+  .cards-grid > * { min-width:0; }
+  .ai-health-grid, .ai-score-grid, .ai-command-grid { grid-template-columns:1fr 1fr; }
+  .ai-command { min-height:44px; }
+  .crm-kanban { grid-template-columns:repeat(7,minmax(235px,1fr)); }
+
+  /* Inline two/three-column layouts collapse cleanly on phones. */
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: \"1fr 1fr\""],
+  [style*="grid-template-columns: repeat(2,1fr)"],
+  [style*="gridTemplateColumns: \"1fr 1fr\""] { grid-template-columns:1fr !important; }
+
+  /* Never let a long filename, URL, email, JSON or currency value create a
+     horizontal page scroll. */
+  .item-title, .item-meta, .hint-line, .detail-json, .comment .txt,
+  .apn-profile-kv span, .apn-head-statline, .apn-head-mini-grid b,
+  .apn-dashboard-card .v, .apn-dashboard-card .k { overflow-wrap:anywhere; }
+
+  .table-wrap { width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:inherit; }
+  .table-wrap table.tbl { min-width:620px; }
+  .tbl th, .tbl td { padding:10px 11px; }
+
+  /* Forms/actions become thumb-friendly and wrap rather than squeeze. */
+  .composer { align-items:stretch; flex-wrap:wrap; }
+  .composer .textarea { flex:1 1 100%; width:100%; }
+  .composer > .btn { flex:0 0 auto; }
+  .modal-foot { padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
+  .modal-foot .btn { min-height:44px; flex:1 1 130px; }
+  .overlay { padding:8px; padding-top:max(8px,env(safe-area-inset-top)); }
+  .modal { width:100%; max-width:none; max-height:calc(100dvh - 16px); border-radius:16px; }
+  .modal-body { padding:16px; }
+  .modal-head { padding:14px 16px; }
+
+  /* Internal mobile navigation. */
+  .allbee.menu-open .sidebar { box-shadow:18px 0 45px rgba(0,0,0,.25); }
+  .topbar { padding-left:10px; padding-right:10px; gap:7px; }
+  .topbar-title h2 { font-size:14px; }
+  .company-pill { max-width:42vw; }
+  .search-trigger { min-height:40px; }
+
+  /* APN portal. */
+  .apn-body { padding:12px 12px calc(82px + env(safe-area-inset-bottom)); }
+  .apn-top { padding-left:10px; padding-right:10px; gap:7px; }
+  .apn-top h1 { font-size:14px; }
+  .apn-top .apn-id { font-size:10px; }
+  .apn-more-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .apn-metrics { grid-template-columns:1fr 1fr !important; }
+  .apn-metric { padding:11px 12px; }
+  .apn-metric .v { font-size:18px; }
+  .apn-quick-actions { top:4px; margin-inline:0; }
+  .apn-quick-actions .btn { flex:1 1 130px; }
+  .apn-section-head { align-items:flex-start; flex-wrap:wrap; }
+  .apn-action-menu { position:fixed; left:12px; right:12px; top:auto; bottom:calc(74px + env(safe-area-inset-bottom)); width:auto; max-height:60vh; }
+  .apn-fab { right:14px; bottom:calc(76px + env(safe-area-inset-bottom)); }
+  .web-ai-panel { bottom:calc(74px + env(safe-area-inset-bottom)); max-height:calc(100dvh - 90px); }
+
+  /* APN admin chat is a one-pane mobile flow: list first, conversation second. */
+  .apn-admin-chat-shell { grid-template-columns:1fr !important; border-radius:14px; }
+  .apn-admin-chat-shell.has-selection > aside { display:none; }
+  .apn-admin-chat-shell:not(.has-selection) > .apn-tc-chat { display:none; }
+  .apn-admin-chat-shell.has-selection > .apn-tc-chat { display:flex; min-height:0; }
+  .apn-admin-chat-shell > aside { min-height:0; padding:10px; }
+  .apn-admin-chat-shell .seg { overflow-x:auto; }
+  .apn-admin-chat-shell .seg button { min-height:40px; }
+  .apn-admin-chat-shell .apn-tc-chathead { padding:10px; }
+  .apn-admin-chat-shell .apn-tc-messages { padding:14px 10px 8px; }
+  .apn-admin-chat-shell .apn-tc-compose { padding:8px 10px calc(10px + env(safe-area-inset-bottom)); }
+  .apn-admin-chat-shell .apn-tc-compose textarea { font-size:16px; min-height:44px; }
+
+  /* APN member Team Chat uses its existing selected/list flow. */
+  .apn-tc-shell { width:100%; min-width:0; }
+  .apn-teamchat .apn-tc-header { padding-inline:8px; }
+  .apn-teamchat .apn-tc-header .seg { max-width:100%; overflow-x:auto; }
+  .apn-teamchat .apn-tc-header .seg button { min-height:40px; }
+  .apn-tc-sidebar { min-width:0; }
+  .apn-tc-msg { max-width:88%; }
+  .apn-tc-compose { padding-left:10px; padding-right:10px; }
+  .apn-tc-compose textarea { font-size:16px; }
+
+  /* Public AI/proposal surfaces. */
+  .web-ai-composer { padding:9px; }
+  .web-ai-actions .btn { flex:1 1 140px; min-height:44px; }
+  .proposal-preview { max-height:calc(100dvh - 130px); }
+  .proposal-portal-summary { grid-template-columns:1fr; }
+  .proposal-preview-head { flex-direction:column; }
+
+  /* Never make a fixed-height workspace shorter than the phone's usable area. */
+  .apn-teamchat[style*="100vh"],
+  .content[style*="100vh"] { height:calc(100dvh - 76px) !important; max-height:none; }
+}
+
+@media (max-width:480px) {
+  .sumrow, .meta-grid { grid-template-columns:1fr; }
+  .ai-health-grid, .ai-score-grid, .ai-command-grid { grid-template-columns:1fr; }
+  .apn-metrics { grid-template-columns:1fr 1fr !important; }
+  .apn-more-grid { grid-template-columns:1fr 1fr; gap:8px; }
+  .apn-more-item { min-height:72px; padding:12px 6px; }
+  .apn-milestones { grid-template-columns:1fr !important; }
+  .apn-profile-stats { grid-template-columns:1fr 1fr !important; }
+  .row-actions { width:100%; }
+  .row-actions .btn { flex:1 1 120px; }
+  .detail-head > .btn, .page-head > .btn { flex:1 1 100%; }
+  .btn.danger { min-height:44px; }
+  .lock { padding:14px; }
+  .lock-card { padding:28px 18px; border-radius:16px; }
+  .who-grid { grid-template-columns:1fr; }
+  .who-btn { min-height:100px; }
+  .gate-foot { flex-direction:column; }
+  .founder-code-row { flex-direction:column; }
+  .founder-code-row .btn { width:100%; }
+  .apn-top .apn-id { display:none; }
+  .apn-tc-msg { max-width:92%; }
+  .apn-tc-bubble { padding:8px 10px; }
+  .apn-tc-chathead { min-height:56px; }
+  .apn-tc-compose .btn.primary { min-width:52px; padding-inline:10px; }
+}
+
+@media (max-width:360px) {
+  .content { padding-left:9px; padding-right:9px; }
+  .topbar { gap:5px; }
+  .topbar-title h2 { font-size:13px; }
+  .apn-body { padding-left:9px; padding-right:9px; }
+  .apn-top { padding-left:8px; padding-right:8px; }
+  .apn-metric { padding:10px; }
+  .apn-metric .v { font-size:16px; }
+  .apn-tab span { font-size:9px; }
+  .apn-tab.net span { font-size:8.5px; }
+  .btn { padding-inline:10px; }
+}
+
+@media (orientation:landscape) and (max-height:560px) {
+  .sidebar, .apn-desktop-sidebar { height:100dvh; }
+  .modal { max-height:calc(100dvh - 10px); }
+  .overlay { padding-block:5px; }
+  .lock-card { max-height:calc(100dvh - 20px); overflow-y:auto; }
+  .apn-bottomnav { padding-bottom:calc(4px + env(safe-area-inset-bottom)); }
+  .apn-tab { padding-top:4px; padding-bottom:4px; }
+}
+
+@media (pointer:coarse) {
+  .allbee .navitem:hover, .allbee .btn:hover, .allbee .iconbtn:hover,
+  .allbee .apn-side-link:hover, .allbee .apn-tc-partner-row:hover { transform:none; }
+  .allbee button, .allbee a { -webkit-touch-callout:none; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .allbee .sidebar, .allbee .modal, .allbee .overlay { transition:none !important; animation:none !important; }
+}
+
 `;
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -8389,7 +8602,7 @@ export function AdminAPNChat({ me, onUnreadChange }) {
     <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
       <div className="page-head"><h3>APN chat</h3><span className="spacer" />{unread > 0 && <span className="badge action-badge" style={{ marginRight: 8 }}>{unread > 99 ? "99+" : unread} new</span>}<button className="btn sm" onClick={() => load()}><RefreshCw size={14} />Refresh</button></div>
       {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
-      <div className="card" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: selected ? "330px 1fr" : "1fr", overflow: "hidden" }}>
+      <div className={`card apn-admin-chat-shell${selected ? " has-selection" : ""}`} style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: selected ? "330px 1fr" : "1fr", overflow: "hidden" }}>
         <aside style={{ overflowY: "auto", padding: 12, borderRight: selected ? "1px solid var(--border)" : "none" }}>
           <div className="seg" style={{ marginBottom: 10 }}>
             {[['all','All'],['person','Partner chats'],['district','District'],['state','State']].map(([k,l]) => <button key={k} className={filter === k ? "on" : ""} onClick={() => setFilter(k)}>{l}</button>)}
