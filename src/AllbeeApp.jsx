@@ -8579,13 +8579,33 @@ export function AdminAPNChat({ me, onUnreadChange }) {
 
   useEffect(() => {
     const ch = supabase.channel(`admin-apn-team-chat:${me.id}`);
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, async () => {
-      await load(true);
-      const current = selectedRef.current;
-      if (current) await open(current);
-    }).subscribe();
-    const timer = setInterval(() => load(true), 10000);
-    return () => { clearInterval(timer); supabase.removeChannel(ch); };
+    let timerId = null;
+    let inFlight = null;
+    let queued = false;
+    const refreshChat = () => {
+      queued = true;
+      if (timerId || inFlight) return;
+      timerId = setTimeout(async () => {
+        timerId = null;
+        if (!queued) return;
+        queued = false;
+        inFlight = load(true).then(async () => {
+          const current = selectedRef.current;
+          if (current) await open(current);
+        }).catch(() => {}).finally(() => {
+          inFlight = null;
+          if (queued) refreshChat();
+        });
+      }, 120);
+    };
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, refreshChat).subscribe();
+    const timer = setInterval(refreshChat, 10000);
+    return () => {
+      clearInterval(timer);
+      if (timerId) clearTimeout(timerId);
+      queued = false;
+      supabase.removeChannel(ch);
+    };
   }, [load, open, me.id]);
 
   const send = async () => {
@@ -14028,14 +14048,32 @@ function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go 
     if (!isOpen) return;
     const chName = `apn-team-chat:${pid}`;
     const ch = supabase.channel(chName);
+    let timerId = null;
+    let inFlight = null;
+    let queued = false;
+    const refreshChat = () => {
+      queued = true;
+      if (timerId || inFlight) return;
+      timerId = setTimeout(async () => {
+        timerId = null;
+        if (!queued || !mountedRef.current) return;
+        queued = false;
+        inFlight = loadConversations(false).then(async () => {
+          if (mountedRef.current && selectedRef.current) await loadMessages(selectedRef.current, { open: false });
+        }).catch(() => {}).finally(() => {
+          inFlight = null;
+          if (queued) refreshChat();
+        });
+      }, 120);
+    };
     ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((t) =>
-      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, async () => {
-        if (!mountedRef.current) return;
-        await loadConversations(false);
-        if (mountedRef.current && selectedRef.current) await loadMessages(selectedRef.current, { open: false });
-      }));
+      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, refreshChat));
     ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      if (timerId) clearTimeout(timerId);
+      queued = false;
+      supabase.removeChannel(ch);
+    };
   }, [isOpen, loadConversations, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
