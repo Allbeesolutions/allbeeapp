@@ -58,6 +58,8 @@ const LazyInHouseForm = React.lazy(() => import("./InHouseForm.jsx"));
 const LazyTeamConfigForm = React.lazy(() => import("./TeamConfigForm.jsx"));
 const LazyProjectForm = React.lazy(() => import("./ProjectForm.jsx"));
 const LazyStudentForm = React.lazy(() => import("./StudentForm.jsx"));
+const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
+const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -1854,45 +1856,7 @@ function WithdrawForm({ balances, defaultUser, onSave, onClose }) {
   );
 }
 
-function MarketingForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(() => ({ client: "", business: "", plan: "", monthlyFee: "", startDate: todayISO(), notes: "", ...initial }));
-  const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.client.trim().length > 0;
-  const save = () => { if (!valid) return; onSave({ ...initial, id: initial?.id || uid(), client: f.client.trim(), business: f.business.trim(), plan: f.plan.trim(), monthlyFee: Number(f.monthlyFee) || 0, startDate: f.startDate, notes: f.notes.trim(), createdAt: initial?.createdAt || Date.now() }); onClose(); };
-  return (
-    <Modal title={initial?.id ? "Edit marketing client" : "New marketing client"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />Save client</button></>}>
-      <div className="grid2">
-        <Field label="Client name" required><input className="input" value={f.client} onChange={(e) => up("client", e.target.value)} /></Field>
-        <Field label="Business name"><input className="input" value={f.business} onChange={(e) => up("business", e.target.value)} /></Field>
-      </div>
-      <div className="grid2">
-        <Field label="Plan name"><input className="input" value={f.plan} onChange={(e) => up("plan", e.target.value)} placeholder="Growth / Social" /></Field>
-        <Field label="Monthly fee"><input className="input mono" type="number" min="0" value={f.monthlyFee} onChange={(e) => up("monthlyFee", e.target.value)} /></Field>
-      </div>
-      <Field label="Start date"><input className="input" type="date" value={f.startDate} onChange={(e) => up("startDate", e.target.value)} /></Field>
-      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => up("notes", e.target.value)} /></Field>
-    </Modal>
-  );
-}
 
-function ConceptForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(() => ({ title: "", notes: "", date: todayISO(), ...initial, tags: Array.isArray(initial?.tags) ? initial.tags.join(", ") : initial?.tags || "" }));
-  const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.title.trim().length > 0;
-  const save = () => { if (!valid) return; onSave({ ...initial, id: initial?.id || uid(), title: f.title.trim(), notes: f.notes.trim(), tags: f.tags.split(",").map((t) => t.trim()).filter(Boolean), date: f.date, createdAt: initial?.createdAt || Date.now() }); onClose(); };
-  return (
-    <Modal title={initial?.id ? "Edit idea" : "New idea"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!valid}><Check size={16} />Save idea</button></>}>
-      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => up("title", e.target.value)} placeholder="Subscription billing tool" /></Field>
-      <Field label="Detailed notes"><textarea className="textarea" style={{ minHeight: 120 }} value={f.notes} onChange={(e) => up("notes", e.target.value)} placeholder="Flesh out the idea…" /></Field>
-      <div className="grid2">
-        <Field label="Tags" hint="Comma separated"><input className="input" value={f.tags} onChange={(e) => up("tags", e.target.value)} placeholder="saas, future, B2B" /></Field>
-        <Field label="Date"><input className="input" type="date" value={f.date} onChange={(e) => up("date", e.target.value)} /></Field>
-      </div>
-    </Modal>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════════════
    PAGES
@@ -11084,8 +11048,8 @@ export default function App() {
         {modal?.type === "teamcfg" && <React.Suspense fallback={<LoadingScreen />}><LazyTeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, AlertTriangle, Avatar, uid, ROLE_LABEL }} /></React.Suspense>}
         {modal?.type === "student" && <React.Suspense fallback={<LoadingScreen />}><LazyStudentForm initial={modal.initial} onSave={(s) => saveGeneric("students", s, "student")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
         {modal?.type === "classStudent" && <ClassStudentForm initial={modal.initial} onSave={saveClassStudent} onClose={() => setModal(null)} />}
-        {modal?.type === "marketing" && <MarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} />}
-        {modal?.type === "concept" && <ConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} />}
+        {modal?.type === "marketing" && <React.Suspense fallback={<LoadingScreen />}><LazyMarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
+        {modal?.type === "concept" && <React.Suspense fallback={<LoadingScreen />}><LazyConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
         {modal?.type === "lead" && <LeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} />}
         {modal?.type === "client" && <ClientForm initial={modal.initial} existing={db.clients} onSave={(x) => { saveOwned("clients", x); }} onClose={() => setModal(null)} />}
         {modal?.type === "quotation" && <React.Suspense fallback={<LoadingScreen />}><LazyQuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, X, Plus, RefreshCw, Upload, uid, round2, money, uploadAttachment, QUOTE_STATUS }} /></React.Suspense>}
