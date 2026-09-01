@@ -41,6 +41,7 @@ const LazyAPNWallet = React.lazy(() => import("./APNWallet.jsx"));
 const LazyAPNLeads = React.lazy(() => import("./APNLeads.jsx"));
 const LazyAPNLeadForm = React.lazy(() => import("./APNLeadForm.jsx"));
 const LazyAPNWithdrawalCenter = React.lazy(() => import("./APNWithdrawalCenter.jsx"));
+const LazyAPNWalletDetailModal = React.lazy(() => import("./APNWalletDetailModal.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
 const LazyLock = React.lazy(() => import("./Lock.jsx"));
 const LazyTestDetail = React.lazy(() => import("./TestDetail.jsx"));
@@ -6496,27 +6497,6 @@ function APNMetric({ k, v, icon, tone, onClick }) {
   </div>;
 }
 
-function APNWalletDetailModal({ detail, onClose }) {
-  if (!detail) return null;
-  const rows = Array.isArray(detail.rows) ? detail.rows : [];
-  return <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.42)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div className="apn-rowcard" style={{ width: "min(760px, 96vw)", maxHeight: "82vh", overflow: "auto", padding: 0, background: "var(--surface, #fff)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 18 }}>{detail.title}</div><div className="hint-line" style={{ marginTop: 3 }}>Live commission-engine breakdown</div></div>
-        <div className="mono" style={{ fontWeight: 800, fontSize: 18 }}>{detail.value}</div>
-        <button className="btn" onClick={onClose} aria-label="Close details">Close</button>
-      </div>
-      {detail.note && <div className="banner" style={{ margin: 12 }}>{detail.note}</div>}
-      {rows.length === 0 ? <Empty icon={<Coins size={22} color="var(--muted)" />} title="No matching records" text="There are no ledger records for this category yet." /> : <div>
-        {rows.map((r, i) => <div key={r.id || i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 18px", borderTop: i ? "1px solid var(--border)" : undefined }}>
-          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{r.title || "Ledger entry"}</div><div className="hint-line" style={{ marginTop: 3 }}>{r.detail || ""}</div>{r.date && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>{fmtDateTime(r.date)}</div>}</div>
-          <div style={{ textAlign: "right", whiteSpace: "nowrap" }}><div className="mono" style={{ fontWeight: 800, color: Number(r.amount) < 0 ? "var(--neg)" : "var(--pos)" }}>{Number(r.amount) < 0 ? money(r.amount) : `+${money(r.amount)}`}</div>{r.status && <span className={"badge " + (r.statusTone || "")} style={{ marginTop: 4 }}>{r.status}</span>}</div>
-        </div>)}
-      </div>}
-    </div>
-  </div>;
-}
-
 /* ── attendance check-in (Check in → type OK → confirm) ──────────────── */
 function APNCheckIn({ db, pid, mutate }) {
   const [step, setStep] = useState("idle");
@@ -8474,7 +8454,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     switch (tab) {
       case "home": return <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "leads": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading leads…</div></div>}><LazyAPNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} runtime={{ apnLeadsOf, APN_SERVICE_LABEL, apnLeadTone, APN_LEAD_REJECTED, money, fmtDate, Empty, UserPlus, Plus, Handshake, AlertTriangle }} /></React.Suspense>;
-      case "wallet": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading wallet…</div></div>}> <LazyAPNWallet db={db} pid={pid} stats={stats} snap={finSnap} runtime={{ APNMetric, APNWalletDetailModal, APN_COMM_REVERSED, APN_WITHDRAWAL_TYPES, Empty, apnCommTone, apnCommissionProjectsOf, apnCommsOf, apnPayoutDate, apnProjectSummary, apnRequestAmount, apnRevenueCollectionsOf, apnSnapshotWallet, apnWalletLabel, apnWithdrawalLabel, apnWithdrawalTone, apnWithdrawalWalletFor, fmtDate, fmtDateTime, money }} />;</React.Suspense>;
+      case "wallet": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading wallet…</div></div>}> <LazyAPNWallet db={db} pid={pid} stats={stats} snap={finSnap} runtime={{ APNMetric, APNWalletDetailModal: LazyAPNWalletDetailModal, APN_COMM_REVERSED, APN_WITHDRAWAL_TYPES, Empty, apnCommTone, apnCommissionProjectsOf, apnCommsOf, apnPayoutDate, apnProjectSummary, apnRequestAmount, apnRevenueCollectionsOf, apnSnapshotWallet, apnWalletLabel, apnWithdrawalLabel, apnWithdrawalTone, apnWithdrawalWalletFor, fmtDate, fmtDateTime, money }} />;</React.Suspense>;
       case "network": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading network…</div></div>}> <LazyAPNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} refreshTick={snapTick} runtime={{ APNReferralMetric, Avatar, Dashboard, Empty, Modal, fmtDate, fmtDateTime, money, referralCodeFor, referralLinkFor, referralQrFor, referralWalletFor, todayISO }} />;</React.Suspense>;
       case "chat": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading Team Chat…</div>}>
