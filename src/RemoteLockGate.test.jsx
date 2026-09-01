@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { RemoteLockGate, FounderTap } from "./AllbeeApp.jsx";
 
 // The founder lockdown gate, in PAUSE_TEST mode: it must render the lockdown
@@ -140,7 +140,7 @@ describe("RemoteLockGate — hidden logo-tap countdown", () => {
     render(<RemoteLockGate isDark={false} pause />);
     await tapLogo(17);
     expect(countdownShown()?.textContent).toBe("3");
-    await new Promise((r) => setTimeout(r, 2800));
+    await act(async () => { await new Promise((r) => setTimeout(r, 2800)); });
     expect(countdownShown()).toBeNull();
     await tapLogo(17);
     expect(countdownShown()?.textContent).toBe("3");
