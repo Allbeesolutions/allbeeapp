@@ -3429,6 +3429,8 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
         if (!d || typeof d !== "object" || Array.isArray(d) || !Array.isArray(d.transactions)) {
           throw new Error("Invalid ALLBEE backup: the transactions collection is missing or malformed.");
         }
+        const ok = window.confirm("Import this ALLBEE backup? This will replace the current workspace data. The restore is transactional and will roll back automatically if anything fails.");
+        if (!ok) return;
         await replaceDB(d);
       } catch (err) {
         emitToast(err?.message || "That file couldn't be read as an ALLBEE backup.", "error");
