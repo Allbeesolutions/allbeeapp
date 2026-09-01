@@ -16699,19 +16699,27 @@ export default function App() {
     return job;
   }, []);
 
+  const dbRef = useRef(db);
+  useEffect(() => { dbRef.current = db; }, [db]);
+
   const mutate = useCallback((updater, audit) => {
-    setDb((prev) => {
-      if (!prev) return prev;
-      let next = updater(prev);
-      const derived = activityForMutation(prev, next);
-      const supplied = audit ? { ...audit, entity: audit.entity || derived?.entity, entityId: audit.entityId || derived?.entityId } : derived;
-      if (supplied) {
-        const event = activityEntry({ id: uid(), ts: Date.now(), ...supplied }, { user: currentUser || "—", userId: me.id, avatar: profile?.photo_url });
-        next = { ...next, audit: [...(next.audit || []), event] };
-      }
-      enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
-      return next;
-    });
+    // Never perform persistence as a side effect inside a React state updater.
+    // React may invoke functional updaters more than once in development/Strict
+    // Mode; doing I/O there can duplicate writes and audit events. Keep a
+    // synchronous ref as the optimistic source of truth, then enqueue exactly
+    // one persistence job for the transition we just calculated.
+    const prev = dbRef.current;
+    if (!prev) return;
+    let next = updater(prev);
+    const derived = activityForMutation(prev, next);
+    const supplied = audit ? { ...audit, entity: audit.entity || derived?.entity, entityId: audit.entityId || derived?.entityId } : derived;
+    if (supplied) {
+      const event = activityEntry({ id: uid(), ts: Date.now(), ...supplied }, { user: currentUser || "—", userId: me.id, avatar: profile?.photo_url });
+      next = { ...next, audit: [...(next.audit || []), event] };
+    }
+    dbRef.current = next;
+    setDb(next);
+    enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
   }, [currentUser, me.id, profile?.photo_url, enqueuePersist]);
 
   const patchDb = useCallback((updater) => { setDb((prev) => (prev ? updater(prev) : prev)); }, []);
