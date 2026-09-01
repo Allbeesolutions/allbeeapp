@@ -22,6 +22,9 @@ const LazyMyEarnings = React.lazy(() => import("./MyEarnings.jsx"));
 const LazyClients = React.lazy(() => import("./Clients.jsx"));
 const LazyTasks = React.lazy(() => import("./Tasks.jsx"));
 const LazyLeave = React.lazy(() => import("./Leave.jsx"));
+const LazyCourses = React.lazy(() => import("./Courses.jsx"));
+const LazyMarketing = React.lazy(() => import("./Marketing.jsx"));
+const LazyProjects = React.lazy(() => import("./Projects.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -4527,78 +4530,6 @@ function RecentlyDeleted({ db, openModal, restoreItem }) {
   );
 }
 
-function Projects({ db, mutate, openModal, openIncome, removeItem, canFinance, isAdmin, me }) {
-  const list = [...db.projects].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  // Staff may edit a project they created for 7 days; after that it's admin-only.
-  const canEditP = (p) => isAdmin || (p.createdById === me?.id && (Date.now() - (p.createdAt || 0)) < 7 * 86400000);
-  const setStage = (p, stage) => mutate((d) => ({ ...d, projects: d.projects.map((x) => x.id === p.id ? { ...x, stage } : x) }), { action: `set "${p.name}" to ${stage}`, module: "Projects" });
-  const appr = (p) => p.approvalStatus || "approved"; // legacy projects count as approved
-  const setApproval = (p, s) => mutate((d) => ({ ...d, projects: d.projects.map((x) => x.id === p.id ? { ...x, approvalStatus: s, approvedAt: Date.now() } : x) }), { action: `${s === "approved" ? "approved" : "rejected"} project "${p.name}"`, module: "Projects" });
-  const del = (p) => removeItem("projects", p, { name: p.name, audit: `deleted project "${p.name}"` });
-  const pending = isAdmin ? list.filter((p) => appr(p) === "pending").length : 0;
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Projects</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "project" })}><Plus size={16} />New project</button></div>
-      {pending > 0 && <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><Hourglass size={15} /> {pending} project{pending > 1 ? "s" : ""} submitted by staff awaiting your approval.</div>}
-      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-        {list.length === 0 ? <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<FolderKanban size={22} color="var(--muted)" />} title="No projects yet" text="Track websites, apps and software from Lead all the way to Completed." action={<button className="btn primary" onClick={() => openModal({ type: "project" })}><Plus size={16} />New project</button>} /></div>
-          : list.map((p) => (
-            <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div><div className="sub">{p.client || "No client"} · {p.type}</div></div>
-                <div className="mono" style={{ fontWeight: 700 }}>{money(p.cost)}</div>
-              </div>
-              {appr(p) !== "approved" && <div><span className={"badge " + (appr(p) === "rejected" ? "neg" : "accent")}>{appr(p) === "rejected" ? "Rejected" : "Awaiting approval"}</span>{p.ownerName && <span className="hint-line" style={{ fontSize: 11, marginLeft: 8 }}>by {p.ownerName}</span>}</div>}
-              <select className="select" value={p.stage} onChange={(e) => setStage(p, e.target.value)}>{PROJECT_STAGES.map((s) => <option key={s}>{s}</option>)}</select>
-              <div className="item-meta">{p.start && <span>Start {fmtDate(p.start)}</span>}{p.expected && <span>Due {fmtDate(p.expected)}</span>}</div>
-              <div style={{ display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                {isAdmin && appr(p) !== "approved" && <button className="btn sm primary" onClick={() => setApproval(p, "approved")}><Check size={13} />Approve</button>}
-                {isAdmin && appr(p) === "pending" && <button className="btn sm danger" onClick={() => setApproval(p, "rejected")}><X size={13} />Reject</button>}
-                {canFinance && <button className="btn sm primary" onClick={() => openIncome({ client: p.client, project: p.name, amount: p.cost, category: "Project" })}>Record income</button>}
-                {canEditP(p) && <button className="btn sm" onClick={() => openModal({ type: "project", initial: p })}><Pencil size={13} /></button>}
-                {canEditP(p) && <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
-                {!canEditP(p) && <span className="hint-line" style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}><LockIcon size={11} />Admin-only after 7 days</span>}
-              </div>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function Courses({ db, mutate, openModal, openIncome, removeItem, canFinance }) {
-  const list = [...db.students].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const del = (s) => removeItem("students", s, { name: s.name, audit: `removed student ${s.name}` });
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Courses & students</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "student" })}><Plus size={16} />New student</button></div>
-      <div className="card">
-        {list.length === 0 ? <Empty icon={<GraduationCap size={22} color="var(--muted)" />} title="No students yet" text="Register students and record their fees — paid fees flow straight into Accounts." action={<button className="btn primary" onClick={() => openModal({ type: "student" })}><Plus size={16} />New student</button>} />
-          : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>Student</th><th>Course</th><th>Joined</th><th className="num-cell">Fee</th><th>Status</th><th></th></tr></thead>
-            <tbody>{list.map((s) => (
-              <tr key={s.id}>
-                <td><div style={{ fontWeight: 600 }}>{s.name}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{s.phone}</div></td>
-                <td>{s.course || "—"}</td><td className="mono">{fmtDate(s.joinDate)}</td>
-                <td className="num-cell mono">{money(s.fee)}</td>
-                <td><span className={"badge " + (s.paymentStatus === "Paid" ? "pos" : s.paymentStatus === "Partial" ? "accent" : "neg")}>{s.paymentStatus}</span></td>
-                <td><div className="row-actions">
-                  {canFinance && <button className="btn sm primary" onClick={() => openIncome({ client: s.name, project: s.course || "Course fee", amount: s.fee, category: "Course", source: { kind: "student", id: s.id } })}>Record fee</button>}
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "student", initial: s })}><Pencil size={14} /></button>
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove student?", body: `Remove ${s.name}?`, note: "They move to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>
-                </div></td>
-              </tr>
-            ))}</tbody>
-          </table></div>}
-      </div>
-    </div>
-  );
-}
-
-/* ── Class students (training institute roster) — admin/superadmin only ─────
-   Own module, own table (class_students). Import from an existing Excel/CSV/
-   Google Sheet, export back out any time, and — if a Google Sheet webhook is
-   connected — every add/edit is mirrored into that sheet automatically. */
 function ClassStudents({ db, openModal, removeItem, mutate, currentUser, config, saveClassWebhook, isSuper }) {
   const [q, setQ] = useState("");
   const [course, setCourse] = useState("all");
@@ -4808,36 +4739,6 @@ function ClassStudentForm({ initial, onSave, onClose }) {
       </div>
       <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => up("notes", e.target.value)} /></Field>
     </Modal>
-  );
-}
-
-function Marketing({ db, mutate, openModal, openIncome, removeItem, canFinance }) {
-  const list = [...db.marketing].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const del = (m) => removeItem("marketing", m, { name: m.client, audit: `removed marketing client ${m.client}` });
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Digital marketing</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "marketing" })}><Plus size={16} />New client</button></div>
-      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-        {list.length === 0 ? <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<Megaphone size={22} color="var(--muted)" />} title="No marketing clients yet" text="Track monthly retainers and get a due reminder each cycle." action={<button className="btn primary" onClick={() => openModal({ type: "marketing" })}><Plus size={16} />New client</button>} /></div>
-          : list.map((m) => {
-            const due = marketingDue(m);
-            return (
-              <div key={m.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{m.client}</div><div className="sub">{m.business || "—"} · {m.plan || "Plan"}</div></div>
-                  <div className="mono" style={{ fontWeight: 700 }}>{money(m.monthlyFee)}<span style={{ fontSize: 11, color: "var(--muted)" }}>/mo</span></div>
-                </div>
-                <div><span className={"badge " + due.tone}>{due.label}</span></div>
-                <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                  {canFinance && <button className="btn sm primary" onClick={() => openIncome({ client: m.client, project: (m.plan || "Marketing") + " — monthly", amount: m.monthlyFee, category: "Marketing", source: { kind: "marketing", id: m.id } })}>Record payment</button>}
-                  <button className="btn sm" onClick={() => openModal({ type: "marketing", initial: m })}><Pencil size={13} /></button>
-                  <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Remove client?", body: `Remove ${m.client}?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(m) })}><Trash2 size={13} /></button>
-                </div>
-              </div>
-            );
-          })}
-      </div>
-    </div>
   );
 }
 
@@ -15942,10 +15843,10 @@ export default function App() {
       case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
       case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} />;
       case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
-      case "courses": return <Courses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
+      case "courses": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading courses…</div></div>}> <LazyCourses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts }} />;</React.Suspense>;
       case "class-students": return <ClassStudents db={db} openModal={openModal} removeItem={removeItem} mutate={mutate} currentUser={currentUser} config={config} saveClassWebhook={saveClassWebhook} isSuper={isSuper} />;
-      case "marketing": return <Marketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} />;
-      case "projects": return <Projects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} />;
+      case "marketing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading marketing…</div></div>}> <LazyMarketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts }} />;</React.Suspense>;
+      case "projects": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading projects…</div></div>}> <LazyProjects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts }} />;</React.Suspense>;
       case "inhouse": return <InHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} />;
       case "testing": return <Testing db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} />;
       case "leads": return (
