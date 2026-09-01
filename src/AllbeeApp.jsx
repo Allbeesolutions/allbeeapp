@@ -48,6 +48,8 @@ const LazyShareForm = React.lazy(() => import("./ShareForm.jsx"));
 const LazyNotificationForm = React.lazy(() => import("./NotificationForm.jsx"));
 const LazyTestSessionForm = React.lazy(() => import("./TestSessionForm.jsx"));
 const LazyTaskForm = React.lazy(() => import("./TaskForm.jsx"));
+const LazyQuotationForm = React.lazy(() => import("./QuotationForm.jsx"));
+const LazyDocForm = React.lazy(() => import("./DocForm.jsx"));
 
 export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
   let timer = null;
@@ -5017,73 +5019,6 @@ function ClientForm({ initial, onSave, onClose, existing }) {
   );
 }
 
-function QuotationForm({ initial, onSave, onClose, clients, portalClients }) {
-  const [f, setF] = useState(initial || { client: "", clientId: "", title: "", status: "Draft", notes: "", items: [{ desc: "", qty: 1, rate: 0 }], pdfUrl: "" });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const setItem = (i, k, v) => setF((s) => ({ ...s, items: s.items.map((it, j) => j === i ? { ...it, [k]: v } : it) }));
-  const addItem = () => setF((s) => ({ ...s, items: [...s.items, { desc: "", qty: 1, rate: 0 }] }));
-  const delItem = (i) => setF((s) => ({ ...s, items: s.items.filter((_, j) => j !== i) }));
-  const total = (f.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
-  const [err, setErr] = useState("");
-  const pdfRef = useRef(null);
-  const [busy, setBusy] = useState(false);
-  const pickPdf = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setBusy(true); setErr("");
-    try { const up = await uploadAttachment(file); setF((s) => ({ ...s, pdfUrl: up.url })); }
-    catch (er) { setErr(er.message || "Upload failed."); }
-    finally { setBusy(false); if (e.target) e.target.value = ""; }
-  };
-  const save = () => {
-    if (!f.client.trim()) { setErr("Add a client name."); return; }
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), client: f.client.trim(), total: round2(total), pdfUrl: (f.pdfUrl || "").trim() });
-  };
-  return (
-    <Modal title={f.id ? "Edit quotation" : "New quotation"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save quotation</button></>}>
-      <div className="grid2">
-        <Field label="Client" required error={err}>
-          <input className="input" list="quote-clients" value={f.client} onChange={(e) => set("client", e.target.value)} placeholder="Client name" />
-          <datalist id="quote-clients">{(clients || []).map((c) => <option key={c.id} value={c.name} />)}</datalist>
-        </Field>
-        <Field label="Status"><select className="select" value={f.status} onChange={(e) => set("status", e.target.value)}>{QUOTE_STATUS.map((s) => <option key={s}>{s}</option>)}</select></Field>
-      </div>
-      <Field label="Title"><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Website + branding" /></Field>
-      {portalClients && portalClients.length > 0 && (
-        <Field label="Share to portal client" hint="Optional — lets that client see this quote when they sign in.">
-          <select className="select" value={f.clientId} onChange={(e) => set("clientId", e.target.value)}>
-            <option value="">Don't share</option>
-            {portalClients.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.email})</option>)}
-          </select>
-        </Field>
-      )}
-      <div className="field">
-        <label>Line items</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {(f.items || []).map((it, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 64px 90px 32px", gap: 6, alignItems: "center" }}>
-              <input className="input" value={it.desc} onChange={(e) => setItem(i, "desc", e.target.value)} placeholder="Description" />
-              <input className="input" type="number" value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} placeholder="Qty" />
-              <input className="input" type="number" value={it.rate} onChange={(e) => setItem(i, "rate", e.target.value)} placeholder="Rate" />
-              <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => delItem(i)} disabled={f.items.length === 1}><X size={14} /></button>
-            </div>
-          ))}
-        </div>
-        <button className="btn sm" style={{ marginTop: 8 }} onClick={addItem}><Plus size={13} />Add line</button>
-      </div>
-      <div className="calc-box"><div className="calc-row"><span>Total</span><b className="mono">{money(total)}</b></div></div>
-      <Field label="Attach PDF" hint="Optional — store a PDF of this quotation (≤50MB).">
-        <div style={{ display: "flex", gap: 8 }}>
-          <input className="input" value={f.pdfUrl || ""} onChange={(e) => set("pdfUrl", e.target.value)} placeholder="https://… or upload →" />
-          <button className="btn" type="button" onClick={() => pdfRef.current?.click()} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Upload size={15} />}Upload</button>
-          <input ref={pdfRef} type="file" accept="application/pdf" onChange={pickPdf} style={{ display: "none" }} />
-        </div>
-      </Field>
-      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Terms, validity, etc." /></Field>
-    </Modal>
-  );
-}
-
 function PlannedForm({ initial, onSave, onClose }) {
   const [f, setF] = useState(initial || { title: "", category: "Office Rent", amount: "", recurrence: "Monthly", status: "Planned", nextDue: todayISO(), notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -5135,67 +5070,6 @@ function VaultForm({ initial, onSave, onClose }) {
       </Field>
       <Field label="Login URL"><input className="input" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://…" /></Field>
       <Field label="Notes" hint="Recovery email, 2FA backup codes, etc."><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
-    </Modal>
-  );
-}
-
-function DocForm({ initial, onSave, onClose, team, portalClients }) {
-  const [f, setF] = useState(initial || { title: "", category: "Contract", url: "", notes: "", audience: "internal", userIds: [], clientId: "" });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const fileRef = useRef(null);
-  const [busy, setBusy] = useState(false);
-  const pick = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setBusy(true); setErr("");
-    try { const up = await uploadAttachment(file); setF((s) => ({ ...s, url: up.url, title: s.title || up.name })); }
-    catch (er) { setErr(er.message || "Upload failed."); }
-    finally { setBusy(false); if (e.target) e.target.value = ""; }
-  };
-  const save = () => {
-    if (!f.title.trim()) { setErr("Add a title."); return; }
-    if (!f.url.trim()) { setErr("Add a link to the file."); return; }
-    const norm = { ...f, clientId: f.audience === "client" ? f.clientId : "", userIds: f.audience === "members" ? (f.userIds || []) : [] };
-    onSave({ ...norm, id: f.id || uid(), createdAt: f.createdAt || Date.now(), title: f.title.trim(), url: f.url.trim() });
-  };
-  return (
-    <Modal title={f.id ? "Edit document" : "Add document"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
-      <div className="grid2">
-        <Field label="Title" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. NDA template" /></Field>
-        <Field label="Category"><SelectOther value={f.category} onChange={(v) => set("category", v)} options={DOC_CATEGORIES.filter((c) => c !== "Other")} placeholder="Custom category…" /></Field>
-      </div>
-      <Field label="File or link" required hint="Upload (image ≤10MB, PDF ≤50MB, other ≤25MB) or paste a link.">
-        <div style={{ display: "flex", gap: 8 }}>
-          <input className="input" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://… or upload →" />
-          <button className="btn" type="button" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Upload size={15} />}Upload</button>
-          <input ref={fileRef} type="file" onChange={pick} style={{ display: "none" }} />
-        </div>
-      </Field>
-      <Field label="Who can see this">
-        <select className="select" value={f.audience} onChange={(e) => set("audience", e.target.value)}>
-          <option value="internal">Everyone (internal team)</option>
-          <option value="members">Specific team members</option>
-          <option value="client">A portal client</option>
-        </select>
-      </Field>
-      {f.audience === "members" && (
-        <Field label="Team members" hint="Only these people (plus admins) can see it.">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{(team || []).filter((pp) => pp.role !== "client").map((pp) => {
-            const on = (f.userIds || []).includes(pp.id);
-            return <button type="button" key={pp.id} onClick={() => set("userIds", on ? (f.userIds || []).filter((x) => x !== pp.id) : [...(f.userIds || []), pp.id])} style={{ padding: "5px 10px", borderRadius: 999, border: "1px solid var(--border)", background: on ? "var(--primary)" : "var(--surface)", color: on ? "#fff" : "var(--ink)", cursor: "pointer", fontSize: 12.5 }}>{pp.name}</button>;
-          })}</div>
-        </Field>
-      )}
-      {f.audience === "client" && (
-        <Field label="Portal client" hint="Shows in that client's portal under Files.">
-          <select className="select" value={f.clientId} onChange={(e) => set("clientId", e.target.value)}>
-            <option value="">Select a client…</option>
-            {(portalClients || []).map((pp) => <option key={pp.id} value={pp.id}>{pp.name} ({pp.email})</option>)}
-          </select>
-        </Field>
-      )}
-      <Field label="Notes"><textarea className="textarea" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
     </Modal>
   );
 }
@@ -11393,11 +11267,11 @@ export default function App() {
         {modal?.type === "concept" && <ConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} />}
         {modal?.type === "lead" && <LeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} />}
         {modal?.type === "client" && <ClientForm initial={modal.initial} existing={db.clients} onSave={(x) => { saveOwned("clients", x); }} onClose={() => setModal(null)} />}
-        {modal?.type === "quotation" && <QuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "quotation" && <React.Suspense fallback={<LoadingScreen />}><LazyQuotationForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("quotations", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, X, Plus, RefreshCw, Upload, uid, round2, money, uploadAttachment, QUOTE_STATUS }} /></React.Suspense>}
         {modal?.type === "invoice" && <InvoiceForm initial={modal.initial} clients={db.clients} portalClients={portalClients} onSave={(x) => saveOwned("invoices", x)} onClose={() => setModal(null)} />}
         {modal?.type === "planned" && <PlannedForm initial={modal.initial} onSave={(x) => saveOwned("planned", x)} onClose={() => setModal(null)} />}
         {modal?.type === "vault" && <VaultForm initial={modal.initial} onSave={(x) => saveOwned("vault", x)} onClose={() => setModal(null)} />}
-        {modal?.type === "document" && <DocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "document" && <React.Suspense fallback={<LoadingScreen />}><LazyDocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, SelectOther, RefreshCw, Upload, uid, uploadAttachment, DOC_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
         {modal?.type === "prompt" && <PromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} />}
         {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
