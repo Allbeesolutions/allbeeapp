@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 
+const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
+
 export default function APNAdmin(props) {
   const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen } = props;
   const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, ...rest } = props.runtime || {};
@@ -451,7 +453,7 @@ export default function APNAdmin(props) {
       {modal?.type === "apnCommunication" && <APNCommunicationForm partner={modal.partner} onClose={() => setModal(null)} onSave={(value) => saveCommunication(modal.partner, value)} />}
       {modal?.type === "apnBulk" && <APNBulkForm action={modal.action} partners={modal.partners} onClose={() => setModal(null)} onSave={(values) => executeBulk(modal.action, modal.partners, values)} />}
       {modal?.type === "apnCreatePartner" && <APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} onClose={() => setModal(null)} />}
-      {modal?.type === "apnCommissionEntry" && <APNCommissionEntry db={db} initial={modal.initial} partners={[...new Map([...(partners.filter((p) => apnEffectiveStatus(p) === "active")), ...((db.apn_users || []).filter((p) => p.id === modal.initial?.partnerId))].map((p) => [p.id, p])).values()]} onSave={saveCommissionProject} onClose={() => setModal(null)} onDelete={modal.onDelete} />}
+      {modal?.type === "apnCommissionEntry" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading commission manager…</div>}><LazyAPNCommissionEntry db={db} initial={modal.initial} partners={[...new Map([...(partners.filter((p) => apnEffectiveStatus(p) === "active")), ...((db.apn_users || []).filter((p) => p.id === modal.initial?.partnerId))].map((p) => [p.id, p])).values()]} onSave={saveCommissionProject} onClose={() => setModal(null)} onDelete={modal.onDelete} runtime={props.runtime} /></React.Suspense>}
       {modal?.type === "apnCommissionReverse" && <APNCommissionReverseModal commission={modal.commission} partnerName={modal.partnerName} isSuper={modal.isSuper} onClose={() => setModal(null)} onSave={(reason, unlockPaid) => reverseCommissionNow(modal.commission, reason, unlockPaid)} />}
       {modal?.type === "apnLeadManage" && <APNLeadManage lead={modal.lead} onSave={saveLead} onClose={() => setModal(null)} />}
       {modal?.type === "apnTarget" && <APNTargetForm partners={partners.filter((p) => apnEffectiveStatus(p) !== "rejected")} heads={(db.apn_users || []).filter((u) => u.role === "district_head" || u.level === "District Head")} onSave={saveTarget} onClose={() => setModal(null)} />}
