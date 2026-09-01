@@ -69,6 +69,7 @@ const LazyLeadForm = React.lazy(() => import("./LeadForm.jsx"));
 const LazyLeaveForm = React.lazy(() => import("./LeaveForm.jsx"));
 const LazyResignForm = React.lazy(() => import("./ResignForm.jsx"));
 const LazyIncentiveForm = React.lazy(() => import("./IncentiveForm.jsx"));
+const LazyPermsModal = React.lazy(() => import("./PermsModal.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -3244,25 +3245,6 @@ function Updates({ db, mutate, me, isAdmin, removeItem, openModal }) {
   );
 }
 
-function PermsModal({ person, onSave, onClose }) {
-  const init = Array.isArray(person.perms?.modules) ? person.perms.modules : [];
-  const [mods, setMods] = useState(init);
-  const toggle = (k) => setMods((m) => m.includes(k) ? m.filter((x) => x !== k) : [...m, k]);
-  return (
-    <Modal title={`Module access — ${person.name}`} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => { onSave(mods); onClose(); }}><Check size={15} />Save access</button></>}>
-      <p className="hint-line" style={{ lineHeight: 1.55 }}>Tick the business modules {person.name} can open. Their personal screens — tasks, attendance, leave and daily updates — are always available.</p>
-      <div className="perm-list">
-        {GRANTABLE_MODULES.map(([k, label]) => (
-          <label key={k} className="perm-item">
-            <input type="checkbox" checked={mods.includes(k)} onChange={() => toggle(k)} />{label}
-          </label>
-        ))}
-      </div>
-    </Modal>
-  );
-}
-
 function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAPN }) {
   const [permFor, setPermFor] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -3389,7 +3371,7 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
           Partners (Haji &amp; Alim) and accountants are the only people who see Share &amp; accounts and Withdrawals. Admins run the team, projects and approvals but not the money. Set a status of Suspended, Resigned or Terminated to revoke someone's access immediately; On leave keeps it.
         </div>
       </div>
-      {permFor && <PermsModal person={permFor} onClose={() => setPermFor(null)} onSave={(modules) => changeProfile(permFor.id, { perms: { ...(permFor.perms || {}), modules } }, `updated ${permFor.name}'s module access`)} />}
+      {permFor && <React.Suspense fallback={<LoadingScreen />}><LazyPermsModal person={permFor} onClose={() => setPermFor(null)} onSave={(modules) => changeProfile(permFor.id, { perms: { ...(permFor.perms || {}), modules } }, `updated ${permFor.name}'s module access`)} runtime={{ useState, Modal, Check, GRANTABLE_MODULES }} /></React.Suspense>}
       {creating && <CreateUserModal onActivity={onActivity} onClose={() => setCreating(false)} />}
       {manageFor && <ManageUserModal person={manageFor} onActivity={onActivity} onClose={() => setManageFor(null)} />}
     </div>
