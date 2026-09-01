@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 const LazyAPNAdminWithdrawals = React.lazy(() => import("./APNAdminWithdrawals.jsx"));
+const LazyAPNAdminReferrals = React.lazy(() => import("./APNAdminReferrals.jsx"));
 
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
 
@@ -422,7 +423,7 @@ export default function APNAdmin(props) {
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
       {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} />}
       {tab === "withdrawals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading withdrawals…</div>}><LazyAPNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
-      {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
+      {tab === "referrals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading referrals…</div>}><LazyAPNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
       {tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
       {tab === "targets" && (() => { const list = (db.apn_targets || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
