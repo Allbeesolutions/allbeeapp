@@ -16411,6 +16411,29 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
   );
 }
 
+// Deterministic write queue: callers enqueue snapshots, and each write waits
+// for the previous one. If a write fails, the next job rebases against the
+// latest committed snapshot before persisting, preventing optimistic state from
+// carrying an uncommitted/failed change into the next database write.
+export function createPersistQueue({ persist, rebase }) {
+  let tail = Promise.resolve();
+  let needsRebase = false;
+  return (prev, next) => {
+    const job = tail.catch(() => {}).then(async () => {
+      const base = needsRebase ? await rebase() : prev;
+      needsRebase = false;
+      try {
+        await persist(base, next);
+      } catch (error) {
+        needsRebase = true;
+        throw error;
+      }
+    });
+    tail = job.catch(() => {});
+    return job;
+  };
+}
+
 export default function App() {
   const [db, setDb] = useState(null);
   const [session, setSession] = useState(undefined); // undefined = checking, null = signed out
@@ -16617,7 +16640,7 @@ export default function App() {
     });
   }, []);
 
-  // ── load data + live sync while signed in ─────────────────────────────
+// ── load data + live sync while signed in ─────────────────────────────
   useEffect(() => {
     if (!session) { setDb(null); setLoading(false); return; }
     setLoading(true);
@@ -16676,28 +16699,7 @@ export default function App() {
   // Every mutation gets one standardized activity event. Explicit audit
   // descriptions remain authoritative; older paths without one receive a
   // backward-compatible event derived from the changed collection.
-  const persistQueueRef = useRef(Promise.resolve());
-  const persistNeedsRebaseRef = useRef(false);
-  const enqueuePersist = useCallback((prev, next) => {
-    const job = persistQueueRef.current.catch(() => {}).then(async () => {
-      // If the preceding write failed, its optimistic state may not exist in
-      // the database. Rebase this queued mutation against the latest committed
-      // snapshot so a later save cannot accidentally preserve the stale gap.
-      let base = prev;
-      if (persistNeedsRebaseRef.current) {
-        base = await fetchAll();
-        persistNeedsRebaseRef.current = false;
-      }
-      try {
-        await persistWithRetry(base, next);
-      } catch (e) {
-        persistNeedsRebaseRef.current = true;
-        throw e;
-      }
-    });
-    persistQueueRef.current = job.catch(() => {});
-    return job;
-  }, []);
+  const enqueuePersist = useMemo(() => createPersistQueue({ persist: persistWithRetry, rebase: fetchAll }), []);
 
   const dbRef = useRef(db);
   useEffect(() => { dbRef.current = db; }, [db]);
