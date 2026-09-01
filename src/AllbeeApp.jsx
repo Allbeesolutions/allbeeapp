@@ -10695,10 +10695,10 @@ function apnDerivedTimeline(db, partner) {
   if (partner.approvedAt) out.push(apnTimelineEntry(pid, "approved", "Approved by Super Admin", "The APN application was approved.", partner.approvedBy || "Super Admin", null, partner.approvedAt));
   if (partner.district && (partner.districtAssignedAt || partner.createdAt)) out.push(apnTimelineEntry(pid, "district-assigned", "District Assigned", `Assigned to ${partner.district}.`, partner.districtAssignedBy || "System", null, partner.districtAssignedAt || partner.createdAt));
   (db.apn_transfer_history || []).filter((x) => x.partnerId === pid).forEach((x) => out.push(apnTimelineEntry(pid, `district-changed:${x.id}`, "District Changed", `${x.previousDistrict || "Unassigned"} → ${x.newDistrict || "Unassigned"}${x.reason ? ` · ${x.reason}` : ""}.`, x.changedBy || "System", null, x.effectiveDate || x.createdAt)));
-  const leads = (db.apn_leads || []).filter((x) => x.partnerId === pid).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const quotes = (db.apn_quotations || []).filter((x) => x.partnerId === pid).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const leads = (db.apn_leads || []).filter((x) => x.partnerId === pid).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const quotes = (db.apn_quotations || []).filter((x) => x.partnerId === pid).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const converted = leads.find((x) => x.status === "Converted");
-  const commission = (db.apn_commissions || []).filter((x) => x.partnerId === pid).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const commission = (db.apn_commissions || []).filter((x) => x.partnerId === pid).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   if (Object.keys(partner.quizPasses || {}).length) out.push(apnTimelineEntry(pid, "quiz-completed", "Quiz Completed", "A partner quiz was completed.", "System", null, partner.quizCompletedAt || partner.updatedAt || partner.createdAt));
   if (APN_SERVICES.every(([k]) => partner.unlocked?.[k])) out.push(apnTimelineEntry(pid, "training-completed", "Training Completed", "All APN training categories are complete.", "System", null, partner.trainingCompletedAt || partner.updatedAt || partner.createdAt));
   if (leads[0]) out.push(apnTimelineEntry(pid, "first-lead", "First Lead Submitted", `First lead submitted for ${leads[0].clientName || "a client"}.`, "System", null, leads[0].createdAt));
@@ -12022,7 +12022,7 @@ function APNLeadForm({ meRow, db, initial, onSave, onClose }) {
 }
 function APNLeads({ db, meRow, pid, openModal, mutate }) {
   const [view, setView] = useState("all");
-  const all = apnLeadsOf(db, pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const all = apnLeadsOf(db, pid).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = view === "all" ? all : view === "open" ? all.filter((l) => !["Converted", "Lost", "Invalid", "Fake", "Duplicate"].includes(l.status)) : all.filter((l) => l.status === "Converted");
   return (
     <div>
@@ -13261,7 +13261,7 @@ function APNTraining({ db, meRow, pid, mutate }) {
 
 /* ── targets ─────────────────────────────────────────────────────────── */
 function APNTargets({ db, pid, mutate, go }) {
-  const list = (db.apn_targets || []).filter((t) => t.partnerId === pid).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = (db.apn_targets || []).filter((t) => t.partnerId === pid).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const ack = (t) => mutate((d) => ({ ...d, apn_targets: (d.apn_targets || []).map((x) => x.id === t.id ? { ...x, acknowledged: true, acknowledgedAt: Date.now() } : x) }), null);
   // Deep link #/targets/<id> — acknowledge the target the head sent you to and
   // surface it, so a notification tap lands exactly where it should.
@@ -13306,7 +13306,7 @@ function APNTargets({ db, pid, mutate, go }) {
 
 /* ── documents ───────────────────────────────────────────────────────── */
 function APNDocuments({ db }) {
-  const list = (db.apn_documents || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = (db.apn_documents || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div>
       <div className="apn-section-h">Sales materials</div>
@@ -13324,7 +13324,7 @@ function APNDocuments({ db }) {
 
 /* ── notifications ───────────────────────────────────────────────────── */
 function APNNotifications({ db, meRow }) {
-  const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div>
       <div className="apn-section-h">Notifications</div>
@@ -15362,7 +15362,7 @@ function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal,
 }
 function APNAdminLeads({ db, openModal }) {
   const [view, setView] = useState("Submitted");
-  const list = (db.apn_leads || []).filter((l) => view === "all" ? true : l.status === view).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = (db.apn_leads || []).filter((l) => view === "all" ? true : l.status === view).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div>
       <div className="apn-seg-scroll">{["Submitted", "Approved", "Quotation Sent", "Converted", "all"].map((k) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{k === "all" ? "All" : k}</button>)}</div>
@@ -15465,7 +15465,7 @@ function APNCommissionReverseModal({ commission, partnerName, isSuper, onClose, 
 function APNAdminCommissions({ db, setCommStatus, openProject, onDelete, onReverse }) {
   const [view, setView] = useState("all");
   const projects = apnCommissionProjectsOf(db).map((project) => apnProjectSummary(db, project)).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-  const legacy = (db.apn_commissions || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const legacy = (db.apn_commissions || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const partnerName = (id) => (db.apn_users || []).find((u) => u.id === id)?.name || "—";
   const summary = apnCommissionDashboardSummary(db);
   const projectList = projects.filter((project) => view === "all" || view === "legacy" || project.status === view);
@@ -15484,7 +15484,7 @@ function APNAdminCommissions({ db, setCommStatus, openProject, onDelete, onRever
   );
 }
 function APNAdminContent({ db, openModal, removeRow }) {
-  const training = (db.apn_training || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const training = (db.apn_training || []).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const quizzes = (db.apn_quizzes || []);
   return (
     <div>
@@ -15516,7 +15516,7 @@ function APNAdminContent({ db, openModal, removeRow }) {
   );
 }
 function APNAdminDocs({ db, openModal, removeRow }) {
-  const list = (db.apn_documents || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = (db.apn_documents || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div>
       <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Sales materials</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnDoc" })}><Plus size={15} />Upload</button></div>
@@ -16163,7 +16163,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "withdrawals" && <APNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "referrals" && <APNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} />}
       {tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
-      {tab === "targets" && (() => { const list = (db.apn_targets || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
+      {tab === "targets" && (() => { const list = (db.apn_targets || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
           : <div style={{ overflowX: "auto" }}><table className="tbl apn-mobile-cards"><thead><tr><th>Partner</th><th>Target</th><th>Progress</th><th>Acknowledged</th></tr></thead>
             <tbody>{list.map((t) => { const p = apnTargetProgress(db, t); return <tr key={t.id}><td data-label="Partner">{t.partnerName}</td><td data-label="Target">{t.title}<div className="hint-line" style={{ fontSize: 11 }}>{t.goal} {apnMetricLabel(t.metric)}</div></td><td data-label="Progress" className="mono">{p.raw}/{p.goal} ({p.pct}%)</td><td data-label="Acknowledged">{t.acknowledged ? <span className="badge pos">Yes</span> : <span className="badge">No</span>}</td></tr>; })}</tbody>
@@ -16172,7 +16172,7 @@ function APNAdmin({ db, mutate, isSuper, isAdmin, currentUser, currentUserId, cu
       {tab === "content" && <APNAdminContent db={db} openModal={setModal} removeRow={removeRow} />}
       {tab === "docs" && <APNAdminDocs db={db} openModal={setModal} removeRow={removeRow} />}
       {tab === "agreements" && <APNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} />}
-      {tab === "notify" && (() => { const list = (db.apn_notifications || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
+      {tab === "notify" && (() => { const list = (db.apn_notifications || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications sent" text="Send updates to all partners, a district, or one partner." action={<button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>} />
           : list.map((n) => { const sender = apnNotificationSender(n); return <div key={n.id} className="card stat" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 10 }}><Avatar name={sender.name} url={sender.avatar} size={28} fontSize={11} /><div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation} · {n.audience === "all" ? "All partners" : n.audience.startsWith("district:") ? n.audience.slice(9) : "One partner"} · {fmtDateTime(n.createdAt)}</div></div><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_notifications", n.id, `deleted APN notification "${n.title}"`)}><Trash2 size={14} /></button></div>; })}</div>
       ); })()}
