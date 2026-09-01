@@ -11417,38 +11417,6 @@ function APNAdminCommissions({ db, setCommStatus, openProject, onDelete, onRever
     </div>
   );
 }
-function APNAdminContent({ db, openModal, removeRow }) {
-  const training = (db.apn_training || []).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const quizzes = (db.apn_quizzes || []);
-  return (
-    <div>
-      <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Training</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnTraining" })}><Plus size={15} />Lesson</button></div>
-      <div className="apn-list" style={{ marginBottom: 18 }}>
-        {training.length === 0 ? <div className="card stat"><Empty icon={<GraduationCap size={20} color="var(--muted)" />} title="No lessons yet" text="Add sales training for each category." /></div>
-          : training.map((t) => (
-            <div key={t.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="tag">{APN_SERVICE_LABEL[t.category]}</span>
-              <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{t.title}</div>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnTraining", initial: t })}><Pencil size={14} /></button>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_training", t.id, `deleted APN lesson "${t.title}"`)}><Trash2 size={14} /></button>
-            </div>
-          ))}
-      </div>
-      <div className="page-head" style={{ marginBottom: 12 }}><h3 style={{ fontSize: 16 }}>Quizzes</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "apnQuiz" })}><Plus size={15} />Quiz</button></div>
-      <div className="apn-list">
-        {quizzes.length === 0 ? <div className="card stat"><Empty icon={<ClipboardCheck size={20} color="var(--muted)" />} title="No quizzes yet" text="A passed quiz unlocks that category's lead submission for partners." /></div>
-          : quizzes.map((qz) => (
-            <div key={qz.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="tag">{APN_SERVICE_LABEL[qz.category]}</span>
-              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{qz.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{(qz.questions || []).length} questions · pass {qz.passPct || 60}%</div></div>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnQuiz", initial: qz })}><Pencil size={14} /></button>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_quizzes", qz.id, `deleted APN quiz "${qz.title}"`)}><Trash2 size={14} /></button>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
 
 export function RemoteLockGate({ isDark, signOut, pause, children }) {
   const [status, setStatus] = useState("checking"); // checking | locked | unlocked | offline
@@ -12493,7 +12461,7 @@ export default function App() {
       case "apn": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
           <LazyAPNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
-            runtime={{ supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminAgreements, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
+            runtime={{ supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, APNAdminReferrals, APNAdminSupport, APNAdminAgreements, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
         </React.Suspense>
       );
       case "activity": return <LastSeen team={team} />;

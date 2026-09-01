@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 const LazyAPNAdminWithdrawals = React.lazy(() => import("./APNAdminWithdrawals.jsx"));
 const LazyAPNAdminReferrals = React.lazy(() => import("./APNAdminReferrals.jsx"));
 const LazyAPNAdminDocs = React.lazy(() => import("./APNAdminDocs.jsx"));
+const LazyAPNAdminContent = React.lazy(() => import("./APNAdminContent.jsx"));
 const LazyAPNAdminLeaderboard = React.lazy(() => import("./APNAdminLeaderboard.jsx"));
 
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
@@ -433,7 +434,7 @@ export default function APNAdmin(props) {
             <tbody>{list.map((t) => { const p = apnTargetProgress(db, t); return <tr key={t.id}><td data-label="Partner">{t.partnerName}</td><td data-label="Target">{t.title}<div className="hint-line" style={{ fontSize: 11 }}>{t.goal} {apnMetricLabel(t.metric)}</div></td><td data-label="Progress" className="mono">{p.raw}/{p.goal} ({p.pct}%)</td><td data-label="Acknowledged">{t.acknowledged ? <span className="badge pos">Yes</span> : <span className="badge">No</span>}</td></tr>; })}</tbody>
           </table></div>}</div>
       ); })()}
-      {tab === "content" && <APNAdminContent db={db} openModal={setModal} removeRow={removeRow} />}
+      {tab === "content" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading content…</div>}><LazyAPNAdminContent db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
       {tab === "docs" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading documents…</div>}><LazyAPNAdminDocs db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
       {tab === "agreements" && <APNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} />}
       {tab === "notify" && (() => { const list = (db.apn_notifications || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
