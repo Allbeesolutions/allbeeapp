@@ -6745,10 +6745,20 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef(null);
+  const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const isAdmin = isAdminRole(role);
   const allowKey = (allowedRoutes || []).join(",");
 
-  useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 30); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement;
+    const t = setTimeout(() => inputRef.current?.focus(), 30);
+    return () => {
+      clearTimeout(t);
+      const previous = previousFocusRef.current;
+      if (previous && typeof previous.focus === "function") previous.focus();
+    };
+  }, []);
 
   const index = useMemo(() => {
     const allow = new Set(allowedRoutes || []);
@@ -6844,7 +6854,16 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
 
   return (
     <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cmdk" role="dialog" aria-modal="true" aria-label="Global search" onKeyDown={onKey}>
+      <div ref={dialogRef} className="cmdk" role="dialog" aria-modal="true" aria-label="Global search" onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+        if (e.key !== "Tab") return;
+        const nodes = Array.from(dialogRef.current?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
+        if (!nodes.length) return;
+        const first = nodes[0]; const last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        onKey(e);
+      }}>
         <div className="cmdk-input">
           <Search size={20} color="var(--muted)" aria-hidden="true" />
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search modules, people, projects, tasks, notes…" aria-label="Search all accessible records" />
@@ -8731,7 +8750,17 @@ function APNProfile({ db, meRow, stats, snap, profile, sessionEmail, mutate, onS
 function APNSearch({ db, meRow, pid, go, onClose }) {
   const [q, setQ] = useState("");
   const inputRef = useRef(null);
-  useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 30); return () => clearTimeout(t); }, []);
+  const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement;
+    const t = setTimeout(() => inputRef.current?.focus(), 30);
+    return () => {
+      clearTimeout(t);
+      const previous = previousFocusRef.current;
+      if (previous && typeof previous.focus === "function") previous.focus();
+    };
+  }, []);
   const index = useMemo(() => {
     const out = [];
     for (const l of apnLeadsOf(db, pid)) out.push({ id: "l" + l.id, tab: "leads", module: "Lead", title: l.clientName, sub: `${APN_SERVICE_LABEL[l.service]} · ${l.status}`, text: searchHay(l) });
@@ -8749,7 +8778,15 @@ function APNSearch({ db, meRow, pid, go, onClose }) {
   }, [q, index]);
   return (
     <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cmdk" role="dialog" aria-modal="true" aria-label="Search APN" onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
+      <div ref={dialogRef} className="cmdk" role="dialog" aria-modal="true" aria-label="Search APN" onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+        if (e.key !== "Tab") return;
+        const nodes = Array.from(dialogRef.current?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
+        if (!nodes.length) return;
+        const first = nodes[0]; const last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }}>
         <div className="cmdk-input"><Search size={20} color="var(--muted)" aria-hidden="true" /><input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads, quotations, materials…" aria-label="Search APN records" /><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} aria-label="Close search" title="Close search"><X size={16} /></button></div>
         <div className="cmdk-results">
           {!q.trim() ? <div className="cmdk-empty">Search your leads, quotations, targets, training and materials.</div>
