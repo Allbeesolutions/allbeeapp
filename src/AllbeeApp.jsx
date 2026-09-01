@@ -12,6 +12,7 @@ const {
 import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 import { createRealtimeReconnect } from "./realtimeReconnect.js";
+const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
 const LazyAPNAdmin = React.lazy(() => import("./APNAdmin.jsx"));
 const LazyEnterpriseCRM = React.lazy(() => import("./EnterpriseCRM.jsx"));
 
@@ -14250,7 +14251,12 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
       case "wallet": return <APNWallet db={db} pid={pid} stats={stats} snap={finSnap} />;
       case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} refreshTick={snapTick} />;
-      case "chat": return <APNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isDark={isDark} isOpen={tab === "chat"} refreshTick={snapTick} go={go} />;
+      case "chat": return (
+        <React.Suspense fallback={<div className="allbee-loading-card">Loading Team Chat…</div>}>
+          <LazyAPNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isDark={isDark} isOpen={tab === "chat"} refreshTick={snapTick} go={go}
+            runtime={{ fmtDateTime, uid, emitToast, Empty, Avatar, apnIdFor, Search, Plus, Trash2, ChevronRight, ArrowLeft, FileText, Send, Bell, MessageSquare }} />
+        </React.Suspense>
+      );
       case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
