@@ -63,6 +63,7 @@ const LazyClientForm = React.lazy(() => import("./ClientForm.jsx"));
 const LazyVaultForm = React.lazy(() => import("./VaultForm.jsx"));
 const LazyPlannedForm = React.lazy(() => import("./PlannedForm.jsx"));
 const LazyPromptForm = React.lazy(() => import("./PromptForm.jsx"));
+const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
 
@@ -4617,29 +4618,6 @@ function Prompts({ db, openModal, removeItem }) {
 
 // Google Sheets (and any spreadsheet) link library — one tidy place for all the
 // team's workbook links. Backed by the `sheets` table (run allbee-sheets.sql).
-function SheetForm({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || { title: "", url: "", category: "General", note: "" });
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const [err, setErr] = useState("");
-  const save = () => {
-    if (!f.title.trim()) { setErr("Add a name."); return; }
-    const url = f.url.trim();
-    if (!/^https?:\/\//i.test(url)) { setErr("Add a valid link starting with http(s)://"); return; }
-    onSave({ ...f, id: f.id || uid(), createdAt: f.createdAt || Date.now(), title: f.title.trim(), url });
-  };
-  return (
-    <Modal title={f.id ? "Edit sheet link" : "Add a sheet link"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save</button></>}>
-      <div className="grid2">
-        <Field label="Name" required error={err}><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. 2026 Expense tracker" /></Field>
-        <Field label="Category"><SelectOther value={f.category} onChange={(v) => set("category", v)} options={SHEET_CATEGORIES} placeholder="Custom category…" /></Field>
-      </div>
-      <Field label="Link" required hint="Paste the Google Sheets (or any spreadsheet) URL."><input className="input" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://docs.google.com/spreadsheets/…" /></Field>
-      <Field label="Note"><textarea className="textarea" value={f.note} onChange={(e) => set("note", e.target.value)} placeholder="What's in this sheet? (optional)" /></Field>
-    </Modal>
-  );
-}
-
 function SelectOther({ value, onChange, options, placeholder = "Type here…" }) {
   const [custom, setCustom] = useState(() => !!value && !options.includes(value));
   const onSel = (e) => {
@@ -10568,7 +10546,7 @@ export default function App() {
         {modal?.type === "document" && <React.Suspense fallback={<LoadingScreen />}><LazyDocForm initial={modal.initial} team={team} portalClients={portalClients} onSave={(x) => saveOwned("documents", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, SelectOther, RefreshCw, Upload, uid, uploadAttachment, DOC_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "knowledge" && <KbForm initial={modal.initial} onSave={(x) => saveOwned("knowledge", x)} onClose={() => setModal(null)} />}
         {modal?.type === "prompt" && <React.Suspense fallback={<LoadingScreen />}><LazyPromptForm initial={modal.initial} onSave={(x) => saveOwned("prompts", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, PROMPT_CATEGORIES }} /></React.Suspense>}
-        {modal?.type === "sheet" && <SheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} />}
+        {modal?.type === "sheet" && <React.Suspense fallback={<LoadingScreen />}><LazySheetForm initial={modal.initial} onSave={(x) => saveOwned("sheets", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, SHEET_CATEGORIES }} /></React.Suspense>}
         {modal?.type === "reward" && <React.Suspense fallback={<LoadingScreen />}><LazyRewardForm initial={modal.initial} team={team} onSave={(x) => saveOwned("rewards", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Award, Check, uid, todayISO, REWARD_KINDS }} /></React.Suspense>}
         {modal?.type === "notification" && <React.Suspense fallback={<LoadingScreen />}><LazyNotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SearchableSelect, Bell, uid, NOTIF_LEVELS, NOTIF_AUDIENCES, ROLE_LABEL }} /></React.Suspense>}
         {modal?.type === "announcement" && <React.Suspense fallback={<LoadingScreen />}><LazyAnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, MegaphoneIcon, uid }} /></React.Suspense>}
