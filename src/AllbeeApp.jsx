@@ -1079,7 +1079,6 @@ async function unlockPeriod(period) {
   const { error } = await supabase.from("fin_locks").delete().eq("period", period);
   if (error) throw new Error(error.message);
 }
-const periodOf = (iso) => (iso ? String(iso).slice(0, 7) : todayISO().slice(0, 7)); // 'YYYY-MM'
 const fmtPeriod = (p) => { const [y, m] = (p || "").split("-"); const d = new Date(Number(y), Number(m) - 1, 1); return isNaN(d) ? p : d.toLocaleDateString("en-IN", { month: "long", year: "numeric" }); };
 const fmtDateTime = (ts) => formatDateValue(ts, true);
 // "5m ago" / "2h ago" / "3d ago" style relative time, for last-seen displays.
@@ -1158,7 +1157,6 @@ const attendanceFor = (db, userId, dateISO) => db.attendance.find((a) => a.userI
    the team they lead or are a member of. The lead is always counted in the
    roster. Stored in the `teams` table; team-scoped chat lives in `team_chat`. */
 const teamOfUser = (teams, userId) => (teams || []).find((t) => t.leadId === userId || (t.memberIds || []).includes(userId)) || null;
-const isTeamLead = (teams, userId) => (teams || []).some((t) => t.leadId === userId);
 const teamRosterIds = (t) => (t ? Array.from(new Set([t.leadId, ...(t.memberIds || [])].filter(Boolean))) : []);
 
 const emptyDB = () => ({
@@ -7797,7 +7795,6 @@ const APN_COMMISSION_RULES = Object.freeze([
   Object.freeze({ key: 1, name: "Active Partner", rate: 15, minProject: 2, maxProject: 9 }),
   Object.freeze({ key: 2, name: "Growth Partner", rate: 20, minProject: 10, maxProject: Infinity }),
 ]);
-const APN_LEVELS = APN_COMMISSION_RULES;
 const APN_ADMIN_LEVELS = ["Trainee", "Partner", "Senior Partner", "District Head", "State Head"];
 const APN_ADMIN_STATUSES = ["pending", "active", "inactive", "suspended", "deleted"];
 const APN_PERCENT_MIN = 0;
@@ -7904,7 +7901,6 @@ const APN_TAG_OPTIONS = ["Website Expert", "Software Sales", "High Performer", "
 const APN_DOCUMENT_TYPES = ["Aadhaar", "PAN", "Bank Passbook", "Photo", "Agreement", "Certificate", "Other"];
 const APN_COMMUNICATION_TYPES = ["Notification", "Email", "WhatsApp Message", "Manual Call", "Internal Message"];
 const apnMonthKey = (date) => { const d = date instanceof Date ? date : new Date(date || 0); return isNaN(d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
-const apnMonthLabel = (key) => { const [y, m] = String(key).split("-").map(Number); return y && m ? new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : key; };
 function apnMonthlyAnalytics(db, pid, count = 6) {
   const now = new Date();
   const months = Array.from({ length: count }, (_, i) => {
@@ -8048,7 +8044,6 @@ function apnZoneStats(db, zoneKey) {
 }
 // Sweep: every partner belongs to a zone; old rows without one are mapped from
 // their registration month so the hub HUD is never empty.
-const apnPartnerZone = (u) => u?.zone || apnZonePeriodKey(u?.createdAt);
 
 // Hub console row: the admin-side campaign/zone settings live in a row of
 // apn_admin_consoles tagged kind:"console". All hub cards read from here.
@@ -9230,7 +9225,7 @@ function APNLeads({ db, meRow, pid, openModal, mutate }) {
 }
 
 /* ── quotations ──────────────────────────────────────────────────────── */
-const QUOTE_CATALOG = {
+  const QUOTE_CATALOG = {
   website: {
     base: 15000, baseLabel: "Website (starter)",
     options: [
