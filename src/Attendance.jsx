@@ -131,10 +131,10 @@ export default function Attendance(props) {
           </div>
         )}
       </div>
-      {editing && <AttendanceEditModal member={editing.p} record={editing.a} date={date}
+      {editing && <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading editor…</div></div>}><LazyAttendanceEditModal member={editing.p} record={editing.a} date={date}
         onClose={() => setEditing(null)}
         onSave={(ci, co) => saveAttendance(editing.p, editing.a, ci, co)}
-        onClear={() => clearAttendance(editing.p)} />}
+        onClear={() => clearAttendance(editing.p)} runtime={{ useState, Modal, Field, Check, Trash2, emitToast, fmtDate }} /></React.Suspense>}
     </div>
   );
 }

@@ -28,6 +28,7 @@ const LazyCourses = React.lazy(() => import("./Courses.jsx"));
 const LazyMarketing = React.lazy(() => import("./Marketing.jsx"));
 const LazyProjects = React.lazy(() => import("./Projects.jsx"));
 const LazyAttendance = React.lazy(() => import("./Attendance.jsx"));
+const LazyAttendanceEditModal = React.lazy(() => import("./AttendanceEditModal.jsx"));
 const LazyDocuments = React.lazy(() => import("./Documents.jsx"));
 const LazySheets = React.lazy(() => import("./Sheets.jsx"));
 const LazyKnowledge = React.lazy(() => import("./Knowledge.jsx"));
@@ -3146,39 +3147,6 @@ function attStatus(db, userId, dateISO) {
   if (!a) return { label: "Absent", tone: "muted" };
   if (a.checkOut) return { label: "Checked out", tone: "pos" };
   return { label: "Present", tone: "pos" };
-}
-
-function AttendanceEditModal({ member, record, date, onSave, onClear, onClose }) {
-  const toTimeInput = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-  const [inT, setInT] = useState(toTimeInput(record?.checkIn) || "09:00");
-  const [outT, setOutT] = useState(toTimeInput(record?.checkOut));
-  const atTime = (hhmm) => {
-    if (!hhmm) return null;
-    const [y, m, d] = date.split("-").map(Number);
-    const [hh, mm] = hhmm.split(":").map(Number);
-    return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString();
-  };
-  const save = () => {
-    if (!inT) return;
-    const ci = atTime(inT);
-    const co = atTime(outT);
-    if (co && new Date(co) < new Date(ci)) { emitToast("Check-out can't be before check-in.", "error"); return; }
-    onSave(ci, co);
-  };
-  return (
-    <Modal title={`Edit attendance — ${member.name}`} onClose={onClose}
-      footer={<>
-        {record && <button className="btn danger" style={{ marginRight: "auto" }} onClick={onClear}><Trash2 size={15} />Mark absent</button>}
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn primary" onClick={save} disabled={!inT}><Check size={16} />Save</button>
-      </>}>
-      <p className="hint-line" style={{ marginBottom: 14, lineHeight: 1.5 }}>Set the check-in and check-out for <b style={{ color: "var(--ink)" }}>{fmtDate(date)}</b>. Leave check-out empty to mark them still checked in.</p>
-      <div className="grid2">
-        <Field label="Check in" required><input className="input" type="time" value={inT} onChange={(e) => setInT(e.target.value)} /></Field>
-        <Field label="Check out"><input className="input" type="time" value={outT} onChange={(e) => setOutT(e.target.value)} /></Field>
-      </div>
-    </Modal>
-  );
 }
 
 function leaveTone(s) { return s === "Approved" ? "pos" : s === "Rejected" ? "neg" : "pri"; }
@@ -10149,7 +10117,7 @@ export default function App() {
       case "knowledge-engine": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Pricing &amp; Knowledge Center…</div></div>}><LazyPricingKnowledgeCenter isAdmin={isAdmin} runtime={{ Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast }} /></React.Suspense>;
       case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
       case "proposal-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Proposal Center…</div></div>}><LazyProposalCenter isAdmin={isAdmin} runtime={{ supabase, emitToast, money, Empty, Modal, Search, RefreshCw, AlertTriangle, FileText, ShieldAlert, Eye, Pencil, Activity, Download, Copy, Send, Check }} /></React.Suspense>;
-      case "attendance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading attendance…</div></div>}><LazyAttendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} runtime={{ Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal }} /></React.Suspense>;
+      case "attendance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading attendance…</div></div>}><LazyAttendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} runtime={{ Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, LazyAttendanceEditModal }} /></React.Suspense>;
       case "leave": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading leave…</div></div>}><LazyLeave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} runtime={{ Empty, avatarColor, fmtDate, haptic, leaveTone, ContactButtons }} /></React.Suspense>;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} onActivity={recordActivity} onOpenAPN={() => go("apn")} />;
