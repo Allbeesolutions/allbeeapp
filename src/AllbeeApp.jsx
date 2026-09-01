@@ -67,6 +67,7 @@ const LazyKbForm = React.lazy(() => import("./KbForm.jsx"));
 const LazyWithdrawForm = React.lazy(() => import("./WithdrawForm.jsx"));
 const LazyLeadForm = React.lazy(() => import("./LeadForm.jsx"));
 const LazyLeaveForm = React.lazy(() => import("./LeaveForm.jsx"));
+const LazyResignForm = React.lazy(() => import("./ResignForm.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -5028,29 +5029,6 @@ function PortalPosts({ db, mutate, openModal, removeItem, portalClients }) {
           ))}
       </div>
     </div>
-  );
-}
-
-function ResignForm({ existing, onSave, onClose }) {
-  const mine = (existing || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-  const [reason, setReason] = useState("");
-  const [lastDay, setLastDay] = useState("");
-  const pending = mine && mine.status === "Pending";
-  const approved = mine && mine.status === "Approved";
-  const submit = () => { if (!reason.trim()) return; onSave({ reason: reason.trim(), lastDay: lastDay || null }); };
-  return (
-    <Modal title="Resignation" onClose={onClose}
-      footer={(pending || approved)
-        ? <button className="btn" onClick={onClose}>Close</button>
-        : <><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={submit}><Check size={15} />Submit request</button></>}>
-      {approved ? <p className="hint-line">Your resignation has been approved. Thank you for your time with the team.</p>
-        : pending ? <p className="hint-line">Your resignation request was submitted{mine.lastDay ? ` with a proposed last working day of ${fmtDate(mine.lastDay)}` : ""} and is pending review by an admin.</p>
-        : <>
-          <p className="hint-line" style={{ marginBottom: 10 }}>This notifies your admins. They'll confirm your last working day and offboard your access.</p>
-          <Field label="Reason" required><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Briefly, why are you resigning?" /></Field>
-          <Field label="Proposed last working day"><input className="input" type="date" value={lastDay} onChange={(e) => setLastDay(e.target.value)} min={todayISO()} /></Field>
-        </>}
-    </Modal>
   );
 }
 
@@ -10433,7 +10411,7 @@ export default function App() {
         {modal?.type === "notification" && <React.Suspense fallback={<LoadingScreen />}><LazyNotificationForm initial={modal.initial} team={team} onSave={(x) => saveOwned("notifications", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, SearchableSelect, Bell, uid, NOTIF_LEVELS, NOTIF_AUDIENCES, ROLE_LABEL }} /></React.Suspense>}
         {modal?.type === "announcement" && <React.Suspense fallback={<LoadingScreen />}><LazyAnnouncementForm initial={modal.initial} onSave={(x) => saveOwned("announcements", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, MegaphoneIcon, uid }} /></React.Suspense>}
         {modal?.type === "portalPost" && <React.Suspense fallback={<LoadingScreen />}><LazyPortalPostForm initial={modal.initial} portalClients={portalClients} onSave={(x) => saveOwned("portal_posts", x)} onClose={() => setModal(null)} runtime={{ Modal, Field, Send, RefreshCw, Upload, uid, uploadAttachment }} /></React.Suspense>}
-        {modal?.type === "resign" && <ResignForm existing={(db.resignations || []).filter((r) => r.userId === me.id)} onSave={(r) => { mutate((d) => ({ ...d, resignations: [...(d.resignations || []), { ...r, id: uid(), userId: me.id, userName: currentUser, status: "Pending", createdAt: Date.now() }] }), { action: "submitted a resignation request", module: "Team" }); setModal(null); }} onClose={() => setModal(null)} />}
+        {modal?.type === "resign" && <React.Suspense fallback={<LoadingScreen />}><LazyResignForm existing={(db.resignations || []).filter((r) => r.userId === me.id)} onSave={(r) => { mutate((d) => ({ ...d, resignations: [...(d.resignations || []), { ...r, id: uid(), userId: me.id, userName: currentUser, status: "Pending", createdAt: Date.now() }] }), { action: "submitted a resignation request", module: "Team" }); setModal(null); }} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, Check, todayISO, fmtDate }} /></React.Suspense>}
         {modal?.type === "confirm" && <Confirm title={modal.title} body={modal.body} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
         {modal?.type === "deleteConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Delete"} icon={<Trash2 size={15} />} danger onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
         {modal?.type === "restoreConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Restore"} icon={<RotateCcw size={15} />} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
