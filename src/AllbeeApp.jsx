@@ -71,6 +71,8 @@ const LazyLeaveForm = React.lazy(() => import("./LeaveForm.jsx"));
 const LazyResignForm = React.lazy(() => import("./ResignForm.jsx"));
 const LazyIncentiveForm = React.lazy(() => import("./IncentiveForm.jsx"));
 const LazyPermsModal = React.lazy(() => import("./PermsModal.jsx"));
+const LazyCreateUserModal = React.lazy(() => import("./CreateUserModal.jsx"));
+const LazyManageUserModal = React.lazy(() => import("./ManageUserModal.jsx"));
 const LazySheetForm = React.lazy(() => import("./SheetForm.jsx"));
 const LazyMarketingForm = React.lazy(() => import("./MarketingForm.jsx"));
 const LazyConceptForm = React.lazy(() => import("./ConceptForm.jsx"));
@@ -3340,8 +3342,8 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
         </div>
       </div>
       {permFor && <React.Suspense fallback={<LoadingScreen />}><LazyPermsModal person={permFor} onClose={() => setPermFor(null)} onSave={(modules) => changeProfile(permFor.id, { perms: { ...(permFor.perms || {}), modules } }, `updated ${permFor.name}'s module access`)} runtime={{ useState, Modal, Check, GRANTABLE_MODULES }} /></React.Suspense>}
-      {creating && <CreateUserModal onActivity={onActivity} onClose={() => setCreating(false)} />}
-      {manageFor && <ManageUserModal person={manageFor} onActivity={onActivity} onClose={() => setManageFor(null)} />}
+      {creating && <React.Suspense fallback={<LoadingScreen />}><LazyCreateUserModal onActivity={onActivity} onClose={() => setCreating(false)} runtime={{ useState, Modal, Field, PasswordField, supabase, ROLE_OPTIONS, ROLE_LABEL, RefreshCw, Plus, Check, AlertTriangle }} /></React.Suspense>}
+      {manageFor && <React.Suspense fallback={<LoadingScreen />}><LazyManageUserModal person={manageFor} onActivity={onActivity} onClose={() => setManageFor(null)} runtime={{ useState, Modal, Field, PasswordField, supabase, useUsernameAvailability, TypedConfirm, emitToast, AlertTriangle, Check, Trash2 }} /></React.Suspense>}
     </div>
   );
 }
@@ -5213,103 +5215,6 @@ function CompanySettings({ config, saveCompany }) {
       <Field label="Website"><input className="input" value={f.website} onChange={(e) => set("website", e.target.value)} placeholder="https://allbee.in" /></Field>
       <button className="btn primary" onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}{done ? "Saved" : "Save company profile"}</button>
     </div>
-  );
-}
-
-function CreateUserModal({ onClose, onActivity }) {
-  const [f, setF] = useState({ name: "", email: "", password: "", role: "staff" });
-  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [ok, setOk] = useState(false);
-  const create = async () => {
-    if (!f.email.trim() || f.password.length < 6) { setErr("Enter an email and a password of at least 6 characters."); return; }
-    setBusy(true); setErr("");
-    try {
-      const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "create", email: f.email.trim(), password: f.password, name: f.name.trim(), role: f.role } });
-      if (error) throw error;
-      if (data && data.error) throw new Error(data.error);
-      onActivity?.({ action: `created user "${f.name.trim() || f.email.trim()}"`, module: "System", entity: "User", entityId: data?.user?.id || null });
-      setOk(true);
-    } catch (e) { setErr((e && e.message) || "Couldn't create the user. Is the admin-users function deployed?"); }
-    finally { setBusy(false); }
-  };
-  if (ok) return <Modal title="User created" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}><p className="hint-line" style={{ lineHeight: 1.6 }}>{f.name || f.email} can now sign in with the email and password you set. The account is confirmed and approved.</p></Modal>;
-  return (
-    <Modal title="Add a user" onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={create} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}Create user</button></>}>
-      <div className="grid2">
-        <Field label="Full name"><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Priya Sharma" /></Field>
-        <Field label="Role"><select className="select" value={f.role} onChange={(e) => set("role", e.target.value)}>{ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Field>
-      </div>
-      <Field label="Email" required><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@allbee.in" /></Field>
-      <PasswordField label="Password" required hint="At least 6 characters. Share it with them securely." value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" autoComplete="new-password" />
-      {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
-      <p className="hint-line" style={{ marginTop: 8 }}>Requires the <b>admin-users</b> edge function to be deployed.</p>
-    </Modal>
-  );
-}
-
-function ManageUserModal({ person, onClose, onActivity }) {
-  const [designation, setDesignation] = useState(person.designation || "");
-  const [username, setUsername] = useState(person.username || "");
-  const [pw, setPw] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const usernameCheck = useUsernameAvailability(username, person.id);
-  const call = async (body) => { setBusy(true); setMsg(""); setErr(""); try { const { data, error } = await supabase.functions.invoke("admin-users", { body }); if (error) throw error; if (data && data.error) throw new Error(data.error); return true; } catch (e) { setErr((e && e.message) || "Action failed. Is the admin-users function deployed?"); return false; } finally { setBusy(false); } };
-  const saveDes = async () => {
-    setBusy(true); setMsg(""); setErr("");
-    try { const { error } = await supabase.from("profiles").update({ designation: designation.trim() || null }).eq("id", person.id); if (error) throw error; onActivity?.({ action: `updated ${person.name}'s job title`, module: "System", entity: "User", entityId: person.id }); setMsg("Job title updated."); }
-    catch (e) { setErr((e && e.message) || "Couldn't update the job title."); }
-    finally { setBusy(false); }
-  };
-  const resetPw = async () => { if (pw.length < 6) { setErr("Password must be at least 6 characters."); return; } if (await call({ action: "reset_password", userId: person.id, password: pw })) { onActivity?.({ action: `reset password for ${person.name}`, module: "System", entity: "User", entityId: person.id }); setMsg("Password reset."); setPw(""); } };
-  // Username writes straight to the profile (no edge function needed).
-  const saveUsername = async () => {
-    setBusy(true); setMsg(""); setErr("");
-    const uname = username.trim().toLowerCase().replace(/\s+/g, "") || null;
-    if (uname && usernameCheck.available === false) { setBusy(false); setErr("That username is already taken."); return; }
-    try { const { error } = await supabase.from("profiles").update({ username: uname }).eq("id", person.id); if (error) throw error; onActivity?.({ action: `updated ${person.name}'s username`, module: "System", entity: "User", entityId: person.id }); setMsg("Username updated."); }
-    catch (e) { setErr((e && e.message && /duplicate|unique/i.test(e.message)) ? "That username is already taken." : ((e && e.message) || "Couldn't update the username.")); }
-    finally { setBusy(false); }
-  };
-  // Permanently delete: the edge function removes the auth identity first and
-  // retains business/audit rows. Partners use the APN archive flow instead.
-  const removeUser = async () => {
-    if (person.role === "superadmin" || person.role === "partner" || person.role === "district_head" || person.role === "state_head") { setErr("APN and Super Admin accounts use their dedicated lifecycle controls."); return; }
-    setBusy(true); setMsg(""); setErr("");
-    try {
-      const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "delete", userId: person.id } });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      onActivity?.({ action: `deleted user "${person.name}"`, module: "System", entity: "User", entityId: person.id });
-      emitToast("User deleted; login access and email reservation were removed.", "success");
-      onClose();
-    } catch (e) { setErr((e && e.message) || "Couldn't delete the user. No account data was removed."); }
-    finally { setBusy(false); setConfirmDelete(false); }
-  };
-  return (
-    <>
-    <Modal title={"Manage " + person.name} onClose={onClose} footer={<button className="btn" onClick={onClose}>Close</button>}>
-      <Field label="Job title / designation"><div style={{ display: "flex", gap: 8 }}><input className="input" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Developer" /><button className="btn primary" onClick={saveDes} disabled={busy}>Save</button></div></Field>
-      <div className="field"><label>Username</label><div style={{ display: "flex", gap: 8 }}><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. priya" aria-describedby="manage-username-status" /><button className="btn primary" onClick={saveUsername} disabled={busy}>Save</button></div><div id="manage-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{username.trim() ? usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved." : "They can sign in with this instead of their email."}</div></div>
-      <div className="field"><PasswordField label="Reset password" hint="Sets a new password for this user immediately." value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" autoComplete="new-password" /><button className="btn primary" onClick={resetPw} disabled={busy}>Reset</button></div>
-      {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
-      {msg && <div className="auth-msg ok"><Check size={14} /> {msg}</div>}
-      {!(["superadmin", "partner", "district_head", "state_head"].includes(person.role)) && (
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-          <div className="lbl" style={{ fontSize: 12, fontWeight: 700, color: "var(--neg)", marginBottom: 6 }}>Danger zone</div>
-          <p className="hint-line" style={{ marginBottom: 10 }}>Permanently delete this account. Their login and profile are removed and the email/username can be reused to re-create them.</p>
-          <button className="btn danger" onClick={() => setConfirmDelete(true)} disabled={busy}><Trash2 size={15} />Delete user</button>
-        </div>
-      )}
-      <p className="hint-line" style={{ marginTop: 12 }}>Delete, password reset and adding users need the <b>admin-users</b> edge function deployed. Username and job title save directly.</p>
-    </Modal>
-    {confirmDelete && <TypedConfirm title={`Delete ${person.name}?`} body="This removes the login identity and profile. Existing business, financial, audit, and timeline records are retained." note="The email and username become available again only after the auth identity is successfully removed." actionLabel="Delete user" onConfirm={removeUser} onClose={() => setConfirmDelete(false)} />}
-    </>
   );
 }
 
