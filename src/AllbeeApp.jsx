@@ -1665,11 +1665,16 @@ function Modal({ title, onClose, children, footer, onMaximize }) {
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     const previous = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const root = modalRef.current;
     const focusable = () => Array.from(root?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
     const first = root?.querySelector("[autofocus]") || focusable()[0];
     first?.focus();
-    return () => { if (previous && typeof previous.focus === "function") previous.focus(); };
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (previous && typeof previous.focus === "function") previous.focus();
+    };
   }, [onClose]);
   const trapFocus = (e) => {
     if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
