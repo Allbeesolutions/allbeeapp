@@ -633,10 +633,13 @@ const BOOTSTRAP_TABLES = Object.freeze([
 const BOOTSTRAP_TIMEOUT_MS = 4500;
 
 
-function pTimeout(promise, ms, label) {
+function pTimeout(promise, ms, label, abortController) {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timeout:${label}`)), ms);
+    timer = setTimeout(() => {
+      abortController?.abort();
+      reject(new Error(`timeout:${label}`));
+    }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
@@ -657,16 +660,18 @@ async function mapWithConcurrency(items, limit, fn) {
 // Awaitable query builder shim: chaining methods return the builder; awaiting
 // it resolves the query. This mirrors how @supabase/supabase-js queries work so
 // callers can use `.select(cols).order(...)` interchangeably.
-function buildQuery(tbl, columns, orderColumn) {
+function buildQuery(tbl, columns, orderColumn, signal) {
   let q = supabase.from(tbl).select(columns);
   if (orderColumn) q = q.order(orderColumn, { ascending: false });
+  if (signal && typeof q.abortSignal === "function") q = q.abortSignal(signal);
   return q;
 }
 
 async function loadTableRows(table, columns, orderColumn, timeoutMs = TABLE_FETCH_TIMEOUT_MS, retries = 1) {
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     try {
-      const { data, error } = await pTimeout(buildQuery(table, columns, orderColumn), timeoutMs, table);
+      const { data, error } = await pTimeout(buildQuery(table, columns, orderColumn, controller?.signal), timeoutMs, table, controller);
       if (error) {
         if (attempt === retries) console.warn(`[ALLBEE] table "${table}" unavailable: ${error.message}`);
         continue;
