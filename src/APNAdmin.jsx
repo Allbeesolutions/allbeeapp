@@ -4,6 +4,7 @@ const LazyAPNAdminReferrals = React.lazy(() => import("./APNAdminReferrals.jsx")
 const LazyAPNAdminDocs = React.lazy(() => import("./APNAdminDocs.jsx"));
 const LazyAPNAdminContent = React.lazy(() => import("./APNAdminContent.jsx"));
 const LazyAPNAdminAgreements = React.lazy(() => import("./APNAdminAgreements.jsx"));
+const LazyAPNAdminCommissions = React.lazy(() => import("./APNAdminCommissions.jsx"));
 const LazyAPNAdminLeaderboard = React.lazy(() => import("./APNAdminLeaderboard.jsx"));
 
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
@@ -425,7 +426,7 @@ export default function APNAdmin(props) {
       {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
-      {tab === "commissions" && <APNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} />}
+      {tab === "commissions" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading commissions…</div>}><LazyAPNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} runtime={props.runtime} /></React.Suspense>}
       {tab === "withdrawals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading withdrawals…</div>}><LazyAPNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
       {tab === "referrals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading referrals…</div>}><LazyAPNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
       {tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
