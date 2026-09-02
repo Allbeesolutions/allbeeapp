@@ -180,23 +180,25 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     let timerId = null;
     let inFlight = null;
     let queued = false;
-    const refreshChat = () => {
+    const refreshChat = (table) => {
       queued = true;
       if (timerId || inFlight) return;
       timerId = setTimeout(async () => {
         timerId = null;
         if (!queued || !mountedRef.current) return;
         queued = false;
-        inFlight = loadConversations(false).then(async () => {
-          if (mountedRef.current && selectedRef.current) await loadMessages(selectedRef.current, { open: false });
-        }).catch(() => {}).finally(() => {
+        const selectedNow = selectedRef.current;
+        const refresh = table === "apn_chat_messages" && selectedNow
+          ? loadMessages(selectedNow, { open: false })
+          : loadConversations(false);
+        inFlight = refresh.catch(() => {}).finally(() => {
           inFlight = null;
-          if (queued) refreshChat();
+          if (queued) refreshChat(table);
         });
-      }, 120);
+      }, 180);
     };
-    ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((t) =>
-      ch.on("postgres_changes", { event: "*", schema: "public", table: t }, refreshChat));
+    ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((table) =>
+      ch.on("postgres_changes", { event: "*", schema: "public", table }, () => refreshChat(table)));
     ch.subscribe();
     return () => {
       if (timerId) clearTimeout(timerId);
