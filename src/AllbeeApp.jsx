@@ -6705,12 +6705,17 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Deep links: #/apn/<tab>, and bare #/targets/<id> lands partners on their
-  // targets tab so a notification tap acknowledges the right target.
+  // Deep links: #/apn/<tab>. Keep the APN tab in the URL so a browser refresh,
+  // reopen, or direct link returns to the exact same APN page instead of Home.
   useEffect(() => {
-    const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
-    const route = parts[0] === "apn" ? parts[1] : parts[0];
-    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
+    const applyHash = () => {
+      const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+      const route = parts[0] === "apn" ? parts[1] : parts[0];
+      if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
   }, []);
 
   const markNotificationsSeen = useCallback(async () => {
@@ -6748,6 +6753,8 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     if (t === "notifications") markNotificationsSeen().catch(() => {});
     setTab(t);
     setSidebarOpen(false);
+    const hash = `#/apn/${t}`;
+    if (window.location.hash !== hash) window.location.hash = hash;
   };
   const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && apnActionRowTime(n) > apnActionReadTime(db, pid, "notification_unread")).length;
   const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
