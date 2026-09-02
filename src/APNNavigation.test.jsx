@@ -83,10 +83,32 @@ describe("APN Portal Navigation", () => {
     user: { id: "test-partner-id", email: "partner@example.com" }
   };
 
+  it("persists the selected APN page in the URL for refresh-safe navigation", async () => {
+    const signOut = vi.fn();
+    const mutate = vi.fn();
+    const reload = vi.fn();
+
+    window.location.hash = "#/apn/network";
+    const first = render(
+      <APNPortal db={mockDb} profile={mockProfile} session={mockSession} signOut={signOut} isDark={false} mutate={mutate} reload={reload} />
+    );
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /my network/i })[0]).toBeTruthy());
+
+    const chatTabButton = screen.getAllByRole("button", { name: /team chat/i })[0];
+    fireEvent.click(chatTabButton);
+    await waitFor(() => expect(window.location.hash).toBe("#/apn/chat"));
+
+    first.unmount();
+    render(<APNPortal db={mockDb} profile={mockProfile} session={mockSession} signOut={signOut} isDark={false} mutate={mutate} reload={reload} />);
+    await waitFor(() => expect(screen.getByText("AllBee Support")).toBeTruthy());
+    expect(window.location.hash).toBe("#/apn/chat");
+  });
+
   it("navigates to Team Chat and then back to Home without crashing", async () => {
     const signOut = vi.fn();
     const mutate = vi.fn();
     const reload = vi.fn();
+    window.location.hash = "#/apn/home";
 
     render(
       <APNPortal
