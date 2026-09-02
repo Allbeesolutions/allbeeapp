@@ -44,6 +44,8 @@ const LazyAPNWithdrawalCenter = React.lazy(() => import("./APNWithdrawalCenter.j
 const LazyAPNWalletDetailModal = React.lazy(() => import("./APNWalletDetailModal.jsx"));
 const LazyAPNQuoteForm = React.lazy(() => import("./APNQuoteForm.jsx"));
 const LazyAPNQuizTaker = React.lazy(() => import("./APNQuizTaker.jsx"));
+const LazyTesting = React.lazy(() => import("./Testing.jsx"));
+const LazyMyTeam = React.lazy(() => import("./MyTeam.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
 const LazyLock = React.lazy(() => import("./Lock.jsx"));
 const LazyTestDetail = React.lazy(() => import("./TestDetail.jsx"));
@@ -5435,122 +5437,6 @@ function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
   );
 }
 
-function MyTeam({ db, team, me, mutate, onRefresh }) {
-  const [tab, setTab] = useState("overview");
-  const [date, setDate] = useState(todayISO());
-  const myTeam = teamOfUser(db.teams, me.id);
-  if (!myTeam) {
-    return (
-      <div className="content">
-        <div className="page-head"><h3>My team</h3></div>
-        <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="You're not on a team yet" text="Once a super admin adds you to a team, you'll see your teammates' attendance, tasks and a private team chat here." /></div>
-      </div>
-    );
-  }
-  const amLead = myTeam.leadId === me.id;
-  const members = teamRosterIds(myTeam).map((id) => team.find((p) => p.id === id)).filter(Boolean);
-  const month = new Date();
-  const memberStats = (p) => {
-    const open = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status !== "Completed").length;
-    const done = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status === "Completed").length;
-    const presentDays = new Set(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month)).map((a) => a.date)).size;
-    const hours = round2(sumHours(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month))));
-    return { open, done, presentDays, hours };
-  };
-  const teamTasks = db.tasks
-    .filter((t) => members.some((p) => isTaskAssignee(t, p)))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["tasks", "Tasks"], ["chat", "Team chat"]];
-  return (
-    <div className="content">
-      <div className="page-head">
-        <h3>{myTeam.name}</h3>
-        <span className="badge accent">{amLead ? "You lead this team" : "Member"}</span>
-        <span className="spacer" />
-        <span className="hint-line">{members.length} member{members.length !== 1 ? "s" : ""}</span>
-      </div>
-      <div className="toolbar"><div className="seg">{TABS.map(([k, l]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>)}</div></div>
-
-      {tab === "overview" && (
-        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
-          {members.map((p) => {
-            const s = memberStats(p);
-            const att = attStatus(db, p.id, todayISO());
-            return (
-              <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div className="who-cell">
-                  <Avatar name={p.name} url={p.photo_url} size={32} />
-                  <span style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{p.name}{p.id === myTeam.leadId ? <span className="badge accent" style={{ marginLeft: 6 }}>Lead</span> : ""}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[p.role] || p.role}</div></span>
-                  <span className={"badge " + att.tone}>{att.label}</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Open tasks</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.open}</div></div>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Completed</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.done}</div></div>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Days present</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.presentDays}</div></div>
-                  <div style={{ background: "var(--surface-2)", borderRadius: 9, padding: "8px 10px" }}><div className="hint-line" style={{ fontSize: 11 }}>Hours (mo)</div><div className="mono" style={{ fontWeight: 700, fontSize: 16 }}>{s.hours}</div></div>
-                </div>
-                {p.id !== me.id && <div><ContactButtons person={p} /></div>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {tab === "attendance" && (
-        <div className="card">
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>Attendance</span>
-            <input className="input" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} style={{ width: "auto" }} />
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Member</th><th>{fmtDate(date)}</th><th>Check in</th><th>Check out</th><th className="num-cell">Days this month</th></tr></thead>
-              <tbody>{members.map((p) => {
-                const st = attStatus(db, p.id, date);
-                const a = attendanceFor(db, p.id, date);
-                const presentDays = new Set(db.attendance.filter((x) => x.userId === p.id && sameMonth(x.date, month)).map((x) => x.date)).size;
-                return (
-                  <tr key={p.id}>
-                    <td><span className="who-cell"><Avatar name={p.name} url={p.photo_url} size={26} /><span style={{ fontWeight: 600 }}>{p.name}</span></span></td>
-                    <td><span className={"badge " + st.tone}>{st.label}</span></td>
-                    <td className="mono">{a ? clockTime(a.checkIn) : "—"}</td>
-                    <td className="mono">{a && a.checkOut ? clockTime(a.checkOut) : "—"}</td>
-                    <td className="num-cell mono">{presentDays}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {tab === "tasks" && (
-        <div className="card">
-          {teamTasks.length === 0 ? <Empty icon={<ListTodo size={22} color="var(--muted)" />} title="No tasks for the team yet" text="Tasks assigned to anyone on the team show up here." />
-            : teamTasks.map((t) => (
-              <div key={t.id} className="item-row">
-                <div className="item-main">
-                  <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                    {t.num != null && <span className="badge mono" style={{ fontWeight: 700 }}>#{t.num}</span>}
-                    <span className="item-title">{t.title}</span>
-                    <span className={"badge " + (t.status === "Completed" ? "pos" : t.status === "In Progress" ? "accent" : "pri")}>{t.status}</span>
-                    {t.priority && <span className={"badge " + priorityTone(t.priority)}>{t.priority}</span>}
-                  </div>
-                  <div className="item-meta" style={{ marginTop: 6 }}>
-                    <span>{t.assignedBy} → <b>{assigneeText(t)}</b></span>
-                    {t.due && <span><CalendarClock size={12} style={{ verticalAlign: -2 }} /> {fmtDate(t.due)}</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {tab === "chat" && <TeamChat db={db} mutate={mutate} me={me} members={members} teamId={myTeam.id} onRefresh={onRefresh} />}
-    </div>
-  );
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    TESTING MODULE (website / app / software QA)
 ══════════════════════════════════════════════════════════════════════ */
@@ -5566,63 +5452,6 @@ const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" :
 // the live session from db by id so edits from either partner stay in sync.
 // Master list + dashboard. Admins see and create every session; a tester sees
 // the sessions assigned to them.
-function Testing({ db, mutate, openModal, removeItem, isAdmin, me, currentUser, team }) {
-  const [openId, setOpenId] = useState(null);
-  const all = [...(db.testing || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const list = isAdmin ? all : all.filter((s) => s.assignedToId === me.id || (!!currentUser && s.assignedTo === currentUser));
-  const del = (s) => removeItem("testing", s, { name: s.title, audit: `deleted test session "${s.title}"` });
-
-  if (openId) return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading test session…</div></div>}><LazyTestDetail key={openId} sessionId={openId} db={db} mutate={mutate} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} openModal={openModal} onBack={() => setOpenId(null)} onDelete={del} runtime={{ Empty, supabase, uid, haptic, uploadAttachment, fileKind, storagePathFromUrl, fmtTime, testProgress, testResultTone, TEST_MAX_IMAGES, TEST_IMAGE_TTL_DAYS, ArrowLeft, ClipboardCheck, FolderKanban, User, Pencil, Trash2, CheckCircle2, XCircle, RotateCcw, ListTodo, X, Plus, Bug, AlertTriangle, ImageIcon, RefreshCw, Send, FileText }} /></React.Suspense>;
-
-  const passed = list.filter((s) => s.result === "Passed").length;
-  const failed = list.filter((s) => s.result === "Failed").length;
-  const pending = list.filter((s) => (s.result || "Pending") === "Pending").length;
-
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Testing</h3><span className="spacer" />{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "testSession" })}><Plus size={16} />New test session</button>}</div>
-
-      <div className="sumrow">
-        <div className="card"><div className="k"><ClipboardCheck size={14} /> Total tests</div><div className="v mono">{list.length}</div></div>
-        <div className="card"><div className="k"><CheckCircle2 size={14} color="var(--pos)" /> Passed</div><div className="v mono pos-txt">{passed}</div></div>
-        <div className="card"><div className="k"><XCircle size={14} color="var(--neg)" /> Failed</div><div className="v mono neg-txt">{failed}</div></div>
-        <div className="card"><div className="k"><Hourglass size={14} /> Pending</div><div className="v mono">{pending}</div></div>
-      </div>
-
-      <div className="card">
-        {list.length === 0 ? (
-          <Empty icon={<ClipboardCheck size={22} color="var(--muted)" />} title={isAdmin ? "No test sessions yet" : "Nothing assigned to you"} text={isAdmin ? "Create a session, add a checklist, and assign a tester to start QA on a project." : "Test sessions assigned to you will show up here."} action={isAdmin ? <button className="btn primary" onClick={() => openModal({ type: "testSession" })}><Plus size={16} />New test session</button> : null} />
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Session</th><th>Project</th><th>Tester</th><th>Checklist</th><th>Result</th><th></th></tr></thead>
-              <tbody>
-                {list.map((s) => {
-                  const p = testProgress(s);
-                  const nBugs = (Array.isArray(s.bugs) ? s.bugs : []).length;
-                  return (
-                    <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => setOpenId(s.id)}>
-                      <td><div style={{ fontWeight: 600 }}>{s.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{fmtDate(new Date(s.createdAt || Date.now()).toISOString().slice(0, 10))}{nBugs ? ` · ${nBugs} issue${nBugs > 1 ? "s" : ""}` : ""}</div></td>
-                      <td>{s.projectName ? <span className="tag">{s.projectName}</span> : <span className="hint-line">—</span>}</td>
-                      <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(s.assignedTo || "?"), width: 24, height: 24, fontSize: 10 }}>{(s.assignedTo || "?")[0]}</span>{s.assignedTo || "Unassigned"}</span></td>
-                      <td className="mono">{p.done}/{p.total}</td>
-                      <td><span className={"badge " + testResultTone(s.result)}>{s.result || "Pending"}</span></td>
-                      <td onClick={(e) => e.stopPropagation()}><div className="row-actions">
-                        <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => setOpenId(s.id)} title="Open"><ChevronRight size={15} /></button>
-                        {isAdmin && <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete test session?", body: `Delete "${s.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>}
-                      </div></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    UNIVERSAL GLOBAL SEARCH (Ctrl / ⌘ + K)
 ══════════════════════════════════════════════════════════════════════ */
@@ -9921,7 +9750,7 @@ export default function App() {
         </React.Suspense>
       );
       case "activity": return <LastSeen team={team} />;
-      case "myteam": return <MyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} />;
+      case "myteam": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading my team…</div></div>}><LazyMyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} runtime={{ useState, todayISO, teamOfUser, teamRosterIds, Empty, Users, Avatar, isTaskAssignee, sameMonth, round2, sumHours, ROLE_LABEL, attStatus, fmtDate, attendanceFor, clockTime, ListTodo, priorityTone, assigneeText, CalendarClock, ContactButtons, TeamChat }} /></React.Suspense>;
       case "staff-salary": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading staff salary…</div></div>}><LazyStaffSalary db={db} team={team} mutate={mutate} me={me} runtime={{ money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL }} /></React.Suspense>;
       case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
       case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
@@ -9932,7 +9761,7 @@ export default function App() {
       case "marketing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading marketing…</div></div>}> <LazyMarketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts }} />;</React.Suspense>;
       case "projects": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading projects…</div></div>}> <LazyProjects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts }} />;</React.Suspense>;
       case "inhouse": return <InHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} />;
-      case "testing": return <Testing db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} />;
+      case "testing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading testing…</div></div>}><LazyTesting db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} runtime={{ useState, LazyTestDetail, Empty, supabase, uid, haptic, uploadAttachment, fileKind, storagePathFromUrl, fmtTime, testProgress, testResultTone, TEST_MAX_IMAGES, TEST_IMAGE_TTL_DAYS, ArrowLeft, ClipboardCheck, FolderKanban, User, Pencil, Trash2, CheckCircle2, XCircle, RotateCcw, ListTodo, X, Plus, Bug, AlertTriangle, ImageIcon, RefreshCw, Send, FileText, ChevronRight, Hourglass, fmtDate, avatarColor }} /></React.Suspense>;
       case "leads": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading CRM…</div>}>
           <LazyEnterpriseCRM db={db} team={team} me={me} isAdmin={isAdmin} reload={reload}
