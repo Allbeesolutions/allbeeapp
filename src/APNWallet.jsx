@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import * as Icons from "./icons.jsx";
 
 export default function APNWallet(props) {
-  const {  db, pid, stats, snap  } = props;
+  const {  db, pid, stats, snap, role  } = props;
   const { APNMetric, APNWalletDetailModal, APN_COMM_REVERSED, APN_WITHDRAWAL_TYPES, Empty, apnCommTone, apnCommissionProjectsOf, apnCommsOf, apnPayoutDate, apnProjectSummary, apnRequestAmount, apnRevenueCollectionsOf, apnSnapshotWallet, apnWalletLabel, apnWithdrawalLabel, apnWithdrawalTone, apnWithdrawalWalletFor, fmtDate, fmtDateTime, money } = props.runtime || {};
   const { ArrowDownToLine, BadgeCheck, Banknote, CalendarDays, CheckCircle2, Coins, FolderKanban, Gift, Handshake, Hexagon, Hourglass, RefreshCw, RotateCcw, ShieldAlert, TrendingUp, Wallet } = Icons;
 
@@ -24,6 +24,9 @@ export default function APNWallet(props) {
   const collectionRows = ownedProjects.flatMap((project) => project.collections.map((c) => ({ id: c.id, title: project.projectName || "Project", clientName: project.clientName, project: project.projectName, amount: Number(c.receivedAmount) || 0, date: c.receivedDate, type: "Revenue received", status: c.commissionStatus || "Recorded", detail: `Commission generated ${money(c.commissionGenerated || 0)} at ${project.commissionRate}% · partner ${project.partnerName || "APN partner"}` }))).sort((a,b) => String(b.date).localeCompare(String(a.date)));
   const positiveLedger = ledger.filter((l) => Number(l.amount) > 0);
   const negativeLedger = ledger.filter((l) => Number(l.amount) < 0);
+  const commissionBreakdown = snapWallet?.commission_breakdown || {};
+  const streamAmount = (type) => Number(commissionBreakdown[type] || positiveLedger.filter((l) => l.commissionType === type).reduce((sum, l) => sum + Number(l.amount || 0), 0)) || 0;
+  const streamRows = (type) => ledgerRows(positiveLedger.filter((l) => l.commissionType === type));
   const withdrawalRows = (db.apn_withdrawal_requests || []).filter((r) => r.partner_id === pid).map((r) => ({ id: r.id, title: `${apnWalletLabel(r.wallet_type)} withdrawal`, amount: -Math.abs(apnRequestAmount(r)), date: r.requested_at, type: "Withdrawal", status: apnWithdrawalLabel(r.status), statusTone: apnWithdrawalTone(r.status), detail: `${r.preferred_method === "upi" ? "UPI" : "Bank transfer"} · requested ${fmtDateTime(r.requested_at)}` }));
   const ledgerRows = (rows) => rows.map((l) => ({ id: l.id, title: l.snapshot?.projectName || l.snapshot?.project || l.snapshot?.clientName || "Commission entry", amount: Number(l.amount) || 0, date: l.eventAt, type: l.commissionType, status: Number(l.amount) < 0 ? "Deduction" : (l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey ? `Pending · ${fmtDate(l.eligibleFrom)}` : "Credited"), statusTone: Number(l.amount) < 0 ? "neg" : (l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey ? "pri" : "pos"), detail: [l.snapshot?.clientName && `Client: ${l.snapshot.clientName}`, l.snapshot?.sourcePartnerName && `Source partner: ${l.snapshot.sourcePartnerName}`, l.snapshot?.recipientRole && `Recipient: ${String(l.snapshot.recipientRole).replace(/_/g, " ")}`, l.baseAmount != null && `${money(l.baseAmount)} at ${l.percent}%`, l.sourceType && `Source: ${l.sourceType}`, l.snapshot?.district && `District: ${l.snapshot.district}`, l.snapshot?.state && `State: ${l.snapshot.state}`].filter(Boolean).join(" · ") }));
   const openDetail = (key) => {
@@ -43,7 +46,10 @@ export default function APNWallet(props) {
       completed: { title: "Completed projects", value: String(ownedProjects.filter(p => p.status === "Completed").length), rows: ownedProjects.filter(p => p.status === "Completed").map(p => ({ id:p.id, title:p.projectName || "Project", amount:p.totalReceived, date:p.updatedAt || p.createdAt, status:"Completed", statusTone:"pos", detail:`Client: ${p.clientName || "—"} · Commission earned ${money(p.commissionEarned)}` })) },
       processing: { title: "Processing projects", value: String(ownedProjects.filter(p => p.status === "Processing").length), rows: ownedProjects.filter(p => p.status === "Processing").map(p => ({ id:p.id, title:p.projectName || "Project", amount:p.totalReceived, date:p.updatedAt || p.createdAt, status:"Processing", statusTone:"accent", detail:`Client: ${p.clientName || "—"} · Remaining ${money(p.remainingAmount)}` })) },
       collections: { title: "Collections received", value: String(collectionRows.length), rows: collectionRows },
-      incentives: { title: "Total incentives — full details", value: money(stats.totalIncentives), rows: collectionRows.filter((r) => { const c = (db.apn_revenue_collections || []).find(x => x.id === r.id); return Number(c?.incentive) > 0; }).map(r => ({ ...r, amount: Number((db.apn_revenue_collections || []).find(x => x.id === r.id)?.incentive) || 0, type: "Incentive", detail: "Incentive recorded against this collection." })) }
+      incentives: { title: "Total incentives — full details", value: money(stats.totalIncentives), rows: collectionRows.filter((r) => { const c = (db.apn_revenue_collections || []).find(x => x.id === r.id); return Number(c?.incentive) > 0; }).map(r => ({ ...r, amount: Number((db.apn_revenue_collections || []).find(x => x.id === r.id)?.incentive) || 0, type: "Incentive", detail: "Incentive recorded against this collection." })) },
+      referral1: { title: "Referral 1% — project earnings", value: money(streamAmount("referral")), rows: streamRows("referral"), note: "Your referral stream is 1% of the qualifying project collections shown below." },
+      district1: { title: "District 1% — district-head earnings", value: money(streamAmount("district")), rows: streamRows("district"), note: "District-head earnings are 1% of qualifying collections assigned to your district." },
+      state1: { title: "State 1% — state-head earnings", value: money(streamAmount("state")), rows: streamRows("state"), note: "State-head earnings are 1% of qualifying collections across your assigned state scope." }
     };
     setDetail(details[key] || null);
   };
@@ -65,6 +71,9 @@ export default function APNWallet(props) {
       <div className="apn-metrics" style={{ marginBottom: 14 }}>
         <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} onClick={() => openDetail("revenue")} />
         <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" onClick={() => openDetail("earned")} />
+        <APNMetric k="Referral 1%" v={money(streamAmount("referral"))} icon={<Handshake size={13} />} tone="pos" onClick={() => openDetail("referral1")} />
+        {role === "district_head" && <APNMetric k="District 1%" v={money(streamAmount("district"))} icon={<Coins size={13} />} tone="accent" onClick={() => openDetail("district1")} />}
+        {role === "state_head" && <APNMetric k="State 1%" v={money(streamAmount("state"))} icon={<Hexagon size={13} />} tone="accent" onClick={() => openDetail("state1")} />}
         <APNMetric k="Pending" v={money(snapWallet ? Number(snapWallet.pending) : stats.commission.pending)} icon={<Hourglass size={13} />} onClick={() => openDetail("pending")} />
         <APNMetric k="Eligible (payable)" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" onClick={() => openDetail("eligible")} />
         <APNMetric k="Withdrawable" v={money(snapWallet ? Number(snapWallet.withdrawable) : Number(stats.commission.payable) || 0)} icon={<ArrowDownToLine size={13} />} onClick={() => openDetail("withdrawable")} />
