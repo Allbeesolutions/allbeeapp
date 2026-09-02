@@ -755,23 +755,36 @@ async function fetchBootstrapData() {
 
 async function fetchAll() {
   const db = emptyDB();
-  // `audit` is intentionally excluded from the generic loader. Supabase/PostgREST
-  // caps an un-ranged select at the API row limit (currently 1,000), and the old
-  // generic path therefore silently loaded only the oldest ~1,000 audit events.
-  // That made the Audit Log appear to stop around 20-Aug even though newer rows
-  // existed in production. Audit has its own paginated loader below.
-  const loaded = await mapWithConcurrency(TABLES.filter((t) => t !== "audit"), TABLE_FETCH_CONCURRENCY, async (t) => [t, await loadTableRows(t, "id,data")]);
-  for (const [t, rows] of loaded) {
-    db[t] = (rows || [])
-      .map((r) => r.data)
-      .filter((x) => x && typeof x === "object")   // tolerate a malformed/null row instead of white-screening
-      .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
+  // `audit` is intentionally excluded from the shared scheduler. Supabase/PostgREST
+  // caps an un-ranged select at the API row limit, so audit has its own paginated
+  // newest-first loader below. Every other normalized read shares ONE concurrency
+  // pool; previously each feature group created its own pool and sequential group
+  // waits made hydration slower while still allowing bursts of 10 requests/group.
+  const jobs = [];
+  for (const t of TABLES) if (t !== "audit") jobs.push([t, "id,data", undefined, false]);
+  for (const [table, columns] of Object.entries(REFERRAL_READS)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(WITHDRAWAL_READS)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(CRM_READS)) jobs.push([table, columns, "created_at", true]);
+  for (const [table, columns] of Object.entries(AI_READS)) jobs.push([table, columns, table === "ai_settings" ? "updated_at" : "created_at", true]);
+  for (const [table, columns] of Object.entries(CLIENT_READS)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(HELPDESK_READS)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(AGREEMENT_READS)) jobs.push([table, columns, undefined, true]);
+  jobs.push(["apn_action_badge_reads", APN_ACTION_BADGE_READS, undefined, true]);
+
+  const loaded = await mapWithConcurrency(jobs, TABLE_FETCH_CONCURRENCY, async ([table, columns, orderColumn]) => [
+    table, await loadTableRows(table, columns, orderColumn)
+  ]);
+  for (const [table, rows] of loaded) {
+    if (TABLES.includes(table)) {
+      db[table] = (rows || [])
+        .map((r) => r.data)
+        .filter((x) => x && typeof x === "object")
+        .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
+    } else {
+      db[table] = rows || [];
+    }
   }
   db.audit = await fetchAuditRows();
-  Object.assign(db,
-    await fetchReferralData(), await fetchWithdrawalData(), await fetchCRMData(), await fetchAIData(),
-    await fetchClientData(), await fetchHelpdeskData(), await fetchAgreementData(),
-    { apn_action_badge_reads: await fetchApnActionBadgeReads() });
   return db;
 }
 
