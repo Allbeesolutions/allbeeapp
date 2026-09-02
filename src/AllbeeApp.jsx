@@ -5710,11 +5710,13 @@ function APNAI({ meRow, go, mutate, pid }) {
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTo({
-        top: chatContainerRef.current.scrollHeight,
-        behavior: "smooth"
-      });
+    const el = chatContainerRef.current;
+    if (!el) return;
+    if (typeof el.scrollTo === "function") {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      // jsdom/older embedded WebViews may not implement Element.scrollTo.
+      el.scrollTop = el.scrollHeight;
     }
   }, [msgs, busy, ticketDone]);
 
@@ -6614,6 +6616,47 @@ class APNTabErrorBoundary extends React.Component {
   }
 }
 
+/* Shared APN partner-page helpers. Keep these in the portal module because the
+   lazy APN pages receive them through runtime; defining them in another lazy
+   module makes the portal render fail before the child component can load. */
+const APN_WITHDRAWAL_TYPES = [
+  ["commission", "Commission"], ["referral", "Referral"], ["incentive", "Incentive"],
+];
+const apnWithdrawalWalletFor = (db, pid, type) => (db.apn_withdrawal_wallets || []).find((row) => row.partner_id === pid && row.wallet_type === type) || { wallet_type: type, pending: 0, approved: 0, withdrawable: 0, locked: 0, paid: 0, lifetime: 0, monthly: 0, today: 0, total_requested: 0, total_approved: 0, total_rejected: 0, total_processing: 0 };
+const apnWithdrawalTone = (status) => ({ pending: "pri", under_review: "accent", approved: "pos", processing: "accent", paid: "pos", rejected: "neg", cancelled: "neg", expired: "neg" }[status] || "");
+const apnWithdrawalLabel = (status) => String(status || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const apnWalletLabel = (type) => APN_WITHDRAWAL_TYPES.find(([key]) => key === type)?.[1] || type;
+const apnRequestAmount = (row) => Number(row.approved_amount ?? row.requested_amount) || 0;
+const referralCodeFor = (db, pid) => (db.apn_referral_codes || []).find((row) => row.partner_id === pid) || null;
+const referralWalletFor = (db, pid) => (db.apn_referral_wallets || []).find((row) => row.partner_id === pid) || { pending: 0, approved: 0, withdrawable: 0, paid: 0, lifetime: 0, monthly: 0 };
+const referralLinkFor = (code) => {
+  if (!code || typeof window === "undefined") return "";
+  return `${window.location.origin}/apn/register?ref=${encodeURIComponent(code)}`;
+};
+const referralQrFor = (link) => link ? `https://quickchart.io/qr?size=220&text=${encodeURIComponent(link)}` : "";
+const APN_TICKET_STATUSES = ["open", "under_review", "waiting_for_partner", "answered", "resolved", "closed"];
+const APN_TICKET_TONE = { open: "pri", under_review: "accent", waiting_for_partner: "accent", answered: "pos", resolved: "pos", closed: "" };
+const APN_AI_CHIPS = [
+  ["My wallet", "What is my wallet balance and when can I withdraw?"],
+  ["My commission", "Why haven't I received my commission yet? Explain from my records."],
+  ["My reversal", "Which reversals appear on my account and why were they made?"],
+  ["My projects", "Which of my projects and revenue collections are on record?"],
+  ["My referrals", "How much have I earned from referrals and when were they effective?"],
+  ["Rules", "Explain the current commission ladder and caps under the active rule version."],
+  ["Escalate to support", "I need help from the ALLBEE support team."],
+];
+const apnAiCategoryFor = (q) => {
+  const s = String(q || "");
+  if (/withdraw|settlement|payout|release/i.test(s)) return "Withdrawal";
+  if (/refer|tie-up|network|link/i.test(s)) return "Referral";
+  if (/commission|percent|earn|paid|ladder|tier/i.test(s)) return "Commission";
+  if (/wallet|balance|money|₹|rupee/i.test(s)) return "Wallet";
+  if (/project|lead|convert|revenue|collection/i.test(s)) return "Project";
+  if (/rule|version|policy|cap/i.test(s)) return "Rules & Policy";
+  if (/support|help|ticket|escalate/i.test(s)) return "Support";
+  return "Other";
+};
+
 /* ── portal shell ────────────────────────────────────────────────────── */
 export function APNPortal({ db, profile, session, signOut, isDark, mutate, patchDb = () => {}, reload }) {
   const pid = profile.id;
@@ -6719,7 +6762,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       case "chat": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading Team Chat…</div>}>
           <LazyAPNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isDark={isDark} isOpen={tab === "chat"} refreshTick={snapTick} go={go}
-            runtime={{ useState, useEffect, useRef, useCallback, useReducedMotion, supabase, fmtDateTime, emitToast, Empty, Avatar, apnIdFor, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL }} />
+            runtime={{ useState, useEffect, useRef, useCallback, useReducedMotion, supabase, fmtDateTime, emitToast, Empty, Avatar, apnIdFor, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, MessageCircle, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL }} />
         </React.Suspense>
       );
       case "withdrawals": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading withdrawal center…</div></div>}><LazyAPNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} runtime={{ Empty, money, fmtDate, fmtDateTime, apnRequestAmount, apnWithdrawalLabel, apnWalletLabel, apnWithdrawalTone, apnWithdrawalWalletFor, apnPayoutDate, apnSnapshotWallet, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectSummary, APN_WITHDRAWAL_TYPES, APN_COMM_REVERSED, APNMetric, supabase }} /></React.Suspense>;
@@ -8323,7 +8366,9 @@ export default function App() {
       case "apn": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
           <LazyAPNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
-            runtime={{ supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminReferrals, APNAdminSupport, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
+            runtime={{ supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, APNAdminWithdrawals, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, APNAdminLeaderboard,
+              apnActivityHistory, apnAttendanceScore, apnAvatarUrl, apnDerivedTimeline, apnHealthScore, apnLastActivity, apnMilestones, apnMonthlyAnalytics, apnPartnerProfileForm, apnPercent, apnRecommendations, apnRiskIndicators, apnTargetFor, apnTimelineEntry,
+              exportRowsToExcel, Sheet, UnlockIcon, apnRequestAmount, apnWalletLabel, apnWithdrawalLabel, apnWithdrawalTone, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
         </React.Suspense>
       );
       case "activity": return <LastSeen team={team} />;

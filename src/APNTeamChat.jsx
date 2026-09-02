@@ -1,7 +1,7 @@
 import React from "react";
 
 export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go, runtime = {} }) {
-  const { useState, useEffect, useRef, useCallback, useReducedMotion, supabase, emitToast, Empty, Avatar, apnIdFor, fmtDateTime, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL } = runtime;
+  const { useState, useEffect, useRef, useCallback, useReducedMotion, supabase, emitToast, Empty, Avatar, apnIdFor, fmtDateTime, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, MessageCircle, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL } = runtime;
   const [section, setSection] = useState("person");
   const [conversations, setConversations] = useState([]);          // from apn_list_conversations
   const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
