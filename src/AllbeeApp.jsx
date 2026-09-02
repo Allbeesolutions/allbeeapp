@@ -8273,9 +8273,14 @@ export default function App() {
   const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
   const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
   const portalClients = team.filter((p) => p.role === "client");
-  const financeApnProjects = (db.apn_commission_projects || []).map((project) => apnProjectSummary(db, project)).filter((project) => project.status !== "Cancelled");
+  // APN project summaries are expensive (each summary scans multiple APN collections).
+  // Build them only while the income modal is actually open; ordinary navigation and
+  // realtime updates should not pay that cost on every App render.
+  const financeApnProjects = modal?.type === "income"
+    ? (db.apn_commission_projects || []).map((project) => apnProjectSummary(db, project)).filter((project) => project.status !== "Cancelled")
+    : [];
   const unseenAnn = db.announcements.filter((a) => !profile?.notif_seen_at || (a.createdAt || 0) > new Date(profile.notif_seen_at).getTime()).length;
-  const financeApnPartners = (db.apn_users || []).filter((partner) => partner.status === "active");
+  const financeApnPartners = modal?.type === "income" ? (db.apn_users || []).filter((partner) => partner.status === "active") : [];
   const actionCounts = (() => {
     const pending = (value) => ["pending", "Pending", "under_review", "processing", "Pending approval"].includes(value);
     const apnActions = apnAdminActionCounts(db, profile?.id);
