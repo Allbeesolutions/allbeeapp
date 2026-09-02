@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 export default function ClientPortal({ db, profile, signOut, isDark, config, reload, runtime }) {
-  const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, PortalHelpdesk, fmtDate, fmtDateTime, money, LOGO_ICON } = runtime;
+  const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, fmtDate, fmtDateTime, money, LOGO_ICON } = runtime;
   const myId = profile?.id;
   const co = companyOf(config);
   const posts = [...db.portal_posts].filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -128,7 +128,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         )}
         </>)}
 
-        {portalView === "support" && <PortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} />}
+        {portalView === "support" && <LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} />}
       </div>
     </div>
   );
