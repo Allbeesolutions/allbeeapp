@@ -753,15 +753,16 @@ async function fetchBootstrapData() {
   return db;
 }
 
-async function fetchAll() {
+async function fetchAll({ excludeTables = [] } = {}) {
   const db = emptyDB();
+  const excluded = new Set(excludeTables);
   // `audit` is intentionally excluded from the shared scheduler. Supabase/PostgREST
   // caps an un-ranged select at the API row limit, so audit has its own paginated
   // newest-first loader below. Every other normalized read shares ONE concurrency
   // pool; previously each feature group created its own pool and sequential group
   // waits made hydration slower while still allowing bursts of 10 requests/group.
   const jobs = [];
-  for (const t of TABLES) if (t !== "audit") jobs.push([t, "id,data", undefined, false]);
+  for (const t of TABLES) if (t !== "audit" && !excluded.has(t)) jobs.push([t, "id,data", undefined, false]);
   for (const [table, columns] of Object.entries(REFERRAL_READS)) jobs.push([table, columns, undefined, true]);
   for (const [table, columns] of Object.entries(WITHDRAWAL_READS)) jobs.push([table, columns, undefined, true]);
   for (const [table, columns] of Object.entries(CRM_READS)) jobs.push([table, columns, "created_at", true]);
@@ -8425,15 +8426,14 @@ export default function App() {
       // Full hydration is intentionally detached from the first paint. It fills
       // APN/CRM/AI/referral/audit data after the shell is already interactive.
       const hydrationGeneration = ++reloadGenerationRef.current;
-      const hydrationRequest = fetchAll();
-      reloadInFlightRef.current = hydrationRequest;
+      const hydrationRequest = fetchAll({ excludeTables: BOOTSTRAP_TABLES });
       hydrationRequest.then((full) => {
         if (hydrationGeneration !== reloadGenerationRef.current) return;
-        setDb(full);
+        // The fast payload already contains these collections. Avoid querying
+        // them twice during startup while preserving the first-paint snapshot.
+        setDb((current) => ({ ...full, ...Object.fromEntries(BOOTSTRAP_TABLES.map((t) => [t, current?.[t] || []])) }));
       }).catch((e) => {
         if (hydrationGeneration === reloadGenerationRef.current) setSyncError(e.message || String(e));
-      }).finally(() => {
-        if (reloadInFlightRef.current === hydrationRequest) reloadInFlightRef.current = null;
       });
       console.info(`[ALLBEE] fast bootstrap ready in ${Math.round(performance.now() - started)}ms`);
     } catch (e) {
