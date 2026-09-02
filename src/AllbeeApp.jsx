@@ -68,6 +68,8 @@ const LazyQuotationForm = React.lazy(() => import("./QuotationForm.jsx"));
 const LazyDocForm = React.lazy(() => import("./DocForm.jsx"));
 const LazyInvoiceForm = React.lazy(() => import("./InvoiceForm.jsx"));
 const LazyAnnouncementForm = React.lazy(() => import("./AnnouncementForm.jsx"));
+const LazyNotifications = React.lazy(() => import("./Notifications.jsx"));
+const LazyInvoices = React.lazy(() => import("./Invoices.jsx"));
 const LazyPortalPostForm = React.lazy(() => import("./PortalPostForm.jsx"));
 const LazyRewardForm = React.lazy(() => import("./RewardForm.jsx"));
 const LazyInHouseForm = React.lazy(() => import("./InHouseForm.jsx"));
@@ -4675,100 +4677,6 @@ function PortalRefreshButton({ onRefresh }) {
   return <button className="iconbtn" title="Refresh" aria-label="Refresh current portal" disabled={busy} onClick={refresh}><RefreshCw size={17} className={busy ? "spin" : ""} /></button>;
 }
 
-function Notifications({ db, mutate, openModal, removeItem, isAdmin, me, profile, team }) {
-  const visible = [...db.notifications].filter((n) => isAdmin || notifVisibleTo(n, profile)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const levelTone = (l) => l === "Urgent" ? "neg" : l === "Important" ? "accent" : "pri";
-  const audienceLabel = (a) => { if (!a || a === "all") return "Everyone"; if (a.startsWith("user:")) { const u = (team || []).find((x) => x.id === a.slice(5)); return u ? "Only " + u.name : "One person"; } return (NOTIF_AUDIENCES.find((x) => x[0] === a) || [a, a])[1]; };
-  const senderFor = (n) => {
-    const person = (team || []).find((x) => x.id === n.senderId || x.name === n.by);
-    return {
-      name: n.senderName || n.by || person?.name || "Admin",
-      designation: n.senderDesignation || person?.designation || ROLE_LABEL[person?.role] || "Administrator",
-      avatar: n.senderAvatar || person?.photo_url || "",
-    };
-  };
-  // Opening Notifications is itself an acknowledgement: once the user has
-  // intentionally opened the notification center, its unread badge must clear
-  // immediately and persist across refreshes/devices.
-  useEffect(() => {
-    if (!me?.id) return;
-    const unread = visible.filter((n) => !(n.reads || []).includes(me.id)).map((n) => n.id);
-    if (!unread.length) return;
-    mutate((d) => ({
-      ...d,
-      notifications: d.notifications.map((x) => unread.includes(x.id)
-        ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) }
-        : x),
-    }), null);
-  }, [visible.length, me?.id, isAdmin]);
-
-  const markRead = (n) => { if ((n.reads || []).includes(me.id)) return; mutate((d) => ({ ...d, notifications: d.notifications.map((x) => x.id === n.id ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) } : x) }), null); };
-  const del = (n) => removeItem("notifications", n, { name: n.title, audit: `deleted notification "${n.title}"` });
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Notifications</h3><span className="spacer" />{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>}</div>
-      {visible.length === 0 ? <div className="card"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text={isAdmin ? "Broadcast an update to everyone, a role, or one person \u2014 with a priority level." : "Notifications from your admins show up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>} /></div>
-        : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{visible.map((n) => {
-          const seen = (n.reads || []).includes(me.id);
-          const sender = senderFor(n);
-          return (
-            <div key={n.id} className="card stat" style={{ borderLeft: `3px solid var(${n.level === "Urgent" ? "--neg" : "--primary"})`, position: "relative" }}>
-              {!seen && !isAdmin && <span aria-label="Unread notification" title="Unread" style={{ position: "absolute", top: 18, right: 18, width: 8, height: 8, borderRadius: "50%", background: "var(--primary)" }} />}
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <Avatar name={sender.name} url={sender.avatar} size={34} fontSize={13} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span style={{ fontWeight: 700, fontSize: 15 }}>{n.title}</span><span className={"badge " + levelTone(n.level)}>{n.level || "General"}</span>{!seen && !isAdmin && <span className="badge pri">New</span>}</div>
-                  {n.body && <div style={{ marginTop: 6, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{n.body}</div>}
-                  <div className="item-meta" style={{ marginTop: 8 }}><span>{sender.name}</span><span>{sender.designation}</span><span>{fmtDateTime(n.createdAt)}</span>{isAdmin && <span><Users size={12} style={{ verticalAlign: -2 }} /> {audienceLabel(n.audience)}</span>}{isAdmin && <span><Check size={12} style={{ verticalAlign: -2 }} /> {(n.reads || []).length} read</span>}</div>
-                  {!isAdmin && !seen && <div style={{ marginTop: 10 }}><button className="btn sm primary" onClick={() => markRead(n)}><Check size={13} />Mark as read</button></div>}
-                  {!isAdmin && seen && <div className="hint-line" style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, color: "var(--pos)" }}><BadgeCheck size={13} />Read</div>}
-                </div>
-                {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} aria-label={`Delete notification ${n.title}`} title="Delete notification" onClick={() => del(n)}><Trash2 size={14} /></button></div>}
-              </div>
-            </div>
-          );
-        })}</div>}
-    </div>
-  );
-}
-
-function Invoices({ db, mutate, openModal, removeItem, portalClients }) {
-  const [status, setStatus] = useState("All");
-  const all = [...db.invoices].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const list = status === "All" ? all : all.filter((iv) => iv.status === status);
-  const setIvStatus = (iv, sv) => mutate((d) => ({ ...d, invoices: d.invoices.map((x) => x.id === iv.id ? { ...x, status: sv, paid: sv === "Paid" } : x) }), { action: `marked invoice ${iv.number || ""} for ${iv.client} ${sv}`, module: "Invoices" });
-  const del = (iv) => removeItem("invoices", iv, { name: (iv.number || "Invoice") + " \u00b7 " + iv.client, audit: `deleted invoice for ${iv.client}` });
-  const tone = (sv) => sv === "Paid" ? "pos" : sv === "Overdue" ? "neg" : sv === "Sent" ? "pri" : sv === "Cancelled" ? "" : "accent";
-  const outstanding = all.filter((iv) => iv.status === "Sent" || iv.status === "Overdue").reduce((a, iv) => a + (Number(iv.amount) || 0), 0);
-  const paid = all.filter((iv) => iv.status === "Paid").reduce((a, iv) => a + (Number(iv.amount) || 0), 0);
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Invoices</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "invoice" })}><Plus size={16} />New invoice</button></div>
-      <div className="sumrow">
-        <div className="card"><div className="k"><Banknote size={14} /> Outstanding</div><div className="v mono">{money(outstanding)}</div></div>
-        <div className="card"><div className="k"><BadgeCheck size={14} /> Paid</div><div className="v mono">{money(paid)}</div></div>
-      </div>
-      <div className="toolbar"><div className="seg">{["All", ...INVOICE_STATUS].map((sv) => <button key={sv} className={status === sv ? "on" : ""} onClick={() => setStatus(sv)}>{sv}</button>)}</div></div>
-      <div className="card">
-        {list.length === 0 ? <Empty icon={<FileText size={22} color="var(--muted)" />} title="No invoices" text="Raise an invoice, track its payment, and optionally share it to the client portal." action={<button className="btn primary" onClick={() => openModal({ type: "invoice" })}><Plus size={16} />New invoice</button>} />
-          : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>Invoice</th><th>Client</th><th>Status</th><th>Due</th><th className="num-cell">Amount</th><th></th></tr></thead>
-            <tbody>{list.map((iv) => (
-              <tr key={iv.id}>
-                <td><div style={{ fontWeight: 600 }}>{iv.number || "\u2014"}</div>{iv.title && <div className="hint-line" style={{ fontSize: 11 }}>{iv.title}</div>}</td>
-                <td>{iv.client}{iv.clientId && <span className="badge accent" style={{ marginLeft: 6, fontSize: 10 }}>Shared</span>}</td>
-                <td><select className="select" style={{ width: "auto", padding: "4px 6px" }} value={iv.status || "Draft"} onChange={(e) => setIvStatus(iv, e.target.value)}>{INVOICE_STATUS.map((sv) => <option key={sv}>{sv}</option>)}</select></td>
-                <td><span className={"badge " + (iv.dueDate && iv.status !== "Paid" && iv.dueDate < todayISO() ? "neg" : "")}>{iv.dueDate ? fmtDate(iv.dueDate) : "\u2014"}</span></td>
-                <td className="num-cell mono" style={{ fontWeight: 700 }}>{money(iv.amount)}</td>
-                <td><div className="row-actions"><span className={"badge " + tone(iv.status)}>{iv.status || "Draft"}</span><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "invoice", initial: iv })}><Pencil size={14} /></button><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete invoice?", body: `Delete this invoice for ${iv.client}?`, note: "Moves to Recently deleted \u2014 restore within 60 days.", onConfirm: () => del(iv) })}><Trash2 size={14} /></button></div></td>
-              </tr>
-            ))}</tbody>
-          </table></div>}
-      </div>
-    </div>
-  );
-}
-
 function CompanySettings({ config, saveCompany }) {
   const init = (() => { try { return JSON.parse((config && config.company) || "{}") || {}; } catch { return {}; } })();
   const [f, setF] = useState({ name: "ALLBEE Solutions", logoUrl: "", address: "", email: "", phone: "", website: "", ...init });
@@ -4860,7 +4768,8 @@ function SalaryRow({ person, db, payroll, onSave }) {
 
 
 
-/* ── Team-scoped chat (private to one team) ────────────────────────────── */
+const LazyTeamChat = React.lazy(() => import("./TeamChat.jsx"));
+
 /* ══════════════════════════════════════════════════════════════════════
    TESTING MODULE (website / app / software QA)
 ══════════════════════════════════════════════════════════════════════ */
@@ -4876,7 +4785,6 @@ const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" :
 // the live session from db by id so edits from either partner stay in sync.
 // Master list + dashboard. Admins see and create every session; a tester sees
 // the sessions assigned to them.
-const LazyTeamChat = React.lazy(() => import("./TeamChat.jsx"));
 
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -9041,17 +8949,17 @@ export default function App() {
       );
       case "clients": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading clients…</div></div>}><LazyClients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} runtime={{ Empty, LoadMore, avatarColor, fmtDate }} /></React.Suspense>;
       case "quotations": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading quotations…</div></div>}> <LazyQuotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} runtime={{ Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
-      case "invoices": return <Invoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
+      case "invoices": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading invoices…</div></div>}><LazyInvoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ useState, Banknote, BadgeCheck, FileText, Plus, Pencil, Trash2, Empty, money, todayISO, fmtDate, INVOICE_STATUS }} /></React.Suspense>;
       case "portal-posts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading client updates…</div></div>}><LazyPortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ Empty, Plus, Trash2, ExternalLink }} /></React.Suspense>;
-      case "support": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading support…</div></div>}> <LazyAPNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} runtime={{ Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices, Notifications, emitToast, fmtDateTime }} />;</React.Suspense>;
+      case "support": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading support…</div></div>}> <LazyAPNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} runtime={{ Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices: LazyInvoices, Notifications: LazyNotifications, emitToast, fmtDateTime }} />;</React.Suspense>;
       case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
       case "vault": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading vault…</div></div>}> <LazyVault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} runtime={{ Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
-      case "notifications": return <Notifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} />;
+      case "notifications": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading notifications…</div></div>}><LazyNotifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} runtime={{ useEffect, notifVisibleTo, NOTIF_AUDIENCES, ROLE_LABEL, Avatar, Empty, Bell, Users, Check, BadgeCheck, Trash2, fmtDateTime }} /></React.Suspense>;
       case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
-      case "documents": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading documents…</div></div>}> <LazyDocuments db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
-      case "knowledge": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading knowledge…</div></div>}> <LazyKnowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
+      case "documents": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading documents…</div></div>}> <LazyDocuments db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
+      case "knowledge": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading knowledge…</div></div>}> <LazyKnowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
       case "prompts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading prompts…</div></div>}><LazyPrompts db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Plus, Trash2, Search, Field, emitToast }} /></React.Suspense>;
-      case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
+      case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
       case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Attach, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat }} /></React.Suspense>;
