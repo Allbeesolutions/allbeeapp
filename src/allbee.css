@@ -1307,3 +1307,16 @@ img, video, canvas, svg { max-width:100%; }
 }
 
 
+
+/* Mobile modal ergonomics: keep dialogs above the keyboard and thumb-reachable. */
+@media (max-width:760px) {
+  .overlay { align-items:flex-end; padding:8px 8px max(8px, env(safe-area-inset-bottom)); }
+  .modal { max-height:calc(100dvh - 16px - env(safe-area-inset-top)); border-radius:16px 16px 12px 12px; }
+  .modal-body { -webkit-overflow-scrolling:touch; }
+  .sidebar { padding-top:max(18px, env(safe-area-inset-top)); }
+}
+
+@media (max-width:480px) {
+  .modal { max-height:calc(100dvh - 10px - env(safe-area-inset-top)); }
+  .modal-head { padding-top:12px; padding-bottom:12px; }
+}
