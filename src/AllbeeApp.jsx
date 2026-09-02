@@ -46,6 +46,9 @@ const LazyAPNQuoteForm = React.lazy(() => import("./APNQuoteForm.jsx"));
 const LazyAPNQuizTaker = React.lazy(() => import("./APNQuizTaker.jsx"));
 const LazyTesting = React.lazy(() => import("./Testing.jsx"));
 const LazyMyTeam = React.lazy(() => import("./MyTeam.jsx"));
+const LazyPerformance = React.lazy(() => import("./Performance.jsx"));
+const LazyRewards = React.lazy(() => import("./Rewards.jsx"));
+const LazyTeamLeads = React.lazy(() => import("./TeamLeads.jsx"));
 const LazyInHouse = React.lazy(() => import("./InHouse.jsx"));
 const LazyGlobalSearch = React.lazy(() => import("./GlobalSearch.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
@@ -109,6 +112,7 @@ export function createConnectivityRecovery({ onOnline, onOffline, refresh }) {
     }
   };
 }
+
 
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -4861,108 +4865,6 @@ export function AdminAPNChat({ me, onUnreadChange }) {
 }
 
 
-function Performance({ db, team }) {
-  const month = new Date();
-  const staff = (team || []).filter((p) => ["staff", "intern", "admin", "accountant"].includes(p.role) && p.active !== false);
-  const rows = staff.map((p) => {
-    const done = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status === "Completed").length;
-    const open = db.tasks.filter((t) => isTaskAssignee(t, p) && t.status !== "Completed").length;
-    const myLeads = db.leads.filter((l) => l.ownerId === p.id || l.leadOwner === p.name);
-    const leadsGen = myLeads.length;
-    const leadsWon = myLeads.filter((l) => l.stage === "Converted").length;
-    const hours = round2(sumHours(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month))));
-    const updateDays = new Set(db.updates.filter((u) => u.userId === p.id && sameMonth(u.date, month)).map((u) => u.date)).size;
-    const points = db.rewards.filter((r) => r.userId === p.id).reduce((s, r) => s + (Number(r.points) || 0), 0);
-    const score = done * 10 + leadsWon * 15 + Math.round(hours) + updateDays * 3 + points;
-    return { p, done, open, leadsGen, leadsWon, hours, updateDays, points, score };
-  }).sort((a, b) => b.score - a.score);
-  const medal = (i) => i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}`;
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Performance</h3></div>
-      <div className="sumrow" style={{ marginBottom: 14 }}>
-        <div className="card"><div className="k"><TrendingUp size={14} /> Revenue this month</div><div className="v mono">{money(db.transactions.filter((t) => t.kind === "income" && sameMonth(t.date, month)).reduce((s, t) => s + (Number(t.amount) || 0), 0))}</div></div>
-        <div className="card"><div className="k"><UserPlus size={14} /> Leads this month</div><div className="v mono">{db.leads.filter((l) => sameMonth(new Date(l.createdAt || 0).toISOString().slice(0, 10), month)).length}</div></div>
-      </div>
-      <div className="card">
-        {rows.length === 0 ? <Empty icon={<TrendingUp size={22} color="var(--muted)" />} title="No team data yet" text="As people complete tasks, check in and earn recognition, the leaderboard fills up." />
-          : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>#</th><th>Member</th><th className="num-cell">Tasks</th><th className="num-cell">Leads</th><th className="num-cell">Won</th><th className="num-cell">Hours</th><th className="num-cell">Updates</th><th className="num-cell">Points</th><th className="num-cell">Score</th></tr></thead>
-            <tbody>{rows.map((r, i) => (
-              <tr key={r.p.id}>
-                <td style={{ fontSize: 16 }}>{medal(i)}</td>
-                <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(r.p.name), width: 26, height: 26, fontSize: 11 }}>{r.p.name[0]}</span><span><div style={{ fontWeight: 600 }}>{r.p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[r.p.role]}</div></span></span></td>
-                <td className="num-cell mono">{r.done}</td><td className="num-cell mono">{r.leadsGen}</td><td className="num-cell mono">{r.leadsWon}</td><td className="num-cell mono">{r.hours}</td><td className="num-cell mono">{r.updateDays}</td><td className="num-cell mono">{r.points}</td>
-                <td className="num-cell mono" style={{ fontWeight: 700 }}>{r.score}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>}
-        <div className="hint-line" style={{ padding: "12px 16px" }}>Score = tasks completed ×10 + days present this month ×2 + recognition points.</div>
-      </div>
-    </div>
-  );
-}
-
-function Rewards({ db, mutate, openModal, removeItem, me, isAdmin, team }) {
-  const all = [...db.rewards].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const list = isAdmin ? all : all.filter((r) => r.userId === me.id);
-  const del = (r) => removeItem("rewards", r, { name: r.userName, audit: `removed recognition for ${r.userName}` });
-  const myPoints = db.rewards.filter((r) => r.userId === me.id).reduce((s, r) => s + (Number(r.points) || 0), 0);
-
-  // Suggested recognition this month — computed from real activity so admins can
-  // award the obvious wins in one tap (PRD: top lead generator / best attendance /
-  // project closer). Each leader, only when there's a clear non-zero standout.
-  const month = new Date();
-  const staff = (team || []).filter((p) => ["staff", "intern", "admin", "accountant"].includes(p.role) && p.active !== false);
-  const lead = (metric) => { let best = null; for (const p of staff) { const v = metric(p); if (v > 0 && (!best || v > best.v)) best = { p, v }; } return best; };
-  const leadGen = lead((p) => db.leads.filter((l) => (l.ownerId === p.id || l.leadOwner === p.name) && l.stage === "Converted" && sameMonth(new Date(l.createdAt || 0).toISOString().slice(0, 10), month)).length);
-  const attend = lead((p) => round2(sumHours(db.attendance.filter((a) => a.userId === p.id && sameMonth(a.date, month)))));
-  const closer = lead((p) => db.projects.filter((pr) => pr.stage === "Completed" && (pr.ownerName === p.name || pr.createdById === p.id)).length);
-  const nominees = [
-    leadGen && { p: leadGen.p, kind: "Goal smashed", points: 20, note: `Top lead generator — ${leadGen.v} converted this month`, badge: "Top lead generator", icon: <UserPlus size={13} /> },
-    attend && { p: attend.p, kind: "On-time hero", points: 15, note: `Best attendance — ${attend.v}h this month`, badge: "Best attendance", icon: <Clock size={13} /> },
-    closer && { p: closer.p, kind: "Star performer", points: 20, note: `Project closer — ${closer.v} completed`, badge: "Project closer", icon: <FolderKanban size={13} /> },
-  ].filter(Boolean);
-  const recognize = (n) => openModal({ type: "reward", initial: { userId: n.p.id, kind: n.kind, points: n.points, note: n.note, date: todayISO() } });
-
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Recognition & rewards</h3><span className="spacer" />{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "reward" })}><Award size={16} />Give recognition</button>}</div>
-      {!isAdmin && <div className="sumrow"><div className="card"><div className="k"><Star size={14} /> Your points</div><div className="v mono">{myPoints}</div></div></div>}
-      {isAdmin && nominees.length > 0 && (
-        <div className="card stat" style={{ marginBottom: 14 }}>
-          <div className="lbl" style={{ fontWeight: 700, color: "var(--ink)" }}><Award size={14} /> Suggested recognition this month</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-            {nominees.map((n) => (
-              <div key={n.badge} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span className="avatar" style={{ background: avatarColor(n.p.name), width: 28, height: 28, fontSize: 11 }}>{n.p.name[0]}</span>
-                <span style={{ fontWeight: 600 }}>{n.p.name}</span>
-                <span className="badge accent" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>{n.icon}{n.badge}</span>
-                <span className="hint-line" style={{ flex: 1, minWidth: 120, fontSize: 12 }}>{n.note}</span>
-                <button className="btn sm primary" onClick={() => recognize(n)}><Award size={13} />Recognize</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="card">
-        {list.length === 0 ? <Empty icon={<Award size={22} color="var(--muted)" />} title={isAdmin ? "No recognition given yet" : "No recognition yet"} text={isAdmin ? "Celebrate good work — points feed the performance leaderboard." : "When an admin recognises your work, it shows up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "reward" })}><Award size={16} />Give recognition</button>} />
-          : list.map((r) => (
-            <div key={r.id} className="item-row">
-              <div className="avatar" style={{ background: avatarColor(r.userName), width: 34, height: 34, fontSize: 14 }}>{(r.userName || "?")[0]}</div>
-              <div className="item-main">
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span className="item-title">{r.userName}</span><span className="badge accent">{r.kind}</span><span className="badge pos">+{r.points} pts</span></div>
-                {r.note && <div className="item-meta" style={{ marginTop: 4 }}>{r.note}</div>}
-                <div className="item-meta"><span>{fmtDate(r.date || new Date(r.createdAt).toISOString().slice(0, 10))}</span></div>
-              </div>
-              {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove recognition?", body: `Remove this for ${r.userName}?`, note: "Moves to Recently deleted.", onConfirm: () => del(r) })}><Trash2 size={14} /></button></div>}
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
 function PortalPosts({ db, mutate, openModal, removeItem, portalClients }) {
   const list = [...db.portal_posts].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const del = (p) => removeItem("portal_posts", p, { name: p.title, audit: `deleted client update "${p.title}"` });
@@ -5290,55 +5192,22 @@ function SalaryRow({ person, db, payroll, onSave }) {
 
 
 
-function TeamLeads({ team, db, openModal, removeItem, me }) {
-  const teams = [...(db.teams || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const roster = team.filter((p) => p.role !== "client" && p.active !== false);
-  const byId = (id) => team.find((p) => p.id === id);
-  const del = (t) => removeItem("teams", t, { name: t.name, audit: `deleted team "${t.name}"` });
-  const assigned = new Set(teams.flatMap((t) => teamRosterIds(t)));
-  const unassigned = roster.filter((p) => !assigned.has(p.id) && p.role !== "superadmin");
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Team leads</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "teamcfg" })}><Plus size={16} />New team</button></div>
-      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><ShieldCheck size={15} /> Group people under a team lead. Leads (and their members) get a My team screen with the team's attendance, tasks, performance and a private team chat.</div>
-      {teams.length === 0 ? <div className="card"><Empty icon={<Users size={22} color="var(--muted)" />} title="No teams yet" text="Create a team, pick a lead, and assign the members who report to them." action={<button className="btn primary" onClick={() => openModal({ type: "teamcfg" })}><Plus size={16} />New team</button>} /></div>
-        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
-          {teams.map((t) => {
-            const members = (t.memberIds || []).map(byId).filter(Boolean);
-            const lead = byId(t.leadId);
-            return (
-              <div key={t.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{t.name}</div><div className="sub">{members.length + 1} member{members.length ? "s" : ""}</div></div>
-                  <div className="row-actions">
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} title="Edit" onClick={() => openModal({ type: "teamcfg", initial: t })}><Pencil size={14} /></button>
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} title="Delete" onClick={() => openModal({ type: "deleteConfirm", title: "Delete team?", body: `Delete "${t.name}"?`, note: "Members keep their accounts — only the grouping is removed.", onConfirm: () => del(t) })}><Trash2 size={14} /></button>
-                  </div>
-                </div>
-                <div>
-                  <div className="hint-line" style={{ marginBottom: 6 }}>Team lead</div>
-                  <span className="who-cell"><Avatar name={lead?.name || "?"} url={lead?.photo_url} size={28} /><span><div style={{ fontWeight: 600 }}>{lead?.name || "—"} <span className="badge accent" style={{ marginLeft: 4 }}>Lead</span></div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[lead?.role] || ""}</div></span></span>
-                </div>
-                <div>
-                  <div className="hint-line" style={{ marginBottom: 6 }}>Members</div>
-                  {members.length === 0 ? <div className="hint-line">No members yet.</div>
-                    : <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{members.map((m) => <span key={m.id} className="who-cell" style={{ background: "var(--surface-2)", borderRadius: 999, padding: "3px 10px 3px 3px" }}><Avatar name={m.name} url={m.photo_url} size={22} /><span style={{ fontSize: 12.5, fontWeight: 600 }}>{m.name}</span></span>)}</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>}
-      {unassigned.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, fontSize: 13 }}>Not on a team yet ({unassigned.length})</div>
-          <div style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", gap: 8 }}>{unassigned.map((p) => <span key={p.id} className="who-cell"><Avatar name={p.name} url={p.photo_url} size={22} /><span style={{ fontSize: 12.5 }}>{p.name}</span></span>)}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ── Team-scoped chat (private to one team) ────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   TESTING MODULE (website / app / software QA)
+══════════════════════════════════════════════════════════════════════ */
+const testProgress = (s) => {
+  const list = Array.isArray(s.checklist) ? s.checklist : [];
+  return { done: list.filter((i) => i.done).length, total: list.length };
+};
+const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" : "pri");
+
+// Create / edit a test session (admin). Seeds a checklist from one-item-per-line
+// text and links the session to a project so its history belongs to that project.
+// Full session view: checklist, bug reports with screenshots, result. Looks up
+// the live session from db by id so edits from either partner stay in sync.
+// Master list + dashboard. Admins see and create every session; a tester sees
+// the sessions assigned to them.
 function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
   const [text, setText] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -5392,21 +5261,7 @@ function TeamChat({ db, mutate, me, members, teamId, onRefresh }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   TESTING MODULE (website / app / software QA)
-══════════════════════════════════════════════════════════════════════ */
-const testProgress = (s) => {
-  const list = Array.isArray(s.checklist) ? s.checklist : [];
-  return { done: list.filter((i) => i.done).length, total: list.length };
-};
-const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" : "pri");
 
-// Create / edit a test session (admin). Seeds a checklist from one-item-per-line
-// text and links the session to a project so its history belongs to that project.
-// Full session view: checklist, bug reports with screenshots, result. Looks up
-// the live session from db by id so edits from either partner stay in sync.
-// Master list + dashboard. Admins see and create every session; a tester sees
-// the sessions assigned to them.
 /* ══════════════════════════════════════════════════════════════════════
    UNIVERSAL GLOBAL SEARCH (Ctrl / ⌘ + K)
 ══════════════════════════════════════════════════════════════════════ */
@@ -9494,7 +9349,7 @@ export default function App() {
       case "leave": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading leave…</div></div>}><LazyLeave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} runtime={{ Empty, avatarColor, fmtDate, haptic, leaveTone, ContactButtons }} /></React.Suspense>;
       case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} onActivity={recordActivity} onOpenAPN={() => go("apn")} />;
-      case "team-leads": return <TeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} />;
+      case "team-leads": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading team leads…</div></div>}><LazyTeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} runtime={{ Empty, Avatar, Users, Plus, ShieldCheck, Pencil, Trash2, ROLE_LABEL, teamRosterIds }} /></React.Suspense>;
       case "apn": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
           <LazyAPNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
@@ -9536,8 +9391,8 @@ export default function App() {
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
       case "chat": return <Chat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} />;
-      case "performance": return <Performance db={db} team={team} />;
-      case "rewards": return <Rewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} />;
+      case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL }} /></React.Suspense>;
+      case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift }} /></React.Suspense>;
       case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ money, fmtDate, Empty }} /></React.Suspense>;
       case "recently-deleted": return <RecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} />;
       case "audit": return <AuditLog db={db} isSuper={isSuper} onOpenActivity={setActivityDetail} />;
