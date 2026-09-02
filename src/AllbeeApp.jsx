@@ -753,24 +753,26 @@ async function fetchBootstrapData() {
   return db;
 }
 
-async function fetchAll({ excludeTables = [] } = {}) {
+async function fetchAll({ excludeTables = [], includeTables = null } = {}) {
   const db = emptyDB();
   const excluded = new Set(excludeTables);
+  const included = includeTables == null ? null : new Set(includeTables);
+  const shouldLoad = (table) => !excluded.has(table) && (!included || included.has(table));
   // `audit` is intentionally excluded from the shared scheduler. Supabase/PostgREST
   // caps an un-ranged select at the API row limit, so audit has its own paginated
   // newest-first loader below. Every other normalized read shares ONE concurrency
   // pool; previously each feature group created its own pool and sequential group
   // waits made hydration slower while still allowing bursts of 10 requests/group.
   const jobs = [];
-  for (const t of TABLES) if (t !== "audit" && !excluded.has(t)) jobs.push([t, "id,data", undefined, false]);
-  for (const [table, columns] of Object.entries(REFERRAL_READS)) jobs.push([table, columns, undefined, true]);
-  for (const [table, columns] of Object.entries(WITHDRAWAL_READS)) jobs.push([table, columns, undefined, true]);
-  for (const [table, columns] of Object.entries(CRM_READS)) jobs.push([table, columns, "created_at", true]);
-  for (const [table, columns] of Object.entries(AI_READS)) jobs.push([table, columns, table === "ai_settings" ? "updated_at" : "created_at", true]);
-  for (const [table, columns] of Object.entries(CLIENT_READS)) jobs.push([table, columns, undefined, true]);
-  for (const [table, columns] of Object.entries(HELPDESK_READS)) jobs.push([table, columns, undefined, true]);
-  for (const [table, columns] of Object.entries(AGREEMENT_READS)) jobs.push([table, columns, undefined, true]);
-  jobs.push(["apn_action_badge_reads", APN_ACTION_BADGE_READS, undefined, true]);
+  for (const t of TABLES) if (t !== "audit" && shouldLoad(t)) jobs.push([t, "id,data", undefined, false]);
+  for (const [table, columns] of Object.entries(REFERRAL_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(WITHDRAWAL_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(CRM_READS)) if (shouldLoad(table)) jobs.push([table, columns, "created_at", true]);
+  for (const [table, columns] of Object.entries(AI_READS)) if (shouldLoad(table)) jobs.push([table, columns, table === "ai_settings" ? "updated_at" : "created_at", true]);
+  for (const [table, columns] of Object.entries(CLIENT_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(HELPDESK_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
+  for (const [table, columns] of Object.entries(AGREEMENT_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
+  if (shouldLoad("apn_action_badge_reads")) jobs.push(["apn_action_badge_reads", APN_ACTION_BADGE_READS, undefined, true]);
 
   const loaded = await mapWithConcurrency(jobs, TABLE_FETCH_CONCURRENCY, async ([table, columns, orderColumn]) => [
     table, await loadTableRows(table, columns, orderColumn)
@@ -8372,12 +8374,12 @@ export default function App() {
 
   const reloadGenerationRef = useRef(0);
   const reloadInFlightRef = useRef(null);
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (tables = null) => {
     const generation = ++reloadGenerationRef.current;
     // Coalesce concurrent callers into one physical snapshot request. Every
     // caller still receives the same promise, while the generation ensures an
     // older snapshot can never overwrite a newer one.
-    const request = reloadInFlightRef.current || fetchAll();
+    const request = reloadInFlightRef.current || fetchAll({ includeTables: tables });
     reloadInFlightRef.current = request;
     try {
       const fresh = await request;
@@ -8492,14 +8494,27 @@ export default function App() {
     let auditTimer = null;
     let auditInFlight = null;
     let auditQueued = false;
-    const scheduleReload = () => {
+    const dirtyTables = new Set();
+    let forceFullReload = false;
+    const scheduleReload = (payload, force = false) => {
+      const table = payload?.table;
+      if (force) forceFullReload = true;
+      if (table && (TABLES.includes(table) || Object.prototype.hasOwnProperty.call(REFERRAL_READS, table) ||
+        Object.prototype.hasOwnProperty.call(WITHDRAWAL_READS, table) || Object.prototype.hasOwnProperty.call(CRM_READS, table) ||
+        Object.prototype.hasOwnProperty.call(AI_READS, table) || Object.prototype.hasOwnProperty.call(CLIENT_READS, table) ||
+        Object.prototype.hasOwnProperty.call(HELPDESK_READS, table) || Object.prototype.hasOwnProperty.call(AGREEMENT_READS, table) ||
+        table === "apn_action_badge_reads")) dirtyTables.add(table);
+      else forceFullReload = true;
       reloadQueued = true;
       if (reloadTimer || reloadInFlight) return;
       reloadTimer = setTimeout(async () => {
         reloadTimer = null;
         if (!reloadQueued) return;
         reloadQueued = false;
-        reloadInFlight = reload().catch(() => {}).finally(() => {
+        const tables = forceFullReload ? null : Array.from(dirtyTables);
+        dirtyTables.clear();
+        forceFullReload = false;
+        reloadInFlight = reload(tables).catch(() => {}).finally(() => {
           reloadInFlight = null;
           if (reloadQueued) scheduleReload();
         });
@@ -8535,7 +8550,7 @@ export default function App() {
     };
     let realtime = createRealtimeReconnect({
       createChannel: (statusHandler) => configureChannel(`allbee-db-sync:${Date.now()}`, statusHandler),
-      onReconnect: () => scheduleReload(),
+      onReconnect: () => scheduleReload(null, true),
       onError: (e) => console.warn("[ALLBEE] realtime reconnect:", e),
     });
     return () => {
