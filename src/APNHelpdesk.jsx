@@ -92,7 +92,7 @@ export default function APNHelpdesk(props) {
           const thread = msgsOf(t.id);
           return (
             <div key={t.id} className="card stat">
-              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flexWrap: "wrap" }} onClick={() => setExpanded(isOpen ? null : t.id)}>
+              <div role="button" tabIndex={0} aria-expanded={isOpen} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flexWrap: "wrap" }} onClick={() => setExpanded(isOpen ? null : t.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(isOpen ? null : t.id); } }}>
                 <div style={{ flex: 1, minWidth: 180 }}>
                   <div style={{ fontWeight: 700 }}>{t.subject}</div>
                   <div className="hint-line" style={{ fontSize: 11.5, marginTop: 2 }}>{t.ticket_no} · {nameOfT(t)} · {t.category}</div>

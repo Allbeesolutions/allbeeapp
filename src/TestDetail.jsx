@@ -111,7 +111,7 @@ export default function TestDetail({ sessionId, db, mutate, isAdmin, me, current
           {checklist.length === 0 ? <div className="hint-line" style={{ padding: "14px 0" }}>No checklist items yet.{isAdmin ? " Add the first below." : ""}</div>
             : checklist.map((i) => (
               <div key={i.id} className="check-item">
-                <div className={"check-box" + (i.done ? " done" : "")} onClick={() => toggle(i.id)} title={canAct ? "Toggle" : "Read-only"} style={{ cursor: canAct ? "pointer" : "default" }}>{i.done && <Check size={14} />}</div>
+                <div className={"check-box" + (i.done ? " done" : "")} role="checkbox" tabIndex={0} aria-checked={!!i.done} onClick={() => canAct && toggle(i.id)} onKeyDown={(e) => { if (canAct && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(i.id); } }} title={canAct ? "Toggle" : "Read-only"} style={{ cursor: canAct ? "pointer" : "default" }}>{i.done && <Check size={14} />}</div>
                 <div className="check-main" style={{ flex: 1, minWidth: 0 }}>
                   <div className={"check-txt" + (i.done ? " done" : "")}>{i.text}</div>
                   {canAct
@@ -164,9 +164,9 @@ export default function TestDetail({ sessionId, db, mutate, isAdmin, me, current
                   </div>
                 ))}
                 {bugImgs.length < TEST_MAX_IMAGES && (
-                  <div className="thumb-add" onClick={() => !busy && fileRef.current?.click()} title="Add screenshot">{busy ? <RefreshCw size={18} className="spin" /> : <ImageIcon size={18} />}</div>
+                  <label className="thumb-add-label" htmlFor="test-screenshot-upload" title="Add screenshot">{busy ? <RefreshCw size={18} className="spin" /> : <ImageIcon size={18} />}</label>
                 )}
-                <input ref={fileRef} type="file" accept="image/*" multiple onChange={pickImages} style={{ display: "none" }} />
+                <input id="test-screenshot-upload" ref={fileRef} type="file" accept="image/*" multiple onChange={pickImages} style={{ display: "none" }} />
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
                 <button className="btn primary" onClick={addBug} disabled={busy || (!bugText.trim() && !bugImgs.length)}><Send size={14} />Add report</button>

@@ -24,7 +24,7 @@ export default function APNQuizTaker({ quiz, onPass, onClose, runtime }) {
         <div key={i} style={{ marginBottom: 8 }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{i + 1}. {q.q}</div>
           {(q.options || []).map((opt, oi) => (
-            <div key={oi} className={"apn-quiz-opt" + (ans[i] === oi ? " sel" : "")} onClick={() => setAns((s) => ({ ...s, [i]: oi }))}>
+            <div key={oi} className={"apn-quiz-opt" + (ans[i] === oi ? " sel" : "")} role="radio" tabIndex={0} aria-checked={ans[i] === oi} onClick={() => setAns((s) => ({ ...s, [i]: oi }))} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setAns((s) => ({ ...s, [i]: oi })); } }}>
               <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (ans[i] === oi ? "var(--primary)" : "var(--border)"), background: ans[i] === oi ? "var(--primary)" : "transparent", flex: "none" }} />
               <span>{opt}</span>
             </div>
