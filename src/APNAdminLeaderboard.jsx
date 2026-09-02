@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-export default function APNAdminLeaderboard({ db }) {
+export default function APNAdminLeaderboard({ db, runtime = {} }) {
+  const { apnLeaderboard, apnIdFor, money, Field, Empty, Trophy, TN_DISTRICTS = [] } = runtime;
   const [scope, setScope] = useState("company");
-  const [district, setDistrict] = useState(TN_DISTRICTS[0]);
+  const [district, setDistrict] = useState(TN_DISTRICTS[0] || "");
   const [metric, setMetric] = useState("revenue");
+  if (!apnLeaderboard || !Field || !Empty || !Trophy || !TN_DISTRICTS.length) return <div className="auth-msg err">Leaderboard is temporarily unavailable. Please refresh.</div>;
   const rows = apnLeaderboard(db, scope, district, metric);
   const fmtVal = (v) => (metric === "projects" ? String(v) : money(v));
   return (

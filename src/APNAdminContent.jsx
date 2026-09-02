@@ -1,7 +1,7 @@
 import React from "react";
 
 export default function APNAdminContent({ db, openModal, removeRow, runtime = {} }) {
-  const { fmtDate, Empty, FileText, Download, Eye, Trash2, Plus, Search } = runtime;
+  const { fmtDate, Empty, FileText, Download, Eye, Trash2, Plus, Search, GraduationCap, Pencil, ClipboardCheck, APN_SERVICE_LABEL } = runtime;
   const training = (db.apn_training || []).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const quizzes = (db.apn_quizzes || []);
   return (

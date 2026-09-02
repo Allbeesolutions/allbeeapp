@@ -58,7 +58,7 @@ function apnPartnerProfileForm(partner, stats, target) {
 }
 
 function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose, onOpenFullPage, runtime = {} }) {
-  const { apnPartnerStats, apnTargetFor, apnHealthScore, todayISO, apnAttendanceScore, apnMonthlyAnalytics, apnActivityHistory, apnMilestones, apnRecommendations, apnRiskIndicators, apnDerivedTimeline, apnPartnerProfileForm, apnPercent, apnLastActivity, apnAvatarUrl, apnTimelineEntry, Avatar, Field, fmtDateTime, emitToast, Empty, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Modal, Confirm, uid, supabase } = runtime;
+  const { apnPartnerStats, apnTargetFor, apnHealthScore, todayISO, apnAttendanceScore, apnMonthlyAnalytics, apnActivityHistory, apnMilestones, apnRecommendations, apnRiskIndicators, apnDerivedTimeline, apnPartnerProfileForm, apnPercent, apnLastActivity, apnAvatarUrl, apnTimelineEntry, Avatar, Field, fmtDateTime, emitToast, Empty, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Modal, Confirm, uid, supabase, TN_DISTRICTS, APN_SERVICE_LABEL } = runtime;
   const stats = apnPartnerStats(db, partner.id);
   const target = apnTargetFor(db, partner.id, partner.targetResetAt);
   const profile = people.find((x) => x.id === partner.id);

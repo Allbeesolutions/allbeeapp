@@ -1,7 +1,7 @@
 import React from "react";
 
 export default function APNAdminDocs({ db, openModal, removeRow, runtime = {} }) {
-  const { fmtDate, Empty, FileText, Download, Eye, Trash2, Plus } = runtime;
+  const { fmtDate, Empty, FileText, Download, Eye, Trash2, Plus, ExternalLink, Pencil } = runtime;
   const list = (db.apn_documents || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div>
