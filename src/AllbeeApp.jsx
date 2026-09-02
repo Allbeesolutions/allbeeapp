@@ -14,6 +14,7 @@ import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
+import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
 const LazyAPNAdmin = React.lazy(() => import("./APNAdmin.jsx"));
 const LazyEnterpriseCRM = React.lazy(() => import("./EnterpriseCRM.jsx"));
@@ -1274,7 +1275,9 @@ const emptyDB = () => ({
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
   crm_clients: [], crm_leads: [], crm_lead_assignments: [], crm_follow_ups: [], crm_quotations: [], crm_quotation_versions: [], crm_projects: [], crm_revenue_collections: [], crm_activities: [], crm_files: [], crm_reminders: [], crm_audit: [],
   ai_settings: [], ai_insights: [], ai_predictions: [], ai_cache: [], ai_history: [], ai_recommendations: [], ai_reports: [],
-  apn_agreements: [], apn_agreement_acceptances: [],
+  apn_target_client_levels: [], apn_target_client_products: [], apn_target_client_prescriptions: [], apn_target_client_prescription_items: [], apn_target_client_loyalty: [], apn_target_client_loyalty_rewards: [],
+  support_tickets: [], support_ticket_messages: [], support_ticket_audit: [],
+  apn_agreements: [], apn_agreement_acceptances: [], apn_agreement_company: [],
 });
 
 /* ── derived calculations ─────────────────────────────────────────────── */
@@ -7526,17 +7529,18 @@ export default function App() {
     const generation = ++reloadGenerationRef.current;
     // Coalesce only identical snapshot requests. A full refresh must never
     // accidentally reuse a partial dirty-table request (or vice versa).
-    const requestKey = tables && tables.length ? [...new Set(tables)].sort().join("|") : "*";
+    const normalizedTables = normalizeRealtimeTableSet(tables);
+    const requestKey = normalizedTables ? normalizedTables.join("|") : "*";
     const request = reloadInFlightRef.current && reloadInFlightKeyRef.current === requestKey
       ? reloadInFlightRef.current
-      : fetchAll({ includeTables: tables });
+      : fetchAll({ includeTables: normalizedTables });
     reloadInFlightRef.current = request;
     reloadInFlightKeyRef.current = requestKey;
     try {
       const fresh = await request;
       if (generation !== reloadGenerationRef.current) return fresh;
-      if (tables && tables.length) {
-        setDb((current) => ({ ...current, ...Object.fromEntries(tables.map((table) => [table, fresh[table] || []])) }));
+      if (normalizedTables) {
+        setDb((current) => mergeScopedRealtimeState(current, fresh, normalizedTables));
       } else {
         setDb(fresh);
       }
