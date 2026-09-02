@@ -8489,6 +8489,9 @@ export default function App() {
     let reloadTimer = null;
     let reloadInFlight = null;
     let reloadQueued = false;
+    let auditTimer = null;
+    let auditInFlight = null;
+    let auditQueued = false;
     const scheduleReload = () => {
       reloadQueued = true;
       if (reloadTimer || reloadInFlight) return;
@@ -8502,6 +8505,21 @@ export default function App() {
         });
       }, 150);
     };
+    const scheduleAuditReload = () => {
+      auditQueued = true;
+      if (auditTimer || auditInFlight) return;
+      auditTimer = setTimeout(async () => {
+        auditTimer = null;
+        if (!auditQueued) return;
+        auditQueued = false;
+        auditInFlight = fetchAuditRows().then((audit) => {
+          setDb((prev) => prev ? { ...prev, audit } : prev);
+        }).catch((e) => setSyncError(e.message || String(e))).finally(() => {
+          auditInFlight = null;
+          if (auditQueued) scheduleAuditReload();
+        });
+      }, 250);
+    };
     const configureChannel = (name, statusHandler) => {
       const channel = supabase.channel(name);
       TABLES.filter((t) => t !== "audit").forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
@@ -8511,9 +8529,7 @@ export default function App() {
       Object.keys(AI_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
       Object.keys(CLIENT_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
       channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
-      channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, () => {
-        fetchAuditRows().then((audit) => setDb((prev) => prev ? { ...prev, audit } : prev)).catch((e) => setSyncError(e.message || String(e)));
-      });
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, scheduleAuditReload);
       channel.subscribe(statusHandler);
       return { unsubscribe: () => supabase.removeChannel(channel) };
     };
@@ -8522,7 +8538,11 @@ export default function App() {
       onReconnect: () => scheduleReload(),
       onError: (e) => console.warn("[ALLBEE] realtime reconnect:", e),
     });
-    return () => { realtime.stop(); };
+    return () => {
+      realtime.stop();
+      if (reloadTimer) clearTimeout(reloadTimer);
+      if (auditTimer) clearTimeout(auditTimer);
+    };
   }, [session, reload, bootstrap]);
 
   // If an admin changes my role or the modules I'm granted while I'm signed in,
