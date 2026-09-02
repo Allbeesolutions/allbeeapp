@@ -8457,6 +8457,8 @@ export default function App() {
       Object.keys(CRM_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
       Object.keys(AI_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
       Object.keys(CLIENT_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(HELPDESK_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
+      Object.keys(AGREEMENT_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
       channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
       channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, scheduleAuditReload);
       channel.subscribe(statusHandler);
