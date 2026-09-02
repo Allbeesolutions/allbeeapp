@@ -49,6 +49,9 @@ const LazyMyTeam = React.lazy(() => import("./MyTeam.jsx"));
 const LazyPerformance = React.lazy(() => import("./Performance.jsx"));
 const LazyRewards = React.lazy(() => import("./Rewards.jsx"));
 const LazyTeamLeads = React.lazy(() => import("./TeamLeads.jsx"));
+const LazyPortalPosts = React.lazy(() => import("./PortalPosts.jsx"));
+const LazyPrompts = React.lazy(() => import("./Prompts.jsx"));
+const LazyRecentlyDeleted = React.lazy(() => import("./RecentlyDeleted.jsx"));
 const LazyInHouse = React.lazy(() => import("./InHouse.jsx"));
 const LazyGlobalSearch = React.lazy(() => import("./GlobalSearch.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
@@ -2823,92 +2826,6 @@ function TaskDetail({ db, taskId, me, isAdmin, currentUser, mutate, openModal, r
   );
 }
 
-function RecentlyDeleted({ db, openModal, restoreItem }) {
-  const [open, setOpen] = useState({});
-  const list = useMemo(() => [...(db.recycle || [])].sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0)), [db.recycle]);
-  const daysLeft = (r) => Math.max(0, RECYCLE_TTL_DAYS - Math.floor((Date.now() - (r.deletedAt || 0)) / 86400000));
-  const askRestore = (r) => openModal({
-    type: "restoreConfirm", title: "Restore item?",
-    body: `Restore ${r.module.toLowerCase()} "${r.name}" to its original module?`, note: "It will reappear where it was before.",
-    onConfirm: () => restoreItem(r),
-  });
-  // Turn a stored field name into a readable label ("assignedTo" → "Assigned To").
-  const humanizeKey = (k) => k.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
-  // Every meaningful field of the deleted record, formatted for display. Arrays
-  // are joined, timestamps are made readable, booleans become Yes/No. Only the
-  // internal id is hidden.
-  const detailsOf = (r) => {
-    const it = r.item || {};
-    const skip = new Set(["id"]);
-    const out = [];
-    for (const [k, v] of Object.entries(it)) {
-      if (skip.has(k) || v === "" || v == null) continue;
-      let text;
-      if (Array.isArray(v)) {
-        if (!v.length) continue;
-        text = v.map((x) => (x && typeof x === "object" ? (x.title || x.name || x.status || x.text || JSON.stringify(x)) : String(x))).join(", ");
-      } else if (typeof v === "boolean") {
-        text = v ? "Yes" : "No";
-      } else if (typeof v === "object") {
-        text = JSON.stringify(v);
-      } else if (typeof v === "number" && v > 1e12 && /(at|At|ts)$/.test(k)) {
-        text = fmtTime(v); // millisecond timestamp
-      } else {
-        text = String(v);
-      }
-      out.push([humanizeKey(k), text]);
-    }
-    return out;
-  };
-
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Recently deleted</h3></div>
-      <div className="hint-line" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
-        <AlertTriangle size={13} /> Deleted items are kept here for {RECYCLE_TTL_DAYS} days, then removed automatically. There is no permanent-delete option.
-      </div>
-      <div className="card">
-        {list.length === 0 ? (
-          <Empty icon={<Trash2 size={22} color="var(--muted)" />} title="Nothing deleted" text="When you delete a task, project, entry or any other record, it lands here first so you can restore it." />
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Item</th><th>Module</th><th>Deleted by</th><th>Deleted</th><th>Auto-removes in</th><th></th></tr></thead>
-              <tbody>
-                {list.map((r) => {
-                  const left = daysLeft(r);
-                  const rows = detailsOf(r);
-                  return (
-                    <React.Fragment key={r.id}>
-                      <tr>
-                        <td><div style={{ fontWeight: 600 }}>{r.name}</div>
-                          {rows.length > 0 && <button className="ttl-link" style={{ fontSize: 12, fontWeight: 500, marginTop: 3 }} onClick={() => setOpen((o) => ({ ...o, [r.id]: !o[r.id] }))}>{open[r.id] ? "Hide" : "View"} original details</button>}
-                        </td>
-                        <td><span className="tag">{r.module}</span></td>
-                        <td><span className="badge"><span className="dot" style={{ background: avatarColor(r.deletedBy), display: "inline-block", marginRight: 5 }} />{r.deletedBy}</span></td>
-                        <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtTime(r.deletedAt)}</td>
-                        <td><span className={"ttl-pill " + (left <= 7 ? "ttl-soon" : "ttl-ok")}>{left} {left === 1 ? "day" : "days"}</span></td>
-                        <td><button className="btn sm primary" onClick={() => askRestore(r)}><RotateCcw size={13} />Restore</button></td>
-                      </tr>
-                      {open[r.id] && rows.length > 0 && (
-                        <tr><td colSpan={6} style={{ background: "var(--surface-2)" }}>
-                          <div className="detail-json">
-                            {rows.map(([k, v]) => <div key={k}><span className="k">{k}:</span> {v}</div>)}
-                          </div>
-                        </td></tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ClassStudents({ db, openModal, removeItem, mutate, currentUser, config, saveClassWebhook, isSuper }) {
   const [q, setQ] = useState("");
   const [course, setCourse] = useState("all");
@@ -4427,44 +4344,6 @@ function NamePicker({ isDark, onChoose }) {
 ══════════════════════════════════════════════════════════════════════ */
 // Shared prompt library — a place to keep the prompts the team reuses and copy
 // them in one tap. Backed by the `prompts` table (run allbee-prompts.sql once).
-function Prompts({ db, openModal, removeItem }) {
-  const [q, setQ] = useState("");
-  const [cat, setCat] = useState("all");
-  const [copiedId, setCopiedId] = useState(null);
-  const all = [...(db.prompts || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const cats = Array.from(new Set(all.map((p) => p.category).filter(Boolean)));
-  const list = all.filter((p) => (cat === "all" || p.category === cat) && (!q.trim() || (p.title + " " + (p.body || "") + " " + (p.category || "")).toLowerCase().includes(q.trim().toLowerCase())));
-  const copy = async (p) => { try { await navigator.clipboard.writeText(p.body || ""); setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500); } catch { emitToast("Couldn't copy — your browser blocked clipboard access.", "error"); } };
-  const del = (p) => removeItem("prompts", p, { name: p.title, audit: `deleted prompt "${p.title}"` });
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Prompts</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "prompt" })}><Plus size={16} />New prompt</button></div>
-      <p className="hint-line" style={{ marginTop: -8, marginBottom: 14 }}>A shared library of the prompts your team reuses — briefs, email templates, AI prompts. Add one, then copy it whenever you need it.</p>
-      <div className="filterbar">
-        <Field label="Search"><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search prompts…" /></Field>
-        {cats.length > 0 && <Field label="Category"><select className="select" value={cat} onChange={(e) => setCat(e.target.value)}><option value="all">All categories</option>{cats.map((c) => <option key={c}>{c}</option>)}</select></Field>}
-      </div>
-      {list.length === 0 ? <div className="card"><Empty icon={<Sparkles size={22} color="var(--muted)" />} title="No prompts yet" text="Add the prompts your team uses most and copy them in one tap." action={<button className="btn primary" onClick={() => openModal({ type: "prompt" })}><Plus size={16} />New prompt</button>} /></div>
-        : <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>{list.map((p) => (
-          <div key={p.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</span>
-              {p.category && <span className="tag">{p.category}</span>}
-            </div>
-            <div className="hint-line" style={{ whiteSpace: "pre-wrap", maxHeight: 120, overflow: "hidden", fontSize: 13, lineHeight: 1.5 }}>{p.body}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-              <button className="btn sm primary" onClick={() => copy(p)}>{copiedId === p.id ? <><Check size={13} />Copied</> : <><Copy size={13} />Copy</>}</button>
-              <button className="btn sm" onClick={() => openModal({ type: "prompt", initial: p })}><Pencil size={13} /></button>
-              <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete prompt?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>
-            </div>
-          </div>
-        ))}</div>}
-    </div>
-  );
-}
-
-// Google Sheets (and any spreadsheet) link library — one tidy place for all the
-// team's workbook links. Backed by the `sheets` table (run allbee-sheets.sql).
 function SelectOther({ value, onChange, options, placeholder = "Type here…" }) {
   const [custom, setCustom] = useState(() => !!value && !options.includes(value));
   const onSel = (e) => {
@@ -4864,35 +4743,6 @@ export function AdminAPNChat({ me, onUnreadChange }) {
   );
 }
 
-
-function PortalPosts({ db, mutate, openModal, removeItem, portalClients }) {
-  const list = [...db.portal_posts].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const del = (p) => removeItem("portal_posts", p, { name: p.title, audit: `deleted client update "${p.title}"` });
-  const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Client updates</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "portalPost" })}><Plus size={16} />Post update</button></div>
-      <p className="hint-line" style={{ marginTop: -4 }}>Updates you post here appear in that client's portal when they sign in.</p>
-      <div className="card" style={{ marginTop: 12 }}>
-        {list.length === 0 ? <Empty icon={<ExternalLink size={22} color="var(--muted)" />} title="No client updates yet" text={portalClients.length === 0 ? "No client portal accounts yet — a client signs up from the login screen (choose Client)." : "Post a status update and your client will see it in their portal."} action={portalClients.length > 0 && <button className="btn primary" onClick={() => openModal({ type: "portalPost" })}><Plus size={16} />Post update</button>} />
-          : list.map((p) => (
-            <div key={p.id} className="item-row">
-              <div className="item-main">
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span className="item-title">{p.title}</span><span className={"badge " + statusTone(p.status)}>{p.status}</span></div>
-                <div className="item-meta"><span><Building2 size={12} style={{ verticalAlign: -2 }} /> {p.clientName}</span><span>{fmtDateTime(p.createdAt)}</span></div>
-                {p.body && <div className="sub" style={{ marginTop: 4 }}>{p.body}</div>}
-                {p.meetingLink && <div style={{ marginTop: 6 }}><a className="btn sm primary" href={p.meetingLink} target="_blank" rel="noreferrer"><Link2 size={13} />Join meeting</a></div>}
-              </div>
-              <div className="row-actions">
-                <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "portalPost", initial: p })}><Pencil size={14} /></button>
-                <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete update?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={14} /></button>
-              </div>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
 
 function PortalRefreshButton({ onRefresh }) {
   const [busy, setBusy] = useState(false);
@@ -9378,7 +9228,7 @@ export default function App() {
       case "clients": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading clients…</div></div>}><LazyClients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} runtime={{ Empty, LoadMore, avatarColor, fmtDate }} /></React.Suspense>;
       case "quotations": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading quotations…</div></div>}> <LazyQuotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} runtime={{ Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
       case "invoices": return <Invoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
-      case "portal-posts": return <PortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} />;
+      case "portal-posts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading client updates…</div></div>}><LazyPortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ Empty, Plus, Trash2, ExternalLink }} /></React.Suspense>;
       case "support": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading support…</div></div>}> <LazyAPNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} runtime={{ Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices, Notifications, emitToast, fmtDateTime }} />;</React.Suspense>;
       case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
       case "vault": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading vault…</div></div>}> <LazyVault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} runtime={{ Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
@@ -9386,7 +9236,7 @@ export default function App() {
       case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
       case "documents": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading documents…</div></div>}> <LazyDocuments db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
       case "knowledge": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading knowledge…</div></div>}> <LazyKnowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
-      case "prompts": return <Prompts db={db} openModal={openModal} removeItem={removeItem} />;
+      case "prompts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading prompts…</div></div>}><LazyPrompts db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Plus, Trash2, Search, Field, emitToast }} /></React.Suspense>;
       case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications, Tasks }} />;</React.Suspense>;
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
@@ -9394,7 +9244,7 @@ export default function App() {
       case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL }} /></React.Suspense>;
       case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift }} /></React.Suspense>;
       case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ money, fmtDate, Empty }} /></React.Suspense>;
-      case "recently-deleted": return <RecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} />;
+      case "recently-deleted": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading recycle bin…</div></div>}><LazyRecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} runtime={{ Empty, Trash2, RotateCcw, avatarColor, fmtDateTime, RECYCLE_TTL_DAYS }} /></React.Suspense>;
       case "audit": return <AuditLog db={db} isSuper={isSuper} onOpenActivity={setActivityDetail} />;
       case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} saveAI={saveAI} />;
       default: return null;
