@@ -1,27 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { supabase } from "./supabaseClient";
-import * as Icons from "./icons.jsx";
+import React from "react";
 
-const CHAT_SECTIONS = ["person", "district", "state"];
-const CHAT_SECTION_LABEL = { person: "Friends", district: "District", state: "State" };
-
-function useReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return undefined;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReduced(mq.matches);
-    update();
-    mq.addEventListener?.("change", update);
-    return () => mq.removeEventListener?.("change", update);
-  }, []);
-  return reduced;
-}
-
-export default function APNTeamChat(props) {
-  const { db, meRow, pid, profile, isDark, isOpen, refreshTick, go } = props;
-  const { fmtDateTime, uid, emitToast, Empty, Avatar, apnIdFor, ...rest } = props.runtime || {};
-  const { Search, Plus, Trash2, ChevronRight, ArrowLeft, FileText, Send, Bell, MessageSquare } = { ...Icons, ...rest };
+export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go, runtime = {} }) {
+  const { useState, useEffect, useRef, useCallback, useReducedMotion, supabase, emitToast, Empty, Avatar, apnIdFor, fmtDateTime, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL } = runtime;
   const [section, setSection] = useState("person");
   const [conversations, setConversations] = useState([]);          // from apn_list_conversations
   const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
@@ -154,7 +134,7 @@ export default function APNTeamChat(props) {
         setConversations([]); setRequests([]); setFriends([]); setContacts([]);
       } else { setErr(e.message || String(e)); }
     } finally { if (showLoading && mountedRef.current) setLoading(false); }
-  }, [pid]);
+  }, []);
 
   const loadMessages = useCallback(async (conv, { open = true } = {}) => {
     // Opening a conversation may clear the old thread while it loads. Refreshing
@@ -177,7 +157,7 @@ export default function APNTeamChat(props) {
     } catch (e) {
       if (mountedRef.current) setErr(e.message || String(e));
     }
-  }, [pid]);
+  }, []);
 
   const openConversation = useCallback(async (conv) => {
     await loadMessages(conv);
@@ -223,7 +203,7 @@ export default function APNTeamChat(props) {
       queued = false;
       supabase.removeChannel(ch);
     };
-  }, [isOpen, pid, loadConversations, loadMessages]);
+  }, [isOpen, loadConversations, loadMessages]);
 
   const sendFriendRequest = async (otherApnId) => {
     setErr("");
@@ -523,239 +503,3 @@ export default function APNTeamChat(props) {
     </div>
   );
 }
-
-/* ── tab error boundary ──────────────────────────────────────────────── */
-class APNTabErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, info) { console.error("[APN] Tab render error:", error, info?.componentStack?.slice(0, 400)); }
-  render() {
-    if (this.state.hasError) {
-      const msg = this.state.error?.message || "An unexpected error occurred.";
-      return (
-        <div style={{ padding: "40px 24px", textAlign: "center" }}>
-          <div style={{ color: "var(--neg)", marginBottom: 12 }}><AlertTriangle size={32} /></div>
-          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 16 }}>Something went wrong</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, maxWidth: 320, margin: "0 auto 20px" }}>{msg}</div>
-          <button className="btn primary" onClick={() => this.setState({ hasError: false, error: null })}>Try again</button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-/* ── portal shell ────────────────────────────────────────────────────── */
-export function APNPortal({ db, profile, session, signOut, isDark, mutate, patchDb = () => {}, reload }) {
-  const pid = profile.id;
-  const meRow = apnMe(db, pid);
-  const [tab, setTab] = useState("home");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [modal, setModal] = useState(null);
-  const [finSnap, setFinSnap] = useState(null);
-  const [snapTick, setSnapTick] = useState(0);
-  const [agr, setAgr] = useState(null);
-
-  // The agreement gate answer comes from the server-side apn_agreement_status
-  // RPC (single source of truth). While it says REQUIRED, the whole portal is
-  // replaced by APNAgreementGate; acceptance there triggers this refetch.
-  const refreshAgreements = useCallback(async () => {
-    const { data, error } = await supabase.rpc("apn_agreement_status");
-    setAgr(error || !data ? null : data);
-  }, []);
-  useEffect(() => {
-    refreshAgreements().catch(() => {});
-  }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // The portal's ONE refresh operation: reload the shared store (which every
-  // APN page reads from) and bump the snapshot tick so the wallet facts and
-  // any page-owned loaders (network, support tickets) refetch. Used by BOTH
-  // the header refresh button and the global pull-to-refresh — one pull, one
-  // refresh, no duplicated pipelines.
-  const refreshPortal = useCallback(async () => {
-    await reload();
-    setSnapTick((t) => t + 1);
-  }, [reload]);
-
-  // WP7 — authoritative financial facts for the portal: refetch on mount, on
-  // tab switch, and after a refresh so wallet values stay current, while
-  // staying a read-only projection (no client-side recomputation). Never
-  // blocks the portal: on failure legacy figures remain.
-  useEffect(() => {
-    let cancelled = false;
-    fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [pid, tab, snapTick]);
-
-  useEffect(() => {
-    const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setSearchOpen((v) => !v); } };
-    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Deep links: #/apn/<tab>, and bare #/targets/<id> lands partners on their
-  // targets tab so a notification tap acknowledges the right target.
-  useEffect(() => {
-    const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
-    const route = parts[0] === "apn" ? parts[1] : parts[0];
-    if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
-  }, []);
-
-  const markNotificationsSeen = useCallback(async () => {
-    const seenAt = new Date().toISOString();
-    const { error } = await supabase.rpc("mark_apn_action_badge_seen", { p_action_type: "notification_unread" });
-    if (error) { console.warn("[ALLBEE] notification read state could not be saved:", error.message); return; }
-    patchDb((d) => ({ ...d, apn_action_badge_reads: [...(d.apn_action_badge_reads || []).filter((r) => !(r.user_id === pid && r.action_type === "notification_unread")), { user_id: pid, action_type: "notification_unread", seen_at: seenAt, updated_at: seenAt }] }));
-  }, [pid, patchDb]);
-
-  if (!meRow) return (
-    <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-      <style>{CSS}</style>
-      <div className="loading-screen">
-        <div className="loading-card">
-          <PrismFluxLoader status="Setting up your APN account…" statusList={["Loading your network", "Syncing data", "Almost ready"]} />
-        </div>
-      </div>
-    </div>
-  );
-
-  const eff = meRow.status === "rejected" ? "rejected" : (profile.active === false && profile.status !== "pending") ? "suspended" : apnEffectiveStatus(meRow);
-  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Waiting for Approval" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) was successfully submitted and is awaiting admin approval. You'll get full access as soon as it's approved.`} onSignOut={signOut} onRefresh={refreshPortal} />;
-  if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
-  if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} onRefresh={refreshPortal} />;
-  if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
-  // AGREE-MENT GATE: while any required document is unaccepted the server's
-  // apn_agreement_status says required=true and the portal is fully replaced
-  // by the review screen (visually distinct from account-suspended).
-  if (agr && agr.required) return <APNAgreementGate isDark={isDark} onSignOut={signOut} required={agr.requiredList || []} onAccepted={refreshAgreements} />;
-
-  const stats = apnPartnerStats(db, pid);
-  const isHead = meRow.role === "district_head";
-  const isStateHead = meRow.role === "state_head";
-  const go = (t) => {
-    if (t === "notifications") markNotificationsSeen().catch(() => {});
-    setTab(t);
-    setSidebarOpen(false);
-  };
-  const unreadNotif = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow) && apnActionRowTime(n) > apnActionReadTime(db, pid, "notification_unread")).length;
-  const unackTargets = (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.acknowledged).length;
-  const withdrawalOpenCount = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid && ["pending", "under_review", "approved", "processing"].includes(row.status)).length;
-
-  const section = () => {
-    switch (tab) {
-      case "home": return <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
-      case "leads": return <APNLeads db={db} meRow={meRow} pid={pid} openModal={setModal} mutate={mutate} />;
-      case "wallet": return <APNWallet db={db} pid={pid} stats={stats} snap={finSnap} />;
-      case "network": return <APNNetwork db={db} meRow={meRow} pid={pid} reload={reload} onOpenWithdrawals={() => go("withdrawals")} refreshTick={snapTick} />;
-      case "chat": return <APNTeamChat db={db} meRow={meRow} pid={pid} profile={profile} isDark={isDark} isOpen={tab === "chat"} refreshTick={snapTick} go={go} />;
-      case "withdrawals": return <APNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} />;
-      case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
-      case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
-      case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
-      case "documents": return <APNDocuments db={db} />;
-      case "agreements": return <APNAgreementCenter db={db} pid={pid} onRefresh={refreshPortal} />;
-      case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
-      case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
-      case "notifications": return <APNNotifications db={db} meRow={meRow} />;
-      case "achievements": return <APNAchievements db={db} pid={pid} />;
-      case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
-      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
-      case "profile": return <APNProfile db={db} meRow={meRow} stats={stats} snap={finSnap} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} />;
-      default: return null;
-    }
-  };
-
-  const moreItems = [
-    ["targets", "Targets", <Target size={20} color="var(--primary)" />, unackTargets],
-    ["quotations", "Quotations", <FileText size={20} color="var(--primary)" />, 0],
-    ["documents", "Materials", <BookOpen size={20} color="var(--primary)" />, 0],
-    ["agreements", "Agreements", <ScrollText size={20} color="var(--primary)" />, agr?.requiredCount || 0],
-    ["notifications", "Notifications", <Bell size={20} color="var(--primary)" />, unreadNotif],
-    ["learn", "Learn", <GraduationCap size={20} color="var(--primary)" />, 0],
-    ["withdrawals", "Withdrawal Center", <Wallet size={20} color="var(--primary)" />, withdrawalOpenCount],
-    ["ai", "ALLBEE AI", <Sparkles size={20} color="var(--primary)" />, 0],
-    ["support", "My Tickets", <MessageCircle size={20} color="var(--primary)" />, 0],
-    ["achievements", "Achievements", <Award size={20} color="var(--primary)" />, 0],
-    ["leaderboard", "Leaderboard", <Trophy size={20} color="var(--primary)" />, 0],
-    ...(isHead ? [["district", "District", <MapPin size={20} color="var(--primary)" />, 0]] : []),
-    ...(isStateHead ? [["district", "State Command", <MapPin size={20} color="var(--primary)" />, 0]] : []),
-    ["profile", "Profile", <User size={20} color="var(--primary)" />, 0],
-  ];
-  const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users], ["chat", "Team Chat", MessageSquare]];
-  const showFab = tab === "leads" || tab === "quotations";
-  return (
-    <div className={`allbee apn apn-nav-shell${sidebarOpen ? " menu-open" : ""}`} data-theme={isDark ? "dark" : "light"}>
-      <aside className="apn-desktop-sidebar" aria-label="APN navigation">
-        <div className="apn-side-brand" role="button" tabIndex={0} onClick={() => go("home")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("home"); } }}>
-          <FounderTap className="brand-logo" src={LOGO_ICON} alt="ALLBEE" />
-          <div><div className="apn-side-title">ALLBEE</div><div className="apn-side-sub">Partner Network</div></div>
-        </div>
-        <div className="apn-side-section">MAIN</div>
-        <div className="apn-side-links">
-          {primary.map(([k, l, Icon]) => <button key={k} className={"apn-side-link" + (tab === k ? " active" : "")} onClick={() => go(k)}><Icon size={17} /><span>{l}</span>{k === "chat" && unreadNotif > 0 ? <span className="badge action-badge">{unreadNotif > 99 ? "99+" : unreadNotif}</span> : null}</button>)}
-        </div>
-        <div className="apn-side-section">WORKSPACE</div>
-        <div className="apn-side-links">
-          {moreItems.map(([k, l, ic, badge]) => <button key={k} className={"apn-side-link" + (tab === k ? " active" : "")} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge action-badge">{badge > 99 ? "99+" : badge}</span>}</button>)}
-        </div>
-        <div className="apn-side-foot">
-          <button className="apn-side-link" onClick={signOut}><LogOut size={17} color="var(--neg)" /><span style={{ color: "var(--neg)" }}>Sign out</span></button>
-        </div>
-      </aside>
-      <div className="apn-main">
-      <style>{CSS}</style><ToastHost />
-       <header className="apn-top">
-         <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><FounderTap className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
-         <button type="button" className="iconbtn" onClick={() => setSidebarOpen((v) => !v)} aria-label={sidebarOpen ? "Close menu" : "Open menu"} title="Menu" aria-expanded={sidebarOpen}><Menu size={19} /></button>
-         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
-        <PortalRefreshButton onRefresh={refreshPortal} />
-        <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
-        <button className="iconbtn" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
-        <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
-      </header>
-
-      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{section()}</APNTabErrorBoundary></div></div>
-
-      {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
-
-      {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
-      <GlobalPullToRefresh enabled={!modal && !searchOpen && !sidebarOpen} onRefresh={refreshPortal} />
-
-      <nav className="apn-bottomnav">
-        {primary.map(([k, l, Icon]) => (
-          <button key={k} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={k === "chat" ? 22 : 20} strokeWidth={k === "chat" ? 1.6 : 2} /><span>{l}</span></button>
-        ))}
-      </nav>
-      </div>
-
-      {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
-      {modal?.type === "apnLead" && <APNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} />}
-      {modal?.type === "apnQuote" && <APNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} />}
-      {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={async (reason) => { try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason || null, rejectedBy: meRow.name, rejectedAt: at } : u) })); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } finally { setModal(null); } }} onClose={() => setModal(null)} />}
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════════════
-   APN ADMIN (internal) — run by Haji / Alim / admins. Approvals, District Head
-   appointment and reactivation are partner-only (superadmin) actions.
-══════════════════════════════════════════════════════════════════════ */
-const APN_APPROVERS = [
-  { name: "Syed Hasan Kuddos Sahib", designation: "Co-Founder & CFO" },
-  { name: "Mohamed Backer Alim Sahib", designation: "Founder & CEO" },
-];
-const apnApproverFor = (actor) => /syed|haji/i.test(String(actor || "")) ? APN_APPROVERS[0] : APN_APPROVERS[1];
-const apnNotificationSender = (n) => {
-  const approvedBy = n?.approvedBy || {};
-  return { name: n?.senderName || approvedBy.name || n?.createdBy || "ALLBEE", designation: n?.senderDesignation || approvedBy.designation || n?.senderRole || "Admin", avatar: n?.senderAvatar || approvedBy.avatar || approvedBy.photo_url || "" };
-};
-const apnApprovalNotification = (partner, actor) => {
-  const approvedBy = apnApproverFor(actor);
-  return { title: "Welcome to APN 🎉", body: `Your partner account has been approved.\n\nApproved by\n${approvedBy.name}\n${approvedBy.designation}`, approvedBy, senderName: approvedBy.name, senderRole: approvedBy.designation, senderDesignation: approvedBy.designation, partnerId: partner.id, audience: `partner:${partner.id}` };
-};
-const apnNotify = (n) => {
-  const createdAt = Date.now();
-  return { id: uid(), title: n.title || "", body: n.body || "", audience: n.audience || "all", level: n.level || "General", reads: [], createdAt, createdDate: new Date(createdAt).toISOString().slice(0, 10), createdTime: new Date(createdAt).toTimeString().slice(0, 8), ...(n.approvedBy ? { approvedBy: n.approvedBy } : {}), ...(n.partnerId ? { partnerId: n.partnerId } : {}), ...(n.metadata ? { metadata: n.metadata } : {}), ...(n.senderName ? { senderName: n.senderName } : {}), ...(n.senderRole ? { senderRole: n.senderRole } : {}), ...(n.senderDesignation ? { senderDesignation: n.senderDesignation } : {}), ...(n.senderAvatar ? { senderAvatar: n.senderAvatar } : {}) };
-};
-
-/* ── admin forms ─────────────────────────────────────────────────────── */
