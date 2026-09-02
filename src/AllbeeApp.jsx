@@ -8529,7 +8529,10 @@ export default function App() {
         forceFullReload = false;
         reloadInFlight = reload(tables).catch(() => {}).finally(() => {
           reloadInFlight = null;
-          if (reloadQueued) scheduleReload();
+          if (reloadQueued) {
+            if (forceFullReload || dirtyTables.size) scheduleReload(null, false);
+            else reloadQueued = false;
+          }
         });
       }, 150);
     };
