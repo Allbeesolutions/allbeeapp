@@ -8374,17 +8374,25 @@ export default function App() {
 
   const reloadGenerationRef = useRef(0);
   const reloadInFlightRef = useRef(null);
+  const reloadInFlightKeyRef = useRef(null);
   const reload = useCallback(async (tables = null) => {
     const generation = ++reloadGenerationRef.current;
-    // Coalesce concurrent callers into one physical snapshot request. Every
-    // caller still receives the same promise, while the generation ensures an
-    // older snapshot can never overwrite a newer one.
-    const request = reloadInFlightRef.current || fetchAll({ includeTables: tables });
+    // Coalesce only identical snapshot requests. A full refresh must never
+    // accidentally reuse a partial dirty-table request (or vice versa).
+    const requestKey = tables && tables.length ? [...new Set(tables)].sort().join("|") : "*";
+    const request = reloadInFlightRef.current && reloadInFlightKeyRef.current === requestKey
+      ? reloadInFlightRef.current
+      : fetchAll({ includeTables: tables });
     reloadInFlightRef.current = request;
+    reloadInFlightKeyRef.current = requestKey;
     try {
       const fresh = await request;
       if (generation !== reloadGenerationRef.current) return fresh;
-      setDb(fresh);
+      if (tables && tables.length) {
+        setDb((current) => ({ ...current, ...Object.fromEntries(tables.map((table) => [table, fresh[table] || []])) }));
+      } else {
+        setDb(fresh);
+      }
       setSyncError(null);
       return fresh;
     } catch (e) {
@@ -8394,7 +8402,10 @@ export default function App() {
       }
       throw e;
     } finally {
-      if (reloadInFlightRef.current === request) reloadInFlightRef.current = null;
+      if (reloadInFlightRef.current === request) {
+        reloadInFlightRef.current = null;
+        reloadInFlightKeyRef.current = null;
+      };
       if (generation === reloadGenerationRef.current) setLoading(false);
     }
   }, []);
