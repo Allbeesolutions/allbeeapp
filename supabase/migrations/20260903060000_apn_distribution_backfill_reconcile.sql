@@ -18,8 +18,6 @@ begin
      if v_amt>0 then perform public.apn_record_ledger_and_expense('col:'||c.id||':state',c.id,'revenue_collection',h.state_head_id,'state',c.received_amount,v_rate,v_amt,v_event,jsonb_build_object('projectId',c.project_id,'receivedDate',c.received_date::text,'sourcePartnerId',c.partner_id,'sourcePartnerName',v_name,'clientName',v_client,'projectName',v_project,'district',v_dist,'state',v_state,'recipientRole','state_head','recipientId',h.state_head_id,'scope','all-state-collections','source','commission-distribution-v2-backfill'),v_eligible); end if;
    end if;
  end loop;
- -- Ensure the source income rows contain the distribution summary and finance links.
- update public.transactions set updated_at=updated_at where data->>'kind'='income' and data->>'apnProjectId' is not null;
 end $$;
 
 do $$ declare r record; begin
