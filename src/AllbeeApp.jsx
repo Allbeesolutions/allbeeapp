@@ -787,7 +787,9 @@ async function fetchAll({ excludeTables = [], includeTables = null } = {}) {
       db[table] = rows || [];
     }
   }
-  db.audit = await fetchAuditRows();
+  // Audit has its own paginated loader and realtime channel. Do not reload it
+  // during ordinary scoped table refreshes; audit events are handled separately.
+  if (includeTables == null || included.has("audit")) db.audit = await fetchAuditRows();
   return db;
 }
 
