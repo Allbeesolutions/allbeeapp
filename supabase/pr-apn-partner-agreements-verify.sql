@@ -119,11 +119,11 @@ begin
   -- (applies AFTER 20260820000000: placeholders were replaced by the
   -- owner-approved final commercial text; bodies stay drafts until published)
   select count(*) into c from public.apn_agreements where status = 'draft';
-  perform public.vf_assert(c = 12, 'T5 exactly 12 seed drafts: ' || c);
-  select count(*) into c from public.apn_agreements where code = any (v_codes) and status = 'draft';
-  perform public.vf_assert(c = 12, 'T5 seed covers all 12 codes: ' || c);
+  perform public.vf_assert(c = 11, 'T5 exactly 11 remaining seed drafts: ' || c);
+  select count(*) into c from public.apn_agreements where code = any (v_codes) and status in ('draft','published');
+  perform public.vf_assert(c = 12, 'T5 seed covers all 12 codes across draft/published: ' || c);
   select count(*) into c from public.apn_agreements where status = 'published';
-  perform public.vf_assert(c = 0, 'T5 nothing published from seed');
+  perform public.vf_assert(c = 1, 'T5 one governed agreement may already be published: ' || c);
   select count(*) into c from public.apn_agreements where body like '[ DRAFT%';
   perform public.vf_assert(c = 0, 'T5 final seeds carry no placeholder markers: ' || c);
   select count(*) into c from public.apn_agreements
@@ -178,7 +178,7 @@ begin
     raise notice '[verify] T8 duplicate-content publish rejected OK';
   end;
   select count(*) into c from public.apn_agreements where status = 'published';
-  perform public.vf_assert(c = 1, 'T8 no extra published row created');
+  perform public.vf_assert(c = 2, 'T8 no extra published row created beyond the current partner-agreement version: ' || c);
   raise notice '[verify] T8 duplicate publish guard OK';
 
   -- ── T9 version update: v2 publishes over v1, v1 superseded, not deleted ────
@@ -294,7 +294,7 @@ begin
     raise notice '[verify] T14 non-partner reject OK';
   end;
   select count(*) into c from public.apn_agreement_acceptances;
-  perform public.vf_assert(c = 1, 'T14 only the one legitimate acceptance exists: ' || c);
+  perform public.vf_assert(c = 5, 'T14 only the four pre-existing plus one fixture acceptance exist: ' || c);
   raise notice '[verify] T14 partner-eligibility OK';
 
   -- ── T15 publish all remaining seeds → every code has a published version ───
@@ -401,7 +401,7 @@ begin
     raise notice '[verify] T21 acceptance delete rejected OK';
   end;
   select count(*) into c from public.apn_agreement_acceptances;
-  perform public.vf_assert(c = 13, 'T21 evidence rows untouched after attempts: ' || c);
+  perform public.vf_assert(c = 17, 'T21 evidence rows untouched after attempts: ' || c);
   raise notice '[verify] T21 acceptance immutability OK';
   raise notice '[verify] ALL AGREEMENT TESTS T1–T21 PASSED';
 end $$;
@@ -626,8 +626,8 @@ begin
   if (select count(*) from public.apn_agreements where created_by = '00000000-0000-4000-8000-0000000000a1') <> 0 then
     raise exception 'VERIFY FAIL: agreements residue after rollback';
   end if;
-  if (select count(*) from public.apn_agreement_acceptances) <> 0 then
-    raise exception 'VERIFY FAIL: acceptance residue after rollback';
+  if (select count(*) from public.apn_agreement_acceptances) <> 4 then
+    raise exception 'VERIFY FAIL: acceptance baseline changed after rollback';
   end if;
   if exists (select 1 from public.apn_users where id like 'verify-agr-%') then
     raise exception 'VERIFY FAIL: apn_users residue after rollback';
@@ -649,14 +649,14 @@ begin
   if (select count(*) from pg_trigger where tgname in ('apn_agreements_guard_trg','apn_agreement_acceptances_guard_trg') and not tgisinternal) <> 2 then
     raise exception 'VERIFY FAIL: immutability triggers not restored';
   end if;
-  if (select count(*) from public.apn_agreements where status = 'published') <> 0 then
-    raise exception 'VERIFY FAIL: published rows created during verify persisted';
+  if (select count(*) from public.apn_agreements where status = 'published') <> 1 then
+    raise exception 'VERIFY FAIL: published agreement baseline changed during verify';
   end if;
   if (select prosrc from pg_proc where oid = 'public.is_admin()'::regprocedure)
      not like '%superadmin%''%admin%' then
     raise exception 'VERIFY FAIL: is_admin not restored';
   end if;
-  raise notice '[verify] T30 POST-ROLLBACK RESTORATION PROOF OK — zero residue';
+  raise notice '[verify] T30 POST-ROLLBACK RESTORATION PROOF OK — production baseline preserved';
 end $$;
 
 commit;

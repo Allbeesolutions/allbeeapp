@@ -113,10 +113,10 @@ begin
   insert into public.apn_users (id, data, updated_at) values
     (v_partner, jsonb_build_object('id', v_partner, 'name', 'Verify Partner', 'status', 'active', 'role', 'partner'), now());
   insert into public.apn_commissions (id, data, updated_at) values
-    ('verify-comm-payable', jsonb_build_object('id', 'verify-comm-payable', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Rev', 'revenue', 100000, 'rate', 10, 'amount', 10000, 'status', 'Payable', 'createdAt', 1786627000000), now()),
-    ('verify-comm-paid',    jsonb_build_object('id', 'verify-comm-paid', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Paid', 'revenue', 50000, 'rate', 10, 'amount', 5000, 'status', 'Paid', 'createdAt', 1786627000000), now()),
-    ('verify-comm-pending', jsonb_build_object('id', 'verify-comm-pending', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Keep', 'revenue', 20000, 'rate', 10, 'amount', 2000, 'status', 'Pending', 'createdAt', 1786627000000), now()),
-    ('verify-comm-reversed', jsonb_build_object('id', 'verify-comm-reversed', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Gone', 'revenue', 30000, 'rate', 10, 'amount', 3000, 'status', 'Reversed', 'reversalReason', 'pre-existing', 'reversedAt', 1786627000000, 'createdAt', 1786627000000), now());
+    ('verify-comm-payable', jsonb_build_object('id', 'verify-comm-payable', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Rev', 'revenue', 100000, 'rate', 10, 'amount', 10000, 'status', 'Payable', 'createdAt', floor(extract(epoch from now()) * 1000)), now()),
+    ('verify-comm-paid',    jsonb_build_object('id', 'verify-comm-paid', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Paid', 'revenue', 50000, 'rate', 10, 'amount', 5000, 'status', 'Paid', 'createdAt', floor(extract(epoch from now()) * 1000)), now()),
+    ('verify-comm-pending', jsonb_build_object('id', 'verify-comm-pending', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Keep', 'revenue', 20000, 'rate', 10, 'amount', 2000, 'status', 'Pending', 'createdAt', floor(extract(epoch from now()) * 1000)), now()),
+    ('verify-comm-reversed', jsonb_build_object('id', 'verify-comm-reversed', 'partnerId', v_partner, 'kind', 'partner', 'project', 'Verify Gone', 'revenue', 30000, 'rate', 10, 'amount', 3000, 'status', 'Reversed', 'reversalReason', 'pre-existing', 'reversedAt', floor(extract(epoch from now()) * 1000), 'createdAt', floor(extract(epoch from now()) * 1000)), now());
 
   -- T2 — role gate: admin/finance/superadmin flags OFF → refused
   perform set_config('apn.verify.admin', 'off', true);

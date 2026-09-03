@@ -7,10 +7,9 @@
 --       DEFINER, and are EXECUTE-revoked from public/anon/authenticated.
 --       apn_ledger_entry keeps its authenticated-only grant; the WP3
 --       apn_ledger_record_safe legacy surface still exists (unchanged).
---   T2  The engine triggers are re-pointed: apn_ledger_collection_after_change
---       and apn_ledger_referral_after_change bodies call apn_ledger_record_owner
---       (owner-role path) — not the gated apn_ledger_entry or the old
---       apn_ledger_record_safe fallback.
+--   T2  The engine triggers route ledger writes through the canonical
+--       apn_record_ledger_and_expense wrapper, which delegates to the owner-role
+--       apn_ledger_record_owner path — not the gated app RPC or legacy fallback.
 --   T3  Direct gate preserved: with admin/finance flags OFF the RPC-level
 --       apn_ledger_entry refuses with insufficient_privilege.
 --   T4  Freeze honored on the owner path: with apn_system_controls frozen the
@@ -148,15 +147,20 @@ begin
 
   -- ── T2 trigger bodies re-pointed to the owner path ────────────────────────
   select prosrc into v_row from pg_proc where proname = 'apn_ledger_collection_after_change';
-  perform public.vf_assert(v_row.prosrc like '%apn_ledger_record_owner%'
+  perform public.vf_assert(v_row.prosrc like '%apn_record_ledger_and_expense%'
     and v_row.prosrc not like '%apn_ledger_record_safe%'
     and v_row.prosrc not like '%public.apn_ledger_entry(%',
-    'T2 collection trigger records through apn_ledger_record_owner');
+    'T2 collection trigger records through canonical ledger/expense wrapper');
   select prosrc into v_row from pg_proc where proname = 'apn_ledger_referral_after_change';
+  perform public.vf_assert(v_row.prosrc like '%apn_record_ledger_and_expense%'
+    and v_row.prosrc not like '%apn_ledger_record_safe%'
+    and v_row.prosrc not like '%public.apn_ledger_entry(%',
+    'T2 referral trigger records through canonical ledger/expense wrapper');
+  select prosrc into v_row from pg_proc where proname = 'apn_record_ledger_and_expense';
   perform public.vf_assert(v_row.prosrc like '%apn_ledger_record_owner%'
     and v_row.prosrc not like '%apn_ledger_record_safe%'
     and v_row.prosrc not like '%public.apn_ledger_entry(%',
-    'T2 referral trigger records through apn_ledger_record_owner');
+    'T2 canonical ledger/expense wrapper delegates to owner path');
 
   -- ── Fixtures (all inside the savepoint) ───────────────────────────────────
   insert into public.apn_users (id, data, updated_at) values
@@ -344,9 +348,9 @@ begin
   select status = 'completed' into v_ok from public.apn_migrations
   where id = 'engine.withdrawal-wallets';
   perform public.vf_assert(v_ok, 'T8 withdrawal-wallets marker completed');
-  select status = 'review_required' and coalesce(notes, '') like '%WP9%' into v_ok
+  select status = 'completed' and coalesce(notes, '') like '%WP10%' into v_ok
   from public.apn_migrations where id = 'engine.crm-assignments';
-  perform public.vf_assert(v_ok, 'T8 crm-assignments kept review_required with WP9 notes');
+  perform public.vf_assert(v_ok, 'T8 crm-assignments completed with WP10 notes');
 
   raise notice '[verify] WP9 end-to-end flow OK';
 end $$;

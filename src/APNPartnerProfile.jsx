@@ -413,3 +413,5 @@ export function APNCommissionReverseModal({ commission, partnerName, isSuper, on
     {paid && isSuper && <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}><input type="checkbox" checked={unlockPaid} onChange={(e) => setUnlockPaid(e.target.checked)} />I confirm this Paid amount may be reversed (super admin unlock)</label>}
   </Modal>;
 }
+
+export { APNPartnerProfile as default };

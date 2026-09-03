@@ -3906,10 +3906,15 @@ const NAV_SORT_LABEL = { category: "Grouped", az: "A–Z", custom: "Custom" };
 
 // Parse the URL hash into a view. Supports deep links like #/accounts/haji,
 // #/tasks/<id> and #/recently-deleted, plus #/<navkey> for ordinary pages.
-function parseHash(hash) {
+export function parseHash(hash) {
   const h = (hash || "").replace(/^#\/?/, "").trim();
   if (!h) return { route: "dashboard", account: null, task: null };
   const parts = h.split("/");
+  // Legacy admin links from the pre-hash router were emitted as /admin and
+  // occasionally picked up punctuation (for example /admin..;). Treat those
+  // spellings as aliases for the canonical APN admin route instead of rendering
+  // a dead/blank route. Normal navigation always emits #/apn.
+  if (/^admin(?:[.;]+)?$/i.test(parts[0])) return { route: "apn", account: null, task: null, legacyAdmin: true };
   if (parts[0] === "accounts" && parts[1]) {
     const k = parts[1].toLowerCase();
     return { route: "accounts", account: k === "haji" ? "Haji" : k === "alim" ? "Alim" : null, task: null };
@@ -8190,10 +8195,21 @@ export default function App() {
 
   // keep the URL hash and the in-app view in sync (reload-safe deep links)
   useEffect(() => {
+    const normalizeLegacyAdminPath = () => {
+      const pathname = String(window.location.pathname || "");
+      if (/^\/admin(?:[.;]+)?\/?$/i.test(pathname)) {
+        try { window.history.replaceState(null, "", `${window.location.origin}/`); } catch { /* ignore */ }
+        if (window.location.hash !== "#/apn") window.location.hash = "#/apn";
+        return true;
+      }
+      return false;
+    };
     const apply = () => {
+      const normalized = normalizeLegacyAdminPath();
       const p = parseHash(window.location.hash);
       setAccountUser(p.account); setTaskDetailId(p.task);
       if (p.route) setRoute(p.route);
+      if (normalized && p.route !== "apn") setRoute("apn");
     };
     apply();
     window.addEventListener("hashchange", apply);

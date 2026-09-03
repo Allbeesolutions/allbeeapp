@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./AllbeeApp.jsx";
+import { supabase } from "./supabaseClient";
 
 // App itself owns a large hook/render tree, so the boundary inside App cannot
 // catch an exception thrown while App is rendering. Keep a final boundary at
@@ -11,6 +12,17 @@ class RootErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error, info) {
     console.error("[ALLBEE] unrecoverable app render error", error, info);
+    // Best-effort production telemetry. Never let monitoring itself prevent the
+    // recovery UI from rendering if auth/network/database is unavailable.
+    try {
+      supabase.rpc("app_record_error", {
+        p_message: String(error?.message || error || "Unknown render error"),
+        p_stack: String(error?.stack || ""),
+        p_component_stack: String(info?.componentStack || ""),
+        p_path: `${window.location.pathname}${window.location.hash}`,
+        p_metadata: { source: "RootErrorBoundary", userAgent: String(navigator.userAgent || "") },
+      }).catch(() => {});
+    } catch { /* monitoring must never mask the original error */ }
   }
   render() {
     if (this.state.error) {
