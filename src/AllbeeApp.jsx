@@ -17,6 +17,7 @@ import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
+const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 const LazyAPNAdmin = React.lazy(() => import("./APNAdmin.jsx"));
 const LazyEnterpriseCRM = React.lazy(() => import("./EnterpriseCRM.jsx"));
 const LazyPricingKnowledgeCenter = React.lazy(() => import("./PricingKnowledgeCenter.jsx"));
@@ -8361,7 +8362,7 @@ export default function App() {
           ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
           : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} onOpenActivity={setActivityDetail} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
       case "tasks": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading tasks…</div></div>}><LazyTasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} runtime={{ Empty, Progress, assigneeText, avatarColor, canActOnTask, canEditTask, fmtDate, haptic, isMultiAssignee, isTaskAssignee, nextTaskState, priorityTone, taskAction, taskAssignees }} /></React.Suspense>;
-      case "assistant": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "34%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>}><AllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} /></React.Suspense>;
+      case "assistant": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "34%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>}><LazyAllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>;
       case "ai-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading AI Intelligence…</div></div>}><LazyAIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} runtime={{ Empty, Field, money, fmtDate, Search, TrendingUp, Users, Target, Activity, FileText, RefreshCw, Check, AlertTriangle, ArrowRight, emitToast, exportRowsToExcel, todayISO, supabase }} /></React.Suspense>;
       case "knowledge-engine": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Pricing &amp; Knowledge Center…</div></div>}><LazyPricingKnowledgeCenter isAdmin={isAdmin} runtime={{ Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast }} /></React.Suspense>;
       case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
