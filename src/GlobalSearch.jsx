@@ -225,3 +225,5 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
     </div>
   );
 }
+
+export default GlobalSearch;
