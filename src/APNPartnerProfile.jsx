@@ -225,36 +225,42 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
   );
 }
 
-function APNAdminHub({ db, mutate, currentUser, isAdmin }) {
+export function APNAdminHub({ db = {}, mutate, currentUser, isAdmin, runtime = {} }) {
+  const { apnConsoleRow: getConsoleRow, apnCampaignOf: getCampaign, apnLivePartners: getLivePartners, round2: round, uid: makeUid, supabase: sb, emitToast: toast, Users, Check, Hourglass, Ban, Lightbulb, TrendingUp, Megaphone, Globe2, Field, ShieldHalf, Empty, X, apnEffectiveStatus: effectiveStatus, money: formatMoney, fmtDateTime: formatDateTime } = runtime;
   const [campaign, setCampaign] = useState(() => null);
-  const requests = (db.apn_zone_requests || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const requests = (Array.isArray(db.apn_zone_requests) ? db.apn_zone_requests : []).filter(Boolean).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const openRequests = requests.filter((r) => ["pending", "requested"].includes(r.status));
-  const consoleRow = apnConsoleRow(db);
-  const camp = apnCampaignOf(db);
-  const live = apnLivePartners(db);
+  const consoleRow = getConsoleRow ? getConsoleRow(db) : {};
+  const camp = getCampaign ? getCampaign(db) : { active: false, message: "inactive", memberCount: 0, targetCount: 0, joined: 0, under: false };
+  const live = getLivePartners ? getLivePartners(db) : (Array.isArray(db.apn_users) ? db.apn_users : []);
   const todayLeads = (db.apn_leads || []).filter((l) => l.createdAt && new Date(l.createdAt).toDateString() === new Date().toDateString()).length;
-  const todayRevenue = round2((db.apn_leads || []).filter((l) => l.status === "Converted" && l.createdAt && new Date(l.createdAt).toDateString() === new Date().toDateString()).reduce((s, l) => s + (Number(l.revenue) || 0), 0));
+  const todayRevenue = (round || ((n) => Number(n) || 0))((db.apn_leads || []).filter((l) => l.status === "Converted" && l.createdAt && new Date(l.createdAt).toDateString() === new Date().toDateString()).reduce((s, l) => s + (Number(l.revenue) || 0), 0));
   const pendingApprovals = (db.apn_users || []).filter((u) => u.status === "pending").length;
   const bans = (db.apn_users || []).filter((u) => u.status === "banned").length;
   const saveConsole = (next) => mutate((d) => {
-    const existing = apnConsoleRow(d);
-    const row = { ...existing, id: existing.id || uid(), kind: "console", ...next, updatedAt: Date.now() };
+    const existing = getConsoleRow ? getConsoleRow(d) : {};
+    const row = { ...existing, id: existing.id || (makeUid ? makeUid() : `console-${Date.now()}`), kind: "console", ...next, updatedAt: Date.now() };
     return { ...d, apn_admin_consoles: [...(d.apn_admin_consoles || []).filter((c) => c.kind !== "console"), row] };
   }, { action: "updated hub console settings", module: "APN" });
   const handleZone = async (req, approve) => {
     const status = approve ? "approved" : "rejected";
     mutate((d) => ({ ...d, apn_zone_requests: (d.apn_zone_requests || []).map((r) => r.id === req.id ? { ...r, status, handledAt: Date.now(), handledBy: currentUser } : r), apn_users: approve ? (d.apn_users || []).map((u) => u.id === req.partnerId ? { ...u, zone: req.zone, zoneApprovedAt: Date.now() } : u) : d.apn_users }), { action: `${approve ? "approved" : "rejected"} ${req.partnerName}'s ${req.zone} zone request`, module: "APN", partnerId: req.partnerId });
-    try { const { error } = await supabase.rpc(approve ? "apn_zone_requests_approve" : "apn_zone_requests_reject", { p_request_id: req.id, p_note: null }); if (error) throw error; emitToast(approve ? "Zone request approved." : "Zone request rejected.", "success"); } catch (err) { console.warn("zone request RPC", err); }
+    try {
+      if (!sb?.rpc) return;
+      const { error } = await sb.rpc(approve ? "apn_zone_requests_approve" : "apn_zone_requests_reject", { p_request_id: req.id, p_note: null });
+      if (error) throw error;
+      toast?.(approve ? "Zone request approved." : "Zone request rejected.", "success");
+    } catch (err) { console.warn("zone request RPC", err); }
   };
   return (
     <div>
       <div className="sumrow">
         <div className="card"><div className="k"><Users size={14} /> Members</div><div className="v mono">{live.length}</div></div>
-        <div className="card"><div className="k"><Check size={14} color="var(--pos)" /> Active partners</div><div className="v mono">{live.filter((u) => apnEffectiveStatus(u) === "active").length}</div></div>
+        <div className="card"><div className="k"><Check size={14} color="var(--pos)" /> Active partners</div><div className="v mono">{live.filter((u) => (effectiveStatus ? effectiveStatus(u) : u.status) === "active").length}</div></div>
         <div className="card"><div className="k"><Hourglass size={14} /> Pending approvals</div><div className="v mono">{pendingApprovals}</div></div>
         <div className="card"><div className="k"><Ban size={14} color="var(--neg)" /> Bans</div><div className="v mono">{bans}</div></div>
         <div className="card"><div className="k"><Lightbulb size={14} /> Leads today</div><div className="v mono">{todayLeads}</div></div>
-        <div className="card"><div className="k"><TrendingUp size={14} /> Revenue today</div><div className="v mono">{money(todayRevenue)}</div></div>
+        <div className="card"><div className="k"><TrendingUp size={14} /> Revenue today</div><div className="v mono">{(formatMoney ? formatMoney(todayRevenue) : todayRevenue)}</div></div>
       </div>
 
       <div className="apn-rowcard" style={{ margin: "14px 0" }}>
@@ -279,10 +285,10 @@ function APNAdminHub({ db, mutate, currentUser, isAdmin }) {
             <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
               <div className="cmdk-ic"><Globe2 size={15} /></div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{r.partnerName} <span className={"badge " + apnZoneTone(r.zone)} style={{ marginLeft: 5 }}>{String(r.zone || "").toUpperCase()}</span>{r.auto && <span className="badge" style={{ marginLeft: 5 }}>auto</span>}</div>
-                <div className="hint-line" style={{ fontSize: 11 }}>{r.notes || (r.auto ? "Auto-joined the current apex zone" : "Manual zone change request")} · {fmtDateTime(r.createdAt)}{r.handledBy ? ` · handled by ${r.handledBy}` : ""}</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{r.partnerName} <span className={"badge " + ({ zone1: "pri", zone2: "pos", zone3: "accent", zone4: "pri", zone5: "pos", zone6: "accent" }[r.zone] || "")} style={{ marginLeft: 5 }}>{String(r.zone || "").toUpperCase()}</span>{r.auto && <span className="badge" style={{ marginLeft: 5 }}>auto</span>}</div>
+                <div className="hint-line" style={{ fontSize: 11 }}>{r.notes || (r.auto ? "Auto-joined the current apex zone" : "Manual zone change request")} · {(formatDateTime ? formatDateTime(r.createdAt) : "—")}{r.handledBy ? ` · handled by ${r.handledBy}` : ""}</div>
               </div>
-              {["pending", "requested"].includes(r.status) && isAdmin ? <><button className="btn sm primary" onClick={() => handleZone(r, true)}><Check size={13} />Approve</button><button className="btn sm" onClick={() => handleZone(r, false)}><X size={13} />Reject</button></> : <span className={"status-pill " + apnZoneTone(r.status === "approved" ? "zone1" : r.status === "rejected" ? "zone6" : "zone3")}>{r.status}</span>}
+              {["pending", "requested"].includes(r.status) && isAdmin ? <><button className="btn sm primary" onClick={() => handleZone(r, true)}><Check size={13} />Approve</button><button className="btn sm" onClick={() => handleZone(r, false)}><X size={13} />Reject</button></> : <span className={"status-pill " + ({ zone1: "pri", zone2: "pos", zone3: "accent", zone4: "pri", zone5: "pos", zone6: "accent" }[r.status === "approved" ? "zone1" : r.status === "rejected" ? "zone6" : "zone3"] || "")}>{r.status}</span>}
             </div>
           ))}
       </div>
@@ -297,7 +303,7 @@ function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal,
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(() => new Set());
   const users = (db.apn_users || []).filter((u) => view === "archived" ? u.status === "deleted" : u.status !== "deleted");
-  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => apnEffectiveStatus(u) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head" || u.level === "District Head").length, stateHeads: users.filter((u) => u.role === "state_head" || u.level === "State Head").length };
+  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => (effectiveStatus ? effectiveStatus(u) : u.status) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head" || u.level === "District Head").length, stateHeads: users.filter((u) => u.role === "state_head" || u.level === "State Head").length };
   const query = q.trim().toLowerCase();
   const relatedIndex = useMemo(() => {
     const map = new Map(); const add = (pid, ...values) => { if (!pid) return; const next = map.get(pid) || []; next.push(...values.flat().filter(Boolean)); map.set(pid, next); };

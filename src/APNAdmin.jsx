@@ -425,7 +425,7 @@ export default function APNAdmin(props) {
       {actionError && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{actionError}</div>}
       {showCreate && tab === "partners" && <div style={{ marginBottom: 14 }}><APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} inline onClose={() => setShowCreate(false)} /></div>}
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
-      {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} />}
+      {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} runtime={props.runtime} />}
       {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
       {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
       {tab === "commissions" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading commissions…</div>}><LazyAPNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} runtime={props.runtime} /></React.Suspense>}
