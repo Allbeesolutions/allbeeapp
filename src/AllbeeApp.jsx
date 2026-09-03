@@ -8658,7 +8658,7 @@ export default function App() {
 
           <div className="main">
             <header className="topbar">
-              <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu"><Menu size={18} /></button>
+              <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu"><Menu size={21} /></button>
               <div className="topbar-title"><h2>{routeTitle}</h2><div className="topbar-sub">ALLBEE Solutions · internal</div></div>
               {canFinance && (
                 <div className="company-pill" role="button" tabIndex={0} aria-label="Open Share & accounts" title="Open Share & accounts"
@@ -8670,16 +8670,16 @@ export default function App() {
                 </div>
               )}
               <div className="usermenu">
-                <button className="search-trigger" onClick={() => setSearchOpen(true)} title="Search (Ctrl K)">
-                  <Search size={16} /><span className="st-lbl" style={{ flex: 1, textAlign: "left" }}>Search…</span><span className="st-kbd">Ctrl K</span>
+                <button className="search-trigger" onClick={() => setSearchOpen(true)} title="Search (Ctrl K)" aria-label="Search">
+                  <Search size={21} /><span className="st-lbl" style={{ flex: 1, textAlign: "left" }}>Search…</span><span className="st-kbd">Ctrl K</span>
                 </button>
                 <button className="iconbtn topbar-refresh" title="Refresh" disabled={topBusy}
                   onClick={async () => { setTopBusy(true); try { await reload(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
-                  <RefreshCw size={18} className={topBusy ? "spin" : ""} />
+                  <RefreshCw size={20} className={topBusy ? "spin" : ""} />
                 </button>
                 <button className="iconbtn" title="Announcements" style={{ position: "relative" }}
                   onClick={() => { go("announcements"); if (me.id) changeProfile(me.id, { notif_seen_at: new Date().toISOString() }); }}>
-                  <Bell size={18} />
+                  <Bell size={20} />
                   {unseenAnn > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unseenAnn}</span>}
                 </button>
                 <div className="userchip" onClick={() => setUserMenu((v) => !v)}>

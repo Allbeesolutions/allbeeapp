@@ -1320,3 +1320,67 @@ img, video, canvas, svg { max-width:100%; }
   .modal { max-height:calc(100dvh - 10px - env(safe-area-inset-top)); }
   .modal-head { padding-top:12px; padding-bottom:12px; }
 }
+
+/* ── Mobile polish: simple, spacious, thumb-friendly controls ───────────── */
+.notification-card { overflow:hidden; }
+.notifications-list { display:flex; flex-direction:column; gap:12px; }
+.notification-card-inner { display:flex; align-items:flex-start; gap:12px; min-width:0; }
+.notification-avatar { flex:0 0 38px; width:38px; height:38px; }
+.notification-avatar .avatar { width:38px !important; height:38px !important; font-size:14px !important; }
+.notification-main { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.notification-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-right:4px; }
+.notification-title-row > span:first-child { font-size:16px !important; line-height:1.25; }
+.notification-actions { flex:0 0 auto; opacity:1; }
+.notification-actions .iconbtn { width:42px !important; height:42px !important; min-width:42px; border-radius:10px; }
+.notification-actions svg { width:18px; height:18px; }
+
+@media (max-width:760px) {
+  .topbar { min-height:58px; padding:7px 10px; gap:8px; }
+  .topbar .hamburger,
+  .topbar .iconbtn { width:44px; height:44px; min-width:44px; min-height:44px; border-radius:12px; flex:0 0 44px; }
+  .topbar .hamburger svg,
+  .topbar .iconbtn svg { width:21px; height:21px; }
+  .topbar-title { flex:0 1 auto; width:auto; max-width:25vw; }
+  .topbar-title h2 { font-size:15px; }
+  .topbar .usermenu { display:flex; align-items:center; gap:7px; min-width:0; flex:1; }
+  .topbar .search-trigger { order:0; width:auto; min-width:44px; height:44px; min-height:44px; padding:0 11px; display:flex; align-items:center; justify-content:center; border-radius:12px; flex:1 1 auto; }
+  .topbar .search-trigger svg { width:21px; height:21px; flex:0 0 21px; }
+  .topbar .search-trigger .st-lbl,
+  .topbar .search-trigger .st-kbd { display:none; }
+  .topbar .topbar-refresh { display:none; }
+  .topbar .userchip { width:44px; height:44px; min-width:44px; min-height:44px; padding:3px; justify-content:center; border-radius:12px; flex:0 0 44px; }
+  .topbar .userchip .avatar { width:36px !important; height:36px !important; font-size:14px !important; }
+  .topbar .userchip-name, .topbar .userchip .role-badge { display:none; }
+
+  .content { padding-top:16px; }
+  .page-head h3 { font-size:20px; }
+  .stat { padding:16px; }
+  .stat .lbl { font-size:13px; gap:9px; }
+  .stat .lbl svg { width:19px; height:19px; flex:0 0 19px; }
+  .balance-card .who { font-size:14px; gap:9px; }
+  .balance-card .who .dot { width:10px; height:10px; }
+  .balance-card .hint svg { width:17px; height:17px; }
+
+  .notifications-list { gap:10px; }
+  .notification-card { padding:15px !important; }
+  .notification-card-inner { gap:11px; }
+  .notification-avatar { flex-basis:40px; width:40px; height:40px; }
+  .notification-avatar .avatar { width:40px !important; height:40px !important; }
+  .notification-title-row { gap:6px; }
+  .notification-title-row > span:first-child { font-size:16px !important; }
+  .notification-main > div[style*="lineHeight"] { font-size:15px; line-height:1.5 !important; }
+  .notification-main .item-meta { font-size:12px; gap:7px; line-height:1.45; }
+  .notification-main .item-meta span { overflow-wrap:anywhere; }
+  .notification-actions .iconbtn { width:44px !important; height:44px !important; min-width:44px; }
+  .notification-actions svg { width:19px; height:19px; }
+}
+
+@media (max-width:480px) {
+  .topbar-title { max-width:22vw; }
+  .topbar-title h2 { font-size:14px; }
+  .notification-card-inner { gap:10px; }
+  .notification-avatar { flex-basis:38px; width:38px; height:38px; }
+  .notification-avatar .avatar { width:38px !important; height:38px !important; }
+  .notification-title-row > span:first-child { font-size:15px !important; }
+  .notification-main > div[style*="lineHeight"] { font-size:14px; }
+}
