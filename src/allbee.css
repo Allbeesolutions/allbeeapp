@@ -1386,3 +1386,32 @@ img, video, canvas, svg { max-width:100%; }
   .notification-main { min-width:0; width:auto; }
   .notification-main > div[style*="lineHeight"] { font-size:14px; }
 }
+
+/* ── Mobile icon scale: keep utility icons visually balanced with text ── */
+@media (max-width:760px) {
+  .allbee .btn svg,
+  .allbee .iconbtn svg,
+  .allbee .navitem svg,
+  .allbee .apn-tab svg,
+  .allbee .apn-side-link svg,
+  .allbee .row-actions svg { width:18px !important; height:18px !important; flex:0 0 18px; }
+  .allbee .btn.sm svg { width:17px !important; height:17px !important; flex-basis:17px; }
+  .allbee .item-meta svg,
+  .allbee .hint-line svg { width:16px !important; height:16px !important; flex:0 0 16px; }
+  .allbee .page-head > .btn svg,
+  .allbee .detail-head > .btn svg,
+  .allbee .toolbar > .btn svg { width:18px !important; height:18px !important; flex-basis:18px; }
+  .allbee .empty .ic svg { width:24px !important; height:24px !important; }
+}
+
+@media (max-width:480px) {
+  .allbee .btn svg,
+  .allbee .iconbtn svg,
+  .allbee .navitem svg,
+  .allbee .apn-tab svg,
+  .allbee .apn-side-link svg,
+  .allbee .row-actions svg { width:18px !important; height:18px !important; flex-basis:18px; }
+  .allbee .btn.sm svg { width:17px !important; height:17px !important; flex-basis:17px; }
+  .allbee .item-meta svg,
+  .allbee .hint-line svg { width:16px !important; height:16px !important; flex-basis:16px; }
+}
