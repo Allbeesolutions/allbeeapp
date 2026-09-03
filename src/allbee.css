@@ -1330,7 +1330,7 @@ img, video, canvas, svg { max-width:100%; }
 .notification-main { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
 .notification-title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-right:4px; }
 .notification-title-row > span:first-child { font-size:16px !important; line-height:1.25; }
-.notification-actions { flex:0 0 auto; opacity:1; }
+.notification-actions { flex:0 0 auto; width:auto !important; opacity:1; }
 .notification-actions .iconbtn { width:42px !important; height:42px !important; min-width:42px; border-radius:10px; }
 .notification-actions svg { width:18px; height:18px; }
 
@@ -1371,7 +1371,8 @@ img, video, canvas, svg { max-width:100%; }
   .notification-main > div[style*="lineHeight"] { font-size:15px; line-height:1.5 !important; }
   .notification-main .item-meta { font-size:12px; gap:7px; line-height:1.45; }
   .notification-main .item-meta span { overflow-wrap:anywhere; }
-  .notification-actions .iconbtn { width:44px !important; height:44px !important; min-width:44px; }
+  .notification-actions { width:auto !important; flex:0 0 44px; }
+  .notification-actions .iconbtn { width:44px !important; height:44px !important; min-width:44px; border:0; background:transparent; box-shadow:none; }
   .notification-actions svg { width:19px; height:19px; }
 }
 
@@ -1382,5 +1383,6 @@ img, video, canvas, svg { max-width:100%; }
   .notification-avatar { flex-basis:38px; width:38px; height:38px; }
   .notification-avatar .avatar { width:38px !important; height:38px !important; }
   .notification-title-row > span:first-child { font-size:15px !important; }
+  .notification-main { min-width:0; width:auto; }
   .notification-main > div[style*="lineHeight"] { font-size:14px; }
 }
