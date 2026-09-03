@@ -178,7 +178,7 @@ export default function APNWallet(props) {
           {legacyList(legacyRows)}
         </div>
       )}
-      <APNWalletDetailModal detail={detail} onClose={() => setDetail(null)} onEntryClick={(entry) => setDetail(entry)} runtime={{ ...Icons, Empty, fmtDateTime, money }} />
+      <APNWalletDetailModal detail={detail} onClose={() => setDetail(null)} onEntryClick={(entry) => setDetail(entry)} runtime={{ ...Icons, Empty, fmtDate, fmtDateTime, money }} />
     </div>
   );
 }

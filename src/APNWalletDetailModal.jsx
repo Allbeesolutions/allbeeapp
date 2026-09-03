@@ -1,5 +1,5 @@
 export default function APNWalletDetailModal({ detail, onClose, onEntryClick, runtime }) {
-  const { Empty, Coins, fmtDateTime, money } = runtime;
+  const { Empty, Coins, fmtDate, fmtDateTime, money } = runtime;
   if (!detail) return null;
   const rows = Array.isArray(detail.rows) ? detail.rows : [];
   return <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.42)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
