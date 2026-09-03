@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as Icons from "./icons.jsx";
 
 export default function APNNetwork(props) {
@@ -19,19 +19,24 @@ export default function APNNetwork(props) {
   const wallet = referralWalletFor(db, pid);
   const ownRelationship = (db.apn_referral_relationships || []).find((row) => row.referred_id === pid);
   const link = referralLinkFor(codeRow?.code);
-  const referralRows = network.length ? network : (db.apn_referral_relationships || []).filter((row) => row.referrer_id === pid).map((row) => ({ relationship_id: row.id, referred_id: row.referred_id, referred_name: "APN Partner", referred_apn_id: "—", status: row.status, linked_at: row.linked_at, revenue: 0, earnings: 0 }));
+  const referralRows = Array.isArray(network) && network.length ? network : (db.apn_referral_relationships || []).filter((row) => row.referrer_id === pid).map((row) => ({ relationship_id: row.id, referred_id: row.referred_id, referred_name: "APN Partner", referred_apn_id: "—", status: row.status, linked_at: row.linked_at, revenue: 0, earnings: 0 }));
   const totalReferrals = referralRows.length;
   const activeReferrals = referralRows.filter((row) => row.status === "active").length;
   const pendingReferrals = referralRows.filter((row) => (db.apn_users || []).some((u) => u.id === row.referred_id && u.status === "pending")).length;
 
-  const refresh = async () => {
+  // Keep the refresh function referentially stable. The old inline function was
+  // listed in the effect dependencies, so every setNetwork/setLeaderboard render
+  // created a new function and retriggered the effect indefinitely, producing an
+  // RPC storm that could make the Network page appear to crash/freeze.
+  const refresh = useCallback(async () => {
+    if (!supabase || !pid) return;
     const [networkResult, boardResult] = await Promise.all([
       supabase.rpc("apn_referral_network", { p_partner_id: pid }),
       supabase.rpc("apn_referral_leaderboard", { p_period: leaderPeriod }),
     ]);
-    if (!networkResult.error) setNetwork(networkResult.data || []);
-    if (!boardResult.error) setLeaderboard(boardResult.data || []);
-  };
+    if (!networkResult.error) setNetwork(Array.isArray(networkResult.data) ? networkResult.data : []);
+    if (!boardResult.error) setLeaderboard(Array.isArray(boardResult.data) ? boardResult.data : []);
+  }, [pid, leaderPeriod, supabase]);
   useEffect(() => {
     if (!codeRow && pid) supabase.rpc("apn_referral_ensure_code", { p_partner_id: pid }).then(() => reload?.()).catch(() => {});
     refresh().catch(() => {});

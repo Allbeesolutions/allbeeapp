@@ -78,10 +78,10 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       const { data, error } = await supabase.rpc("apn_list_conversations");
       if (error) throw new Error(error.message);
       if (!mountedRef.current) return;
-      setConversations(data || []);
+      setConversations(Array.isArray(data) ? data : []);
       const contactsRes = await supabase.rpc("apn_list_chat_contacts");
       if (!mountedRef.current) return;
-      let contactRows = contactsRes.data || [];
+      let contactRows = Array.isArray(contactsRes.data) ? contactsRes.data : [];
       if (contactsRes.error) {
         // Production-safe fallback: an older PostgREST schema cache can retain the
         // UNION ORDER BY error. Keep Team Chat usable while the database function
@@ -119,10 +119,10 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       const fr = await supabase.rpc("apn_list_friend_requests");
       if (!mountedRef.current) return;
       if (fr.error) throw new Error(fr.error.message);
-      setRequests(fr.data || []);
-      const accepted = (fr.data || []).filter((r) => r.status === "accepted");
+      const requestRows = Array.isArray(fr.data) ? fr.data : [];
+      setRequests(requestRows);
+      const accepted = requestRows.filter((r) => r.status === "accepted");
       setFriends(accepted.map((r) => ({ id: r.other_id, name: r.other_name, apnId: r.other_apn_id })));
-      const requestRows = fr.data || [];
       setContacts((rows) => rows.map((c) => {
         if (c.contact_type !== "partner") return c;
         const rel = requestRows.find((r) => String(r.other_id) === String(c.contact_id));
@@ -149,7 +149,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.id });
       if (!mountedRef.current) return;
       if (error) throw new Error(error.message);
-      const msgs = data || [];
+      const msgs = Array.isArray(data) ? data : [];
       setMessages(msgs);
       await Promise.all(msgs.filter((m) => m.sender_id !== pid && !m.delivered_at).map((m) => supabase.rpc("apn_mark_delivered", { p_message_id: m.id })));
       // advance the caller's read cursor to the latest message so the badge clears
