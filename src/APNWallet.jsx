@@ -28,7 +28,61 @@ export default function APNWallet(props) {
   const streamAmount = (type) => Number(commissionBreakdown[type] || positiveLedger.filter((l) => l.commissionType === type).reduce((sum, l) => sum + Number(l.amount || 0), 0)) || 0;
   const streamRows = (type) => ledgerRows(positiveLedger.filter((l) => l.commissionType === type));
   const withdrawalRows = (db.apn_withdrawal_requests || []).filter((r) => r.partner_id === pid).map((r) => ({ id: r.id, title: `${apnWalletLabel(r.wallet_type)} withdrawal`, amount: -Math.abs(apnRequestAmount(r)), date: r.requested_at, type: "Withdrawal", status: apnWithdrawalLabel(r.status), statusTone: apnWithdrawalTone(r.status), detail: `${r.preferred_method === "upi" ? "UPI" : "Bank transfer"} · requested ${fmtDateTime(r.requested_at)}` }));
-  const ledgerRows = (rows) => rows.map((l) => ({ id: l.id, title: l.snapshot?.projectName || l.snapshot?.project || l.snapshot?.clientName || "Commission entry", amount: Number(l.amount) || 0, date: l.eventAt, type: l.commissionType, status: Number(l.amount) < 0 ? "Deduction" : (l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey ? `Pending · ${fmtDate(l.eligibleFrom)}` : "Credited"), statusTone: Number(l.amount) < 0 ? "neg" : (l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey ? "pri" : "pos"), detail: [l.snapshot?.clientName && `Client: ${l.snapshot.clientName}`, l.snapshot?.sourcePartnerName && `Source partner: ${l.snapshot.sourcePartnerName}`, l.snapshot?.recipientRole && `Recipient: ${String(l.snapshot.recipientRole).replace(/_/g, " ")}`, l.baseAmount != null && `${money(l.baseAmount)} at ${l.percent}%`, l.sourceType && `Source: ${l.sourceType}`, l.snapshot?.district && `District: ${l.snapshot.district}`, l.snapshot?.state && `State: ${l.snapshot.state}`].filter(Boolean).join(" · ") }));
+  const apnUserById = (id) => (db.apn_users || []).find((u) => u.id === id) || null;
+  const collectionById = (id) => (db.apn_revenue_collections || []).find((c) => c.id === id) || null;
+  const projectById = (id) => (db.apn_commission_projects || []).find((p) => p.id === id) || null;
+  const referralEarningById = (id) => (db.apn_referral_earnings || []).find((e) => e.id === id) || null;
+  const commissionEntryDetail = (l) => {
+    const earning = l.commissionType === "referral" ? referralEarningById(l.sourceId) : null;
+    const collectionId = earning?.source_collection_id || l.snapshot?.collectionId || (l.sourceType === "revenue_collection" ? l.sourceId : null);
+    const collection = collectionById(collectionId);
+    const projectId = earning?.project_id || l.snapshot?.projectId || collection?.project_id;
+    const project = projectById(projectId);
+    const sourcePartnerId = earning?.referred_id || l.snapshot?.sourcePartnerId || collection?.partner_id || null;
+    const sourcePartner = apnUserById(sourcePartnerId);
+    const sourcePartnerName = sourcePartner?.name || l.snapshot?.sourcePartnerName || "APN partner";
+    const sourceApnId = sourcePartner?.apnId || l.snapshot?.sourcePartnerApnId || "—";
+    const projectName = project?.projectName || l.snapshot?.projectName || l.snapshot?.project || "Project — not specified";
+    const clientName = project?.clientName || l.snapshot?.clientName || "—";
+    const revenue = Number(earning?.revenue_amount ?? collection?.received_amount ?? l.baseAmount) || 0;
+    const collectionDate = earning?.collection_at || collection?.received_date || l.snapshot?.receivedDate || null;
+    const projectValue = Number(project?.projectValue ?? project?.data?.projectValue) || 0;
+    const projectCommissionRate = project?.commissionRate ?? project?.data?.commissionRate;
+    return {
+      title: `${String(l.commissionType || "commission").replace(/_/g, " ")} ${l.percent != null ? `${l.percent}%` : ""} — ${projectName}`.trim(),
+      value: money(l.amount),
+      note: `This ${l.commissionType || "commission"} earning was generated from a qualifying collection. The source APN partner and project below are resolved from the commission engine records.`,
+      entry: {
+        commissionType: l.commissionType,
+        commissionAmount: Number(l.amount) || 0,
+        rate: l.percent,
+        baseAmount: Number(l.baseAmount) || revenue,
+        eligibleFrom: l.eligibleFrom,
+        eventAt: l.eventAt,
+        sourcePartnerId,
+        sourceApnId,
+        sourcePartnerName,
+        sourcePartnerRole: sourcePartner?.role || (l.commissionType === "state" ? "partner" : "partner"),
+        projectId,
+        projectName,
+        clientName,
+        projectValue,
+        projectCommissionRate,
+        collectionId,
+        collectionAmount: revenue,
+        collectionDate,
+        collectionCommissionGenerated: Number(collection?.commission_generated ?? project?.commissionEarned ?? 0) || 0,
+        district: project?.district || project?.data?.district || l.snapshot?.district || sourcePartner?.district || "—",
+        state: project?.state || project?.data?.state || l.snapshot?.state || sourcePartner?.state || "—",
+        sourceType: l.sourceType,
+      }
+    };
+  };
+  const ledgerRows = (rows) => rows.map((l) => {
+    const detail = commissionEntryDetail(l);
+    return { id: l.id, title: detail.entry.projectName || l.snapshot?.clientName || "Commission entry", amount: Number(l.amount) || 0, date: l.eventAt, type: l.commissionType, status: Number(l.amount) < 0 ? "Deduction" : (l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey ? `Pending · ${fmtDate(l.eligibleFrom)}` : "Credited"), statusTone: Number(l.amount) < 0 ? "neg" : (l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey ? "pri" : "pos"), detail: [detail.entry.clientName !== "—" && `Client: ${detail.entry.clientName}`, detail.entry.sourcePartnerName && `Source partner: ${detail.entry.sourcePartnerName}${detail.entry.sourceApnId !== "—" ? ` (${detail.entry.sourceApnId})` : ""}`, l.snapshot?.recipientRole && `Recipient: ${String(l.snapshot.recipientRole).replace(/_/g, " ")}`, l.baseAmount != null && `${money(l.baseAmount)} at ${l.percent}%`, l.sourceType && `Source: ${l.sourceType}`, detail.entry.district !== "—" && `District: ${detail.entry.district}`, detail.entry.state !== "—" && `State: ${detail.entry.state}`].filter(Boolean).join(" · "), commissionDetail: detail };
+  });
+  const openLedgerDetail = (l) => setDetail(commissionEntryDetail(l));
   const openDetail = (key) => {
     const earned = positiveLedger.reduce((s,l) => s + Number(l.amount || 0), 0);
     const deductions = Math.abs(negativeLedger.reduce((s,l) => s + Number(l.amount || 0), 0));
@@ -93,7 +147,7 @@ export default function APNWallet(props) {
           <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Commission ledger <span className="hint-line" style={{ fontWeight: 500 }}>— engine records</span></div>
           {ledger.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Coins size={22} color="var(--muted)" />} title="No engine records yet" text="Once a converted project is paid and completed, its commission is recorded here by the commission engine." /></div>
             : ledger.map((l) => (
-              <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)" }}>
+              <div key={l.id} role="button" tabIndex={0} onClick={() => openLedgerDetail(l)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openLedgerDetail(l); } }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 15px", borderBottom: "1px solid var(--border)", cursor: "pointer" }} aria-label={`View ${l.commissionType || "commission"} ledger entry details`}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>{l.snapshot?.project || l.snapshot?.projectNumber || l.snapshot?.clientName || "Ledger entry"}</div>
                   <div className="hint-line" style={{ fontSize: 12 }}>{l.snapshot?.clientName ? `${l.snapshot.clientName} · ` : ""}{l.commissionType}{l.sourceType ? ` · ${l.sourceType}` : ""}{l.baseAmount ? ` · ${money(l.baseAmount)} at ${l.percent}%` : ""} · {fmtDateTime(l.eventAt)}</div>
@@ -124,7 +178,7 @@ export default function APNWallet(props) {
           {legacyList(legacyRows)}
         </div>
       )}
-      <APNWalletDetailModal detail={detail} onClose={() => setDetail(null)} runtime={{ ...Icons, Empty, fmtDateTime, money }} />
+      <APNWalletDetailModal detail={detail} onClose={() => setDetail(null)} onEntryClick={(entry) => setDetail(entry)} runtime={{ ...Icons, Empty, fmtDateTime, money }} />
     </div>
   );
 }
