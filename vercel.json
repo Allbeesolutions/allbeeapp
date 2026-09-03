@@ -4,12 +4,6 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "redirects": [
-    { "source": "/admin..;", "destination": "/admin", "permanent": false },
-    { "source": "/admin..", "destination": "/admin", "permanent": false },
-    { "source": "/admin.;", "destination": "/admin", "permanent": false },
-    { "source": "/admin;", "destination": "/admin", "permanent": false }
-  ],
   "headers": [
     {
       "source": "/(.*)",
