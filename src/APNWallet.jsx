@@ -38,15 +38,15 @@ export default function APNWallet(props) {
     const collection = collectionById(collectionId);
     const projectId = earning?.project_id || l.snapshot?.projectId || collection?.project_id;
     const project = projectById(projectId);
-    const sourcePartnerId = earning?.referred_id || l.snapshot?.sourcePartnerId || collection?.partner_id || null;
+    const sourcePartnerId = l.snapshot?.sourcePartnerId || earning?.referred_id || collection?.partner_id || null;
     const sourcePartner = apnUserById(sourcePartnerId);
-    const sourcePartnerName = sourcePartner?.name || l.snapshot?.sourcePartnerName || "APN partner";
-    const sourceApnId = sourcePartner?.apnId || l.snapshot?.sourcePartnerApnId || "—";
-    const projectName = project?.projectName || l.snapshot?.projectName || l.snapshot?.project || "Project — not specified";
-    const clientName = project?.clientName || l.snapshot?.clientName || "—";
-    const revenue = Number(earning?.revenue_amount ?? collection?.received_amount ?? l.baseAmount) || 0;
-    const collectionDate = earning?.collection_at || collection?.received_date || l.snapshot?.receivedDate || null;
-    const projectValue = Number(project?.projectValue ?? project?.data?.projectValue) || 0;
+    const sourcePartnerName = l.snapshot?.sourcePartnerName || l.snapshot?.referredName || sourcePartner?.name || "APN partner";
+    const sourceApnId = l.snapshot?.sourcePartnerApnId || l.snapshot?.referredApnId || sourcePartner?.apnId || "—";
+    const projectName = l.snapshot?.projectName || l.snapshot?.project || project?.projectName || "Project — not specified";
+    const clientName = l.snapshot?.clientName || project?.clientName || "—";
+    const revenue = Number(l.snapshot?.collectionAmount ?? earning?.revenue_amount ?? collection?.received_amount ?? l.baseAmount) || 0;
+    const collectionDate = l.snapshot?.collectionDate || earning?.collection_at || collection?.received_date || l.snapshot?.receivedDate || null;
+    const projectValue = Number(l.snapshot?.projectValue ?? project?.projectValue ?? project?.data?.projectValue) || 0;
     const projectCommissionRate = project?.commissionRate ?? project?.data?.commissionRate;
     return {
       title: `${String(l.commissionType || "commission").replace(/_/g, " ")} ${l.percent != null ? `${l.percent}%` : ""} — ${projectName}`.trim(),

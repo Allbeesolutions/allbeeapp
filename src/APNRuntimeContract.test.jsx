@@ -27,5 +27,8 @@ describe("APN runtime contract regressions", () => {
     expect(modalSource).toContain("const safeFmtDate = fmtDate ||");
     expect(modalSource).toContain("const safeFmtDateTime = fmtDateTime ||");
     expect(modalSource).toContain("const safeMoney = money ||");
+    expect(walletSource).toContain("const sourcePartnerId = l.snapshot?.sourcePartnerId || earning?.referred_id");
+    expect(walletSource).toContain("const sourcePartnerName = l.snapshot?.sourcePartnerName || l.snapshot?.referredName");
+    expect(walletSource).toContain("const sourceApnId = l.snapshot?.sourcePartnerApnId || l.snapshot?.referredApnId");
   });
 });
