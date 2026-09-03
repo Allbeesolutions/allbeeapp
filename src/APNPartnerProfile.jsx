@@ -297,7 +297,7 @@ export function APNAdminHub({ db = {}, mutate, currentUser, isAdmin, runtime = {
   );
 }
 
-function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal, onOpenProfile }) {
+export function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal, onOpenProfile }) {
   const [view, setView] = useState("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
@@ -363,7 +363,7 @@ function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal,
     </div>
   );
 }
-function APNAdminLeads({ db, openModal }) {
+export function APNAdminLeads({ db, openModal }) {
   const [view, setView] = useState("Submitted");
   const list = (db.apn_leads || []).filter((l) => view === "all" ? true : l.status === view).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
