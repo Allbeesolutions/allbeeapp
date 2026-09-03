@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor, cleanup } from "@testing-library/react";
+import { render, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import APNNetwork from "./APNNetwork.jsx";
 
 const rpc = vi.fn();
@@ -46,5 +46,17 @@ describe("APN Network refresh stability", () => {
     const leaderboardCalls = rpc.mock.calls.filter(([fn]) => fn === "apn_referral_leaderboard").length;
     expect(networkCalls).toBe(1);
     expect(leaderboardCalls).toBe(1);
+  });
+
+  it("does not crash when cached DB collections or RPC payloads are malformed", async () => {
+    rpc.mockImplementation((fn) => {
+      if (fn === "apn_referral_network") return Promise.resolve({ data: { unexpected: true }, error: null });
+      if (fn === "apn_referral_leaderboard") return Promise.resolve({ data: [null, { partner_id: "partner", partner_name: "Haji", earnings: 0, referral_count: 0 }], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    expect(() => render(<APNNetwork db={{ apn_referral_relationships: {}, apn_users: null, apn_referral_earnings: {}, apn_referral_timeline: {} }} meRow={{ id: "partner" }} pid="partner" reload={vi.fn()} onOpenWithdrawals={vi.fn()} runtime={runtime} />)).not.toThrow();
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith("apn_referral_network", { p_partner_id: "partner" }));
+    fireEvent.click(document.querySelector('[aria-label="Referral network sections"] button:last-child'));
+    await waitFor(() => expect(document.body.textContent).toContain("Lifetime"));
   });
 });

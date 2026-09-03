@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as Icons from "./icons.jsx";
 
 export default function APNNetwork(props) {
-  const {  db, meRow, pid, reload, onOpenWithdrawals, refreshTick = 0  } = props;
+  const { db = {}, meRow, pid, reload, onOpenWithdrawals, refreshTick = 0 } = props;
   const { APNReferralMetric, Avatar, Dashboard, Empty, Modal, fmtDate, fmtDateTime, money, referralCodeFor, referralLinkFor, referralQrFor, referralWalletFor, todayISO, Users, Copy, Pencil, Send, Download, Coins, CalendarDays, Hourglass, Wallet, BadgeCheck, UserCheck, UserPlus, Link2, Clock, Trophy, ChevronRight, TrendingUp, supabase, exportRowsToExcel } = props.runtime || {};
 
   const [view, setView] = useState("dashboard");
@@ -15,30 +15,32 @@ export default function APNNetwork(props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
   const [detail, setDetail] = useState(null);
-  const codeRow = referralCodeFor(db, pid);
-  const wallet = referralWalletFor(db, pid);
-  const ownRelationship = (db.apn_referral_relationships || []).find((row) => row.referred_id === pid);
+  const codeRow = referralCodeFor?.(db, pid) || null;
+  const wallet = referralWalletFor?.(db, pid) || { pending: 0, approved: 0, withdrawable: 0, paid: 0, lifetime: 0, monthly: 0 };
+  const relationships = Array.isArray(db.apn_referral_relationships) ? db.apn_referral_relationships.filter(Boolean) : [];
+  const apnUsers = Array.isArray(db.apn_users) ? db.apn_users.filter(Boolean) : [];
+  const ownRelationship = relationships.find((row) => row.referred_id === pid);
   const link = referralLinkFor(codeRow?.code);
-  const referralRows = Array.isArray(network) && network.length ? network : (db.apn_referral_relationships || []).filter((row) => row.referrer_id === pid).map((row) => ({ relationship_id: row.id, referred_id: row.referred_id, referred_name: "APN Partner", referred_apn_id: "—", status: row.status, linked_at: row.linked_at, revenue: 0, earnings: 0 }));
-  const totalReferrals = referralRows.length;
-  const activeReferrals = referralRows.filter((row) => row.status === "active").length;
-  const pendingReferrals = referralRows.filter((row) => (db.apn_users || []).some((u) => u.id === row.referred_id && u.status === "pending")).length;
+  const referralRows = Array.isArray(network) && network.length ? network.filter(Boolean) : relationships.filter((row) => row.referrer_id === pid).map((row) => ({ relationship_id: row.id, referred_id: row.referred_id, referred_name: "APN Partner", referred_apn_id: "—", status: row.status, linked_at: row.linked_at, revenue: 0, earnings: 0 }));
+  const totalReferrals = referralRows.filter(Boolean).length;
+  const activeReferrals = referralRows.filter((row) => row && row.status === "active").length;
+  const pendingReferrals = referralRows.filter((row) => row && apnUsers.some((u) => u.id === row.referred_id && u.status === "pending")).length;
 
   // Keep the refresh function referentially stable. The old inline function was
   // listed in the effect dependencies, so every setNetwork/setLeaderboard render
   // created a new function and retriggered the effect indefinitely, producing an
   // RPC storm that could make the Network page appear to crash/freeze.
   const refresh = useCallback(async () => {
-    if (!supabase || !pid) return;
+    if (!supabase?.rpc || !pid) return;
     const [networkResult, boardResult] = await Promise.all([
       supabase.rpc("apn_referral_network", { p_partner_id: pid }),
       supabase.rpc("apn_referral_leaderboard", { p_period: leaderPeriod }),
     ]);
-    if (!networkResult.error) setNetwork(Array.isArray(networkResult.data) ? networkResult.data : []);
-    if (!boardResult.error) setLeaderboard(Array.isArray(boardResult.data) ? boardResult.data : []);
+    if (!networkResult.error) setNetwork(Array.isArray(networkResult.data) ? networkResult.data.filter((row) => row && typeof row === "object") : []);
+    if (!boardResult.error) setLeaderboard(Array.isArray(boardResult.data) ? boardResult.data.filter((row) => row && typeof row === "object") : []);
   }, [pid, leaderPeriod, supabase]);
   useEffect(() => {
-    if (!codeRow && pid) supabase.rpc("apn_referral_ensure_code", { p_partner_id: pid }).then(() => reload?.()).catch(() => {});
+    if (!codeRow && pid && supabase?.rpc) supabase.rpc("apn_referral_ensure_code", { p_partner_id: pid }).then(() => reload?.()).catch(() => {});
     refresh().catch(() => {});
   }, [pid, leaderPeriod, codeRow?.code, refreshTick]);
   useEffect(() => { if (codeRow?.code && !codeDraft) setCodeDraft(codeRow.code); }, [codeRow?.code]);
@@ -94,8 +96,8 @@ export default function APNNetwork(props) {
     if (navigator.share) { try { await navigator.share({ title: "Join ALLBEE APN", text: `Join my APN network with code ${codeRow.code}.`, url: link }); return; } catch { /* cancelled */ } }
     copy(link, "Referral link");
   };
-  const earningRows = (db.apn_referral_earnings || []).filter((row) => row.referrer_id === pid);
-  const timelineRows = (db.apn_referral_timeline || []).filter((row) => row.partner_id === pid).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const earningRows = (Array.isArray(db.apn_referral_earnings) ? db.apn_referral_earnings : []).filter(Boolean).filter((row) => row.referrer_id === pid);
+  const timelineRows = (Array.isArray(db.apn_referral_timeline) ? db.apn_referral_timeline : []).filter(Boolean).filter((row) => row.partner_id === pid).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   const statusTone = (s) => s === "active" ? "pos" : s === "disabled" ? "neg" : "pri";
 
   return <div>
