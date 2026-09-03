@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
+import { GaugeCircle, TrendingUp, Coins, Users, UserCheck, Target, Wallet, ShieldAlert, AlertTriangle, X, Sparkles, Lightbulb, CheckCircle2, Search, RefreshCw, Check, ArrowRight, FileText } from "./icons.jsx";
 
 export default function AIIntelligenceCenter(props) {
   const { db, go, openModal, reload } = props;
   const runtime = props.runtime || {};
-  const { Empty, Field, money, fmtDate, Search, TrendingUp, Users, Target, Activity, FileText, RefreshCw, Check, AlertTriangle, ArrowRight, emitToast, exportRowsToExcel, todayISO, supabase: runtimeSupabase } = runtime;
+  const { Empty, Field, money, fmtDate, Activity, emitToast, exportRowsToExcel, exportRowsToPDF, todayISO, fmtDateTime, ROLE_LABEL, supabase: runtimeSupabase } = runtime;
   const sb = runtimeSupabase || supabase;
 
   const [snapshot, setSnapshot] = useState(null);
