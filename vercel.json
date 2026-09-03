@@ -4,10 +4,22 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/admin..;", "destination": "/admin", "permanent": false },
+    { "source": "/admin..", "destination": "/admin", "permanent": false },
+    { "source": "/admin.;", "destination": "/admin", "permanent": false },
+    { "source": "/admin;", "destination": "/admin", "permanent": false }
+  ],
   "headers": [
     {
       "source": "/(.*)",
-      "headers": [
+      "redirects": [
+    { "source": "/admin..;", "destination": "/admin", "permanent": false },
+    { "source": "/admin..", "destination": "/admin", "permanent": false },
+    { "source": "/admin.;", "destination": "/admin", "permanent": false },
+    { "source": "/admin;", "destination": "/admin", "permanent": false }
+  ],
+  "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
