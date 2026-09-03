@@ -11,6 +11,9 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const [selected, setSelected] = useState(null);                    // {id, subject, participants}
   const [messages, setMessages] = useState([]);
   const [composer, setComposer] = useState("");
+  const [replyTo, setReplyTo] = useState(null);
+  const [editMessage, setEditMessage] = useState(null);
+  const [reactionBusy, setReactionBusy] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [busyRequests, setBusyRequests] = useState(new Set());
@@ -258,9 +261,12 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     if (!body || !selected) return;
     const convId = selected.id;
     setComposer("");
+    setReplyTo(null);
     setErr("");
     try {
-      const { data, error } = await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
+      const { data, error } = replyTo?.id
+        ? await supabase.rpc("apn_send_message_v2", { p_conversation_id: convId, p_body: body, p_reply_to_id: replyTo.id })
+        : await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
       if (error) throw new Error(error.message);
       await loadMessages(selected, { open: false });
       await loadConversations(false);
@@ -268,6 +274,29 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       setComposer(body);
       setErr(e.message || String(e));
     }
+  };
+
+  const editNow = async () => {
+    const body = (composer || "").trim();
+    if (!body || !editMessage) return;
+    try {
+      const { error } = await supabase.rpc("apn_edit_message", { p_message_id: editMessage.id, p_body: body });
+      if (error) throw new Error(error.message);
+      setComposer(""); setEditMessage(null);
+      await loadMessages(selected, { open: false });
+      emitToast("Message edited.", "success");
+    } catch (e) { setErr(e.message || String(e)); }
+  };
+
+  const toggleReaction = async (message, emoji) => {
+    const key = `${message.id}:${emoji}`;
+    setReactionBusy(key);
+    try {
+      const { error } = await supabase.rpc("apn_toggle_reaction", { p_message_id: message.id, p_emoji: emoji });
+      if (error) throw new Error(error.message);
+      await loadMessages(selected, { open: false });
+    } catch (e) { setErr(e.message || String(e)); }
+    finally { setReactionBusy(null); }
   };
 
   const deleteMessage = async (message) => {
@@ -451,17 +480,23 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                       return <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`} onDoubleClick={(e) => { e.stopPropagation(); setContextMessage(m); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMessage(m); }}>
                         {!isMe && <Avatar name={m.sender_name || "?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9} />}
                         <div className="apn-tc-bubble-wrap">
-                          <div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div></div>
-                          {isMe && remaining > 0 && <div className="apn-tc-delete-timer">Delete available {Math.floor(remaining/60000)}:{String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}</div>}
-                          {contextMessage?.id === m.id && <div className="apn-tc-msg-menu" onClick={(e) => e.stopPropagation()}><button onClick={() => showMessageInfo(m)}>INFO</button>{canDelete && <button className="danger" onClick={() => deleteMessage(m)}><Trash2 size={13}/>Delete</button>}</div>}
+                          <div className="apn-tc-bubble">
+                            {m.reply_to_id && (() => { const parent = messages.find((x) => x.id === m.reply_to_id); return <div className="apn-tc-reply-preview">↳ {parent ? `${parent.sender_name || "Message"}: ${String(parent.body || "").slice(0, 90)}` : "Reply"}</div>; })()}
+                            <div className="apn-tc-text">{m.body}</div>
+                            <div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}{m.edited_at ? " · edited" : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div>
+                          </div>
+                          {Array.isArray(m.reactions) && m.reactions.length > 0 && <div className="apn-tc-reactions">{m.reactions.map((r) => <button key={r.emoji} className={`apn-tc-reaction ${r.mine ? "mine" : ""}`} disabled={reactionBusy === `${m.id}:${r.emoji}`} onClick={() => toggleReaction(m, r.emoji)}>{r.emoji} {r.count}</button>)}</div>}
+                          {isMe && remaining > 0 && <div className="apn-tc-delete-timer">Edit/Delete available {Math.floor(remaining/60000)}:{String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}</div>}
+                          {contextMessage?.id === m.id && <div className="apn-tc-msg-menu" onClick={(e) => e.stopPropagation()}><button onClick={() => { setReplyTo(m); setContextMessage(null); }}>Reply</button><button onClick={() => toggleReaction(m, "👍")}>👍</button><button onClick={() => toggleReaction(m, "❤️")}>❤️</button><button onClick={() => toggleReaction(m, "😂")}>😂</button><button onClick={() => showMessageInfo(m)}>INFO</button>{isMe && remaining > 0 && <button onClick={() => { setEditMessage(m); setComposer(m.body || ""); setContextMessage(null); }}>Edit</button>}{canDelete && <button className="danger" onClick={() => deleteMessage(m)}><Trash2 size={13}/>Delete</button>}</div>}
                         </div>
                       </div>;
                     })}
                     {messages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title="No messages yet" text="Send the first message." />}
                   </div>
                   <div className="apn-tc-compose">
-                    <textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} />
-                    <button className="btn primary" onClick={sendMessage} disabled={!composer.trim() || !selected}>Send</button>
+                    {(replyTo || editMessage) && <div className="apn-tc-compose-mode"><span>{editMessage ? "Editing message" : `Replying to ${replyTo?.sender_name || "message"}`}</span><button className="linkbtn" onClick={() => { setReplyTo(null); setEditMessage(null); setComposer(""); }}>×</button></div>}
+                    <textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder={editMessage ? "Edit message…" : replyTo ? "Write your reply…" : "Type a message…"} rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editMessage ? editNow() : sendMessage(); } }} />
+                    <button className="btn primary" onClick={editMessage ? editNow : sendMessage} disabled={!composer.trim() || !selected}>{editMessage ? "Save" : "Send"}</button>
                   </div>
                 </div>
               ) : <div className="apn-tc-main-empty"><div><MessageSquare size={30} color="var(--muted)" /><div className="apn-tc-main-title">Friend chats</div><div className="hint-line">Select a partner from the list to start messaging.</div></div></div>}
