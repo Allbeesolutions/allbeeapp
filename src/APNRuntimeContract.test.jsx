@@ -21,21 +21,17 @@ describe("APN runtime contract regressions", () => {
     for (const name of required) expect(routeRuntime).toContain(name);
   });
 
-  it("keeps every APN Admin component supplied to the runtime in the module scope", () => {
+  it("keeps APN Admin child components module-bound instead of runtime-bound", () => {
     const routeStart = appSource.indexOf("runtime={{ ...Icons, supabase, todayISO, money, fmtDate, fmtDateTime");
     const routeEnd = appSource.indexOf("}} />", routeStart);
     const routeRuntime = appSource.slice(routeStart, routeEnd);
-    const componentNames = [
-      "APNAdminActivityLog", "APNAdminHub", "APNAdminPartners", "APNAdminLeads", "APNAdminSupport"
-    ];
-    for (const name of componentNames) {
-      expect(routeRuntime).toContain(name);
-      expect(appSource).toMatch(new RegExp(`(?:import\\s+[^\\n]*\\b${name}\\b|(?:export )?(?:function|const|let|var)\\s+${name}\\b)`));
-    }
-    for (const removed of [
-      "APNAdminCommissions", "APNAdminWithdrawals", "APNAdminReferrals", "APNAdminContent",
-      "APNAdminDocs", "APNAdminAgreements", "APNAdminLeaderboard"
-    ]) expect(routeRuntime).not.toContain(`, ${removed}`);
+    for (const name of [
+      "APNAdminPartners", "APNAdminLeads", "APNAdminCommissions", "APNAdminWithdrawals",
+      "APNAdminReferrals", "APNAdminContent", "APNAdminDocs", "APNAdminAgreements", "APNAdminLeaderboard"
+    ]) expect(routeRuntime).not.toContain(name);
+    const adminSource = readFileSync(resolve(root, "APNAdmin.jsx"), "utf8");
+    expect(adminSource).toContain('import { APNAdminHub, APNAdminPartners, APNAdminLeads } from "./APNPartnerProfile.jsx";');
+    expect(adminSource).toContain("runtime={props.runtime}");
   });
 
   it("keeps fmtDate available to the wallet detail modal and guards missing formatters", () => {

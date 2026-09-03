@@ -27,16 +27,17 @@ function APNCommunicationForm({ partner, onSave, onClose }) {
   return <Modal title={`Communication · ${partner.name}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!subject.trim() && !message.trim()} onClick={() => onSave({ type, receiver, subject: subject.trim(), message: message.trim(), status })}><Send size={15} />Save log</button></>}><Field label="Type"><select className="select" value={type} onChange={(e) => setType(e.target.value)}>{APN_COMMUNICATION_TYPES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Receiver"><input className="input" value={receiver} onChange={(e) => setReceiver(e.target.value)} /></Field><Field label="Subject"><input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} /></Field><Field label="Message"><textarea className="textarea" value={message} onChange={(e) => setMessage(e.target.value)} /></Field><Field label="Status"><select className="select" value={status} onChange={(e) => setStatus(e.target.value)}><option>Logged</option><option>Sent</option><option>Delivered</option><option>Failed</option></select></Field></Modal>;
 }
 
-function APNActionMenu({ partner, isSuper, canManage, onAction }) {
+function APNActionMenu({ partner, isSuper, canManage, onAction, runtime = {} }) {
+  const { apnEffectiveStatus: effectiveStatus, MoreVertical } = runtime;
   const [open, setOpen] = useState(false);
   const options = [
     ["Approve", canManage && partner.status === "pending"], ["Reject", canManage && partner.status === "pending"], ["View details", true],
     ["Edit Profile", true], ["View Timeline", true], ["View Activity", true],
     ["Reset Password", isSuper], ["Send Notification", isSuper], ["Generate Report", isSuper], ["Promote", isSuper && partner.role !== "state_head"], ["Demote", isSuper && (partner.role === "district_head" || partner.role === "state_head")],
     ["Transfer District", isSuper], ["Reset Quiz", isSuper], ["Reset Training", isSuper], ["Reset Attendance", isSuper], ["Reset Target", isSuper],
-    ["Suspend", isSuper && !["suspended", "deleted"].includes(apnEffectiveStatus(partner))], ["Deactivate", isSuper && apnEffectiveStatus(partner) === "active"],
+    ["Suspend", isSuper && !["suspended", "deleted"].includes(effectiveStatus ? effectiveStatus(partner) : partner.status)], ["Deactivate", isSuper && effectiveStatus ? effectiveStatus(partner) : partner.status === "active"],
     ["Ban", isSuper && partner.status !== "banned" && partner.status !== "deleted"],
-    ["Reactivate", isSuper && ["inactive", "suspended"].includes(apnEffectiveStatus(partner))], ["Delete Partner", isSuper && partner.status !== "deleted"], ["Permanent Delete", isSuper && partner.status !== "deleted"],
+    ["Reactivate", isSuper && ["inactive", "suspended"].includes(effectiveStatus ? effectiveStatus(partner) : partner.status)], ["Delete Partner", isSuper && partner.status !== "deleted"], ["Permanent Delete", isSuper && partner.status !== "deleted"],
     ["View as Partner (Coming Soon)", false],
   ];
   return <div className="apn-action-wrap" onClick={(e) => e.stopPropagation()}>
@@ -297,13 +298,14 @@ export function APNAdminHub({ db = {}, mutate, currentUser, isAdmin, runtime = {
   );
 }
 
-export function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal, onOpenProfile }) {
+export function APNAdminPartners({ db, people = [], isSuper, canManage, act, openModal, onOpenProfile, runtime = {} }) {
+  const { apnEffectiveStatus, apnIdFor, apnStatusLabel, apnPartnerStats, apnAvatarUrl, apnHealthScore, apnLastSeenLabel, apnAdminLevel, apnStatusClass, money, fmtDateTime, Avatar, ActionBadge, Search, Hourglass, Check, XCircle, ShieldCheck, UserPlus, Ban } = runtime;
   const [view, setView] = useState("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(() => new Set());
   const users = (db.apn_users || []).filter((u) => view === "archived" ? u.status === "deleted" : u.status !== "deleted");
-  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => (effectiveStatus ? effectiveStatus(u) : u.status) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head" || u.level === "District Head").length, stateHeads: users.filter((u) => u.role === "state_head" || u.level === "State Head").length };
+  const counts = { pending: users.filter((u) => u.status === "pending").length, active: users.filter((u) => (apnEffectiveStatus ? apnEffectiveStatus(u) : u.status) === "active").length, inactive: users.filter((u) => apnEffectiveStatus(u) === "inactive").length, heads: users.filter((u) => u.role === "district_head" || u.level === "District Head").length, stateHeads: users.filter((u) => u.role === "state_head" || u.level === "State Head").length };
   const query = q.trim().toLowerCase();
   const relatedIndex = useMemo(() => {
     const map = new Map(); const add = (pid, ...values) => { if (!pid) return; const next = map.get(pid) || []; next.push(...values.flat().filter(Boolean)); map.set(pid, next); };
@@ -354,7 +356,7 @@ export function APNAdminPartners({ db, people = [], isSuper, canManage, act, ope
                 <td data-label="Status"><span className={"status-pill " + apnStatusClass(eff)}>{apnStatusLabel(eff)}</span>{(p.approvedAt && Date.now() - p.approvedAt < 30 * 864e5) && <span className="badge pos" style={{ marginLeft: 5 }}>New Partner</span>}{p.status === "banned" && <span className="badge neg" style={{ marginLeft: 5 }}><Ban size={11} style={{ verticalAlign: -2 }} />Banned</span>}{(p.suspensionReason || p.suspendedAt) && eff === "suspended" && <div className="hint-line" style={{ fontSize: 11 }}>{p.suspensionReason || "Suspended"}</div>}{p.status === "banned" && p.banReason && <div className="hint-line" style={{ fontSize: 11 }}>{p.banReason}</div>}</td>
                 <td data-label="Health"><span className="badge pri">{apnHealthScore(db, p, people.find((x) => x.id === p.id)).score}</span></td>
                 <td data-label="Last Seen" className="hint-line">{apnLastSeenLabel(p, people.find((x) => x.id === p.id))}</td>
-                <td className="apn-card-act"><APNActionMenu partner={p} isSuper={isSuper} canManage={canManage} onAction={act.run} /></td>
+                <td className="apn-card-act"><APNActionMenu partner={p} isSuper={isSuper} canManage={canManage} onAction={act.run} runtime={runtime} /></td>
               </tr>
             ); })}</tbody>
           </table></div>}
@@ -363,7 +365,8 @@ export function APNAdminPartners({ db, people = [], isSuper, canManage, act, ope
     </div>
   );
 }
-export function APNAdminLeads({ db, openModal }) {
+export function APNAdminLeads({ db, openModal, runtime = {} }) {
+  const { APN_SERVICE_LABEL, money, Empty, UserPlus, Pencil } = runtime;
   const [view, setView] = useState("Submitted");
   const list = (db.apn_leads || []).filter((l) => view === "all" ? true : l.status === view).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (

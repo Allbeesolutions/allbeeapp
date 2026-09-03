@@ -1,3 +1,4 @@
+import { APNAdminHub, APNAdminPartners, APNAdminLeads } from "./APNPartnerProfile.jsx";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 const LazyAPNAdminWithdrawals = React.lazy(() => import("./APNAdminWithdrawals.jsx"));
 const LazyAPNAdminReferrals = React.lazy(() => import("./APNAdminReferrals.jsx"));
@@ -13,7 +14,7 @@ const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx
 export default function APNAdmin(props) {
   const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen } = props;
   const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, ...rest } = props.runtime || {};
-  const { APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, APNAdminWithdrawals, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, APNAdminLeaderboard, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, AlertTriangle, Target, Bell, ActionBadge,
+  const { APNAdminActivityLog, APNAdminCommissions, APNAdminWithdrawals, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, APNAdminLeaderboard, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, AlertTriangle, Target, Bell, ActionBadge,
     APN_ACTION_BADGE_MAP, APN_COMM_REVERSED, apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnCommissionProjectsOf, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry, apnDerivedTimeline } = rest;
   const [tab, setTab] = useState("partners");
   const [modal, setModal] = useState(null);
@@ -426,8 +427,8 @@ export default function APNAdmin(props) {
       {showCreate && tab === "partners" && <div style={{ marginBottom: 14 }}><APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} inline onClose={() => setShowCreate(false)} /></div>}
       {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
       {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} runtime={props.runtime} />}
-      {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} />}
-      {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} />}
+      {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} runtime={props.runtime} />}
+      {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} runtime={props.runtime} />}
       {tab === "commissions" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading commissions…</div>}><LazyAPNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} runtime={props.runtime} /></React.Suspense>}
       {tab === "withdrawals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading withdrawals…</div>}><LazyAPNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
       {tab === "referrals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading referrals…</div>}><LazyAPNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
