@@ -3,7 +3,7 @@ import { Check, AlertTriangle, Users } from "./icons.jsx";
 
 export default function StaffSalary(props) {
   const { db, team, mutate, me } = props;
-  const { money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL } = props.runtime || {};
+  const { money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL, Banknote, Coins, Gift, SalaryRow, staffEarnings, uid } = props.runtime || {};
   const roster = team.filter((p) => p.role !== "client" && p.role !== "superadmin");
   const setPay = (person, patch, action) => mutate((d) => {
     const exists = (d.payroll || []).some((r) => r.userId === person.id);

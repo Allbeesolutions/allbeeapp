@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function APNHelpdesk(props) {
   const {  db, me, team = [], isAdmin = false, onRefresh  } = props;
-  const { Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices, Notifications, emitToast, fmtDateTime } = props.runtime || {};
+  const { Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices, Notifications, emitToast, fmtDateTime, supabase } = props.runtime || {};
   const { Activity, ChevronDown, EyeOff, Headset, History, RefreshCw, Search, Send } = Icons;
 
   const [q, setQ] = useState("");

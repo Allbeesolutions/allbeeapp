@@ -1,4 +1,8 @@
-export default function MarketingForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check } from "./icons.jsx";
+
+export default function MarketingForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, uid, todayISO } = runtime;
   const [f, setF] = useState(() => ({ client: "", business: "", plan: "", monthlyFee: "", startDate: todayISO(), notes: "", ...initial }));
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.client.trim().length > 0;

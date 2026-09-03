@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 
 function Prompts({ db, openModal, removeItem, runtime }) {
-  const { Empty, Plus, Trash2, Search, Field, emitToast } = runtime;
+  const { Empty, Plus, Trash2, Search, Field, emitToast, Check, Copy, Pencil, Sparkles } = runtime;
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
   const [copiedId, setCopiedId] = useState(null);

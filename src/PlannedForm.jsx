@@ -1,4 +1,8 @@
-export default function PlannedForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check } from "./icons.jsx";
+
+export default function PlannedForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, SelectOther, uid, todayISO, EXPENSE_CATEGORIES = ["Office Rent", "Utilities", "Software", "Other"], EXPENSE_RECURRENCE = ["Monthly", "Quarterly", "Yearly", "One-time"], PLANNED_STATUS = ["Planned", "Paid", "Cancelled"] } = runtime;
   const [f, setF] = useState(initial || { title: "", category: "Office Rent", amount: "", recurrence: "Monthly", status: "Planned", nextDue: todayISO(), notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [err, setErr] = useState("");

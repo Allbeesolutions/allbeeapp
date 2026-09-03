@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 
 function RecentlyDeleted({ db, openModal, restoreItem, runtime }) {
-  const { Empty, Trash2, RotateCcw, avatarColor, fmtDateTime, RECYCLE_TTL_DAYS } = runtime;
+  const { Empty, Trash2, RotateCcw, avatarColor, fmtDateTime, RECYCLE_TTL_DAYS, AlertTriangle, fmtTime } = runtime;
   const [open, setOpen] = useState({});
   const list = useMemo(() => [...(db.recycle || [])].sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0)), [db.recycle]);
   const daysLeft = (r) => Math.max(0, RECYCLE_TTL_DAYS - Math.floor((Date.now() - (r.deletedAt || 0)) / 86400000));

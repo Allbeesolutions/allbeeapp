@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 
 export default function APNAdminReferrals({ db, isSuper, onRefresh, runtime = {} }) {
-  const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical } = runtime;
+  const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, SearchableSelect, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminHub, APNAdminPartners, APNAdminLeads, APNAdminCommissions, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Users, Wallet } = runtime;
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);

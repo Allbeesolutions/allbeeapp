@@ -1,4 +1,8 @@
-export default function VaultForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check, Eye, EyeOff } from "./icons.jsx";
+
+export default function VaultForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, SelectOther, uid, VAULT_CATEGORIES = ["Social", "Finance", "Work", "Other"] } = runtime;
   const [f, setF] = useState(initial || { service: "", category: "Social", username: "", password: "", url: "", notes: "" });
   const [show, setShow] = useState(false);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));

@@ -30,7 +30,7 @@ describe("APN runtime contract regressions", () => {
       "APNAdminReferrals", "APNAdminContent", "APNAdminDocs", "APNAdminAgreements", "APNAdminLeaderboard"
     ]) expect(routeRuntime).not.toContain(name);
     const adminSource = readFileSync(resolve(root, "APNAdmin.jsx"), "utf8");
-    expect(adminSource).toContain('import { APNAdminHub, APNAdminPartners, APNAdminLeads } from "./APNPartnerProfile.jsx";');
+    expect(adminSource).toContain('import { APNAdminHub, APNAdminPartners, APNAdminLeads, APNCommissionReverseModal, APNTagForm, APNPartnerDocumentForm, APNCommunicationForm } from "./APNPartnerProfile.jsx";');
     expect(adminSource).toContain("runtime={props.runtime}");
   });
 

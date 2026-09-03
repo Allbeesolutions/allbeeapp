@@ -1,4 +1,8 @@
-export default function StudentForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check } from "./icons.jsx";
+
+export default function StudentForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, uid, todayISO } = runtime;
   const [f, setF] = useState(() => ({ name: "", phone: "", course: "", joinDate: todayISO(), fee: "", paymentStatus: "Unpaid", notes: "", ...initial }));
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.name.trim().length > 0;

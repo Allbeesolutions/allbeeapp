@@ -3,7 +3,7 @@ import React from "react";
 
 export default function MyEarnings(props) {
   const { db, me, role, payroll, profile, go } = props;
-  const { money, fmtDate, Empty } = props.runtime || {};
+  const { money, fmtDate, Empty, Banknote, Coins, Gift, Hourglass, UserPlus, Wallet, staffEarnings } = props.runtime || {};
 
   if (role === "superadmin") {
     return (

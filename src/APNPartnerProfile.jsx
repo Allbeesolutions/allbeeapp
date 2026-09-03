@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 
-function APNPartnerProfileShell({ fullPage, title, onClose, onSave, onOpenFullPage, children }) {
+function APNPartnerProfileShell({ fullPage, title, onClose, onSave, onOpenFullPage, children, runtime = {} }) {
+  const { Modal, Check, ArrowLeft } = runtime;
   if (!fullPage) return <Modal title={title} onClose={onClose} onMaximize={onOpenFullPage} footer={<><button className="btn" onClick={onClose}>Close</button>{onSave && <button className="btn primary" onClick={onSave}><Check size={15} />Save changes</button>}</>}>{children}</Modal>;
   return <div className="content" style={{ maxWidth: 1120, margin: "0 auto", paddingBottom: 40 }}>
     <div className="page-head" style={{ position: "sticky", top: 0, zIndex: 4, background: "var(--bg)", paddingTop: 12, paddingBottom: 12 }}>
@@ -11,18 +12,21 @@ function APNPartnerProfileShell({ fullPage, title, onClose, onSave, onOpenFullPa
   </div>;
 }
 
-function APNTagForm({ partner, onSave, onClose }) {
+export function APNTagForm({ partner, onSave, onClose, runtime = {} }) {
+  const { Modal, Check, APN_TAG_OPTIONS = ["High potential", "Top performer", "Follow-up", "Training", "At risk"] } = runtime;
   const [tags, setTags] = useState(partner.tags || []);
   const toggle = (tag) => setTags((prev) => prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]);
   return <Modal title={`Tags · ${partner.name}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => onSave(tags)}><Check size={15} />Save tags</button></>}><div className="apn-tag-picker">{APN_TAG_OPTIONS.map((tag) => <button type="button" className={tags.includes(tag) ? "on" : ""} key={tag} onClick={() => toggle(tag)}>{tag}</button>)}</div></Modal>;
 }
 
-function APNPartnerDocumentForm({ partner, initial, onSave, onClose }) {
+export function APNPartnerDocumentForm({ partner, initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, Upload, Check, APN_DOCUMENT_TYPES = ["Agreement", "KYC", "Bank details", "Other"] } = runtime;
   const [type, setType] = useState(initial?.type || APN_DOCUMENT_TYPES[0]); const [version, setVersion] = useState(initial?.version || 1); const [file, setFile] = useState(null); const [notes, setNotes] = useState(initial?.notes || "");
   return <Modal title={`${initial ? "Update" : "Add"} partner document · ${partner.name}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => onSave({ type, version: Number(version) || 1, file, notes })}><Upload size={15} />Save document</button></>}><Field label="Document type" required><select className="select" value={type} onChange={(e) => setType(e.target.value)}>{APN_DOCUMENT_TYPES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Version"><input className="input" type="number" min="1" value={version} onChange={(e) => setVersion(e.target.value)} /></Field><Field label={initial ? "Replace file (optional)" : "Private file"} required={!initial}><input className="input" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} /></Field><Field label="Notes"><textarea className="textarea" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field></Modal>;
 }
 
-function APNCommunicationForm({ partner, onSave, onClose }) {
+export function APNCommunicationForm({ partner, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, Send, APN_COMMUNICATION_TYPES = ["Call", "Email", "Meeting", "Notification", "Other"] } = runtime;
   const [type, setType] = useState(APN_COMMUNICATION_TYPES[0]); const [receiver, setReceiver] = useState(partner.name || "Partner"); const [subject, setSubject] = useState(""); const [message, setMessage] = useState(""); const [status, setStatus] = useState("Logged");
   return <Modal title={`Communication · ${partner.name}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!subject.trim() && !message.trim()} onClick={() => onSave({ type, receiver, subject: subject.trim(), message: message.trim(), status })}><Send size={15} />Save log</button></>}><Field label="Type"><select className="select" value={type} onChange={(e) => setType(e.target.value)}>{APN_COMMUNICATION_TYPES.map((x) => <option key={x}>{x}</option>)}</select></Field><Field label="Receiver"><input className="input" value={receiver} onChange={(e) => setReceiver(e.target.value)} /></Field><Field label="Subject"><input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} /></Field><Field label="Message"><textarea className="textarea" value={message} onChange={(e) => setMessage(e.target.value)} /></Field><Field label="Status"><select className="select" value={status} onChange={(e) => setStatus(e.target.value)}><option>Logged</option><option>Sent</option><option>Delivered</option><option>Failed</option></select></Field></Modal>;
 }
@@ -58,8 +62,8 @@ function apnPartnerProfileForm(partner, stats, target) {
   };
 }
 
-function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose, onOpenFullPage, runtime = {} }) {
-  const { apnPartnerStats, apnTargetFor, apnHealthScore, todayISO, apnAttendanceScore, apnMonthlyAnalytics, apnActivityHistory, apnMilestones, apnRecommendations, apnRiskIndicators, apnDerivedTimeline, apnPartnerProfileForm, apnPercent, apnLastActivity, apnAvatarUrl, apnTimelineEntry, Avatar, Field, fmtDateTime, emitToast, Empty, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Modal, Confirm, uid, supabase, TN_DISTRICTS, APN_SERVICE_LABEL } = runtime;
+export function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose, onOpenFullPage, runtime = {} }) {
+  const { APNPartnerDashboard: PartnerDashboard, APNPartnerAnalytics: PartnerAnalytics, APNPartnerDocuments: PartnerDocuments, APNPartnerCommunications: PartnerCommunications, APNPartnerActivity: PartnerActivity, apnPartnerStats, apnTargetFor, apnHealthScore, todayISO, apnAttendanceScore, apnMonthlyAnalytics, apnActivityHistory, apnMilestones, apnRecommendations, apnRiskIndicators, apnDerivedTimeline, apnPartnerProfileForm, apnPercent, apnLastActivity, apnAvatarUrl, apnTimelineEntry, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_LEAD_REJECTED, APN_TARGET_METRICS, apnAdminLevel, apnEffectiveStatus, apnIdFor, apnLastSeenAt, apnLastSeenLabel, apnLeadTone, apnSafeHtml, apnStatusClass, apnStatusLabel, Avatar, AlertTriangle, Empty, Plus, Sparkles, Tag, Trash2, Field, fmtDateTime, emitToast, Search, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Modal, Confirm, uid, supabase, TN_DISTRICTS, APN_SERVICE_LABEL, money } = runtime;
   const stats = apnPartnerStats(db, partner.id);
   const target = apnTargetFor(db, partner.id, partner.targetResetAt);
   const profile = people.find((x) => x.id === partner.id);
@@ -146,7 +150,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
     onAction(action, partner);
   };
   return (
-    <APNPartnerProfileShell fullPage={fullPage} title={`Partner profile · ${partner.name}`} onClose={onClose} onSave={canEdit ? save : null} onOpenFullPage={!fullPage ? onOpenFullPage : null}>
+    <APNPartnerProfileShell runtime={runtime} fullPage={fullPage} title={`Partner profile · ${partner.name}`} onClose={onClose} onSave={canEdit ? save : null} onOpenFullPage={!fullPage ? onOpenFullPage : null}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <Avatar name={partner.name} url={apnAvatarUrl(partner, profile)} size={42} fontSize={17} />
         <div style={{ flex: 1 }}><div style={{ fontSize: 18, fontWeight: 800 }}>{partner.name}</div><div className="hint-line">{apnIdFor(partner)} · {partner.email || "No email"}</div></div>
@@ -154,7 +158,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
         {(["district_head", "state_head"].includes(partner.role) || ["District Head", "State Head"].includes(partner.level)) && <span className="badge pri">{apnAdminLevel(partner, stats)}</span>}
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 7 }}>{(partner.tags || []).map((tag) => <span className="apn-tag" key={tag}>{tag}</span>)}{isSuper && <button className="btn sm" onClick={() => onTags(partner)}><Tag size={13} />Manage tags</button>}</div>
-      <APNPartnerDashboard summary={summary} health={health} />
+      <PartnerDashboard summary={summary} health={health} />
       {isSuper && <div className="apn-quick-actions" aria-label="Quick Actions"><b style={{ alignSelf: "center", marginRight: 3 }}>Quick Actions</b>{["Edit Profile", "View Timeline", "View Activity", "Reset Password", "Send Notification", "Promote", "Suspend", "Delete Partner"].map((action) => <button key={action} className="btn sm" onClick={() => handleQuickAction(action)} disabled={action === "Suspend" && ["suspended", "deleted"].includes(apnEffectiveStatus(partner)) || action === "Delete Partner" && partner.status === "deleted"}>{action}</button>)}<button className="btn sm" onClick={() => onExport?.(partner)}><Download size={13} />Generate Report</button></div>}
       {actions.length > 0 && <Field label="Actions"><select className="select" value="" onChange={(e) => { if (e.target.value && e.target.value !== "View as Partner (Coming Soon)") onAction(e.target.value, partner); }}><option value="">Choose an action…</option>{actions.map((a) => <option key={a} value={a} disabled={a === "View as Partner (Coming Soon)"}>{a}</option>)}</select></Field>}
 
@@ -198,15 +202,15 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
 
       <div className="apn-profile-section"><h4>Partner health score</h4><div className="apn-health"><div className="apn-health-ring">{health.score}</div><div><div style={{ fontWeight: 800 }}>{health.band}</div><div className="hint-line">System-generated from attendance, activity, training, quiz, lead quality, conversions, warnings, and login activity.</div></div></div><div className="apn-health-parts">{Object.entries(health.parts).map(([k, v]) => <div className="apn-health-part" key={k}>{k.replace(/[A-Z]/g, (m) => ` ${m}`).replace(/^./, (m) => m.toUpperCase())}<b>{v}</b></div>)}</div></div>
 
-      <APNPartnerAnalytics rows={analytics} />
+      <PartnerAnalytics rows={analytics} />
       <div className="apn-profile-section"><div className="apn-section-head"><h4>Partner milestones</h4></div><div className="apn-milestones">{milestones.map((m) => <div className={"apn-milestone " + (m.done ? "done" : "")} key={m.id}><span>{m.done ? "✓" : "○"}</span><div><b>{m.label}</b>{m.at && <div className="hint-line">{fmtDateTime(m.at)}</div>}</div></div>)}</div></div>
       {recommendations.length > 0 && <div className="apn-profile-section"><h4>Smart recommendations</h4><div className="apn-alert-list">{recommendations.map((x) => <div className="apn-alert" key={x}><Sparkles size={14} color="var(--accent)" />{x}</div>)}</div></div>}
       {risks.length > 0 && <div className="apn-profile-section"><h4>Risk indicators</h4><div className="apn-alert-list">{risks.map(([x, tone]) => <div className="apn-alert" key={x}><AlertTriangle size={14} color={`var(--${tone})`} />{x}</div>)}</div></div>}
 
       <div className="apn-profile-section"><h4>Last Seen</h4>{kv("Presence", apnLastSeenLabel(partner, profile))}{kv("Last seen at", apnLastSeenAt(partner, profile) ? fmtDateTime(apnLastSeenAt(partner, profile)) : "Never")}{kv("Last activity", lastActivity ? fmtDateTime(lastActivity) : "—")}</div>
 
-      <APNPartnerDocuments documents={partnerDocuments} isSuper={isSuper && !partner.deletedAt} onAdd={() => onDocuments?.(partner)} onDownload={onDocumentDownload} />
-      <APNPartnerCommunications rows={communications} isSuper={isSuper && !partner.deletedAt} onAdd={() => onCommunication?.(partner)} />
+      <PartnerDocuments documents={partnerDocuments} isSuper={isSuper && !partner.deletedAt} onAdd={() => onDocuments?.(partner)} onDownload={onDocumentDownload} />
+      <PartnerCommunications rows={communications} isSuper={isSuper && !partner.deletedAt} onAdd={() => onCommunication?.(partner)} />
 
       <div className="apn-profile-section"><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><h4 style={{ margin: 0 }}>Warnings</h4><span className="spacer" />{!partner.deletedAt && <button className="btn sm" onClick={() => onWarning(partner)}><Plus size={13} />Add warning</button>}</div>{warnings.length ? warnings.map((w) => <div className="apn-warning" key={w.id}><AlertTriangle size={15} color={w.status === "Active" ? "var(--neg)" : "var(--muted)"} /><div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{w.type} <span className={"badge " + (w.status === "Active" ? "neg" : "pos")} style={{ marginLeft: 5 }}>{w.status}</span></div><div style={{ marginTop: 3, whiteSpace: "pre-wrap", fontSize: 12.5 }}>{w.notes || w.reason}</div><div className="hint-line" style={{ marginTop: 4 }}>{w.issuedBy || "—"} · {fmtDateTime(w.issuedAt || w.createdAt)}{w.resolvedAt ? ` · resolved ${fmtDateTime(w.resolvedAt)}` : ""}</div></div><div style={{ display: "flex", gap: 4 }}>{w.status === "Active" && <button className="btn sm" onClick={() => onResolveWarning(w)}>Resolve</button>}{isSuper && <button className="iconbtn" style={{ width: 28, height: 28 }} aria-label="Delete warning" onClick={() => onDeleteWarning(w)}><Trash2 size={13} /></button>}</div></div>) : <div className="hint-line">No warnings recorded.</div>}</div>
 
@@ -221,7 +225,7 @@ function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false
         ...(db.apn_quotations || []).filter((x) => x.partnerId === partner.id).map((x) => ({ ts: x.createdAt, text: `Quotation created · ${x.clientName || "Unnamed client"}` })),
         ...(db.apn_commissions || []).filter((x) => x.partnerId === partner.id).map((x) => ({ ts: x.createdAt, text: `Commission ${x.status || "recorded"} · ${money(x.amount)}` })),
       ].filter((x) => x.ts).sort((a, b) => b.ts - a.ts).slice(0, 8).map((x, i) => <div key={i} className="apn-profile-kv"><span>{fmtDateTime(x.ts)}</span><span>{x.text}</span></div>)}{!(db.apn_leads || []).some((x) => x.partnerId === partner.id) && !(db.apn_quotations || []).some((x) => x.partnerId === partner.id) && !(db.apn_commissions || []).some((x) => x.partnerId === partner.id) && <div className="hint-line">No activity recorded yet.</div>}</div>
-      <div ref={activityRef}>{showAllActivity ? <APNPartnerActivity rows={activityRows} /> : <button className="btn" style={{ width: "100%" }} onClick={() => { pendingActivityScrollRef.current = true; setShowAllActivity(true); }}><Activity size={14} />View complete activity history</button>}</div>
+      <div ref={activityRef}>{showAllActivity ? <PartnerActivity rows={activityRows} /> : <button className="btn" style={{ width: "100%" }} onClick={() => { pendingActivityScrollRef.current = true; setShowAllActivity(true); }}><Activity size={14} />View complete activity history</button>}</div>
     </APNPartnerProfileShell>
   );
 }
@@ -391,7 +395,8 @@ export function APNAdminLeads({ db, openModal, runtime = {} }) {
   );
 }
 
-function APNCommissionReverseModal({ commission, partnerName, isSuper, onClose, onSave }) {
+export function APNCommissionReverseModal({ commission, partnerName, isSuper, onClose, onSave, runtime = {} }) {
+  const { Modal, Undo2, AlertTriangle, money, apnCommTone, LockIcon, Field } = runtime;
   const [reason, setReason] = useState("");
   const [unlockPaid, setUnlockPaid] = useState(false);
   const paid = commission.status === "Paid";

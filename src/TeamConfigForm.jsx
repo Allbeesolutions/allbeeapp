@@ -1,4 +1,8 @@
-export default function TeamConfigForm({ initial, roster, onSave, onClose }) {
+import React, { useState } from "react";
+import { AlertTriangle, Check } from "./icons.jsx";
+
+export default function TeamConfigForm({ initial, roster, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, uid, ROLE_LABEL = {}, Avatar } = runtime;
   const [name, setName] = useState(initial?.name || "");
   const [leadId, setLeadId] = useState(initial?.leadId || "");
   const [memberIds, setMemberIds] = useState(initial?.memberIds || []);

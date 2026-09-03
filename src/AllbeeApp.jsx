@@ -6885,6 +6885,151 @@ const apnNotify = (n) => {
 };
 
 /* ── admin forms ─────────────────────────────────────────────────────── */
+
+function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose, inline = false }) {
+  const [f, setF] = useState({ name: "", email: "", password: "", mobile: "", apnId: "", district: TN_DISTRICTS[0], taluk: "", city: "", occupation: "", college: "", username: "", reason: "" });
+  const usernameCheck = useUsernameAvailability(f.username);
+  const emailCheck = useEmailAvailability(f.email);
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
+  const create = async () => {
+    setErr("");
+    if (!f.name.trim()) { setErr("Enter the partner's full name."); return; }
+    if (!f.email.trim()) { setErr("Enter an email."); return; }
+    if (emailCheck.available === false) { setErr("That email already has an account. Use a different email."); return; }
+    if (f.password.length < 6) { setErr("Set a password of at least 6 characters."); return; }
+    if (!f.mobile.trim()) { setErr("Enter a mobile number."); return; }
+    if (!f.district) { setErr("Choose a district."); return; }
+    if (usernameCheck.available === false) { setErr("That username is already taken. Choose another one."); return; }
+    let assignedApnId;
+    try {
+      if (f.apnId.trim() && !normalizeManualApnId(f.apnId)) throw new Error("APN ID must be four digits, for example 0006 or APN-TN-0006.");
+      assignedApnId = resolveApnId(db.apn_users || [], f.apnId);
+    } catch (e) { setErr(e.message); return; }
+    setBusy(true);
+    try {
+      // 1) create a confirmed login via the same edge function used to add staff
+      const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "create", email: f.email.trim(), password: f.password, name: f.name.trim(), role: "partner", username: f.username.trim().toLowerCase(), mobile: f.mobile.trim() } });
+      if (error) throw error;
+      if (data && data.error) throw new Error(data.error);
+      // 2) resolve the new user id (works whatever the function returns)
+      let newId = data && (data.id || (data.user && data.user.id) || data.userId);
+      if (!newId) { const { data: p1 } = await supabase.from("profiles").select("id").eq("email", f.email.trim().toLowerCase()).maybeSingle(); newId = p1 && p1.id; }
+      if (!newId) { const { data: p2 } = await supabase.from("profiles").select("id").eq("email", f.email.trim()).maybeSingle(); newId = p2 && p2.id; }
+      if (!newId) throw new Error("Account created, but couldn't link the APN profile automatically. Ask them to sign in once, then approve them from Pending.");
+      // 3) make the profile a partner (so they land in the APN portal) and approved
+      await supabase.from("profiles").update({ role: "partner", approved: true }).eq("id", newId);
+      // 4) assign the next APN id
+      const row = {
+        id: newId, apnId: assignedApnId, name: f.name.trim(), mobile: f.mobile.trim(), email: f.email.trim(), dob: "",
+        district: f.district, taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(),
+        college: f.college.trim(), reason: f.reason.trim(), username: f.username.trim().toLowerCase(),
+        status: "active", role: "partner", approvedBy: currentUser, approvedAt: Date.now(),
+        unlocked: {}, quizPasses: {}, createdAt: Date.now(),
+      };
+      // 5) create the APN profile row (active — the admin is vouching for them)
+      mutate((d) => ({ ...d, apn_users: (d.apn_users || []).some((u) => u.id === newId) ? d.apn_users.map((u) => u.id === newId ? { ...u, ...row } : u) : [...(d.apn_users || []), row] }), { action: `added APN partner "${f.name.trim()}"`, module: "APN" });
+      setOk(`${f.name.trim()} (${apnIdFor(row)}) can sign in right away with the email and password you set — no email confirmation needed.`);
+    } catch (e) {
+      const msg = (e && e.message) || "Couldn't create the partner.";
+      setErr(/already registered|already been registered|duplicate|exists/i.test(msg) ? "That email already has an account — use a different email."
+        : /admin-users|not deployed|Failed to send a request|Function|non-2xx/i.test(msg) ? "This needs the admin-users edge function deployed (the same one used to add staff on the Team screen)."
+        : msg);
+    } finally { setBusy(false); }
+  };
+  if (ok) return inline ? <div className="banner" style={{ margin: 0, borderColor: "var(--pos)" }}><BadgeCheck size={15} color="var(--pos)" />{ok}<div style={{ marginTop: 8 }}><button className="btn" onClick={onClose}>Done</button></div></div> : <Modal title="Partner added 🎉" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}><div className="banner" style={{ margin: 0, borderColor: "var(--pos)" }}><BadgeCheck size={15} color="var(--pos)" />{ok}</div></Modal>;
+  const body = <>
+    <div className="banner" style={{ margin: "0 0 12px" }}><GaugeCircle size={15} />Creates a ready-to-use partner account — confirmed and approved, so they can sign in immediately. Share the password with them securely.</div>
+    <div className="grid2">
+      <Field label="Full name" required><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Partner name" /></Field>
+      <Field label="Mobile" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
+    </div>
+    {canManage && <Field label="APN ID (optional)" hint="Leave blank to allocate the next ID. Reserved gaps may be filled manually; the ID is immutable after creation."><input className="input mono" value={f.apnId} onChange={(e) => set("apnId", e.target.value)} placeholder="0006 or APN-TN-0006" /></Field>}
+    <div className="grid2">
+      <div className="field"><label>Email<span className="req" aria-hidden="true"> *</span></label><input className="input" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="name@email.com" aria-describedby="create-partner-email-status" />{f.email.trim().includes("@") && <div id="create-partner-email-status" className="hint-line" style={{ color: emailCheck.available === false ? "var(--neg)" : emailCheck.available === true ? "var(--pos)" : undefined }}>{emailCheck.checking ? "Checking email availability…" : emailCheck.available === false ? "Email already registered" : emailCheck.available === true ? "Email available" : ""}</div>}</div>
+      <PasswordField label="Password" required hint="At least 6 characters." value={f.password} onChange={(e) => set("password", e.target.value)} placeholder="Temporary password" autoComplete="new-password" />
+    </div>
+    <div className="grid2">
+      <div className="field"><label>District<span className="req" aria-hidden="true"> *</span></label><SearchableSelect value={f.district} onChange={(value) => set("district", value)} ariaLabel="Partner district" options={TN_DISTRICTS.map((d) => ({ value: d, label: d }))} /></div>
+      <Field label="Taluk"><input className="input" value={f.taluk} onChange={(e) => set("taluk", e.target.value)} placeholder="Taluk" /></Field>
+    </div>
+    <div className="grid2">
+      <Field label="City / town"><input className="input" value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="City" /></Field>
+      <Field label="Occupation"><input className="input" value={f.occupation} onChange={(e) => set("occupation", e.target.value)} placeholder="Student, freelancer…" /></Field>
+    </div>
+    <div className="grid2">
+      <Field label="College (optional)"><input className="input" value={f.college} onChange={(e) => set("college", e.target.value)} placeholder="College" /></Field>
+      <div className="field"><label>Username (optional)</label><input className="input" value={f.username} onChange={(e) => set("username", e.target.value)} placeholder="Sign-in username" aria-describedby="create-partner-username-status" />{f.username.trim() && <div id="create-partner-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
+    </div>
+    <Field label="Notes / why joining (optional)"><textarea className="textarea" value={f.reason} onChange={(e) => set("reason", e.target.value)} /></Field>
+    {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
+  </>;
+  if (inline) return (
+    <div className="apn-rowcard">
+      <div className="lbl"><UserPlus size={14} /> Add APN partner</div>
+      {body}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}><button className="btn" onClick={onClose}>Close</button><button className="btn primary" onClick={create} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}Create partner</button></div>
+    </div>
+  );
+  return (
+    <Modal title="Add APN partner" onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={create} disabled={busy}>{busy ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}Create partner</button></>}>
+      {body}
+    </Modal>
+  );
+}
+
+function APNQuizForm({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || { category: "website", title: "", passPct: 60, questions: [{ id: uid(), q: "", options: ["", "", "", ""], answer: 0 }] });
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const setQ = (qi, patch) => setF((s) => ({ ...s, questions: s.questions.map((q, i) => i === qi ? { ...q, ...patch } : q) }));
+  const setOpt = (qi, oi, v) => setF((s) => ({ ...s, questions: s.questions.map((q, i) => i === qi ? { ...q, options: q.options.map((o, j) => j === oi ? v : o) } : q) }));
+  const addQ = () => setF((s) => ({ ...s, questions: [...s.questions, { id: uid(), q: "", options: ["", "", "", ""], answer: 0 }] }));
+  const rmQ = (qi) => setF((s) => ({ ...s, questions: s.questions.filter((_, i) => i !== qi) }));
+  const save = () => {
+    const questions = f.questions.filter((q) => q.q.trim() && q.options.filter((o) => o.trim()).length >= 2);
+    if (!f.title.trim() || !questions.length) return;
+    onSave({ ...initial, id: initial?.id || uid(), category: f.category, title: f.title.trim(), passPct: Number(f.passPct) || 60, questions, createdAt: initial?.createdAt || Date.now() });
+    onClose();
+  };
+  return (
+    <Modal title={initial?.id ? "Edit quiz" : "Create quiz"} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save}><Check size={15} />Save quiz</button></>}>
+      <div className="grid2">
+        <Field label="Category" hint="Passing unlocks this category's leads."><select className="select" value={f.category} onChange={(e) => set("category", e.target.value)}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+        <Field label="Pass %"><input className="input mono" type="number" min="1" max="100" value={f.passPct} onChange={(e) => set("passPct", e.target.value)} /></Field>
+      </div>
+      <Field label="Title" required><input className="input" value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Website sales quiz" /></Field>
+      {f.questions.map((q, qi) => (
+        <div key={q.id} className="bug-card">
+          <div style={{ display: "flex", gap: 8 }}>
+            <input className="input" value={q.q} onChange={(e) => setQ(qi, { q: e.target.value })} placeholder={`Question ${qi + 1}`} style={{ flex: 1 }} />
+            {f.questions.length > 1 && <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmQ(qi)}><X size={14} /></button>}
+          </div>
+          {q.options.map((o, oi) => (
+            <div key={oi} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="radio" checked={q.answer === oi} onChange={() => setQ(qi, { answer: oi })} title="Correct answer" />
+              <input className="input" value={o} onChange={(e) => setOpt(qi, oi, e.target.value)} placeholder={`Option ${oi + 1}`} style={{ flex: 1 }} />
+            </div>
+          ))}
+          <div className="hint-line" style={{ fontSize: 11 }}>Select the radio next to the correct answer.</div>
+        </div>
+      ))}
+      <button className="btn" onClick={addQ}><Plus size={15} />Add question</button>
+    </Modal>
+  );
+}
+
+function APNWithdrawalApprovalModal({ request, onClose, onSave }) {
+  const [amount, setAmount] = useState(String(request.requested_amount || ""));
+  const [reason, setReason] = useState("");
+  const value = Number(amount) || 0;
+  const valid = value > 0 && value <= Number(request.requested_amount || 0);
+  return <Modal title="Approve withdrawal" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!valid} onClick={() => onSave(value, reason)}>Approve {money(value)}</button></>}><div className="calc-box"><div className="calc-row"><span>Requested</span><b className="mono">{money(request.requested_amount)}</b></div><div className="calc-row"><span>Wallet</span><b>{apnWalletLabel(request.wallet_type)}</b></div></div><Field label="Approved amount" required error={amount && !valid ? "Amount must be above ₹0 and no more than the request." : ""}><input className="input mono" type="number" min="0" max={request.requested_amount} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field><Field label="Approval note"><textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional note for the partner" /></Field>{valid && value < Number(request.requested_amount || 0) && <div className="banner" style={{ margin: 0 }}><UnlockIcon size={15} />{money(Number(request.requested_amount) - value)} will be released back to the wallet.</div>}</Modal>;
+}
+
 function APNRejectForm({ partner, onSave, onClose }) {
   const [reason, setReason] = useState("");
   return (
@@ -8364,7 +8509,7 @@ export default function App() {
       case "tasks": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading tasks…</div></div>}><LazyTasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} runtime={{ Empty, Progress, assigneeText, avatarColor, canActOnTask, canEditTask, fmtDate, haptic, isMultiAssignee, isTaskAssignee, nextTaskState, priorityTone, taskAction, taskAssignees }} /></React.Suspense>;
       case "assistant": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "34%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>}><LazyAllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>;
       case "ai-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading AI Intelligence…</div></div>}><LazyAIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} runtime={{ Empty, Field, money, fmtDate, fmtDateTime, ROLE_LABEL, Search, TrendingUp, Users, Target, Activity, FileText, RefreshCw, Check, AlertTriangle, ArrowRight, emitToast, exportRowsToExcel, exportRowsToPDF, todayISO, supabase }} /></React.Suspense>;
-      case "knowledge-engine": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Pricing &amp; Knowledge Center…</div></div>}><LazyPricingKnowledgeCenter isAdmin={isAdmin} runtime={{ Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast }} /></React.Suspense>;
+      case "knowledge-engine": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Pricing &amp; Knowledge Center…</div></div>}><LazyPricingKnowledgeCenter isAdmin={isAdmin} runtime={{ ...Icons, Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast, AGREEMENT_CATEGORIES }} /></React.Suspense>;
       case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
       case "proposal-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Proposal Center…</div></div>}><LazyProposalCenter isAdmin={isAdmin} runtime={{ supabase, emitToast, money, Empty, Modal, Search, RefreshCw, AlertTriangle, FileText, ShieldAlert, Eye, Pencil, Activity, Download, Copy, Send, Check }} /></React.Suspense>;
       case "attendance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading attendance…</div></div>}><LazyAttendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} runtime={{ Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, LazyAttendanceEditModal }} /></React.Suspense>;
@@ -8378,12 +8523,14 @@ export default function App() {
             runtime={{ ...Icons, supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, APN_SERVICE_LABEL, APN_ACTION_BADGE_MAP, APN_COMM_REVERSED, SearchableSelect, apnConsoleRow, apnCampaignOf, apnLivePartners, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, apnLeaderboard, ActionBadge, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminSupport,
               apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry,
               apnActivityHistory, apnAttendanceScore, apnAvatarUrl, apnDerivedTimeline, apnLastActivity, apnMilestones, apnMonthlyAnalytics, apnPartnerProfileForm, apnRecommendations, apnRiskIndicators, apnTargetFor,
+              APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_LEAD_REJECTED, APN_TARGET_METRICS, AGREEMENT_CATEGORIES, APNWarningForm, apnAdminLevel, apnLastSeenAt, apnLeadTone, apnStatusClass,
+              APNCreatePartnerForm, APNQuizForm, APNWithdrawalApprovalModal, APNBanForm, APNBulkForm, APNDeleteForm, APNDocForm, APNLeadManage, APNNoteForm, APNNotifForm, APNPermanentDeleteForm, APNReactivateForm, APNRejectForm, APNResetPasswordForm, APNSuspendForm, APNTargetForm, APNTrainingForm, APNPartnerDashboard, APNPartnerAnalytics, APNPartnerActivity, APNPartnerDocuments, APNPartnerCommunications,
               exportRowsToExcel, Sheet, UnlockIcon, ClipboardCheck, GraduationCap, ExternalLink, TN_DISTRICTS, apnRequestAmount, apnWalletLabel, apnWithdrawalLabel, apnWithdrawalTone, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical }} />
         </React.Suspense>
       );
       case "activity": return <LastSeen team={team} />;
       case "myteam": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading my team…</div></div>}><LazyMyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} runtime={{ useState, todayISO, teamOfUser, teamRosterIds, Empty, Users, Avatar, isTaskAssignee, sameMonth, round2, sumHours, ROLE_LABEL, attStatus, fmtDate, attendanceFor, clockTime, ListTodo, priorityTone, assigneeText, CalendarClock, ContactButtons, Confirm, TeamChat: LazyTeamChat }} /></React.Suspense>;
-      case "staff-salary": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading staff salary…</div></div>}><LazyStaffSalary db={db} team={team} mutate={mutate} me={me} runtime={{ money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL }} /></React.Suspense>;
+      case "staff-salary": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading staff salary…</div></div>}><LazyStaffSalary db={db} team={team} mutate={mutate} me={me} runtime={{ ...Icons, money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL, uid, staffEarnings, SalaryRow }} /></React.Suspense>;
       case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
       case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
       case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} />;
@@ -8397,29 +8544,29 @@ export default function App() {
       case "leads": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading CRM…</div>}>
           <LazyEnterpriseCRM db={db} team={team} me={me} isAdmin={isAdmin} reload={reload}
-            runtime={{ todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar }} />
+            runtime={{ ...Icons, todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons }} />
         </React.Suspense>
       );
       case "clients": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading clients…</div></div>}><LazyClients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} runtime={{ Empty, LoadMore, avatarColor, fmtDate }} /></React.Suspense>;
       case "quotations": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading quotations…</div></div>}> <LazyQuotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} runtime={{ Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
       case "invoices": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading invoices…</div></div>}><LazyInvoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ useState, Banknote, BadgeCheck, FileText, Plus, Pencil, Trash2, Empty, money, todayISO, fmtDate, INVOICE_STATUS }} /></React.Suspense>;
-      case "portal-posts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading client updates…</div></div>}><LazyPortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ Empty, Plus, Trash2, ExternalLink }} /></React.Suspense>;
-      case "support": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading support…</div></div>}> <LazyAPNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} runtime={{ Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices: LazyInvoices, Notifications: LazyNotifications, emitToast, fmtDateTime }} />;</React.Suspense>;
+      case "portal-posts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading client updates…</div></div>}><LazyPortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ ...Icons, Empty, Plus, Trash2, ExternalLink, Building2, Link2, Pencil, fmtDateTime }} /></React.Suspense>;
+      case "support": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading support…</div></div>}> <LazyAPNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} runtime={{ Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices: LazyInvoices, Notifications: LazyNotifications, emitToast, fmtDateTime, supabase }} />;</React.Suspense>;
       case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
       case "vault": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading vault…</div></div>}> <LazyVault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} runtime={{ Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
       case "notifications": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading notifications…</div></div>}><LazyNotifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} runtime={{ useEffect, notifVisibleTo, NOTIF_AUDIENCES, ROLE_LABEL, Avatar, Empty, Bell, Users, Check, BadgeCheck, Trash2, fmtDateTime }} /></React.Suspense>;
       case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
-      case "documents": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading documents…</div></div>}> <LazyDocuments db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
-      case "knowledge": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading knowledge…</div></div>}> <LazyKnowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
-      case "prompts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading prompts…</div></div>}><LazyPrompts db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Plus, Trash2, Search, Field, emitToast }} /></React.Suspense>;
-      case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
+      case "documents": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading documents…</div></div>}> <LazyDocuments db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} runtime={{ ...Icons, Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
+      case "knowledge": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading knowledge…</div></div>}> <LazyKnowledge db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} runtime={{ ...Icons, Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
+      case "prompts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading prompts…</div></div>}><LazyPrompts db={db} openModal={openModal} removeItem={removeItem} runtime={{ ...Icons, Empty, Plus, Trash2, Search, Field, emitToast }} /></React.Suspense>;
+      case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ ...Icons, Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks }} />;</React.Suspense>;
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
       case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Attach, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat }} /></React.Suspense>;
-      case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL }} /></React.Suspense>;
-      case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift }} /></React.Suspense>;
-      case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ money, fmtDate, Empty }} /></React.Suspense>;
-      case "recently-deleted": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading recycle bin…</div></div>}><LazyRecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} runtime={{ Empty, Trash2, RotateCcw, avatarColor, fmtDateTime, RECYCLE_TTL_DAYS }} /></React.Suspense>;
+      case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ ...Icons, Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, round2, avatarColor }} /></React.Suspense>;
+      case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ ...Icons, Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, avatarColor, round2, todayISO }} /></React.Suspense>;
+      case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ ...Icons, money, fmtDate, Empty, staffEarnings }} /></React.Suspense>;
+      case "recently-deleted": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading recycle bin…</div></div>}><LazyRecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} runtime={{ ...Icons, Empty, Trash2, RotateCcw, avatarColor, fmtDateTime, RECYCLE_TTL_DAYS, fmtTime }} /></React.Suspense>;
       case "audit": return <AuditLog db={db} isSuper={isSuper} onOpenActivity={setActivityDetail} />;
       case "settings": return <Settings db={db} mutate={mutate} replaceDB={replaceDB} syncError={syncError} currentUser={currentUser} role={role} teamCount={team.length} sessionEmail={session?.user?.email} config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} saveCompany={saveCompany} saveAI={saveAI} />;
       default: return null;
@@ -8575,7 +8722,7 @@ export default function App() {
         {modal?.type === "testSession" && <React.Suspense fallback={<LoadingScreen />}><LazyTestSessionForm initial={modal.initial} projects={[...db.projects].filter((p) => (p.approvalStatus || "approved") !== "rejected").sort((a, b) => (a.name || "").localeCompare(b.name || ""))} team={team} onSave={saveTesting} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid }} /></React.Suspense>}
         {modal?.type === "teamcfg" && <React.Suspense fallback={<LoadingScreen />}><LazyTeamConfigForm initial={modal.initial} roster={team.filter((p) => p.role !== "client" && p.active !== false)} onSave={saveTeamCfg} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, AlertTriangle, Avatar, uid, ROLE_LABEL }} /></React.Suspense>}
         {modal?.type === "student" && <React.Suspense fallback={<LoadingScreen />}><LazyStudentForm initial={modal.initial} onSave={(s) => saveGeneric("students", s, "student")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
-        {modal?.type === "classStudent" && <React.Suspense fallback={<LoadingScreen />}><LazyClassStudentForm initial={modal.initial} onSave={saveClassStudent} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO, CLASS_COURSES, CLASS_MODES }} /></React.Suspense>}
+        {modal?.type === "classStudent" && <React.Suspense fallback={<LoadingScreen />}><LazyClassStudentForm initial={modal.initial} onSave={saveClassStudent} onClose={() => setModal(null)} runtime={{ ...Icons, Modal, Field, Check, uid, todayISO, CLASS_COURSES, CLASS_MODES }} /></React.Suspense>}
         {modal?.type === "marketing" && <React.Suspense fallback={<LoadingScreen />}><LazyMarketingForm initial={modal.initial} onSave={(m) => saveGeneric("marketing", m, "marketing client")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
         {modal?.type === "concept" && <React.Suspense fallback={<LoadingScreen />}><LazyConceptForm initial={modal.initial} onSave={(c) => saveGeneric("concepts", c, "idea")} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, todayISO }} /></React.Suspense>}
         {modal?.type === "lead" && <React.Suspense fallback={<LoadingScreen />}><LazyLeadForm initial={modal.initial} onSave={(x) => saveOwned("leads", x)} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, SelectOther, Check, uid, LEAD_SOURCES, LEAD_STAGES, LEAD_SERVICES }} /></React.Suspense>}

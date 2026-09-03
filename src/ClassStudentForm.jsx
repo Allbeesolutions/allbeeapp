@@ -1,4 +1,8 @@
-export default function ClassStudentForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check } from "./icons.jsx";
+
+export default function ClassStudentForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, uid, todayISO, CLASS_COURSES = [], CLASS_MODES = ["Offline", "Online"] } = runtime;
   const [f, setF] = useState(() => ({ name: "", phone: "", email: "", course: "", mode: "Offline", batch: "", joinDate: todayISO(), fee: "", paid: "", paymentStatus: "Unpaid", notes: "", ...initial }));
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = (f.name || "").trim().length > 0;

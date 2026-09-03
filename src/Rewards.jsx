@@ -1,7 +1,7 @@
 import React from "react";
 
 function Rewards({ db, mutate, openModal, removeItem, me, isAdmin, team, runtime }) {
-  const { Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift } = runtime;
+  const { Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, FolderKanban, Award, Star, Trash2, avatarColor, round2, todayISO } = runtime;
   const all = [...db.rewards].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = isAdmin ? all : all.filter((r) => r.userId === me.id);
   const del = (r) => removeItem("rewards", r, { name: r.userName, audit: `removed recognition for ${r.userName}` });

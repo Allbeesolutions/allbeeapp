@@ -1,7 +1,7 @@
 import React from "react";
 
 function Performance({ db, team, runtime }) {
-  const { Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL } = runtime;
+  const { Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, TrendingUp, UserPlus, avatarColor, round2 } = runtime;
   const month = new Date();
   const staff = (team || []).filter((p) => ["staff", "intern", "admin", "accountant"].includes(p.role) && p.active !== false);
   const rows = staff.map((p) => {

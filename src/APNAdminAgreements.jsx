@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 export default function APNAdminAgreements({ db, isAdmin, onRefresh, runtime = {} }) {
-  const { supabase, fmtDate, fmtDateTime, Empty, Modal, Field, SelectOther, Search, Plus, Trash2, Pencil, Save, Check, X, FileText, Download, Eye, emitToast } = runtime;
+  const { supabase, fmtDate, fmtDateTime, Empty, Modal, Field, SelectOther, Search, Plus, Trash2, Pencil, Save, Check, X, FileText, Download, Eye, emitToast, ScrollText, RefreshCw, AlertTriangle, AGREEMENT_CATEGORIES } = runtime;
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");

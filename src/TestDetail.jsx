@@ -1,6 +1,9 @@
 import React, { useState, useRef } from "react";
+import * as Icons from "./icons.jsx";
 
-export default function TestDetail({ sessionId, db, mutate, isAdmin, me, currentUser, team, openModal, onBack, onDelete, runtime }) {
+export default function TestDetail({ sessionId, db, mutate, isAdmin, me, currentUser, team, openModal, onBack, onDelete, runtime = {} }) {
+  const { testProgress, uid, haptic, TEST_MAX_IMAGES = 5, fileKind, uploadAttachment, storagePathFromUrl, supabase, testResultTone, TEST_IMAGE_TTL_DAYS = 30, fmtTime } = runtime;
+  const { ArrowLeft, Empty, ClipboardCheck, FolderKanban, User, AlertTriangle, Check, CheckCircle2, XCircle, Bug, ImageIcon, Plus, Pencil, Trash2, RotateCcw, Send, FileText, RefreshCw, ListTodo, X } = { ...Icons, ...runtime };
   const s = (db.testing || []).find((x) => x.id === sessionId);
   const [newItem, setNewItem] = useState("");
   const [bugText, setBugText] = useState("");

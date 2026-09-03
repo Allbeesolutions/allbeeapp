@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 
 export default function PricingKnowledgeCenter(props) {
   const { isAdmin } = props;
-  const { Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast } = props.runtime || {};
+  const { Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast, AlertTriangle, BookOpen, Check, Download, Pencil, Plus, RefreshCw, Search, ShieldAlert, X } = props.runtime || {};
   const tabs = [["services", "Services"], ["packages", "Packages"], ["pricing", "Pricing"], ["features", "Features"], ["delivery", "Delivery"], ["hosting", "Hosting"], ["maintenance", "AMC"], ["faq", "FAQs"], ["policies", "Policies"], ["discounts", "Discounts"], ["integrations", "Integrations"], ["knowledge", "Knowledge"]];
   const [tab, setTab] = useState("services");
   const [query, setQuery] = useState("");

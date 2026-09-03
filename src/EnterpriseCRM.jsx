@@ -4,8 +4,8 @@ import * as Icons from "./icons.jsx";
 
 export default function EnterpriseCRM(props) {
   const runtime = props.runtime || {};
-  const { todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, ...iconOverrides } = runtime;
-  const { Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical } = { ...Icons, ...iconOverrides };
+  const { todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons, ...iconOverrides } = runtime;
+  const { Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, UserPlus, Flame, CalendarClock, Trophy, XCircle, Coins, GaugeCircle, FolderKanban, AlertTriangle } = { ...Icons, ...iconOverrides };
   const { db, team = [], me, isAdmin, reload } = props;
   const [tab, setTab] = useState("overview");
   const [query, setQuery] = useState("");

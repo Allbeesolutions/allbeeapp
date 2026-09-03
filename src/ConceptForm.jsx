@@ -1,4 +1,8 @@
-export default function ConceptForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check } from "./icons.jsx";
+
+export default function ConceptForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, uid, todayISO } = runtime;
   const [f, setF] = useState(() => ({ title: "", notes: "", date: todayISO(), ...initial, tags: Array.isArray(initial?.tags) ? initial.tags.join(", ") : initial?.tags || "" }));
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.title.trim().length > 0;

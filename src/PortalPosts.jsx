@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 
 function PortalPosts({ db, mutate, openModal, removeItem, portalClients, runtime }) {
-  const { Empty, Plus, Trash2, ExternalLink } = runtime;
+  const { Empty, Plus, Trash2, ExternalLink, Building2, Link2, Pencil, fmtDateTime } = runtime;
   const list = [...db.portal_posts].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const del = (p) => removeItem("portal_posts", p, { name: p.title, audit: `deleted client update "${p.title}"` });
   const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";

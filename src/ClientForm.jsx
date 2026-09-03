@@ -1,4 +1,8 @@
-export default function ClientForm({ initial, onSave, onClose, existing }) {
+import React, { useState } from "react";
+import { AlertTriangle, Check } from "./icons.jsx";
+
+export default function ClientForm({ initial, onSave, onClose, existing, runtime = {} }) {
+  const { Modal, Field, uid, CLIENT_STATUS = ["Prospect", "Active", "Inactive"] } = runtime;
   const [f, setF] = useState(initial || { name: "", phone: "", email: "", company: "", status: "Prospect", notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [err, setErr] = useState("");

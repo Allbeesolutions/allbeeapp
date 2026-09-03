@@ -1,4 +1,8 @@
-export default function ProjectForm({ initial, onSave, onClose }) {
+import React, { useState } from "react";
+import { Check } from "./icons.jsx";
+
+export default function ProjectForm({ initial, onSave, onClose, runtime = {} }) {
+  const { Modal, Field, SelectOther, uid, todayISO, PROJECT_STAGES = ["Lead", "In progress", "Completed"] } = runtime;
   const [f, setF] = useState(() => ({ client: "", name: "", type: "Website", cost: "", start: todayISO(), expected: "", stage: "Lead", notes: "", ...initial }));
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.name.trim().length > 0;
