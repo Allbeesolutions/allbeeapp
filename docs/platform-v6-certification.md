@@ -25,9 +25,9 @@ Evidence: migration 20260904154000 applied to production; direct attachment tabl
 Commit: 06243b6
 Deployment: production Vercel deployment completed successfully.
 
-## Tasks 5–10
+## Tasks 7–10
 Status: PENDING
-5 Global Search v5; 6 CRM v5; 7 APN Network v6; 8 Finance v5; 9 Security v5; 10 Final Platform v6 certification.
+7 APN Network v6; 8 Finance v5; 9 Security v5; 10 Final Platform v6 certification.
 
 ## Task 5 — Global Search v5
 Status: CERTIFIED
@@ -37,7 +37,15 @@ Commit: e679a83
 Deployment: production Vercel deployment completed successfully.
 
 ## Task 6 — CRM v5
+Status: CERTIFIED
+Implemented: advanced CRM pipeline intelligence with deterministic lead scoring, win probability, weighted sales forecast, scoped top-lead ranking, Customer 360 continuity, and stage-driven activity/follow-up automation. Existing Kanban drag/drop now surfaces CRM v5 score/win probability and the live forecast card.
+Evidence: migration 20260904161000 applied to production; 5 CRM v5 contract tests passed; full Vitest suite passed (23 files, 148 tests); lockdown E2E passed; production build passed; git diff check passed; anonymous CRM v5 dashboard RPC correctly denied with HTTP 401 / `42501`; custom production domain returned HTTP 200; Vercel production deployment completed successfully.
+Commit: 51d186b
+Deployment: production Vercel deployment completed successfully and aliased live deployment.
+Runtime limitation: authenticated production dashboard output could not be independently queried from this session because the available Supabase SQL connector denied execution permission. Migration application plus production auth rejection, build, tests, and live deployment were verified; no claim is made about a specific authenticated production metric value.
+
+## Task 7 — APN Network v6
 Status: NEXT / PENDING
-## Tasks 7–10
+## Tasks 8–10
 Status: PENDING
-7 APN Network v6; 8 Finance v5; 9 Security v5; 10 Final Platform v6 certification.
+8 Finance v5; 9 Security v5; 10 Final Platform v6 certification.
