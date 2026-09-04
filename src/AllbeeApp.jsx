@@ -2484,6 +2484,15 @@ function AccountFull({ db, user, goBack }) {
 function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks = [], lockPeriod, unlockPeriod, isSuper, currentUser }) {
   const [view, setView] = useState("all");
   const [q, setQ] = useState("");
+  const [financeV5, setFinanceV5] = useState(null);
+  const [financeV5Error, setFinanceV5Error] = useState("");
+  const refreshFinanceV5 = useCallback(async () => {
+    if (!isSuper) return;
+    const { data, error } = await supabase.rpc("finance_v5_dashboard");
+    if (error) { setFinanceV5Error(error.message); return; }
+    setFinanceV5(data || null); setFinanceV5Error("");
+  }, [isSuper]);
+  useEffect(() => { refreshFinanceV5(); }, [refreshFinanceV5]);
   const thisPeriod = todayISO().slice(0, 7);
   const lockedThis = locks.includes(thisPeriod);
   const doLock = async (p, on) => { try { on ? await lockPeriod(p, currentUser) : await unlockPeriod(p); emitToast(on ? "Period locked." : "Period unlocked.", "success"); } catch (e) { emitToast(e.message || "Couldn't update the lock.", "error"); } };
@@ -2527,6 +2536,8 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
       </div>
 
       {lockedThis && <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><LockIcon size={15} /> {fmtPeriod(thisPeriod)} is locked — income, expenses and withdrawals dated this month are frozen{isSuper ? "." : " until a partner unlocks it."}</div>}
+      {isSuper && financeV5Error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />Finance v5 reconciliation could not load: {financeV5Error}</div>}
+      {isSuper && financeV5 && <div className="card" style={{ marginBottom: 16 }}><div className="item-row"><div className="item-main"><div className="item-title"><ShieldCheck size={15} style={{ verticalAlign: -2 }} /> Finance v5 control panel</div><div className="item-meta">Authoritative transaction totals, APN commission expense linkage, paid withdrawals, and forward cash forecast.</div></div><button className="btn sm" onClick={refreshFinanceV5}>Refresh</button></div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}><div className="card stat"><div className="lbl">Income</div><div className="num mono">{money(financeV5.transactions.income)}</div></div><div className="card stat"><div className="lbl">Expenses</div><div className="num mono">{money(financeV5.transactions.expenses)}</div></div><div className="card stat"><div className="lbl">Net cash</div><div className="num mono">{money(financeV5.transactions.net)}</div></div><div className="card stat"><div className="lbl">APN commission expenses</div><div className="num mono">{money(financeV5.apn.commission_expenses)}</div></div><div className="card stat"><div className="lbl">Forward forecast</div><div className="num mono">{money(financeV5.forecast.net)}</div></div><div className="card stat"><div className="lbl">Reconciliation</div><div className={`num mono ${financeV5.reconciliation.status === "balanced" ? "pos-txt" : "neg-txt"}`}>{financeV5.reconciliation.status === "balanced" ? "Balanced" : `${financeV5.reconciliation.exceptions} exception(s)`}</div></div></div></div>}
 
       {isSuper && (
         <div className="card stat" style={{ marginBottom: 16 }}>
