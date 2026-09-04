@@ -56,7 +56,7 @@ const SEARCH_SOURCES = [
   { coll: "students", route: "courses", label: "Courses", title: (x) => x.name, sub: (x) => x.course, date: (x) => x.joinDate },
   { coll: "marketing", route: "marketing", label: "Marketing", title: (x) => x.client, sub: (x) => x.plan, date: (x) => x.startDate },
   { coll: "portal_posts", route: "portal-posts", label: "Client updates", title: (x) => x.title, date: (x) => msToISO(x.createdAt) },
-  { coll: "notifications", route: "notifications", label: "Notifications", title: (x) => x.title, date: (x) => msToISO(x.createdAt), filter: (x, c) => notifVisibleTo?.(x, c.profile) },
+  { coll: "notifications", route: "notifications", label: "Notifications", title: (x) => x.title, date: (x) => msToISO(x.createdAt), filter: (x, c) => c.notifVisibleTo ? c.notifVisibleTo(x, c.profile) : true },
   { coll: "crm_leads", route: "leads", label: "CRM leads", title: (x) => x.customer_name || x.lead_number, sub: (x) => x.status, user: (x) => x.email || x.mobile, date: (x) => x.updated_at || x.created_at },
   { coll: "crm_quotations", route: "leads", label: "CRM quotations", title: (x) => x.title || x.quote_number, sub: (x) => x.status, date: (x) => x.updated_at || x.created_at },
   { coll: "crm_projects", route: "leads", label: "CRM projects", title: (x) => x.name || x.project_number, sub: (x) => x.status, date: (x) => x.updated_at || x.created_at },
@@ -68,6 +68,10 @@ const SEARCH_SOURCES = [
 function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask, openModal, onClose, nav, notifVisibleTo, activityModuleOf }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
+  const [moduleFilter, setModuleFilter] = useState("All");
+  const [routeFilter, setRouteFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -87,7 +91,7 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
 
   const index = useMemo(() => {
     const allow = new Set(allowedRoutes || []);
-    const ctx = { isAdmin, me, profile };
+    const ctx = { isAdmin, me, profile, notifVisibleTo };
     const out = [];
     // modules (navigation)
     for (const [key, label, , tag] of nav) {
@@ -122,7 +126,7 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
       }
     }
     return out;
-  }, [db, team, allowKey, isAdmin, me.id, profile]);
+  }, [db, team, allowKey, isAdmin, me.id, profile, notifVisibleTo]);
 
   const results = useMemo(() => {
     const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -132,6 +136,10 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
     }
     const scored = [];
     for (const r of index) {
+      if (moduleFilter !== "All" && r.module !== moduleFilter) continue;
+      if (routeFilter !== "All" && r.route !== routeFilter) continue;
+      if (dateFrom && (!r.dateISO || r.dateISO.slice(0, 10) < dateFrom)) continue;
+      if (dateTo && (!r.dateISO || r.dateISO.slice(0, 10) > dateTo)) continue;
       if (!toks.every((t) => r.text.includes(t))) continue;
       const tl = r.title.toLowerCase();
       let score = 0;
@@ -143,7 +151,7 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
     }
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, 40).map((x) => x.r);
-  }, [q, index]);
+  }, [q, index, moduleFilter, routeFilter, dateFrom, dateTo]);
 
   useEffect(() => { setSel(0); }, [q]);
   const curSel = Math.min(sel, Math.max(0, results.length - 1));
@@ -193,6 +201,13 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
           <Search size={20} color="var(--muted)" aria-hidden="true" />
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search modules, people, projects, tasks, notes…" aria-label="Search all accessible records" />
           <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} title="Close search" aria-label="Close search"><X size={16} /></button>
+        </div>
+        <div className="toolbar" style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", gap: 6, flexWrap: "wrap" }}>
+          <select className="select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)} aria-label="Filter search module"><option>All</option>{Array.from(new Set(index.map((r) => r.module))).sort().map((x) => <option key={x}>{x}</option>)}</select>
+          <select className="select" value={routeFilter} onChange={(e) => setRouteFilter(e.target.value)} aria-label="Filter search route"><option>All</option>{Array.from(new Set(index.map((r) => r.route))).sort().map((x) => <option key={x}>{x}</option>)}</select>
+          <input className="input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} aria-label="Search from date" title="From date" style={{ width: 145 }} />
+          <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} aria-label="Search to date" title="To date" style={{ width: 145 }} />
+          {(moduleFilter !== "All" || routeFilter !== "All" || dateFrom || dateTo) && <button className="btn sm" onClick={() => { setModuleFilter("All"); setRouteFilter("All"); setDateFrom(""); setDateTo(""); }}>Clear filters</button>}
         </div>
         <div className="cmdk-results">
           {results.length === 0 ? (
