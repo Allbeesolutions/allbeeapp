@@ -45,7 +45,15 @@ Deployment: production Vercel deployment completed successfully and aliased live
 Runtime limitation: authenticated production dashboard output could not be independently queried from this session because the available Supabase SQL connector denied execution permission. Migration application plus production auth rejection, build, tests, and live deployment were verified; no claim is made about a specific authenticated production metric value.
 
 ## Task 7 — APN Network v6
+Status: CERTIFIED
+Implemented/validated: APN referral network remains direct one-level only; referral rate defaults to 1% and is snapshotted per qualifying collection; referral codes permit one rename; authoritative partner wallet/ledger exposes source identity server-side; district/state streams use exact current head roles; withdrawal eligibility follows the calendar 5th-of-month rule; paid withdrawals bridge to finance; wallet and withdrawal histories remain ledger-backed.
+Evidence: existing APN Network, wallet, withdrawal, referral and commission hardening were inspected rather than reimplemented; new APN Network v6 contract suite passed 5/5; APN Network refresh tests passed 2/2; APN runtime contracts passed 3/3; APN Admin test passed 1/1; full Vitest suite passed (24 files, 153 tests); production build passed; diff check passed; production migration list is synchronized through 20260904161000; anonymous authoritative wallet/leaderboard RPC access is denied (401), while the referral network RPC is not exposed to anonymous callers; live custom domain remains reachable.
+Commit: test checkpoint pending
+Deployment: no application-source change was required for APN v6; current production deployment remains valid. Test/certification changes will be pushed with the checkpoint commit.
+Runtime limitation: authenticated APN production wallet/ledger values could not be independently queried from this session because the available Supabase SQL connector denied execution permission. No specific production balance is claimed here.
+
+## Task 8 — Finance v5
 Status: NEXT / PENDING
-## Tasks 8–10
+## Tasks 9–10
 Status: PENDING
-8 Finance v5; 9 Security v5; 10 Final Platform v6 certification.
+9 Security v5; 10 Final Platform v6 certification.
