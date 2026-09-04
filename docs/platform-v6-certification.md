@@ -53,7 +53,14 @@ Deployment: no application-source change was required for APN v6; current produc
 Runtime limitation: authenticated APN production wallet/ledger values could not be independently queried from this session because the available Supabase SQL connector denied execution permission. No specific production balance is claimed here.
 
 ## Task 8 — Finance v5
+Status: CERTIFIED
+Implemented: Finance v5 now has an admin-scoped authoritative dashboard for transaction income/expense/net cash, APN collections, positive commission ledger, APN commission expense linkage, paid withdrawal settlements, forward forecast, and explicit reconciliation status. Added a separate reconciliation RPC that classifies missing commission expenses, orphan finance maps, duplicate finance transaction mappings, and negative transaction amounts. Share & accounts now surfaces the Finance v5 control panel for Super Admins.
+Evidence: migration 20260904162000 applied to production; Finance v5 contract suite passed 4/4; full Vitest suite passed (25 files, 157 tests); production build passed; diff check passed; production migration list is synchronized through 20260904162000; live custom domain returned HTTP 200; Vercel production deployment completed successfully.
+Commit: 59ac553
+Deployment: production Vercel deployment completed successfully and aliased live deployment.
+Runtime limitation: authenticated finance dashboard/reconciliation output could not be independently queried from this session because the available Supabase SQL connector denied execution permission. No specific production finance balance or reconciliation count is claimed here.
+
+## Task 9 — Security v5
 Status: NEXT / PENDING
-## Tasks 9–10
+## Task 10 — Final Platform v6 certification
 Status: PENDING
-9 Security v5; 10 Final Platform v6 certification.
