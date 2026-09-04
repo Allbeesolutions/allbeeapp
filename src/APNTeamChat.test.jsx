@@ -40,7 +40,7 @@ beforeEach(() => {
     if (fn === "apn_open_person_chat") return Promise.resolve({ data:[{ conversation_id:"conv1", subject:"Friend One", participant_apn_id:"APN-TN-0002" }], error:null });
     if (fn === "apn_list_messages") return Promise.resolve({ data:[], error:null });
     if (fn === "apn_mark_read" || fn === "apn_mark_delivered") return Promise.resolve({ data:null, error:null });
-    if (fn === "apn_send_message") return Promise.resolve({ data:[{ message_id:"m1" }], error:null });
+    if (fn === "apn_send_message_v3") return Promise.resolve({ data:[{ message_id:"m1" }], error:null });
     return Promise.resolve({ data:null, error:null });
   });
 });
@@ -56,7 +56,7 @@ describe("APN Team Chat", () => {
 
     fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target:{ value:"Hello from ALLBEE" } });
     fireEvent.click(screen.getByRole("button", { name:"Send" }));
-    await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_send_message", { p_conversation_id:"conv1", p_body:"Hello from ALLBEE" }));
+    await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_send_message_v3", { p_conversation_id:"conv1", p_body:"Hello from ALLBEE", p_reply_to_id:null, p_mentions:[] }));
   });
 
   it("keeps the visible admin chat while realtime refresh is pending", async () => {

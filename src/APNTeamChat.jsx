@@ -2,6 +2,7 @@ import React from "react";
 
 export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go, runtime = {} }) {
   const { useState, useEffect, useRef, useCallback, useReducedMotion, supabase, emitToast, Empty, Avatar, apnIdFor, fmtDateTime, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, MessageCircle, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL } = runtime;
+  const Paperclip = runtime.Paperclip || MessageCircle;
   const [section, setSection] = useState("person");
   const [conversations, setConversations] = useState([]);          // from apn_list_conversations
   const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
@@ -11,6 +12,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const [selected, setSelected] = useState(null);                    // {id, subject, participants}
   const [messages, setMessages] = useState([]);
   const [composer, setComposer] = useState("");
+  const [composerFile, setComposerFile] = useState(null);
   const [messageSearch, setMessageSearch] = useState("");
   const [replyTo, setReplyTo] = useState(null);
   const [editMessage, setEditMessage] = useState(null);
@@ -265,22 +267,35 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 
   const sendMessage = async () => {
     const body = (composer || "").trim();
-    if (!body || !selected) return;
+    if ((!body && !composerFile) || !selected) return;
+    if (composerFile && composerFile.size > 10 * 1024 * 1024) { setErr("Attachments must be 10 MB or smaller."); return; }
     const convId = selected.id;
-    setComposer("");
-    setReplyTo(null);
-    setErr("");
+    const file = composerFile;
+    setComposer(""); setComposerFile(null); setReplyTo(null); setErr("");
     try {
-      const { data, error } = replyTo?.id
-        ? await supabase.rpc("apn_send_message_v2", { p_conversation_id: convId, p_body: body, p_reply_to_id: replyTo.id })
-        : await supabase.rpc("apn_send_message", { p_conversation_id: convId, p_body: body });
+      const mentions = Array.from(new Set((body.match(/@[A-Za-z0-9_.-]+/g) || []).map((x) => x.slice(1))));
+      const { data, error } = await supabase.rpc("apn_send_message_v3", { p_conversation_id: convId, p_body: body || (file ? `📎 ${file.name}` : "Attachment"), p_reply_to_id: replyTo?.id || null, p_mentions: mentions });
       if (error) throw new Error(error.message);
+      const messageId = data?.[0]?.message_id;
+      if (file && messageId) {
+        const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_").slice(-160);
+        const path = `${convId}/${messageId}/${safeName}`;
+        const upload = await supabase.storage.from("apn-chat").upload(path, file, { upsert: false, contentType: file.type || undefined });
+        if (upload.error) throw new Error(`Message sent, but attachment upload failed: ${upload.error.message}`);
+        const { error: attachError } = await supabase.from("apn_chat_attachments").insert({ message_id: messageId, conversation_id: convId, uploader_id: pid, file_name: file.name, storage_path: path, mime_type: file.type || null, size_bytes: file.size });
+        if (attachError) throw new Error(`Message sent, but attachment could not be linked: ${attachError.message}`);
+      }
       await loadMessages(selected, { open: false });
       await loadConversations(false);
-    } catch (e) {
-      setComposer(body);
-      setErr(e.message || String(e));
-    }
+    } catch (e) { setComposer(body); setComposerFile(file); setErr(e.message || String(e)); }
+  };
+
+  const openAttachment = async (attachment) => {
+    try {
+      const { data, error } = await supabase.storage.from("apn-chat").createSignedUrl(attachment.storage_path, 600);
+      if (error || !data?.signedUrl) throw new Error(error?.message || "Attachment link unavailable.");
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e) { setErr(e.message || "Could not open attachment."); }
   };
 
   const editNow = async () => {
@@ -489,7 +504,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                         <div className="apn-tc-bubble-wrap">
                           <div className="apn-tc-bubble">
                             {m.reply_to_id && (() => { const parent = messages.find((x) => x.id === m.reply_to_id); return <div className="apn-tc-reply-preview">↳ {parent ? `${parent.sender_name || "Message"}: ${String(parent.body || "").slice(0, 90)}` : "Reply"}</div>; })()}
-                            <div className="apn-tc-text">{m.body}</div>
+                            <div className="apn-tc-text">{m.body}</div>{Array.isArray(m.mentions) && m.mentions.length > 0 && <div className="hint-line" style={{ fontSize: 11, marginTop: 4 }}>Mentioned: {m.mentions.map((x) => `@${x}`).join(" ")}</div>}{Array.isArray(m.attachments) && m.attachments.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>{m.attachments.map((a) => <button key={a.id} className="btn sm" onClick={(e) => { e.stopPropagation(); openAttachment(a); }}><Paperclip size={12} />{a.file_name}</button>)}</div>}
                             <div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}{m.edited_at ? " · edited" : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div>
                           </div>
                           {Array.isArray(m.reactions) && m.reactions.length > 0 && <div className="apn-tc-reactions">{m.reactions.map((r) => <button key={r.emoji} className={`apn-tc-reaction ${r.mine ? "mine" : ""}`} disabled={reactionBusy === `${m.id}:${r.emoji}`} onClick={() => toggleReaction(m, r.emoji)}>{r.emoji} {r.count}</button>)}</div>}
@@ -502,8 +517,12 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                   </div>
                   <div className="apn-tc-compose">
                     {(replyTo || editMessage) && <div className="apn-tc-compose-mode"><span>{editMessage ? "Editing message" : `Replying to ${replyTo?.sender_name || "message"}`}</span><button className="linkbtn" onClick={() => { setReplyTo(null); setEditMessage(null); setComposer(""); }}>×</button></div>}
-                    <textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder={editMessage ? "Edit message…" : replyTo ? "Write your reply…" : "Type a message…"} rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editMessage ? editNow() : sendMessage(); } }} />
-                    <button className="btn primary" onClick={editMessage ? editNow : sendMessage} disabled={!composer.trim() || !selected}>{editMessage ? "Save" : "Send"}</button>
+                    {composerFile && <div className="hint-line" style={{ marginBottom: 6 }}>Attachment: <b>{composerFile.name}</b> · {Math.round(composerFile.size / 1024)} KB <button className="linkbtn" onClick={() => setComposerFile(null)}>remove</button></div>}
+                    <div style={{ display: "flex", gap: 7, alignItems: "flex-end" }}>
+                      <label className="btn" title="Attach file" style={{ cursor: "pointer", height: 44, display: "inline-flex", alignItems: "center" }}><Paperclip size={16} /><input type="file" hidden onChange={(e) => setComposerFile(e.target.files?.[0] || null)} /></label>
+                      <div style={{ flex: 1 }}><textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder={editMessage ? "Edit message…" : replyTo ? "Write your reply…" : "Type a message…"} rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editMessage ? editNow() : sendMessage(); } }} /><div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Use <b>@APNID</b> to record a mention · private attachments up to 10 MB</div></div>
+                      <button className="btn primary" onClick={editMessage ? editNow : sendMessage} disabled={(!composer.trim() && !composerFile) || !selected}>{editMessage ? "Save" : "Send"}</button>
+                    </div>
                   </div>
                 </div>
               ) : <div className="apn-tc-main-empty"><div><MessageSquare size={30} color="var(--muted)" /><div className="apn-tc-main-title">Friend chats</div><div className="hint-line">Select a partner from the list to start messaging.</div></div></div>}
