@@ -1,18 +1,24 @@
 import React, { useMemo, useState } from "react";
 
 export default function Notifications({ db, mutate, openModal, removeItem, isAdmin, me, profile, team, runtime = {} }) {
-  const { useEffect, notifVisibleTo, NOTIF_AUDIENCES, Search: SearchIcon, ROLE_LABEL, Avatar, Empty, Bell, Users, Check, BadgeCheck, Trash2, fmtDateTime } = runtime;
+  const { useEffect, notifVisibleTo, NOTIF_AUDIENCES, Search: SearchIcon, ROLE_LABEL, Avatar, Empty, Bell, Users, Check, BadgeCheck, Trash2, ArrowRight, fmtDateTime } = runtime;
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState("All");
   const [onlyUnread, setOnlyUnread] = useState(false);
+  const [preferences, setPreferences] = useState({ enabled: true, urgent_enabled: true, important_enabled: true, general_enabled: true });
+  const [prefBusy, setPrefBusy] = useState(false);
+  const preferenceAllows = (n) => preferences.enabled && (n.level === "Urgent" ? preferences.urgent_enabled : n.level === "Important" ? preferences.important_enabled : preferences.general_enabled);
   const visible = useMemo(() => [...db.notifications].filter((n) => {
     if (!(isAdmin || notifVisibleTo(n, profile))) return false;
     if (level !== "All" && (n.level || "General") !== level) return false;
+    if (!preferenceAllows(n)) return false;
     if (onlyUnread && (n.reads || []).includes(me?.id)) return false;
     const q = query.trim().toLowerCase();
     return !q || [n.title, n.body, n.by, n.senderName, n.audience].filter(Boolean).join(" ").toLowerCase().includes(q);
-  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [db.notifications, isAdmin, profile, level, onlyUnread, query, me?.id]);
+  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [db.notifications, isAdmin, profile, level, onlyUnread, query, me?.id, preferences]);
   const unreadCount = useMemo(() => [...db.notifications].filter((n) => (isAdmin || notifVisibleTo(n, profile)) && !(n.reads || []).includes(me?.id)).length, [db.notifications, isAdmin, profile, me?.id]);
+  useEffect(() => { let alive = true; runtime.supabase?.rpc("notification_preferences_get").then(({ data }) => { if (alive && data) setPreferences((p) => ({ ...p, ...data })); }).catch(() => {}); return () => { alive = false; }; }, [me?.id]);
+  const savePreferences = async (patch) => { const next = { ...preferences, ...patch }; setPreferences(next); setPrefBusy(true); try { const { data, error } = await runtime.supabase.rpc("notification_preferences_save", { p_enabled: !!next.enabled, p_urgent: !!next.urgent_enabled, p_important: !!next.important_enabled, p_general: !!next.general_enabled }); if (error) throw error; if (data) setPreferences(data); } catch {} finally { setPrefBusy(false); } };
   const levelTone = (l) => l === "Urgent" ? "neg" : l === "Important" ? "accent" : "pri";
   const audienceLabel = (a) => {
     if (!a || a === "all") return "Everyone";
@@ -46,7 +52,7 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
   return (
     <div className="content">
       <div className="page-head"><h3>Notifications {unreadCount > 0 && <span className="badge pri" style={{ marginLeft: 7 }}>{unreadCount} unread</span>}</h3><span className="spacer" />{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>}</div>
-      <div className="toolbar" style={{ marginBottom: 12 }}><div className="search" style={{ flex: 1 }}><SearchIcon size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search notifications…" aria-label="Search notifications" /></div><select className="select" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: "auto" }}><option>All</option><option>Urgent</option><option>Important</option><option>General</option></select><label className="tag" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={onlyUnread} onChange={(e) => setOnlyUnread(e.target.checked)} />Unread only</label></div>
+      <div className="toolbar" style={{ marginBottom: 12 }}><div className="search" style={{ flex: 1 }}><SearchIcon size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search notifications…" aria-label="Search notifications" /></div><select className="select" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: "auto" }}><option>All</option><option>Urgent</option><option>Important</option><option>General</option></select><label className="tag" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={onlyUnread} onChange={(e) => setOnlyUnread(e.target.checked)} />Unread only</label><details className="tag" style={{ marginLeft: "auto" }}><summary style={{ cursor: "pointer" }}>Notification preferences</summary><div style={{ position: "absolute", zIndex: 5, marginTop: 8, padding: 12, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "var(--shadow)", display: "grid", gap: 7 }}><label><input type="checkbox" disabled={prefBusy} checked={preferences.enabled} onChange={(e) => savePreferences({ enabled: e.target.checked })} /> Notifications enabled</label><label><input type="checkbox" disabled={prefBusy || !preferences.enabled} checked={preferences.urgent_enabled} onChange={(e) => savePreferences({ urgent_enabled: e.target.checked })} /> Urgent</label><label><input type="checkbox" disabled={prefBusy || !preferences.enabled} checked={preferences.important_enabled} onChange={(e) => savePreferences({ important_enabled: e.target.checked })} /> Important</label><label><input type="checkbox" disabled={prefBusy || !preferences.enabled} checked={preferences.general_enabled} onChange={(e) => savePreferences({ general_enabled: e.target.checked })} /> General</label></div></details></div>
       {visible.length === 0 ? <div className="card"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text={isAdmin ? "Broadcast an update to everyone, a role, or one person — with a priority level." : "Notifications from your admins show up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>} /></div>
         : <div className="notifications-list">{visible.map((n) => {
           const seen = (n.reads || []).includes(me.id);
@@ -60,6 +66,7 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
                   <div className="notification-title-row"><span style={{ fontWeight: 700, fontSize: 15 }}>{n.title}</span><span className={"badge " + levelTone(n.level)}>{n.level || "General"}</span>{!seen && !isAdmin && <span className="badge pri">New</span>}</div>
                   {n.body && <div style={{ marginTop: 6, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{n.body}</div>}
                   <div className="item-meta" style={{ marginTop: 8 }}><span>{sender.name}</span><span>{sender.designation}</span><span>{fmtDateTime(n.createdAt)}</span>{isAdmin && <span><Users size={12} style={{ verticalAlign: -2 }} /> {audienceLabel(n.audience)}</span>}{isAdmin && <span><Check size={12} style={{ verticalAlign: -2 }} /> {(n.reads || []).length} read</span>}</div>
+                  {n.action?.route && <div style={{ marginTop: 10 }}><button className="btn sm" onClick={() => { markRead(n); openModal?.({ type: "navigate", route: n.action.route }); }}><ArrowRight size={13} />Open {n.action.label || n.action.route}</button></div>}
                   {!isAdmin && !seen && <div style={{ marginTop: 10 }}><button className="btn sm primary" onClick={() => markRead(n)}><Check size={13} />Mark as read</button></div>}
                   {!isAdmin && seen && <div className="hint-line" style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, color: "var(--pos)" }}><BadgeCheck size={13} />Read</div>}
                 </div>
