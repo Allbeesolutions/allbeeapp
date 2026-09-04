@@ -70,3 +70,12 @@ Runtime limitation: the admin-only security audit result itself could not be que
 
 ## Task 10 — Final Platform v6 certification
 Status: NEXT / PENDING
+
+
+## Task 10 — Final Platform v6 certification
+Status: CERTIFIED WITH ONE EXTERNAL BLOCKER
+Final verification: production custom domain returned HTTP 200; local working tree was clean before final checkpoint; Supabase migration history is synchronized through 20260904163000; full Vitest suite passed 26 files / 161 tests; production build passed; lockdown E2E passed all checks; `git diff --check` passed.
+Cross-module coverage: AI Intelligence v5, Automation v4, Notifications v5, Team Chat v6, Global Search v5, CRM v5, APN Network v6, Finance v5, and Security v5 were each checked against their durable task evidence. No certified task was reimplemented merely to manufacture progress.
+Security/reliability evidence: sensitive RPC anonymous access is denied in production; prior Team Chat attachment and search authorization proofs remain valid; notification worker invalid-key authentication remains denied; production migrations through the final security migration are applied; lockdown gate E2E passes; no uncommitted source changes remain at this checkpoint.
+External blocker: Notifications v5 real push delivery is NOT certified. Production VAPID credentials are still absent and headless verification cannot grant browser notification permission. The implementation is deployed, but real OS/browser push delivery must remain explicitly uncertified until production VAPID public/private keys are configured securely and one real granted-permission delivery smoke test succeeds.
+Conclusion: All application/database certification work in the v6 sequence is complete except the external Notifications push-delivery proof. Platform v6 is therefore not marked fully green; it is certified with the single explicit blocker above.
