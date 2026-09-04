@@ -7,6 +7,8 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [preferences, setPreferences] = useState({ enabled: true, urgent_enabled: true, important_enabled: true, general_enabled: true });
   const [prefBusy, setPrefBusy] = useState(false);
+  const [snoozing, setSnoozing] = useState(null);
+  const [pushState, setPushState] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const preferenceAllows = (n) => preferences.enabled && (n.level === "Urgent" ? preferences.urgent_enabled : n.level === "Important" ? preferences.important_enabled : preferences.general_enabled);
   const visible = useMemo(() => [...db.notifications].filter((n) => {
     if (!(isAdmin || notifVisibleTo(n, profile))) return false;
