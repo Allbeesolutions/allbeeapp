@@ -125,3 +125,13 @@ Regression evidence: new `src/AdminPageRuntimeRegression.test.jsx` covers the fo
 Production database evidence: migration `20260905050000_admin_page_runtime_fixes.sql` was applied successfully through the linked Supabase CLI. `supabase migration list`/`db push --dry-run` now report the remote database up to date. Direct production schema probes confirmed `crm_v5_dashboard()` contains the scoped CTE fix and `finance_v5_dashboard()` contains the corrected reconciliation logic. The existing signup guard remains fail-closed and signup-bootstrap aware.
 
 Release gate: source changes still require the final GitHub commit and Vercel production deployment before the user's current browser can receive the fixes. After deployment, the live custom domain must be rechecked and the affected admin routes should be refreshed for final visual confirmation.
+
+
+## Execution checkpoint — 2026-09-05 admin routes deployed
+Status: DEPLOYED / VERIFICATION GREEN
+
+Application commit `6b203be` is pushed to `main` and the production Vercel deployment `dpl_9sLgakXRawtsd1Y4SDWKbmZ7qzHZ` is READY on the `main` commit. The live custom domain `https://app.allbeesolutions.com` returns HTTP 200 and serves the new asset build. Vercel runtime-error aggregation reports no runtime errors in the post-deployment 20-minute window.
+
+Production database migration `20260905050000_admin_page_runtime_fixes.sql` is applied and `supabase db push --dry-run` reports the database up to date. Local verification remains 28 Vitest files / 170 tests, production build passed, lockdown E2E passed, and `git diff --check` passed. Working tree is clean and `origin/main` matches the deployed commit.
+
+Affected admin routes now have explicit regression coverage for the exact failures shown in the supplied screenshots. Final visual confirmation still requires the already-open browser tab to refresh/load the new deployment; no browser-side success is claimed merely from the HTTP/deployment checks.
