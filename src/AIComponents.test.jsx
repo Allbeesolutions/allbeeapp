@@ -7,7 +7,7 @@ import AIIntelligenceCenter from "./AIIntelligenceCenter.jsx";
 const icon = ({ children }) => <span>{children}</span>;
 const baseRuntime = { aiConfigOf: () => ({ enabled: true }), companyOf: () => ({ name: "ALLBEE" }), aiConfigured: () => true,
   buildAIContext: () => "snapshot", callAI: vi.fn().mockResolvedValue("Hello from AI"), ROLE_LABEL: { admin: "Admin" },
-  AI_QUICK_PROMPTS: [["Summarise", "summarise pending work"]], renderAIText: (x) => <span>{x}</span>, supabase: { rpc: vi.fn() } };
+  AI_QUICK_PROMPTS: [["Summarise", "summarise pending work"]], renderAIText: (x) => <span>{x}</span>, supabase: { rpc: vi.fn(), functions: { invoke: vi.fn() } } };
 const intelligenceRuntime = { Empty: ({ title }) => <div>{title}</div>, Field: ({ children }) => <div>{children}</div>, money: (n) => `₹${n || 0}`,
   fmtDate: () => "date", fmtDateTime: () => "date-time", Activity: icon, emitToast: vi.fn(), exportRowsToExcel: vi.fn(), exportRowsToPDF: vi.fn(),
   todayISO: () => "2026-09-03", ROLE_LABEL: { admin: "Admin" }, Search: icon, TrendingUp: icon, Users: icon, Target: icon, FileText: icon,
@@ -19,14 +19,17 @@ describe("ALLBEE AI surfaces", () => {
   it("loads knowledge context, renders quick prompts, and sends a chat", async () => {
     const rpc = baseRuntime.supabase.rpc.mockImplementation((name) => {
       if (name === "knowledge_search") return Promise.resolve({ data: [] });
-      if (name === "ai_memory_hybrid_search") return Promise.resolve({ data: [{ title: "Lead follow-up", content: "Follow up open leads promptly." }] });
+      return Promise.resolve({ data: {} });
+    });
+    const invoke = baseRuntime.supabase.functions.invoke.mockImplementation((name) => {
+      if (name === "ai-memory-runtime") return Promise.resolve({ data: { rows: [{ title: "Lead follow-up", content: "Follow up open leads promptly." }] } });
       return Promise.resolve({ data: {} });
     });
     render(<AllbeeAI db={{}} config={{}} me={{ name: "Haji" }} role="admin" isAdmin go={vi.fn()} runtime={baseRuntime} />);
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("knowledge_search", { p_query: "", p_limit: 12 }));
     fireEvent.click(screen.getByRole("button", { name: "Summarise" }));
     await waitFor(() => expect(baseRuntime.callAI).toHaveBeenCalled());
-    expect(rpc).toHaveBeenCalledWith("ai_memory_hybrid_search", { p_query: "summarise pending work", p_embedding: null, p_limit: 8 });
+    expect(invoke).toHaveBeenCalledWith("ai-memory-runtime", { body: { mode: "query", query: "summarise pending work", limit: 8 } });
     expect(baseRuntime.callAI.mock.calls.at(-1)[1]).toContain("RETRIEVED AI MEMORY");
     expect(screen.getByText("Hello from AI")).toBeTruthy();
   });
