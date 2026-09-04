@@ -108,15 +108,15 @@ export default function AIIntelligenceCenter(props) {
   };
   const automationRules = useMemo(() => [
     { id: "stale-leads", title: "Stale lead recovery", condition: `${crmCount(db, "crm_leads", (x) => !["Won","Lost","Cancelled","Converted","Closed"].includes(x.status) && Date.now() - new Date(x.updated_at || x.created_at || 0).getTime() > 7 * 86400000)} stale active lead(s)`, level: "Important", body: "AI automation found active leads with no meaningful update for 7+ days. Review CRM and schedule the next action." },
-    { id: "overdue-followups", title: "Overdue follow-up recovery", condition: `${crmCount(db, "crm_follow_ups", (x) => x.status === "Open" && x.follow_up_date < todayISO)} overdue follow-up(s)`, level: "Urgent", body: "AI automation found open CRM follow-ups past their due date. Review and complete or reschedule them." },
-    { id: "quote-risk", title: "Quotation risk review", condition: `${crmCount(db, "crm_quotations", (x) => !["Accepted","Converted","Rejected","Expired"].includes(x.status) && x.validity_until && x.validity_until < todayISO)} active quote(s) past validity`, level: "Important", body: "AI automation found active quotations whose validity date has passed. Review before the opportunity is lost." },
+    { id: "overdue-followups", title: "Overdue follow-up recovery", condition: `${crmCount(db, "crm_follow_ups", (x) => x.status === "Open" && x.follow_up_date < todayISO())} overdue follow-up(s)`, level: "Urgent", body: "AI automation found open CRM follow-ups past their due date. Review and complete or reschedule them." },
+    { id: "quote-risk", title: "Quotation risk review", condition: `${crmCount(db, "crm_quotations", (x) => !["Accepted","Converted","Rejected","Expired"].includes(x.status) && x.validity_until && x.validity_until < todayISO())} active quote(s) past validity`, level: "Important", body: "AI automation found active quotations whose validity date has passed. Review before the opportunity is lost." },
   ], [db, todayISO]);
   const runAutomation = async () => {
     if (!mutate) return;
     setAutomationBusy(true);
     try {
       const now = Date.now();
-      const additions = automationRules.filter((r) => !/^0 /.test(r.condition)).map((r) => ({ id: `ai-auto:${r.id}:${todayISO}`, createdAt: now, title: r.title, body: `${r.condition}. ${r.body}`, level: r.level, audience: "all", reads: [], by: "ALLBEE AI" }));
+      const additions = automationRules.filter((r) => !/^0 /.test(r.condition)).map((r) => ({ id: `ai-auto:${r.id}:${todayISO()}`, createdAt: now, title: r.title, body: `${r.condition}. ${r.body}`, level: r.level, audience: "all", reads: [], by: "ALLBEE AI" }));
       if (additions.length) mutate((d) => ({ ...d, notifications: [...(d.notifications || []), ...additions.filter((n) => !(d.notifications || []).some((x) => x.id === n.id))] }), { name: "AI automation", audit: `ran AI automation rules (${additions.length} notification(s))` });
       emitToast(additions.length ? `Automation created ${additions.length} review notification(s).` : "No automation conditions are currently active.", "success");
     } finally { setAutomationBusy(false); }
