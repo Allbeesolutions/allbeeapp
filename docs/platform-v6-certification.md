@@ -19,8 +19,11 @@ Commit: 40231fc
 Deployment: production Vercel deployment completed successfully; custom domain live 200.
 
 ## Task 4 — Team Chat v6
-Status: NEXT / IN PROGRESS
-Pending migration: 20260904154000_apn_chat_v6_attachment_search_fix.sql
+Status: CERTIFIED
+Implemented: server-authorized attachment linking, participant-authorized message search, search across message body/sender/mentions with attachment metadata, live search UI, realtime refresh, presence, read receipts, replies and mentions.
+Evidence: migration 20260904154000 applied to production; direct attachment table INSERT privilege is false; unauthenticated attachment call is rejected; unauthorized search call is rejected; 8 Team Chat tests passed; production build passed; diff check passed; custom domain live 200.
+Commit: 06243b6
+Deployment: production Vercel deployment completed successfully.
 
 ## Tasks 5–10
 Status: PENDING
