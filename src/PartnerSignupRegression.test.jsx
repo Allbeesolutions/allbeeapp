@@ -16,6 +16,11 @@ describe("Partner signup regression contracts", () => {
     expect(guard).toContain("You cannot create another APN profile.");
   });
 
+  it("fails closed when auth.uid is unavailable", () => {
+    expect(guard).toContain("auth.uid() is null");
+    expect(guard).toContain("You cannot create another APN profile.");
+  });
+
   it("preserves the pending partner provisioning flow", () => {
     expect(signup).toContain("set_config('allbee.apn_signup_bootstrap', '1', true)");
     expect(signup).toContain("'status', 'pending'");
@@ -33,8 +38,3 @@ describe("Partner signup regression contracts", () => {
     expect(guard).toContain("revoke execute on function public.apn_users_guard() from public, anon, authenticated");
   });
 });
-
-  it("fails closed when auth.uid is unavailable", () => {
-    expect(guard).toContain("auth.uid() is null");
-    expect(guard).toContain("You cannot create another APN profile.");
-  });
