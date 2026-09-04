@@ -175,7 +175,8 @@ export default function EnterpriseCRM(props) {
     if (!selected || !aiApproval) return;
     setAiActionBusy(true); setAiActionError("");
     try {
-      const { data: created, error: createError } = await supabase.rpc("ai_crm_action_create", { p_lead_id: selected.id, p_action_type: aiApproval.actionType, p_payload: aiApproval.payload });
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `${selected.id}:${aiApproval.actionType}:${Date.now()}:${Math.random()}`;
+      const { data: created, error: createError } = await supabase.rpc("ai_crm_action_create_v4", { p_lead_id: selected.id, p_action_type: aiApproval.actionType, p_payload: aiApproval.payload, p_idempotency_key: idempotencyKey });
       if (createError) throw new Error(createError.message);
       const id = created?.id;
       const { data: approved, error: approveError } = await supabase.rpc("ai_crm_action_approve", { p_action_id: id });

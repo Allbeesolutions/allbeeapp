@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
+import AICRMDelivery from "./AICRMDelivery.jsx";
+import AIMemoryAdmin from "./AIMemoryAdmin.jsx";
+import AIExecutiveV5 from "./AIExecutiveV5.jsx";
+import AutomationV4 from "./AutomationV4.jsx";
+import PlatformV6Operations from "./PlatformV6Operations.jsx";
 import { GaugeCircle, TrendingUp, Coins, Users, UserCheck, Target, Wallet, ShieldAlert, AlertTriangle, X, Sparkles, Lightbulb, CheckCircle2, Search, RefreshCw, Check, ArrowRight, FileText } from "./icons.jsx";
 
 const crmCount = (db, key, predicate) => (db?.[key] || []).filter(predicate).length;
@@ -151,7 +156,7 @@ export default function AIIntelligenceCenter(props) {
   const topPartners = partners.slice(0, 8);
   const topEmployees = employees.slice(0, 8);
   const commands = ["Open CRM", "Open Finance", "Open APN", "Create Lead", "Create Quotation", "Create Project", "Open Client", "Search Partner", "Search Employee"];
-  const tabs = [["overview", "Overview"], ["automation", "Automation"], ["observability", "Observability"], ["leads", "Lead AI"], ["partners", "Partner AI"], ["employees", "Employee AI"], ["finance", "Finance AI"], ["search", "Natural search"], ["reports", "Reports"], ["settings", "Settings"]];
+  const tabs = [["overview", "Overview"], ["ai-delivery", "AI Delivery"], ["ai-memory", "AI Memory"], ["ai-executive", "AI Executive"], ["platform-v6", "V6 Operations"], ["automation", "Automation"], ["observability", "Observability"], ["leads", "Lead AI"], ["partners", "Partner AI"], ["employees", "Employee AI"], ["finance", "Finance AI"], ["search", "Natural search"], ["reports", "Reports"], ["settings", "Settings"]];
   return (
     <div className="content">
       <div className="page-head"><div><h3>AI Intelligence Center</h3><div className="hint-line">Deterministic business intelligence across CRM, finance, employees, APN, revenue, risk and growth.</div></div><span className="spacer" /><button className="btn" onClick={refresh} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} />Refresh intelligence</button></div>
@@ -159,6 +164,11 @@ export default function AIIntelligenceCenter(props) {
       {!snapshot ? <div className="cards-grid"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "38%" }} /><div className="skeleton" style={{ height: 90, marginTop: 12 }} /></div><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "55%" }} /><div className="skeleton" style={{ height: 90, marginTop: 12 }} /></div></div> : <>
         <div className="card" style={{ marginBottom: 14, background: "linear-gradient(135deg,var(--surface),var(--surface-2))" }}><div className="item-row" style={{ padding: 0, alignItems: "flex-start" }}><div className="item-main"><div className="item-title" style={{ fontSize: 18 }}><Sparkles size={18} color="var(--primary)" style={{ verticalAlign: -3, marginRight: 7 }} />Company intelligence at a glance</div><div className="item-meta">Scores are explainable rules over current ERP data. No external AI provider is called.</div></div><span className={`badge ${settings.enabled ? "pos" : "neg"}`}>{settings.enabled ? "Enabled" : "Disabled"}</span></div></div>
         <div className="seg" style={{ marginBottom: 16, overflowX: "auto" }}>{tabs.map(([key, label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}{key === "search" && results.length > 0 ? ` · ${results.length}` : ""}</button>)}</div>
+                {tab === "ai-delivery" && <AICRMDelivery money={money} fmtDateTime={fmtDateTime} emitToast={emitToast} />}
+                {tab === "ai-memory" && <AIMemoryAdmin fmtDateTime={fmtDateTime} emitToast={emitToast} />}
+                {tab === "ai-executive" && <AIExecutiveV5 money={money} fmtDate={fmtDate} fmtDateTime={fmtDateTime} />}
+                {tab === "automation-v4" && <AutomationV4 fmtDateTime={fmtDateTime} emitToast={emitToast} />}
+                {tab === "platform-v6" && <PlatformV6Operations money={money} />}
         {tab === "overview" && <>
           {executiveSummary && <div className="card" style={{ marginBottom: 14 }}><div className="item-row" style={{ padding: 0 }}><div className="item-main"><div className="item-title"><Sparkles size={15} style={{ verticalAlign: -2, marginRight: 6, color: "var(--primary)" }} />Executive summary</div><div className="item-meta" style={{ marginTop: 6, lineHeight: 1.6 }}>{executiveSummary}</div></div></div></div>}
           <div className="ai-health-grid" style={{ marginBottom: 14 }}>{healthCards.map(([label, value, Icon]) => <div className="card stat" key={label}><div className="lbl"><Icon size={14} />{label}</div><div className="num mono">{typeof value === "number" ? value : (value || "—")}</div>{typeof value === "number" && <div className="ai-score-bar" style={{ marginTop: 9 }}><i style={{ width: `${Math.max(0,Math.min(100,value))}%` }} /></div>}</div>)}</div>
