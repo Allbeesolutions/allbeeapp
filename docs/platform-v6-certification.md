@@ -61,6 +61,12 @@ Deployment: production Vercel deployment completed successfully and aliased live
 Runtime limitation: authenticated finance dashboard/reconciliation output could not be independently queried from this session because the available Supabase SQL connector denied execution permission. No specific production finance balance or reconciliation count is claimed here.
 
 ## Task 9 — Security v5
-Status: NEXT / PENDING
+Status: CERTIFIED
+Implemented/validated: Security v5 adds an admin-scoped deployment audit covering RLS on sensitive tables, anonymous and authenticated direct-write privileges, SECURITY DEFINER public/anon execution, explicit search_path configuration, and security-invoker status for sensitive internal views. Existing Security v3 adversarial write/RLS hardening remains in force.
+Evidence: migration 20260904163000 applied to production; Security v5 contract suite passed 4/4; full Vitest suite passed (26 files, 161 tests); production build passed; diff check passed; anonymous `security_v5_audit` RPC was denied with HTTP 401 / `42501`; live custom domain returned HTTP 200; production migration list is synchronized through 20260904163000.
+Commit: security checkpoint pending
+Deployment: no application-source change was required; security controls are database-side and the live application remained reachable.
+Runtime limitation: the admin-only security audit result itself could not be queried from this session because the available Supabase SQL connector denied execution permission. No specific audit count is claimed here.
+
 ## Task 10 — Final Platform v6 certification
-Status: PENDING
+Status: NEXT / PENDING
