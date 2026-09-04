@@ -14,6 +14,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const [composer, setComposer] = useState("");
   const [composerFile, setComposerFile] = useState(null);
   const [messageSearch, setMessageSearch] = useState("");
+  const [searchedMessages, setSearchedMessages] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [editMessage, setEditMessage] = useState(null);
   const [reactionBusy, setReactionBusy] = useState(null);
@@ -259,11 +260,18 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     }
   };
 
-  const filteredMessages = React.useMemo(() => {
-    const q = messageSearch.trim().toLowerCase();
-    if (!q) return messages;
-    return messages.filter((m) => [m.body, m.sender_name, m.sender_apn_id].filter(Boolean).join(" ").toLowerCase().includes(q));
-  }, [messages, messageSearch]);
+  useEffect(() => {
+    let cancelled = false;
+    const q = messageSearch.trim();
+    if (!q || !selected) { setSearchedMessages(null); return undefined; }
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase.rpc("apn_chat_search", { p_conversation_id: selected.id, p_query: q, p_limit: 100 });
+      if (!cancelled) setSearchedMessages(error ? [] : (Array.isArray(data) ? data : []));
+    }, 180);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [messageSearch, selected]);
+
+  const filteredMessages = searchedMessages ?? messages;
 
   const sendMessage = async () => {
     const body = (composer || "").trim();
@@ -282,7 +290,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
         const path = `${convId}/${messageId}/${safeName}`;
         const upload = await supabase.storage.from("apn-chat").upload(path, file, { upsert: false, contentType: file.type || undefined });
         if (upload.error) throw new Error(`Message sent, but attachment upload failed: ${upload.error.message}`);
-        const { error: attachError } = await supabase.from("apn_chat_attachments").insert({ message_id: messageId, conversation_id: convId, uploader_id: pid, file_name: file.name, storage_path: path, mime_type: file.type || null, size_bytes: file.size });
+        const { error: attachError } = await supabase.rpc("apn_chat_attach", { p_message_id: messageId, p_conversation_id: convId, p_file_name: file.name, p_storage_path: path, p_mime_type: file.type || null, p_size_bytes: file.size });
         if (attachError) throw new Error(`Message sent, but attachment could not be linked: ${attachError.message}`);
       }
       await loadMessages(selected, { open: false });
@@ -492,6 +500,13 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                       {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
                     </div>
                   </div>
+                  <div style={{ padding: "8px 10px 0" }}>
+                    <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+                      <Search size={15} />
+                      <input className="input" value={messageSearch} onChange={(e) => setMessageSearch(e.target.value)} placeholder="Search messages, mentions, or senders…" aria-label="Search messages" />
+                      {messageSearch && <button className="linkbtn" onClick={() => setMessageSearch("")} aria-label="Clear message search">×</button>}
+                    </div>
+                  </div>
                   <div className="apn-tc-messages" onClick={() => setContextMessage(null)}>
                     {filteredMessages.map((m) => {
                       const isMe = m.sender_id === pid;
@@ -513,7 +528,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                         </div>
                       </div>;
                     })}
-                    {messages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title="No messages yet" text="Send the first message." />}
+                    {filteredMessages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title={messageSearch ? "No matching messages" : "No messages yet"} text={messageSearch ? "Try another search." : "Send the first message."} />}
                   </div>
                   <div className="apn-tc-compose">
                     {(replyTo || editMessage) && <div className="apn-tc-compose-mode"><span>{editMessage ? "Editing message" : `Replying to ${replyTo?.sender_name || "message"}`}</span><button className="linkbtn" onClick={() => { setReplyTo(null); setEditMessage(null); setComposer(""); }}>×</button></div>}
