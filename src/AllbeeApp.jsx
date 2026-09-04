@@ -573,6 +573,7 @@ const AI_READS = {
   ai_history: "id,period,summary,metrics,created_by,created_at",
   ai_recommendations: "id,category,title,description,impact,priority,entity_type,entity_id,action_route,metadata,status,created_at,updated_at",
   ai_reports: "id,report_type,format,title,payload,generated_by,created_at",
+  business_automation_queue: "id,rule_id,entity,entity_id,status,payload,requested_at,requested_by,reviewed_at,reviewed_by,executed_at,failure_reason",
 };
 
 // WP4 — client = level / product / prescription / loyalty. Normalized reads;
