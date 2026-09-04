@@ -33,3 +33,8 @@ describe("Partner signup regression contracts", () => {
     expect(guard).toContain("revoke execute on function public.apn_users_guard() from public, anon, authenticated");
   });
 });
+
+  it("fails closed when auth.uid is unavailable", () => {
+    expect(guard).toContain("auth.uid() is null");
+    expect(guard).toContain("You cannot create another APN profile.");
+  });
