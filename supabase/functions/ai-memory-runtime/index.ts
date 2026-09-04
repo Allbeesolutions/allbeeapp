@@ -15,7 +15,7 @@ Deno.serve(async(req)=>{
       const [vector]=await embed(key,q); const {data,error}=await client.rpc("ai_memory_hybrid_search",{p_query:q,p_embedding:vector,p_limit:Math.min(Math.max(Number(body.limit||8),1),12)}); if(error) return json({error:error.message},400); return json({rows:data||[],method:"hybrid"});
     }
     if(mode==="index"){
-      const {error:syncError}=await client.rpc("ai_memory_sync_knowledge"); if(syncError) return json({error:syncError.message},400);
+      const {error:syncError}=await client.rpc("ai_memory_sync_knowledge"); if(syncError) return json({error:syncError.message},400); const {error:businessSyncError}=await client.rpc("ai_memory_sync_business"); if(businessSyncError) return json({error:businessSyncError.message},400);
       const {data:docs,error:readError}=await admin.from("ai_memory_documents").select("id,title,content,metadata,content_hash").eq("active",true).is("embedding",null).limit(100);
       if(readError) return json({error:readError.message},500); if(!docs?.length) return json({ok:true,indexed:0,pending:0});
       const vectors=await embed(key,docs.map((d)=>`${d.title}\n${d.content}`)); let indexed=0;

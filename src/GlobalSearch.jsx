@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, FileText } from "./icons.jsx";
+import { supabase } from "./supabaseClient";
 
 const USERS = ["Haji", "Alim"];
 const COMBINED = "Haji & Alim";
@@ -22,6 +23,12 @@ function collectText(v, out) {
 const searchHay = (obj) => collectText(obj).join(" ").toLowerCase();
 const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 const searchEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function fuzzyScore(text, query) {
+  const a=String(text||"").toLowerCase(), b=String(query||"").toLowerCase().trim(); if(!b) return 0;
+  if(a===b) return 100; if(a.includes(b)) return 70;
+  const toks=b.split(/\s+/).filter(Boolean); let hit=0; for(const t of toks){ if(a.includes(t)) hit+=18; else { for(let i=0;i<=a.length-t.length;i++){ let d=0; for(let j=0;j<t.length;j++) if(a[i+j]!==t[j]) d++; if(d<=Math.max(1,Math.floor(t.length*.25))){ hit+=8; break; } } } } return hit;
+}
+
 function SearchHighlight({ text, q }) {
   const toks = (q || "").trim().split(/\s+/).filter(Boolean).map(searchEscape);
   if (!toks.length || !text) return <>{text}</>;
@@ -72,6 +79,8 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
   const [routeFilter, setRouteFilter] = useState("All");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [savedSearches, setSavedSearches] = useState([]);
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -128,6 +137,9 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
     return out;
   }, [db, team, allowKey, isAdmin, me.id, profile, notifVisibleTo]);
 
+  useEffect(() => { let alive=true; Promise.all([supabase.rpc("global_search_recent",{p_limit:8}),supabase.from("global_search_saved").select("id,name,query,filters").order("created_at",{ascending:false}).limit(8)]).then(([r,s])=>{ if(alive){setRecentSearches(Array.isArray(r.data)?r.data:[]);setSavedSearches(Array.isArray(s.data)?s.data:[]);} }).catch(()=>{}); return ()=>{alive=false;}; }, []);
+  useEffect(() => { const term=q.trim(); if(!term) return; const t=setTimeout(()=>{ supabase.auth.getUser().then(({data})=>{const uid=data?.user?.id;if(uid) return supabase.from("global_search_history").insert({user_id:uid,query:term,filters:{module:moduleFilter,route:routeFilter,dateFrom,dateTo}});}).catch(()=>{}); },800); return ()=>clearTimeout(t); }, [q]);
+
   const results = useMemo(() => {
     const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!toks.length) {
@@ -142,9 +154,8 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
       if (dateTo && (!r.dateISO || r.dateISO.slice(0, 10) > dateTo)) continue;
       if (!toks.every((t) => r.text.includes(t))) continue;
       const tl = r.title.toLowerCase();
-      let score = 0;
-      if (tl === toks.join(" ")) score += 100;
-      if (toks.every((t) => tl.includes(t))) score += 40;         // all terms in the title
+      let score = fuzzyScore(tl,toks.join(" "));
+      if (toks.every((t) => tl.includes(t))) score += 40;
       if (tl.startsWith(toks[0])) score += 12;
       if (r.module === "Navigation") score += 6;
       scored.push({ r, score });
@@ -209,6 +220,7 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
           <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} aria-label="Search to date" title="To date" style={{ width: 145 }} />
           {(moduleFilter !== "All" || routeFilter !== "All" || dateFrom || dateTo) && <button className="btn sm" onClick={() => { setModuleFilter("All"); setRouteFilter("All"); setDateFrom(""); setDateTo(""); }}>Clear filters</button>}
         </div>
+        {!q && (recentSearches.length || savedSearches.length) ? <div style={{padding:"8px 12px",borderBottom:"1px solid var(--border)",display:"flex",gap:6,flexWrap:"wrap"}}>{savedSearches.map(x=><button key={"s"+x.id} className="tag" onClick={()=>{setQ(x.query);const f=x.filters||{};setModuleFilter(f.module||"All");setRouteFilter(f.route||"All");setDateFrom(f.dateFrom||"");setDateTo(f.dateTo||"");}}>★ {x.name}</button>)}{recentSearches.slice(0,5).map(x=><button key={"r"+x.id} className="tag" onClick={()=>setQ(x.query)}>↺ {x.query}</button>)}</div> : null}
         <div className="cmdk-results">
           {results.length === 0 ? (
             <div className="cmdk-empty">No matches for “{q}”.</div>
