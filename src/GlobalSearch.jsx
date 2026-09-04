@@ -57,6 +57,11 @@ const SEARCH_SOURCES = [
   { coll: "marketing", route: "marketing", label: "Marketing", title: (x) => x.client, sub: (x) => x.plan, date: (x) => x.startDate },
   { coll: "portal_posts", route: "portal-posts", label: "Client updates", title: (x) => x.title, date: (x) => msToISO(x.createdAt) },
   { coll: "notifications", route: "notifications", label: "Notifications", title: (x) => x.title, date: (x) => msToISO(x.createdAt), filter: (x, c) => notifVisibleTo?.(x, c.profile) },
+  { coll: "crm_leads", route: "leads", label: "CRM leads", title: (x) => x.customer_name || x.lead_number, sub: (x) => x.status, user: (x) => x.email || x.mobile, date: (x) => x.updated_at || x.created_at },
+  { coll: "crm_quotations", route: "leads", label: "CRM quotations", title: (x) => x.title || x.quote_number, sub: (x) => x.status, date: (x) => x.updated_at || x.created_at },
+  { coll: "crm_projects", route: "leads", label: "CRM projects", title: (x) => x.name || x.project_number, sub: (x) => x.status, date: (x) => x.updated_at || x.created_at },
+  { coll: "crm_activities", route: "leads", label: "CRM activity", title: (x) => x.title || x.event_type, sub: (x) => x.description, user: (x) => x.actor_name, date: (x) => x.created_at },
+  { coll: "apn_users", route: "apn", label: "APN partners", title: (x) => x.name || x.apnId, sub: (x) => x.district || x.state, user: (x) => x.mobile || x.email, filter: (x, c) => c.isAdmin || x.status === "active" },
 ];
 
 

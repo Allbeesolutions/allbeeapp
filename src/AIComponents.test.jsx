@@ -19,14 +19,14 @@ describe("ALLBEE AI surfaces", () => {
   it("loads knowledge context, renders quick prompts, and sends a chat", async () => {
     const rpc = baseRuntime.supabase.rpc.mockImplementation((name) => {
       if (name === "knowledge_search") return Promise.resolve({ data: [] });
-      if (name === "ai_memory_search") return Promise.resolve({ data: [{ title: "Lead follow-up", content: "Follow up open leads promptly." }] });
+      if (name === "ai_memory_hybrid_search") return Promise.resolve({ data: [{ title: "Lead follow-up", content: "Follow up open leads promptly." }] });
       return Promise.resolve({ data: {} });
     });
     render(<AllbeeAI db={{}} config={{}} me={{ name: "Haji" }} role="admin" isAdmin go={vi.fn()} runtime={baseRuntime} />);
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("knowledge_search", { p_query: "", p_limit: 12 }));
     fireEvent.click(screen.getByRole("button", { name: "Summarise" }));
     await waitFor(() => expect(baseRuntime.callAI).toHaveBeenCalled());
-    expect(rpc).toHaveBeenCalledWith("ai_memory_search", { p_query: "summarise pending work", p_limit: 8 });
+    expect(rpc).toHaveBeenCalledWith("ai_memory_hybrid_search", { p_query: "summarise pending work", p_embedding: null, p_limit: 8 });
     expect(baseRuntime.callAI.mock.calls.at(-1)[1]).toContain("RETRIEVED AI MEMORY");
     expect(screen.getByText("Hello from AI")).toBeTruthy();
   });

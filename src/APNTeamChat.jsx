@@ -11,6 +11,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const [selected, setSelected] = useState(null);                    // {id, subject, participants}
   const [messages, setMessages] = useState([]);
   const [composer, setComposer] = useState("");
+  const [messageSearch, setMessageSearch] = useState("");
   const [replyTo, setReplyTo] = useState(null);
   const [editMessage, setEditMessage] = useState(null);
   const [reactionBusy, setReactionBusy] = useState(null);
@@ -256,6 +257,12 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     }
   };
 
+  const filteredMessages = React.useMemo(() => {
+    const q = messageSearch.trim().toLowerCase();
+    if (!q) return messages;
+    return messages.filter((m) => [m.body, m.sender_name, m.sender_apn_id].filter(Boolean).join(" ").toLowerCase().includes(q));
+  }, [messages, messageSearch]);
+
   const sendMessage = async () => {
     const body = (composer || "").trim();
     if (!body || !selected) return;
@@ -471,7 +478,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                     </div>
                   </div>
                   <div className="apn-tc-messages" onClick={() => setContextMessage(null)}>
-                    {messages.map((m) => {
+                    {filteredMessages.map((m) => {
                       const isMe = m.sender_id === pid;
                       const ts = m.created_at ? new Date(m.created_at) : null;
                       const remaining = ts ? Math.max(0, 300000 - (chatNow - ts.getTime())) : 0;
@@ -521,7 +528,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
           <div className="apn-tc-chat" ref={scrollRef}>
             <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button><div style={{ fontWeight: 700, flex: 1 }}>{selected.subject}</div></div>
             <div className="apn-tc-messages">
-              {messages.map((m) => { const isMe=m.sender_id===pid; const ts=m.created_at?new Date(m.created_at):null; return <div key={m.id||m.created_at} className={`apn-tc-msg ${isMe?"mine":"theirs"}`}>{!isMe&&<Avatar name={m.sender_name||"?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9}/>}<div className="apn-tc-bubble"><div>{m.body}</div><div className="apn-tc-time">{ts?fmtDateTime(ts):""}</div></div></div>; })}
+              {filteredMessages.map((m) => { const isMe=m.sender_id===pid; const ts=m.created_at?new Date(m.created_at):null; return <div key={m.id||m.created_at} className={`apn-tc-msg ${isMe?"mine":"theirs"}`}>{!isMe&&<Avatar name={m.sender_name||"?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9}/>}<div className="apn-tc-bubble"><div>{m.body}</div><div className="apn-tc-time">{ts?fmtDateTime(ts):""}</div></div></div>; })}
               {messages.length===0&&!loading&&<Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
             </div>
             <div className="apn-tc-compose"><textarea className="textarea" value={composer} onChange={e=>setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}/><button className="btn primary" onClick={sendMessage} disabled={!composer.trim()||!selected}>Send</button></div>

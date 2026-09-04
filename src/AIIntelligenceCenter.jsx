@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import { GaugeCircle, TrendingUp, Coins, Users, UserCheck, Target, Wallet, ShieldAlert, AlertTriangle, X, Sparkles, Lightbulb, CheckCircle2, Search, RefreshCw, Check, ArrowRight, FileText } from "./icons.jsx";
 
+const crmCount = (db, key, predicate) => (db?.[key] || []).filter(predicate).length;
+
 export default function AIIntelligenceCenter(props) {
-  const { db, go, openModal, reload } = props;
+  const { db, go, openModal, reload, mutate } = props;
   const runtime = props.runtime || {};
   const { Empty, Field, money, fmtDate, Activity, emitToast, exportRowsToExcel, exportRowsToPDF, todayISO, fmtDateTime, ROLE_LABEL, supabase: runtimeSupabase } = runtime;
   const sb = runtimeSupabase || supabase;
@@ -18,6 +20,7 @@ export default function AIIntelligenceCenter(props) {
   const [webSettings, setWebSettings] = useState({ enabled: true, welcome_message: "Hi — I’m AllBee AI. I can help you explore the right business solution.", business_hours: "Monday–Saturday, 9:00 AM–6:00 PM IST", fallback_contact: "", max_conversation_length: 18, pricing_visibility: true });
   const [reportType, setReportType] = useState("sales");
   const [reportFormat, setReportFormat] = useState("json");
+  const [automationBusy, setAutomationBusy] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true); setError("");
@@ -103,6 +106,22 @@ export default function AIIntelligenceCenter(props) {
     } catch (e) { setError(e.message || "Report generation failed."); }
     finally { setBusy(false); }
   };
+  const automationRules = useMemo(() => [
+    { id: "stale-leads", title: "Stale lead recovery", condition: `${crmCount(db, "crm_leads", (x) => !["Won","Lost","Cancelled","Converted","Closed"].includes(x.status) && Date.now() - new Date(x.updated_at || x.created_at || 0).getTime() > 7 * 86400000)} stale active lead(s)`, level: "Important", body: "AI automation found active leads with no meaningful update for 7+ days. Review CRM and schedule the next action." },
+    { id: "overdue-followups", title: "Overdue follow-up recovery", condition: `${crmCount(db, "crm_follow_ups", (x) => x.status === "Open" && x.follow_up_date < todayISO)} overdue follow-up(s)`, level: "Urgent", body: "AI automation found open CRM follow-ups past their due date. Review and complete or reschedule them." },
+    { id: "quote-risk", title: "Quotation risk review", condition: `${crmCount(db, "crm_quotations", (x) => !["Accepted","Converted","Rejected","Expired"].includes(x.status) && x.validity_until && x.validity_until < todayISO)} active quote(s) past validity`, level: "Important", body: "AI automation found active quotations whose validity date has passed. Review before the opportunity is lost." },
+  ], [db, todayISO]);
+  const runAutomation = async () => {
+    if (!mutate) return;
+    setAutomationBusy(true);
+    try {
+      const now = Date.now();
+      const additions = automationRules.filter((r) => !/^0 /.test(r.condition)).map((r) => ({ id: `ai-auto:${r.id}:${todayISO}`, createdAt: now, title: r.title, body: `${r.condition}. ${r.body}`, level: r.level, audience: "all", reads: [], by: "ALLBEE AI" }));
+      if (additions.length) mutate((d) => ({ ...d, notifications: [...(d.notifications || []), ...additions.filter((n) => !(d.notifications || []).some((x) => x.id === n.id))] }), { name: "AI automation", audit: `ran AI automation rules (${additions.length} notification(s))` });
+      emitToast(additions.length ? `Automation created ${additions.length} review notification(s).` : "No automation conditions are currently active.", "success");
+    } finally { setAutomationBusy(false); }
+  };
+
   const generateTimeline = async (period) => {
     setBusy(true); setError("");
     try { const { data, error: rpcError } = await sb.rpc("ai_generate_timeline", { p_period: period }); if (rpcError) throw new Error(rpcError.message); await load(); emitToast(data?.summary || "AI timeline generated.", "success"); }
@@ -122,7 +141,7 @@ export default function AIIntelligenceCenter(props) {
   const topPartners = partners.slice(0, 8);
   const topEmployees = employees.slice(0, 8);
   const commands = ["Open CRM", "Open Finance", "Open APN", "Create Lead", "Create Quotation", "Create Project", "Open Client", "Search Partner", "Search Employee"];
-  const tabs = [["overview", "Overview"], ["leads", "Lead AI"], ["partners", "Partner AI"], ["employees", "Employee AI"], ["finance", "Finance AI"], ["search", "Natural search"], ["reports", "Reports"], ["settings", "Settings"]];
+  const tabs = [["overview", "Overview"], ["automation", "Automation"], ["leads", "Lead AI"], ["partners", "Partner AI"], ["employees", "Employee AI"], ["finance", "Finance AI"], ["search", "Natural search"], ["reports", "Reports"], ["settings", "Settings"]];
   return (
     <div className="content">
       <div className="page-head"><div><h3>AI Intelligence Center</h3><div className="hint-line">Deterministic business intelligence across CRM, finance, employees, APN, revenue, risk and growth.</div></div><span className="spacer" /><button className="btn" onClick={refresh} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} />Refresh intelligence</button></div>
@@ -138,6 +157,7 @@ export default function AIIntelligenceCenter(props) {
           </div>
           <div className="card" style={{ marginTop: 14 }}><div className="item-row"><div className="item-main"><div className="item-title">AI command bar</div><div className="item-meta">Use these shortcuts to move from insight to action.</div></div><span className="tag">Ctrl K for global search</span></div><div className="ai-command-grid">{commands.map((label) => <button className="ai-command" key={label} onClick={() => openCommand(label)}><ArrowRight size={14} color="var(--primary)" />{label}</button>)}</div></div>
         </>}
+        {tab === "automation" && <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", alignItems: "start" }}><div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Business Automation Engine</div><div className="item-meta">Safe, deterministic review automations. They create notifications only; they never mutate CRM, finance, APN or customer records.</div></div><Sparkles size={16} color="var(--primary)" /></div>{automationRules.map((r) => <div className="item-row" key={r.id}><div className="item-main"><div className="item-title">{r.title}</div><div className="item-meta">{r.condition}</div></div><span className={`badge ${r.level === "Urgent" ? "neg" : "accent"}`}>{r.level}</span></div>)}<button className="btn primary" onClick={runAutomation} disabled={automationBusy}><RefreshCw size={14} />{automationBusy ? "Running…" : "Run review automations"}</button></div><div className="card"><div className="item-title">Approval boundary</div><div className="item-meta" style={{ marginTop: 6, lineHeight: 1.6 }}>Automation may surface a review notification. A human must open CRM and approve any real business action such as sending a message, changing a quote, scheduling a follow-up, or recording revenue.</div><div className="calc-box" style={{ marginTop: 14 }}><div className="calc-row"><span>Active rules</span><b className="mono">{automationRules.length}</b></div><div className="calc-row"><span>Auto-mutations</span><b className="mono">0</b></div></div></div></div>}
         {tab === "leads" && <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Lead AI scoring</div><div className="item-meta">Budget, timeline, follow-up, source, customer and partner history.</div></div><span className="badge pri">{leads.length} scored</span></div>{topLeads.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Lead</th><th>Score</th><th>Win probability</th><th>Lost risk</th><th>Reason</th><th>Next action</th></tr></thead><tbody>{topLeads.map((l) => <tr key={l.id}><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => go("leads")}>{l.customer_name}</button><div className="hint-line">{l.lead_number} · {l.status}</div></td><td><b className="mono">{l.ai_lead_score}</b>/100<div className="ai-score-bar" style={{ width: 90, marginTop: 5 }}><i style={{ width: `${l.ai_lead_score}%` }} /></div></td><td className="mono">{l.win_probability}%</td><td className="mono" style={{ color: l.lost_risk >= 60 ? "var(--neg)" : "var(--ink)" }}>{l.lost_risk}%</td><td className="hint-line">{l.reasons || "—"}</td><td><span className="badge accent">{l.next_action}</span></td></tr>)}</tbody></table></div> : <Empty icon={<Target size={22} />} title="No normalized CRM leads" text="Create leads in Leads & pipeline to activate deterministic scoring." />}</div>}
         {tab === "partners" && <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">APN partner intelligence</div><div className="item-meta">Performance, growth, health, conversion, referrals and withdrawal risk.</div></div><span className="badge accent">{partners.length} partners</span></div>{topPartners.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Partner</th><th>Performance</th><th>Growth</th><th>Health</th><th>Conversion</th><th>Revenue</th><th>Risk</th></tr></thead><tbody>{topPartners.map((p) => <tr key={p.partner_id}><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => go("apn")}>{p.partner_name}</button><div className="hint-line">{p.district} · {p.lead_count} leads</div></td><td className="mono">{p.performance_score}</td><td className="mono">{p.growth_score}</td><td className="mono">{p.health_score}</td><td>{p.conversion_pct}%<div className="hint-line">Follow-up {p.followup_pct}%</div></td><td className="mono">{money(p.revenue)}</td><td><span className={`badge ${p.risk_score >= 50 ? "neg" : p.risk_score >= 25 ? "accent" : "pos"}`}>{p.risk_score}</span></td></tr>)}</tbody></table></div> : <Empty icon={<Users size={22} />} title="No APN partner data" text="Active APN partners will receive deterministic health and growth scores." />}</div>}
         {tab === "employees" && <div className="card"><div className="item-row"><div className="item-main"><div className="item-title">Employee intelligence</div><div className="item-meta">Task completion, revenue, conversion, response activity and attendance.</div></div><span className="badge pri">{employees.length} employees</span></div>{topEmployees.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Employee</th><th>Score</th><th>Tasks</th><th>Lead conversion</th><th>Revenue</th><th>Summary</th></tr></thead><tbody>{topEmployees.map((e) => <tr key={e.employee_id}><td><button className="linkbtn" style={{ margin: 0 }} onClick={() => go("team")}>{e.name}</button><div className="hint-line">{e.designation || ROLE_LABEL[e.role] || e.role}</div></td><td className="mono">{e.performance_score}/100</td><td>{e.completed_tasks}/{e.task_count}<div className="hint-line">{e.task_completion_pct}% complete</div></td><td>{e.converted_leads}/{e.assigned_leads}<div className="hint-line">{e.lead_conversion_pct}%</div></td><td className="mono">{money(e.revenue)}</td><td className="hint-line">{e.performance_summary}</td></tr>)}</tbody></table></div> : <Empty icon={<Users size={22} />} title="No employee activity data" text="Assigned tasks and CRM ownership will appear here." />}</div>}
