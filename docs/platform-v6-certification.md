@@ -95,3 +95,9 @@ Production deployment evidence: the available Supabase management connector curr
 Notifications v5: remains BLOCKED FOR FULL DELIVERY CERTIFICATION because production VAPID credentials are not configured and a real granted-permission browser/device delivery test has not been completed. No duplicate notification implementation work was performed.
 
 Final Platform v6: remains BLOCKED pending production application of the signup migration and the Notifications VAPID/provider + real-device delivery proof. Current local verification is green at 27 files / 165 tests, production build, lockdown E2E, and diff check, but this does not substitute for the missing production database/push evidence.
+
+
+## Current execution checkpoint — 2026-09-05 04:10 IST
+Code checkpoint: `ec70036` pushed to `main`; working tree is clean and `origin/main` matches the local commit. Local certification suite is now 27 files / 166 tests, including 5 partner-signup regression tests. Production build, lockdown E2E, and `git diff --check` all pass. Production custom domain still returns HTTP 200.
+
+Release gate remains intentionally open: the signup migration is prepared in `20260905042000_finalize_apn_signup_guard.sql` but the available Supabase management connector rejects both migration and SQL execution with permission error `MCP error -32600`. Notifications also remains blocked pending secure production VAPID configuration and a real granted-permission browser/device push smoke test. No false production-certification claim or premature Vercel deployment is recorded.
