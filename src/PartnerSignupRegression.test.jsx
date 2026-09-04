@@ -4,7 +4,7 @@ import path from "node:path";
 
 const root = path.resolve(process.cwd());
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
-const guard = read("supabase/migrations/20260905100000_fix_partner_signup_bootstrap_guard.sql");
+const guard = read("supabase/migrations/20260905042000_finalize_apn_signup_guard.sql");
 const signup = read("supabase/migrations/20260824120000_fix_apn_signup_pending_approval.sql");
 const appn = read("src/AllbeeApp.jsx");
 

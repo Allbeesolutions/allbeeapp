@@ -1,3 +1,4 @@
+-- Finalize APN signup guard bootstrap detection and fail-closed auth identity checks.
 -- Fix production APN partner signup after the State Head guard replaced the
 -- earlier signup-aware guard. Auth signup runs the apn_users insert inside
 -- handle_new_user(), where auth.uid() is not the new user identity.
@@ -10,7 +11,7 @@ declare
   old_status text;
   new_status text;
   state_head_action boolean := current_setting('app.apn_state_head_lifecycle', true) = '1';
-  signup_bootstrap boolean := current_setting('allbee.apn_signup_bootstrap', true) = '1';
+  signup_bootstrap boolean := coalesce(current_setting('allbee.apn_signup_bootstrap', true), '') = '1';
 begin
   if public.is_superadmin() then return new; end if;
 
