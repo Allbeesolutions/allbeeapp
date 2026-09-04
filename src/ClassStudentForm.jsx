@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Check } from "./icons.jsx";
+import * as Icons from "./icons.jsx";
+const { Check, Plus, Lightbulb, ArrowRight, Pencil, Trash2 } = Icons;
 
 export default function ClassStudentForm({ initial, onSave, onClose, runtime = {} }) {
   const { Modal, Field, uid, todayISO, CLASS_COURSES = [], CLASS_MODES = ["Offline", "Online"] } = runtime;

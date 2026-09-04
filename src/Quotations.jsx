@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function Quotations(props) {
   const {  db, mutate, openModal, removeItem, me, currentUser, isAdmin  } = props;
-  const { Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor } = props.runtime || {};
+  const { Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor } = props.runtime || {};
   const { FileText, Pencil, Plus, Trash2 } = Icons;
 
   const [status, setStatus] = useState("All");

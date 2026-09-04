@@ -111,3 +111,17 @@ Partner signup runtime gate: still pending. The available execution environment 
 Notifications configuration evidence: production Supabase secret inventory contains `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, and `VAPID_SUBJECT`; Vercel Production contains `VITE_VAPID_PUBLIC_KEY`. Secret values were not printed or committed. Matching-key cryptographic verification and real browser/device delivery remain pending because the private value must stay in secure secret storage and no granted-permission browser test is available here.
 
 Local verification: full Vitest suite passed 27 files / 166 tests; production build passed; `npm run test:e2e` passed all lockdown checks; `git diff --check` was not reached after the latest documentation edit and must be rerun before the next commit. Release remains blocked on real partner-signup smoke proof and real push delivery proof.
+
+
+## Continuation — 2026-09-05 admin route production defects
+Status: FIXED IN CODE + DATABASE; APPLICATION DEPLOYMENT PENDING
+
+Production evidence from the supplied admin screenshots identified seven separate route failures: Team Chat crashed on an undefined `Attach` runtime symbol; Leads surfaced `relation "calc" does not exist`; Quotations crashed on an undefined `VaultCategories`; Support crashed on missing `HELP_STATUS_LABEL`; Concepts referenced a component that was no longer in `AllbeeApp`; Share & accounts hit a Finance v5 `UNION types uuid and text cannot be matched` error; Documents crashed because the parent passed an undefined `Tasks` symbol, and the extracted document modules also lacked their React hook import.
+
+Fixes: restored the admin Concepts route component in `AllbeeApp`; removed stale undefined Chat/Quotation/Vault runtime dependencies; supplied Support status constants; passed `LazyTasks` to Documents/Knowledge/Sheets; restored React hook imports in the extracted modules; repaired Finance v5 reconciliation by using typed independent counts instead of the uuid/text UNION; repaired CRM v5 by keeping each `calc` CTE inside the SQL statement that consumes it. No APN financial or authorization rules were changed.
+
+Regression evidence: new `src/AdminPageRuntimeRegression.test.jsx` covers the formerly missing runtime bindings and SQL defects; targeted admin route/runtime suite passed 45/45 tests; full Vitest suite passed 28 files / 170 tests; production build passed; lockdown E2E passed; `git diff --check` passed.
+
+Production database evidence: migration `20260905050000_admin_page_runtime_fixes.sql` was applied successfully through the linked Supabase CLI. `supabase migration list`/`db push --dry-run` now report the remote database up to date. Direct production schema probes confirmed `crm_v5_dashboard()` contains the scoped CTE fix and `finance_v5_dashboard()` contains the corrected reconciliation logic. The existing signup guard remains fail-closed and signup-bootstrap aware.
+
+Release gate: source changes still require the final GitHub commit and Vercel production deployment before the user's current browser can receive the fixes. After deployment, the live custom domain must be rechecked and the affected admin routes should be refreshed for final visual confirmation.

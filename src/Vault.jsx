@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function Vault(props) {
   const {  db, mutate, openModal, removeItem  } = props;
-  const { Empty, money, uid, QUOTE_STATUS, VaultCategories, VAULT_CATEGORIES, fmtDate, avatarColor } = props.runtime || {};
+  const { Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor } = props.runtime || {};
   const { Copy, ExternalLink, Eye, EyeOff, KeyRound, LockIcon, Pencil, Plus, Search, Trash2, User } = Icons;
 
   const [q, setQ] = useState("");
