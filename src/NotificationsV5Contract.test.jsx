@@ -1,0 +1,20 @@
+import {describe,it,expect} from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+const root=path.resolve(process.cwd());
+const read=p=>fs.readFileSync(path.join(root,p),"utf8");
+const base=read("supabase/migrations/20260904140000_notifications_v5.sql");
+const delivery=read("supabase/migrations/20260904153000_notifications_v5_delivery.sql")+read("supabase/migrations/20260904153200_notifications_v5_worker_recovery.sql");
+const sql=base+delivery;
+const push=read("src/pushNotifications.js");
+const sw=read("public/sw.js");
+const worker=read("supabase/functions/notification-push-worker/index.ts");
+describe("Notifications v5 delivery contracts",()=>{
+ it("persists and removes per-user push subscriptions",()=>{expect(sql).toContain("notification_push_subscriptions");expect(push).toContain("notification_push_save");expect(push).toContain("notification_push_remove");});
+ it("queues notifications and claims with crash recovery",()=>{expect(sql).toContain("notification_push_enqueue");expect(sql).toContain("locked_until<now()");expect(sql).toContain("for update of q skip locked");});
+ it("enforces category preferences and recipient audience",()=>{expect(worker).toContain("notification_preferences");expect(worker).toContain("aud.startsWith(\"user:\")");expect(worker).toContain("urgent_enabled");});
+ it("records delivery analytics and removes dead subscriptions",()=>{expect(worker).toContain("notification_delivery_audit");expect(worker).toContain("statusCode===404||statusCode===410");expect(sql).toContain("notification_delivery_analytics");});
+ it("supports service-worker push display and deep-link click",()=>{expect(push).toContain("serviceWorker.register('/sw.js')");expect(push).toContain("PushManager");expect(sw).toContain("showNotification");expect(sw).toContain("deep_link");});
+ it("protects snooze from cross-user access",()=>{expect(sql).toContain("Notification access denied.");expect(sql).toContain("aud<>('user:'||auth.uid()::text)");});
+ it("keeps push worker unauthenticated access blocked",()=>{expect(worker).toContain("Worker authentication required.");expect(worker).toContain("x-notification-push-worker-key");});
+});
