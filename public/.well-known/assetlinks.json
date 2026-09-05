@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.allbeesolutions.app.twa",
+      "sha256_cert_fingerprints": [
+        "6C:34:AE:8B:25:ED:77:2A:30:10:59:CD:3F:3C:90:89:55:E7:1F:A3:42:48:11:1F:70:07:EC:1E:A6:8F:4C:4C"
+      ]
+    }
+  }
+]

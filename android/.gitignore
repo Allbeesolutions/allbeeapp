@@ -1,0 +1,14 @@
+# Android build outputs and generated artifacts
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+
+# Release signing material — never commit private keys
+*.keystore
+*.jks
+*.p12
+*.pfx
+
+*.idsig
