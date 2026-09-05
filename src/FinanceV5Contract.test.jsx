@@ -47,6 +47,9 @@ describe("Finance v5 contracts", () => {
     expect(app).toContain("company + apnCommission");
     expect(app).toContain("Account balance");
     expect(app).toContain("bal.account");
+    expect(app).toContain("AccountBalanceDetail");
+    expect(app).toContain("APN partner balances");
+    expect(app).toContain("unwithdrawn");
   });
   it("ignores historical orphan APN ledger rows while checking live reconciliation", () => {
     expect(reconFinalSql).toContain("posted APN income");

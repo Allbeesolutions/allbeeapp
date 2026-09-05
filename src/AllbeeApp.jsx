@@ -2019,9 +2019,9 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
           <div><div className="lbl"><Wallet size={14} /> Company balance</div>
             <div className="num mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</div>
             <div className="sub">Haji balance + Alim balance</div></div>
-          <div style={{ minWidth: 190 }}><div className="lbl"><Wallet size={14} /> Account balance</div>
+          <div role="button" tabIndex={0} title="View APN partner balance details" onClick={() => openBalance("__account__")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openBalance("__account__"); } }} style={{ minWidth: 190, cursor: "pointer" }}><div className="lbl"><Wallet size={14} /> Account balance</div>
             <div className="num mono" style={{ color: bal.account < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.account)}</div>
-            <div className="sub">Company + unwithdrawn APN commission</div></div>
+            <div className="sub">Company + unwithdrawn APN commission · View details</div></div>
           <span style={{ flex: 1, minWidth: 20 }} />
           <div style={{ minWidth: 220 }}>
             <SplitBar
@@ -2073,6 +2073,69 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
         ))}
       </div>
     </div>
+  );
+}
+
+function AccountBalanceDetail({ db, onClose }) {
+  const partners = useMemo(() => {
+    const active = new Set((db.apn_users || [])
+      .filter((u) => !["inactive", "suspended", "deleted"].includes(String(u.status || "").toLowerCase()))
+      .map((u) => u.id));
+    const names = new Map((db.apn_users || []).map((u) => [u.id, u]));
+    return (db.apn_consolidated_wallets || [])
+      .filter((w) => active.has(w.partner_id))
+      .map((w) => {
+        const partner = names.get(w.partner_id) || {};
+        const earned = Number(w.earned) || 0;
+        const withdrawn = Number(w.withdrawn) || 0;
+        const unwithdrawn = Math.max(0, earned - withdrawn);
+        return {
+          id: w.partner_id,
+          name: partner.name || partner.data?.name || "APN Partner",
+          apnId: apnIdFor(partner),
+          earned,
+          withdrawn,
+          pending: Number(w.pending) || 0,
+          withdrawable: Number(w.withdrawable) || 0,
+          unwithdrawn,
+        };
+      })
+      .filter((w) => w.earned > 0 || w.withdrawn > 0 || w.pending > 0)
+      .sort((a, b) => b.unwithdrawn - a.unwithdrawn || a.name.localeCompare(b.name));
+  }, [db]);
+  const held = round2(partners.reduce((sum, p) => sum + p.unwithdrawn, 0));
+  // Reuse the authoritative employee/company balance calculation so the modal
+  // cannot drift from the balance shown on the Finance page.
+  const company = balances(db).company;
+  const account = round2(company + held);
+  return (
+    <Modal title="Account balance — APN holdings" onClose={onClose}
+      footer={<button className="btn primary" onClick={onClose}>Close</button>}>
+      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))", marginBottom: 14 }}>
+        <div className="calc-box"><div className="lbl">Company balance</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(company)}</div><div className="sub">Haji + Alim</div></div>
+        <div className="calc-box"><div className="lbl">Unwithdrawn APN</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(held)}</div><div className="sub">Still held in partner accounts</div></div>
+        <div className="calc-box"><div className="lbl">Account balance</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(account)}</div><div className="sub">Company + APN holdings</div></div>
+      </div>
+      <div style={{ fontWeight: 750, marginBottom: 8 }}>APN partner balances</div>
+      {partners.length === 0 ? (
+        <Empty icon={<Wallet size={22} color="var(--muted)" />} title="No APN balances" text="There are no active APN partner balances to include in Account balance." />
+      ) : (
+        <div style={{ overflowX: "auto", margin: "0 -20px -20px" }}>
+          <table className="tbl">
+            <thead><tr><th>Partner</th><th className="num-cell">Earned</th><th className="num-cell">Withdrawn</th><th className="num-cell">Unwithdrawn</th><th className="num-cell">Pending</th></tr></thead>
+            <tbody>{partners.map((p) => (
+              <tr key={p.id}>
+                <td><div style={{ fontWeight: 650 }}>{p.name}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{p.apnId}</div></td>
+                <td className="num-cell mono">{money(p.earned)}</td>
+                <td className="num-cell mono">{money(p.withdrawn)}</td>
+                <td className="num-cell mono" style={{ fontWeight: 800, color: p.unwithdrawn > 0 ? "var(--ink)" : "var(--muted)" }}>{money(p.unwithdrawn)}</td>
+                <td className="num-cell mono">{money(p.pending)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -2584,9 +2647,9 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
         <div className="card stat"><div className="lbl"><Wallet size={14} /> Company balance</div>
           <div className="num mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</div>
           <div className="sub">Haji + Alim · {db.transactions.length} entries</div></div>
-        <div className="card stat account-balance-card"><div className="lbl"><Wallet size={14} /> Account balance</div>
+        <div className="card stat account-balance-card" role="button" tabIndex={0} title="View APN partner balance details" onClick={() => openBalance("__account__")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openBalance("__account__"); } }} style={{ cursor: "pointer" }}><div className="lbl"><Wallet size={14} /> Account balance</div>
           <div className="num mono" style={{ color: bal.account < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.account)}</div>
-          <div className="sub">Company + unwithdrawn APN commission {money(bal.apnCommission)}</div></div>
+          <div className="sub">Company + unwithdrawn APN commission {money(bal.apnCommission)} · View details</div></div>
       </div>
 
       <ExpenseSharePanel db={db} />
@@ -9073,7 +9136,8 @@ export default function App() {
         {modal?.type === "restoreConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Restore"} icon={<RotateCcw size={15} />} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
         {modal?.type === "okConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} word="OK" actionLabel={modal.actionLabel || "Confirm"} icon={modal.icon} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
 
-        {balanceUser && <BalanceDetail db={db} user={balanceUser} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
+        {balanceUser === "__account__" && <AccountBalanceDetail db={db} onClose={() => setBalanceUser(null)} />}
+        {balanceUser && balanceUser !== "__account__" && <BalanceDetail db={db} user={balanceUser} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
 
         {activityDetail && <ActivityDetailsDrawer activity={activityDetail} db={db} isSuper={isSuper} onClose={() => setActivityDetail(null)} onRelated={openActivityRelated} />}
 
