@@ -1,5 +1,6 @@
 import { QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE } from "./quoteCatalog.js";
-import { apnPartnerProfileForm } from "./APNPartnerProfile.jsx";
+import { apnPartnerProfileForm } from "./apnPartnerProfileForm.js";
+import { loadTableRows } from "./loadTableRows.js";
 import { printProposalDocument, proposalSectionDisplay } from "./proposalPrint.js";
 const shareQuoteVia = async (...args) => (await import("./APNLeadForm.jsx")).shareQuoteVia(...args);
 const downloadQuotePdf = async (...args) => (await import("./APNLeadForm.jsx")).downloadQuotePdf(...args);
@@ -646,32 +647,32 @@ const AGREEMENT_READS = {
 
 async function fetchReferralData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(REFERRAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(REFERRAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchApnActionBadgeReads() {
-  return loadTableRows("apn_action_badge_reads", APN_ACTION_BADGE_READS);
+  return loadTableRows(supabase, "apn_action_badge_reads", APN_ACTION_BADGE_READS);
 }
 
 async function fetchWithdrawalData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(WITHDRAWAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(WITHDRAWAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchCRMData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(CRM_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns, "created_at")]);
+  const entries = await mapWithConcurrency(Object.entries(CRM_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, "created_at")]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchAIData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(AI_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns, table === "ai_settings" ? "updated_at" : "created_at")]);
+  const entries = await mapWithConcurrency(Object.entries(AI_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, table === "ai_settings" ? "updated_at" : "created_at")]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
@@ -689,21 +690,21 @@ async function fetchPartnerFinancialSnapshot() {
 
 async function fetchClientData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(CLIENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(CLIENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchHelpdeskData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(HELPDESK_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(HELPDESK_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchAgreementData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(AGREEMENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(AGREEMENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
@@ -731,17 +732,6 @@ const BOOTSTRAP_TABLES = Object.freeze([
 const BOOTSTRAP_TIMEOUT_MS = 4500;
 
 
-function pTimeout(promise, ms, label, abortController) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => {
-      abortController?.abort();
-      reject(new Error(`timeout:${label}`));
-    }, ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
 async function mapWithConcurrency(items, limit, fn) {
   const out = new Array(items.length);
   let i = 0;
@@ -755,46 +745,10 @@ async function mapWithConcurrency(items, limit, fn) {
   return out;
 }
 
-// Awaitable query builder shim: chaining methods return the builder; awaiting
-// it resolves the query. This mirrors how @supabase/supabase-js queries work so
-// callers can use `.select(cols).order(...)` interchangeably.
-function buildQuery(tbl, columns, orderColumn, signal) {
-  let q = supabase.from(tbl).select(columns);
-  if (orderColumn) q = q.order(orderColumn, { ascending: false });
-  if (signal && typeof q.abortSignal === "function") q = q.abortSignal(signal);
-  return q;
-}
-
-async function loadTableRows(table, columns, orderColumn, timeoutMs = TABLE_FETCH_TIMEOUT_MS, retries = 1, paginate = true) {
-  const pageSize = 500;
-  const rows = [];
-  for (let from = 0; ; from += pageSize) {
-    let page = null;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-      try {
-        let q = supabase.from(table).select(columns);
-        if (orderColumn) q = q.order(orderColumn, { ascending: false });
-        if (paginate && typeof q.range === "function") q = q.range(from, from + pageSize - 1);
-        if (controller && typeof q.abortSignal === "function") q = q.abortSignal(controller.signal);
-        const { data, error } = await pTimeout(q, timeoutMs, `${table}:${from}`, controller);
-        if (!error) { page = data || []; break; }
-        if (attempt === retries) console.warn(`[ALLBEE] table "${table}" page ${from} unavailable: ${error.message}`);
-      } catch (e) {
-        if (attempt === retries) console.warn(`[ALLBEE] table "${table}" page ${from} failed: ${e.message}`);
-      }
-    }
-    if (page === null) break;
-    rows.push(...page);
-    if (!paginate || page.length < pageSize) break;
-  }
-  return rows;
-}
-
 async function fetchBootstrapData() {
   const db = emptyDB();
   const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
-    t, await loadTableRows(t, "id,data", undefined, BOOTSTRAP_TIMEOUT_MS, 0, false)
+    t, await loadTableRows(supabase, t, "id,data", undefined, BOOTSTRAP_TIMEOUT_MS, 0, false)
   ]);
   for (const [t, rows] of loaded) {
     db[t] = (rows || [])
@@ -827,7 +781,7 @@ async function fetchAll({ excludeTables = [], includeTables = null } = {}) {
   if (shouldLoad("apn_action_badge_reads")) jobs.push(["apn_action_badge_reads", APN_ACTION_BADGE_READS, undefined, true]);
 
   const loaded = await mapWithConcurrency(jobs, TABLE_FETCH_CONCURRENCY, async ([table, columns, orderColumn]) => [
-    table, await loadTableRows(table, columns, orderColumn)
+    table, await loadTableRows(supabase, table, columns, orderColumn)
   ]);
   for (const [table, rows] of loaded) {
     if (TABLES.includes(table)) {

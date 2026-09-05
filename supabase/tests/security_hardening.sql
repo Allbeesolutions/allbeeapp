@@ -20,3 +20,31 @@ begin
 end $$;
 
 rollback;
+
+begin;
+do $$
+declare v boolean; n integer;
+begin
+  select prosecdef into v from pg_proc where oid='public.notification_unread_count()'::regprocedure;
+  if not v then raise exception 'notification_unread_count must be SECURITY DEFINER'; end if;
+
+  select prosecdef into v from pg_proc where oid='public.notification_snooze(text,integer)'::regprocedure;
+  if not v then raise exception 'notification_snooze must be SECURITY DEFINER'; end if;
+
+  select prosecdef into v from pg_proc where oid='public.audit_record(jsonb)'::regprocedure;
+  if not v then raise exception 'audit_record must be SECURITY DEFINER'; end if;
+
+  select count(*) into n
+  from pg_trigger
+  where not tgisinternal and tgname like 'security_sensitive_change_%';
+  if n < 11 then raise exception 'expected sensitive-action audit triggers on all critical tables, found %', n; end if;
+
+  select count(*) into n from pg_proc where proname='apn_profile_age_guard';
+  if n <> 1 then raise exception 'APN profile age guard trigger function missing'; end if;
+
+  select count(*) into n from pg_proc where proname='global_search_v6';
+  if n <> 1 then raise exception 'global_search_v6 missing'; end if;
+  select prosecdef into v from pg_proc where oid='public.global_search_v6(text,text,text,date,date,integer)'::regprocedure;
+  if v then raise exception 'global_search_v6 must remain SECURITY INVOKER'; end if;
+end $$;
+rollback;
