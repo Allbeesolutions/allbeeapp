@@ -116,6 +116,9 @@ describe("Admin route component smoke audit", () => {
   it.each(cases)("renders %s without a render-time exception", async (_name, Component, props) => {
     expect(() => render(<Component {...props} />)).not.toThrow();
     await waitFor(() => expect(document.body.textContent).not.toContain("Something went wrong rendering the app."));
+    // Some admin routes perform an immediate async bootstrap; let its finally
+    // state update settle before the per-case cleanup tears down the DOM.
+    await new Promise((resolve) => setTimeout(resolve, 25));
   });
 
   it.each([

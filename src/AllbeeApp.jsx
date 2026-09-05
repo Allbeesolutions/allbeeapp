@@ -548,6 +548,7 @@ const REFERRAL_READS = {
   apn_referral_analytics_monthly: "partner_id,month_start,conversion_rate,referral_count,active_count,revenue,earnings,updated_at",
   apn_referral_settings: "id,enabled,default_percent,updated_at,updated_by",
   apn_referral_snapshots: "id,earning_id,referral_percent,settings_enabled,captured_at,snapshot",
+  apn_consolidated_wallets: "partner_id,earned,pending,eligible,total_balance,reserved,withdrawable,withdrawn,reversed,recovery_outstanding,recovery_recovered,recovery_remaining,commission_breakdown,updated_at",
 };
 
 // APN admin action badges use a per-user watermark. The source records remain
@@ -1299,7 +1300,17 @@ function balances(db) {
     if (w.user === "Haji") Haji -= Number(w.amount) || 0;
     else Alim -= Number(w.amount) || 0;
   }
-  return { Haji: round2(Haji), Alim: round2(Alim), company: round2(Haji + Alim) };
+  const company = round2(Haji + Alim);
+  // APN commission remains a partner-level balance until it is withdrawn.
+  // The company balance is deliberately unchanged; Account balance is the
+  // broader cash view requested by Finance: company + unwithdrawn APN commission.
+  const activeApnPartnerIds = new Set((db.apn_users || [])
+    .filter((u) => !["inactive", "suspended", "deleted"].includes(String(u.status || "").toLowerCase()))
+    .map((u) => u.id));
+  const apnCommission = round2((db.apn_consolidated_wallets || [])
+    .filter((w) => activeApnPartnerIds.has(w.partner_id))
+    .reduce((sum, w) => sum + Math.max(0, (Number(w.earned) || 0) - (Number(w.withdrawn) || 0)), 0));
+  return { Haji: round2(Haji), Alim: round2(Alim), company, apnCommission, account: round2(company + apnCommission) };
 }
 
 function ledgerFor(db, user) {
@@ -2008,6 +2019,9 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
           <div><div className="lbl"><Wallet size={14} /> Company balance</div>
             <div className="num mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</div>
             <div className="sub">Haji balance + Alim balance</div></div>
+          <div style={{ minWidth: 190 }}><div className="lbl"><Wallet size={14} /> Account balance</div>
+            <div className="num mono" style={{ color: bal.account < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.account)}</div>
+            <div className="sub">Company + unwithdrawn APN commission</div></div>
           <span style={{ flex: 1, minWidth: 20 }} />
           <div style={{ minWidth: 220 }}>
             <SplitBar
@@ -2538,7 +2552,7 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
 
       {lockedThis && <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><LockIcon size={15} /> {fmtPeriod(thisPeriod)} is locked — income, expenses and withdrawals dated this month are frozen{isSuper ? "." : " until a partner unlocks it."}</div>}
       {isSuper && financeV5Error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />Finance v5 reconciliation could not load: {financeV5Error}</div>}
-      {isSuper && financeV5 && <div className="card" style={{ marginBottom: 16 }}><div className="item-row"><div className="item-main"><div className="item-title"><ShieldCheck size={15} style={{ verticalAlign: -2 }} /> Finance v5 control panel</div><div className="item-meta">Authoritative transaction totals, APN commission expense linkage, paid withdrawals, and forward cash forecast.</div></div><button className="btn sm" onClick={refreshFinanceV5}>Refresh</button></div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}><div className="card stat"><div className="lbl">Income</div><div className="num mono">{money(financeV5.transactions.income)}</div></div><div className="card stat"><div className="lbl">Expenses</div><div className="num mono">{money(financeV5.transactions.expenses)}</div></div><div className="card stat"><div className="lbl">Net cash</div><div className="num mono">{money(financeV5.transactions.net)}</div></div><div className="card stat"><div className="lbl">APN commission expenses</div><div className="num mono">{money(financeV5.apn.commission_expenses)}</div></div><div className="card stat"><div className="lbl">Forward forecast</div><div className="num mono">{money(financeV5.forecast.net)}</div></div><div className="card stat"><div className="lbl">Reconciliation</div><div className={`num mono ${financeV5.reconciliation.status === "balanced" ? "pos-txt" : "neg-txt"}`}>{financeV5.reconciliation.status === "balanced" ? "Balanced" : `${financeV5.reconciliation.exceptions} exception(s)`}</div></div></div></div>}
+      {isSuper && financeV5 && <div className="card" style={{ marginBottom: 16 }}><div className="item-row"><div className="item-main"><div className="item-title"><ShieldCheck size={15} style={{ verticalAlign: -2 }} /> Finance v5 control panel</div><div className="item-meta">Authoritative transaction totals, APN commission expense linkage, paid withdrawals, and forward cash forecast.</div></div><button className="btn sm" onClick={refreshFinanceV5}>Refresh</button></div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}><div className="card stat"><div className="lbl">Income</div><div className="num mono">{money(financeV5.transactions.income)}</div></div><div className="card stat"><div className="lbl">Expenses</div><div className="num mono">{money(financeV5.transactions.expenses)}</div></div><div className="card stat"><div className="lbl">Net cash</div><div className="num mono">{money(financeV5.transactions.net)}</div></div><div className="card stat"><div className="lbl">APN commission expenses</div><div className="num mono">{money(financeV5.apn.commission_expenses)}</div></div><div className="card stat finance-v5-forecast-card" title="Projected net cash for the next 3 months: forecast revenue minus forecast expenses."><div className="lbl">3-month forward forecast</div><div className="num mono">{money(financeV5.forecast.net)}</div><div className="sub">Projected net cash · next 3 months</div></div><div className="card stat finance-v5-reconciliation-card"><div className="lbl">Reconciliation</div><div className={`num mono ${financeV5.reconciliation.status === "balanced" ? "pos-txt" : "neg-txt"}`} style={{ fontSize: 20, lineHeight: 1.15, whiteSpace: "normal", overflowWrap: "anywhere" }}>{financeV5.reconciliation.status === "balanced" ? "Balanced" : `${financeV5.reconciliation.exceptions} exceptions`}</div><div className="sub">{financeV5.reconciliation.status === "balanced" ? "All APN commission mappings agree" : "Review Finance reconciliation"}</div></div></div></div>}
 
       {isSuper && (
         <div className="card stat" style={{ marginBottom: 16 }}>
@@ -2558,7 +2572,7 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
         </div>
       )}
 
-      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 16 }}>
+      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 16 }}>
         <div className="card balance-card" onClick={() => openBalance("Haji")}><div className="stripe" style={{ background: "var(--haji)" }} />
           <div className="who"><span className="dot" style={{ background: "var(--haji)" }} /> Haji</div>
           <div className="amt mono" style={{ fontSize: 24, color: bal.Haji < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.Haji)}</div>
@@ -2567,9 +2581,12 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
           <div className="who"><span className="dot" style={{ background: "var(--alim)" }} /> Alim</div>
           <div className="amt mono" style={{ fontSize: 24, color: bal.Alim < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.Alim)}</div>
           <div className="hint">Breakdown <ChevronRight size={13} /></div></div>
-        <div className="card stat"><div className="lbl"><Wallet size={14} /> Company</div>
+        <div className="card stat"><div className="lbl"><Wallet size={14} /> Company balance</div>
           <div className="num mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</div>
-          <div className="sub">{db.transactions.length} entries recorded</div></div>
+          <div className="sub">Haji + Alim · {db.transactions.length} entries</div></div>
+        <div className="card stat account-balance-card"><div className="lbl"><Wallet size={14} /> Account balance</div>
+          <div className="num mono" style={{ color: bal.account < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.account)}</div>
+          <div className="sub">Company + unwithdrawn APN commission {money(bal.apnCommission)}</div></div>
       </div>
 
       <ExpenseSharePanel db={db} />
@@ -2592,7 +2609,7 @@ function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks =
                   <tr key={t.id}>
                     <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtDate(t.date)}</td>
                     <td><div style={{ fontWeight: 600 }}>{t.project || t.client || "—"}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{t.client || ""}</div></td>
-                    <td><span className={"badge " + (t.kind === "income" ? "pos" : "neg")}>{t.kind === "income" ? "Income" : "Expense"}</span> <span className="tag">{t.category}</span>{t.kind === "expense" && expenseScope(t) === "company" && <span className="tag" style={{ marginLeft: 4 }}>Shared</span>}{t.kind === "income" && Number(t.apnCommissionDistributionTotal) > 0 && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>APN deductions {money(t.apnCommissionDistributionTotal)} · referral {money(t.apnReferralCommission || 0)} · district {money(t.apnDistrictCommission || 0)} · state {money(t.apnStateCommission || 0)}</div>}{t.apnCommissionExpense && t.apnCommissionOfIncome && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Linked to project income</div>}{t.apnWithdrawalExpense && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Paid APN withdrawal · wallet {t.apnWalletType || "commission"}</div>}</td>
+                    <td><span className={"badge " + (t.kind === "income" ? "pos" : "neg")}>{t.kind === "income" ? "Income" : "Expense"}</span> <span className="tag">{t.category}</span>{t.kind === "expense" && expenseScope(t) === "company" && <span className="tag" style={{ marginLeft: 4 }}>Shared</span>}{t.kind === "income" && Number(t.apnCommissionDistributionTotal) > 0 && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>APN deductions {money(t.apnCommissionDistributionTotal)} · partner {money(t.apnPartnerCommission || 0)} · referral {money(t.apnReferralCommission || 0)} · district {money(t.apnDistrictCommission || 0)} · state {money(t.apnStateCommission || 0)}</div>}{t.kind === "expense" && t.apnCommissionCombined && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Single APN deduction · partner {money(t.apnPartnerCommission || 0)} · referral {money(t.apnReferralCommission || 0)} · district {money(t.apnDistrictCommission || 0)} · state {money(t.apnStateCommission || 0)}</div>}{t.apnCommissionExpense && t.apnCommissionOfIncome && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Linked to project income</div>}{t.apnWithdrawalExpense && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Paid APN withdrawal · wallet {t.apnWalletType || "commission"}</div>}</td>
                     <td className={"num-cell mono " + (t.kind === "income" ? "pos-txt" : "neg-txt")} style={{ fontWeight: 700 }}>{money(t.kind === "income" ? t.amount : -t.amount, { sign: t.kind === "income" })}</td>
                     <td style={{ minWidth: 130 }}><SplitBar h={t.hajiPct} a={t.alimPct} legend={false} /><div className="split-legend"><span>H {t.hajiPct}%</span><span>A {t.alimPct}%</span></div></td>
                     <td><div className="row-actions">
