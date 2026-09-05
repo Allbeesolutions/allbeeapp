@@ -1,4 +1,4 @@
-import { APNAdminHub } from "./APNPartnerProfile.jsx";
+import { APNAdminHub, apnPartnerProfileForm } from "./APNPartnerProfile.jsx";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
@@ -4718,6 +4718,150 @@ function PortalRefreshButton({ onRefresh }) {
     try { await onRefresh(); } finally { setBusy(false); }
   };
   return <button className="iconbtn" title="Refresh" aria-label="Refresh current portal" disabled={busy} onClick={refresh}><RefreshCw size={17} className={busy ? "spin" : ""} /></button>;
+}
+
+function AuditLog({ db, isSuper, onOpenActivity }) {
+  const [user, setUser] = useState(() => sessionAuditFilter("user") || "all");
+  const [module, setModule] = useState(() => sessionAuditFilter("module") || "all");
+  const [date, setDate] = useState(() => sessionAuditFilter("date") || "");
+  const [search, setSearch] = useState(() => sessionAuditFilter("search") || "");
+  const [page, setPage] = useState(0);
+  const users = useMemo(() => Array.from(new Set(["Haji", "Alim", ...db.audit.map((a) => a.user).filter(Boolean)])), [db.audit]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return [...db.audit].sort((a, b) => (b.ts || 0) - (a.ts || 0)).filter((a) => {
+      const day = a.ts ? new Date(a.ts).toLocaleDateString("en-CA") : "";
+      const haystack = [a.user, a.module, a.action, a.description, a.entity, a.entityId].filter(Boolean).join(" ").toLowerCase();
+      return (user === "all" || a.user === user)
+        && (module === "all" || activityModuleOf(a.module) === module)
+        && (!date || day === date)
+        && (!q || haystack.includes(q));
+    });
+  }, [db.audit, user, module, date, search]);
+  useEffect(() => { try { sessionStorage.setItem(AUDIT_FILTER_SESSION_KEY, JSON.stringify({ user, module, date, search })); } catch { /* session storage is optional */ } }, [user, module, date, search]);
+  useEffect(() => setPage(0), [user, module, date, search]);
+  const pageSize = 50;
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const list = filtered.slice(page * pageSize, (page + 1) * pageSize);
+  return (
+    <div className="content">
+      <div className="page-head"><h3>Audit log</h3></div>
+      <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <div className="audit-filter-grid">
+          <SearchableSelect value={user} onChange={setUser} ariaLabel="Filter audit log by user" options={[{ value: "all", label: "All users" }, ...users.map((x) => ({ value: x, label: x }))]} />
+          <select className="select" value={module} onChange={(e) => setModule(e.target.value)} aria-label="Filter audit log by module">
+            <option value="all">All modules</option>{ACTIVITY_MODULES.map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Filter audit log by date" />
+          <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search activity…" aria-label="Search audit log" />
+          {isSuper && <><button className="btn sm" onClick={() => downloadActivityCsv(filtered)}><Download size={13} />CSV</button><button className="btn sm" onClick={() => exportRowsToExcel(`allbee-audit-${todayISO()}.xlsx`, "Audit Log", [{ label: "Event ID", value: (a) => a.id }, { label: "Timestamp", value: (a) => a.ts ? fmtDateTime(a.ts) : "" }, { label: "User", value: (a) => a.user || "System" }, { label: "Module", value: (a) => activityModuleOf(a.module) }, { label: "Action", value: (a) => a.action || "" }, { label: "Entity", value: (a) => a.entity || "" }, { label: "Entity ID", value: (a) => a.entityId || "" }, { label: "Description", value: (a) => a.description || "" }, { label: "Previous Value", value: (a) => activityValue(a.previousValue) }, { label: "New Value", value: (a) => activityValue(a.newValue) }], filtered)}><Download size={13} />Excel</button></>}
+        </div>
+      </div>
+      <div className="card">
+        {list.length === 0 ? <Empty icon={<ScrollText size={22} color="var(--muted)" />} title={filtered.length ? "No activity on this page" : "No matching activity"} text="Every action — edits, share changes, expenses, withdrawals — is logged here permanently." />
+          : <div style={{ overflowX: "auto" }}><table className="tbl">
+            <thead><tr><th>When</th><th>User</th><th>Activity</th><th>Module</th><th>Entity</th></tr></thead>
+            <tbody>{list.map((a) => (
+              <tr key={a.id} className="activity-table-row" role="button" tabIndex={0} aria-label={`View activity details: ${a.description || a.action || "activity"}`} onClick={() => onOpenActivity?.(a)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenActivity?.(a); } }}><td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtTime(a.ts)}</td>
+                <td><span className="badge" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Avatar name={a.user || "System"} url={a.avatar} size={20} fontSize={9} />{a.user || "System"}</span></td>
+                <td>{a.description || `${a.user || "System"} ${a.action || "performed an action"}`}</td><td><span className="tag">{activityModuleOf(a.module)}</span></td><td>{a.entity || "—"}{a.entityId ? ` · ${a.entityId}` : ""}</td></tr>
+            ))}</tbody>
+          </table></div>}
+        {pages > 1 && <div className="apn-pagination" style={{ padding: "12px 14px" }}><button className="btn sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</button><span className="hint-line">Page {page + 1} of {pages} · {filtered.length} records</span><button className="btn sm" disabled={page >= pages - 1} onClick={() => setPage((p) => p + 1)}>Next</button></div>}
+      </div>
+    </div>
+  );
+}
+
+function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCount, sessionEmail, config, saveTnc, saveRoleTnc, saveCompany, saveAI }) {
+  const fileRef = useRef(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const exportJSON = async () => {
+    try {
+      const snapshot = await buildBackupSnapshot(db);
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `allbee-backup-${todayISO()}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      emitToast("Couldn't build the JSON backup — check your connection and try again.", "error");
+    }
+  };
+  const importJSON = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = async () => {
+      try {
+        const d = JSON.parse(r.result);
+        if (!d || typeof d !== "object" || Array.isArray(d) || !Array.isArray(d.transactions)) {
+          throw new Error("Invalid ALLBEE backup: the transactions collection is missing or malformed.");
+        }
+        const ok = window.confirm("Import this ALLBEE backup? This will replace the current workspace data. The restore is transactional and will roll back automatically if anything fails.");
+        if (!ok) return;
+        await replaceDB(d);
+      } catch (err) {
+        emitToast(err?.message || "That file couldn't be read as an ALLBEE backup.", "error");
+      }
+    };
+    r.onerror = () => emitToast("That backup file could not be read.", "error");
+    r.readAsText(file); e.target.value = "";
+  };
+  const counts = { "Team members": teamCount || 0, Transactions: db.transactions.length, Withdrawals: db.withdrawals.length, Tasks: db.tasks.length, Projects: db.projects.length, Students: db.students.length, "Marketing clients": db.marketing.length, "Leave requests": db.leave.length, "Daily updates": db.updates.length };
+  return (
+    <div className="content" style={{ maxWidth: 760 }}>
+      <div className="page-head"><h3>Settings</h3></div>
+
+      <div className="card stat" style={{ marginBottom: 14 }}>
+        <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Backup & restore</div>
+        <p className="hint-line" style={{ lineHeight: 1.55, marginBottom: 14 }}>
+          Export a full copy of your ALLBEE workspace data. <b>Excel backup</b> writes one sheet per module — open it in Excel or import it into Google Sheets (File → Import) for a spreadsheet backup. <b>JSON backup</b> is for re-importing here later. JSON restore is performed atomically on the server, so a failed restore leaves the existing data unchanged.
+        </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="btn primary" onClick={() => exportFullBackupXLSX(db)}><Sheet size={16} />Excel backup (workspace)</button>
+          <button className="btn" onClick={exportJSON}><Download size={16} />JSON backup</button>
+          <button className="btn" onClick={() => fileRef.current?.click()}><Upload size={16} />Import JSON</button>
+          <input ref={fileRef} type="file" accept="application/json" onChange={importJSON} style={{ display: "none" }} />
+        </div>
+      </div>
+
+      <TncManager config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} />
+
+      <CompanySettings config={config} saveCompany={saveCompany} />
+
+      <AISettings config={config} saveAI={saveAI} />
+
+
+      <div className="card stat" style={{ marginBottom: 14 }}>
+        <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Import from Excel / Google Sheets</div>
+        <p className="hint-line" style={{ lineHeight: 1.55, marginBottom: 14 }}>
+          Bring in existing records — income, expenses, withdrawals, projects, students, marketing clients, ideas or tasks — from a spreadsheet. Upload an <b>.xlsx</b> or <b>.csv</b> file (from Google Sheets use <b>File → Download</b>). Imported rows are <b>added</b> to what's already here; they don't replace anything.
+        </p>
+        <button className="btn primary" onClick={() => setImportOpen(true)}><Sheet size={16} />Import a spreadsheet</button>
+      </div>
+
+      <div className="card stat" style={{ marginBottom: 14 }}>
+        <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Your data</div>
+        <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))" }}>
+          {Object.entries(counts).map(([k, v]) => (
+            <div key={k} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "12px 14px" }}>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 700 }}>{v}</div><div className="hint-line">{k}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card stat">
+        <div className="lbl" style={{ marginBottom: 8, fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>About this build</div>
+        <p className="hint-line" style={{ lineHeight: 1.6, margin: 0 }}>
+          Signed in as <b style={{ color: avatarColor(currentUser) }}>{currentUser}</b>{sessionEmail ? ` (${sessionEmail})` : ""} · <b>{ROLE_LABEL[role] || "Staff"}</b>. Records live in a shared Postgres database and sync across the team in real time{syncError ? " — but the last sync failed, so some changes may not have saved yet" : ""}. Share &amp; accounts and Withdrawals are limited to the two partners and an accountant; module access for staff is set per person on the Team screen. All of this is enforced by the database, not just hidden. File attachments and an installable Android version are optional add-ons documented in the project README.
+        </p>
+      </div>
+
+      {importOpen && <ImportData mutate={mutate} currentUser={currentUser} onClose={() => setImportOpen(false)} />}
+    </div>
+  );
 }
 
 function CompanySettings({ config, saveCompany }) {

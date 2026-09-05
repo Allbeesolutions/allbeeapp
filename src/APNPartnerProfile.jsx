@@ -50,7 +50,7 @@ function APNActionMenu({ partner, isSuper, canManage, onAction, runtime = {} }) 
   </div>;
 }
 
-function apnPartnerProfileForm(partner, stats, target) {
+export function apnPartnerProfileForm(partner, stats, target) {
   return {
     name: partner.name || "", username: partner.username || "", email: partner.email || "", mobile: partner.mobile || "",
     alternateNumber: partner.alternateNumber || "", gender: partner.gender || "", dob: partner.dob || "",

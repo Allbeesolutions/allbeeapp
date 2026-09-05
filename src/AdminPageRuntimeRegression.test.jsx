@@ -13,6 +13,9 @@ describe("admin page runtime regression coverage", () => {
     expect(app).toContain("HELP_STATUS_LABEL, HELP_STATUS_TONE");
     expect(app).not.toContain("runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Attach,");
     expect(app).toContain("function Concepts({ db, mutate, openModal, removeItem })");
+    expect(app).toContain("function AuditLog({ db, isSuper, onOpenActivity })");
+    expect(app).toContain("function Settings({ db, mutate, replaceDB");
+    expect(app).toContain("apnPartnerProfileForm");
     expect(app).not.toMatch(/runtime=\{\{[^}]*\bVaultCategories\b/);
   });
 

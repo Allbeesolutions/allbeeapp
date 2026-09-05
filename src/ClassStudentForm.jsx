@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "./icons.jsx";
 const { Check, Plus, Lightbulb, ArrowRight, Pencil, Trash2 } = Icons;
 
@@ -157,7 +157,7 @@ function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
   );
 }
 
-function AuditLog({ db, isSuper, onOpenActivity }) {
+export function AuditLog({ db, isSuper, onOpenActivity }) {
   const [user, setUser] = useState(() => sessionAuditFilter("user") || "all");
   const [module, setModule] = useState(() => sessionAuditFilter("module") || "all");
   const [date, setDate] = useState(() => sessionAuditFilter("date") || "");
@@ -264,7 +264,7 @@ function AISettings({ config, saveAI }) {
   );
 }
 
-function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCount, sessionEmail, config, saveTnc, saveRoleTnc, saveCompany, saveAI }) {
+export function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCount, sessionEmail, config, saveTnc, saveRoleTnc, saveCompany, saveAI }) {
   const fileRef = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
   const exportJSON = async () => {

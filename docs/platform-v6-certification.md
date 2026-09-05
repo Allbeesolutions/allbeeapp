@@ -135,3 +135,11 @@ Application commit `6b203be` is pushed to `main` and the production Vercel deplo
 Production database migration `20260905050000_admin_page_runtime_fixes.sql` is applied and `supabase db push --dry-run` reports the database up to date. Local verification remains 28 Vitest files / 170 tests, production build passed, lockdown E2E passed, and `git diff --check` passed. Working tree is clean and `origin/main` matches the deployed commit.
 
 Affected admin routes now have explicit regression coverage for the exact failures shown in the supplied screenshots. Final visual confirmation still requires the already-open browser tab to refresh/load the new deployment; no browser-side success is claimed merely from the HTTP/deployment checks.
+
+
+## Execution checkpoint — 2026-09-05 remaining Admin runtime crashes
+Status: FIXED IN CODE / VERIFICATION GREEN / DEPLOYMENT PENDING
+
+The second production screenshot pass exposed three additional missing lexical bindings that were not covered by the first route repair: APN Partner Profile lacked the exported `apnPartnerProfileForm` helper, while Audit Log and Settings were still referenced from `AllbeeApp` without being defined there. These were fixed by exporting the APN form helper and restoring the complete Audit Log and Settings implementations into the main application module, where their existing shared helpers are available. The standalone Class Student form was also made self-contained for React hooks.
+
+Regression evidence: full Vitest suite 28 files / 170 tests passed; Admin route/runtime coverage 45/45 passed; production build passed; lockdown E2E passed; `git diff --check` passed. The affected route implementations are now represented in source rather than relying on undefined runtime globals.
