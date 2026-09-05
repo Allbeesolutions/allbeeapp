@@ -163,3 +163,13 @@ Fixes: restored the Terms & Conditions manager as self-contained `src/TncManager
 Regression hardening: `StaticRuntimeIntegrity.test.jsx` now also checks uppercase JSX component identifiers for lexical bindings, catching the exact class of `TncManager` failure that the earlier scanner missed. Admin smoke coverage now includes the real `TncManager` component. Targeted verification passed 47 tests (46 Admin smoke + 1 static integrity), full Vitest remains 29 files / 175 tests, production build passes, and `git diff --check` passes.
 
 Deployment gate: these fixes must be committed and deployed to Vercel before the currently open production browser can receive them. After deployment, `https://app.allbeesolutions.com` must be checked again and the Settings route refreshed for browser-side confirmation. Notifications real push delivery and real partner-signup smoke remain separate external release gates.
+
+
+## Execution checkpoint — 2026-09-05 Settings/runtime fix deployed
+Status: DEPLOYED / PRODUCTION HTTP GREEN / BROWSER REFRESH REQUIRED
+
+Application commit `4805016` is pushed to `main` and the Vercel production deployment `allbeeapp-lpo0zuy4i-kuddosahib-8503s-projects.vercel.app` completed successfully and is READY. The custom domain `https://app.allbeesolutions.com` returns HTTP 200. Vercel build logs show the production build completed successfully with no build failure; only the pre-existing chunking warnings remain.
+
+Local release evidence: full Vitest 29 files / 175 tests passed; Admin route smoke is 46 cases including the real Terms Manager; static runtime integrity passes with uppercase JSX binding detection; production build passes; lockdown E2E passes; `git diff --check` passes; working tree is clean.
+
+Browser confirmation: the fix is live, but the already-open browser tab must be hard-refreshed so it loads the new deployment. The original `TncManager is not defined` Settings crash should no longer occur. Real partner-signup smoke and real notification push delivery remain separate external gates and are not claimed complete here.
