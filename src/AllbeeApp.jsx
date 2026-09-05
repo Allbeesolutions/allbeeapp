@@ -7,6 +7,7 @@ const downloadQuotePdf = async (...args) => (await import("./APNLeadForm.jsx")).
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
+import PrivacyPolicy from "./PrivacyPolicy.jsx";
 const {
   LayoutDashboard, Wallet, ArrowDownToLine, ListTodo, TrendingUp, Lightbulb,
   GraduationCap, Megaphone, FolderKanban, ScrollText, SettingsIcon,
@@ -8815,6 +8816,9 @@ export default function App() {
     ? <RemoteLockGate isDark={isDark} signOut={signOut} pause={LOCKDOWN_PAUSE_TEST}>{node}</RemoteLockGate>
     : node);
 
+  const publicPath = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
+  if (publicPath === "/privacy-policy") return <PrivacyPolicy mode="privacy" />;
+  if (publicPath === "/delete-account") return <PrivacyPolicy mode="delete" />;
   if (publicProposalToken) return gateChild(<ProposalPortal token={publicProposalToken} isDark={isDark} />);
   if (session === undefined) return <LoadingScreen isDark={isDark} />;
   if (!session) return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyLock isDark={isDark} setDark={setIsDark} runtime={{ supabase, useUsernameAvailability, useEmailAvailability, emitToast, FounderTap, ToastHost, SearchableSelect, PasswordField, LoginAccessAssistant, LOGO_FULL, TN_DISTRICTS, USERS, avatarColor, Users, Building2, GaugeCircle, ArrowLeft, AlertTriangle, Check, RefreshCw, LogIn, Mail, Sun, Moon }} /></React.Suspense>);

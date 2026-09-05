@@ -209,6 +209,9 @@ export default function Lock({ isDark, setDark, runtime }) {
         </button>
         </>)}
 
+        <div className="hint-line" style={{ marginTop: 10, fontSize: 11, textAlign: "center" }}>
+          <a href="/privacy-policy" target="_blank" rel="noreferrer">Privacy Policy</a> · <a href="/delete-account" target="_blank" rel="noreferrer">Account deletion</a>
+        </div>
         <button className="btn ghost" style={{ marginTop: 18 }} onClick={() => setDark(!isDark)}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />} {isDark ? "Light" : "Dark"} mode
         </button>
