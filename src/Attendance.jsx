@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function Attendance(props) {
   const {  db, mutate, me, isAdmin, isSuper, team, openModal  } = props;
-  const { Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal } = props.runtime || {};
+  const { Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal, useState, Modal, Field, Trash2, emitToast } = props.runtime || {};
   const { CalendarDays, Check, CheckCircle2, Clock, LogIn, Pencil, Plane, UserCheck, Users, XCircle } = Icons;
 
   const today = todayISO();
@@ -131,7 +131,7 @@ export default function Attendance(props) {
           </div>
         )}
       </div>
-      {editing && <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading editor…</div></div>}><LazyAttendanceEditModal member={editing.p} record={editing.a} date={date}
+      {editing && <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading editor…</div></div>}><AttendanceEditModal member={editing.p} record={editing.a} date={date}
         onClose={() => setEditing(null)}
         onSave={(ci, co) => saveAttendance(editing.p, editing.a, ci, co)}
         onClear={() => clearAttendance(editing.p)} runtime={{ useState, Modal, Field, Check, Trash2, emitToast, fmtDate }} /></React.Suspense>}

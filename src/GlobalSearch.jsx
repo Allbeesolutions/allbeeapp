@@ -3,6 +3,7 @@ import { Search, X, FileText } from "./icons.jsx";
 import { supabase } from "./supabaseClient";
 
 const USERS = ["Haji", "Alim"];
+const fmtDate = (value) => new Date(value || Date.now()).toLocaleDateString("en-IN");
 const COMBINED = "Haji & Alim";
 const assigneeText = (t) => {
   const a = Array.isArray(t.assignees) && t.assignees.length ? t.assignees.slice() : t.assignedTo === COMBINED ? USERS.slice() : t.assignedTo ? [t.assignedTo] : [];

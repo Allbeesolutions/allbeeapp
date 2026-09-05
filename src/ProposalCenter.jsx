@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-function proposalSectionDisplay(section, money) {
+export function proposalSectionDisplay(section, money) {
   const c = section?.content || {};
   if (c.text) return c.text;
   if (c.items && Array.isArray(c.items)) return c.items.map((x) => typeof x === "string" ? x : (x.label || x.name || x.title || x.description || JSON.stringify(x))).filter(Boolean).join("\n");
@@ -8,7 +8,7 @@ function proposalSectionDisplay(section, money) {
   return Object.entries(c).filter(([, value]) => value != null && value !== "").map(([key, value]) => `${key.replace(/_/g, " ")}: ${typeof value === "object" ? JSON.stringify(value) : value}`).join("\n");
 }
 function escapeProposalHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-function printProposalDocument(detail, runtime) {
+export function printProposalDocument(detail, runtime) {
   const { money } = runtime;
   const p = detail?.proposal || detail;
   const sections = detail?.sections || [];

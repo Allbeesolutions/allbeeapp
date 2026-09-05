@@ -1,13 +1,22 @@
 import React, { useMemo, useState } from "react";
+import * as Icons from "./icons.jsx";
+const { Send, AlertTriangle, Download } = Icons;
+const localUid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const apnLeadId = (n) => "APN-L-" + String(n).padStart(4, "0");
+const localTodayISO = () => new Date().toISOString().slice(0, 10);
+const localMoney = (n) => `₹${(Number(n) || 0).toLocaleString("en-IN")}`;
+const localFmtDate = (value) => new Date(value || Date.now()).toLocaleDateString("en-IN");
+const pdfSafe = (t) => String(t ?? "").replace(/₹/g, "Rs.");
+const loadPdfEngine = () => Promise.all([import("jspdf"), import("jspdf-autotable")]).then(([j, a]) => ({ jsPDF: j.jsPDF, autoTable: a.default }));
 
 export default function APNLeadForm({ meRow, db, initial, onSave, onClose, runtime = {} }) {
-  const { APN_SERVICES, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO } = runtime;
-  const unlocked = apnUnlocked(meRow);
+  const { APN_SERVICES, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO = localTodayISO, APN_TIEUPS = {}, uid = localUid } = runtime;
+  const unlocked = (meRow && meRow.unlocked && typeof meRow.unlocked === "object" ? meRow.unlocked : {});
   const enabled = APN_SERVICES.filter(([k]) => unlocked[k]);
   const [f, setF] = useState(() => ({ clientName: "", mobile: "", business: "", service: enabled[0]?.[0] || "", budget: "", college: "", tieUp: "", notes: "", ...initial }));
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [err, setErr] = useState("");
-  const rules = apnFormRules(f.service);
+  const rules = f.service === "course" ? { showBusiness: false, showBudget: false, showCollege: true, showTieUps: true } : { showBusiness: true, showBudget: true, showCollege: false, showTieUps: true };
   const save = () => {
     if (!enabled.length) { setErr("Pass a sales quiz first to unlock lead submission."); return; }
     if (!f.clientName.trim()) { setErr("Client name is required."); return; }
@@ -45,6 +54,11 @@ export default function APNLeadForm({ meRow, db, initial, onSave, onClose, runti
     </Modal>
   );
 }
+const money = localMoney;
+const fmtDate = localFmtDate;
+const todayISO = localTodayISO;
+const emitToast = (message) => console.error(message);
+
 /* ── quotations ──────────────────────────────────────────────────────── */
   const QUOTE_CATALOG = {
   website: {
@@ -72,18 +86,18 @@ export default function APNLeadForm({ meRow, db, initial, onSave, onClose, runti
     ],
   },
 };
-const QUOTE_BUSINESS_EMAIL = { key: "business_email", label: "Business Email (per year)", amount: 999 };
-const QUOTE_URGENT_RATE = 0.10;
-const QUOTE_SITE_TYPES = [
+export const QUOTE_BUSINESS_EMAIL = { key: "business_email", label: "Business Email (per year)", amount: 999 };
+export const QUOTE_URGENT_RATE = 0.10;
+export const QUOTE_SITE_TYPES = [
   ["static", "Static website", "Standard pages — the Starter website."],
   ["dynamic", "Dynamic website", "Custom pages, modules and content management."],
   ["ecommerce", "E-commerce", "Online store with cart, checkout and payments."],
   ["custom", "Custom build", "Built from scratch to the client's exact scope."],
 ];
-const QUOTE_TECHS = ["React", "HTML-CSS or WordPress", "PHP", ".NET", "No Preference"];
-const QUOTE_STEP_LABELS = ["Service", "Type", "Technology", "Add-ons", "Urgency", "Client", "Summary"];
-const QUOTE_DISCLAIMER = "This is an AllBee partner network's estimated quotation. Final pricing is confirmed by the ALLBEE sales team after scope review.";
-const QUOTE_SERVICE_LABEL = { website: "Website Development", marketing: "Digital Marketing", course: "Course Admission" };
+export const QUOTE_TECHS = ["React", "HTML-CSS or WordPress", "PHP", ".NET", "No Preference"];
+export const QUOTE_STEP_LABELS = ["Service", "Type", "Technology", "Add-ons", "Urgency", "Client", "Summary"];
+export const QUOTE_DISCLAIMER = "This is an AllBee partner network's estimated quotation. Final pricing is confirmed by the ALLBEE sales team after scope review.";
+export const QUOTE_SERVICE_LABEL = { website: "Website Development", marketing: "Digital Marketing", course: "Course Admission" };
 
 // Share a quotation over email or WhatsApp — a plain-text summary (line items
 // + total) since attachments need a server; the sender can attach the PDF
@@ -92,7 +106,7 @@ const quoteShareText = (q) => {
   const lines = (q.items || []).map((it) => `• ${it.label}: ${it.amount == null ? "to be confirmed" : money(it.amount)}`).join("\n");
   return `Quotation ${q.quoteNo || ""} — ${q.clientName || "Client"}\n${QUOTE_SERVICE_LABEL[q.service] || q.service || ""}${lines ? `\n\n${lines}` : ""}\nTotal: ${money(q.total)}\n\n${QUOTE_DISCLAIMER}`;
 };
-const shareQuoteVia = (q, via) => {
+export const shareQuoteVia = (q, via) => {
   const text = quoteShareText(q);
   if (via === "whatsapp") {
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -104,7 +118,7 @@ const shareQuoteVia = (q, via) => {
   }
 };
 
-async function downloadQuotePdf(q, meRow) {
+export async function downloadQuotePdf(q, meRow) {
   const addWorkingDays = (startDate, days) => {
     let date = new Date(startDate);
     let count = 0;

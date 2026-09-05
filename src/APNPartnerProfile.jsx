@@ -51,19 +51,20 @@ function APNActionMenu({ partner, isSuper, canManage, onAction, runtime = {} }) 
 }
 
 export function apnPartnerProfileForm(partner, stats, target) {
+  const level = partner?.level || (partner?.role === "state_head" ? "State Head" : partner?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
   return {
     name: partner.name || "", username: partner.username || "", email: partner.email || "", mobile: partner.mobile || "",
     alternateNumber: partner.alternateNumber || "", gender: partner.gender || "", dob: partner.dob || "",
     country: partner.country || "India", state: partner.state || "Tamil Nadu", district: partner.district || "", taluk: partner.taluk || "",
     city: partner.city || "", pincode: partner.pincode || "", address: partner.address || "",
-    status: partner.status || "pending", level: apnAdminLevel(partner, stats), target: partner.target ?? target?.goal ?? "",
+    status: partner.status || "pending", level, target: partner.target ?? target?.goal ?? "",
     targetMetric: partner.targetMetric || target?.metric || "leads", commissionPct: stats.level.rate,
     attendanceScore: partner.attendanceScore ?? "", notes: partner.notes || partner.reason || "", kycStatus: partner.kycStatus || "Not started",
   };
 }
 
 export function APNPartnerProfile({ partner, db, people = [], isSuper, fullPage = false, initialSection = "summary", onSave, onAction, onWarning, onResolveWarning, onDeleteWarning, onNote, onEditNote, onTags, onDocuments, onDocumentDownload, onCommunication, onExport, onClose, onOpenFullPage, runtime = {} }) {
-  const { APNPartnerDashboard: PartnerDashboard, APNPartnerAnalytics: PartnerAnalytics, APNPartnerDocuments: PartnerDocuments, APNPartnerCommunications: PartnerCommunications, APNPartnerActivity: PartnerActivity, apnPartnerStats, apnTargetFor, apnHealthScore, todayISO, apnAttendanceScore, apnMonthlyAnalytics, apnActivityHistory, apnMilestones, apnRecommendations, apnRiskIndicators, apnDerivedTimeline, apnPartnerProfileForm, apnPercent, apnLastActivity, apnAvatarUrl, apnTimelineEntry, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_LEAD_REJECTED, APN_TARGET_METRICS, apnAdminLevel, apnEffectiveStatus, apnIdFor, apnLastSeenAt, apnLastSeenLabel, apnLeadTone, apnSafeHtml, apnStatusClass, apnStatusLabel, Avatar, AlertTriangle, Empty, Plus, Sparkles, Tag, Trash2, Field, fmtDateTime, emitToast, Search, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Modal, Confirm, uid, supabase, TN_DISTRICTS, APN_SERVICE_LABEL, money } = runtime;
+  const { APNPartnerDashboard: PartnerDashboard, APNPartnerAnalytics: PartnerAnalytics, APNPartnerDocuments: PartnerDocuments, APNPartnerCommunications: PartnerCommunications, APNPartnerActivity: PartnerActivity, apnPartnerStats, apnTargetFor, apnHealthScore, todayISO, apnAttendanceScore, apnMonthlyAnalytics, apnActivityHistory, apnMilestones, apnRecommendations, apnRiskIndicators, apnDerivedTimeline, apnPartnerProfileForm, apnPercent, apnLastActivity, apnAvatarUrl, apnTimelineEntry, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_LEAD_REJECTED, APN_TARGET_METRICS, apnAdminLevel, apnEffectiveStatus, apnIdFor, apnLastSeenAt, apnLastSeenLabel, apnLeadTone, apnSafeHtml, apnStatusClass, apnStatusLabel, fmtDate, Avatar, AlertTriangle, Empty, Plus, Sparkles, Tag, Trash2, Field, fmtDateTime, emitToast, Search, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, Modal, Confirm, uid, supabase, TN_DISTRICTS, APN_SERVICE_LABEL, money } = runtime;
   const stats = apnPartnerStats(db, partner.id);
   const target = apnTargetFor(db, partner.id, partner.targetResetAt);
   const profile = people.find((x) => x.id === partner.id);
@@ -370,7 +371,7 @@ export function APNAdminPartners({ db, people = [], isSuper, canManage, act, ope
   );
 }
 export function APNAdminLeads({ db, openModal, runtime = {} }) {
-  const { APN_SERVICE_LABEL, money, Empty, UserPlus, Pencil } = runtime;
+  const { APN_SERVICE_LABEL, apnLeadTone, money, Empty, UserPlus, Pencil } = runtime;
   const [view, setView] = useState("Submitted");
   const list = (db.apn_leads || []).filter((l) => view === "all" ? true : l.status === view).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (

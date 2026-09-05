@@ -143,3 +143,11 @@ Status: FIXED IN CODE / VERIFICATION GREEN / DEPLOYMENT PENDING
 The second production screenshot pass exposed three additional missing lexical bindings that were not covered by the first route repair: APN Partner Profile lacked the exported `apnPartnerProfileForm` helper, while Audit Log and Settings were still referenced from `AllbeeApp` without being defined there. These were fixed by exporting the APN form helper and restoring the complete Audit Log and Settings implementations into the main application module, where their existing shared helpers are available. The standalone Class Student form was also made self-contained for React hooks.
 
 Regression evidence: full Vitest suite 28 files / 170 tests passed; Admin route/runtime coverage 45/45 passed; production build passed; lockdown E2E passed; `git diff --check` passed. The affected route implementations are now represented in source rather than relying on undefined runtime globals.
+
+
+## Final app-wide runtime audit — 2026-09-05
+Status: CODE-COMPLETE / LOCAL CERTIFICATION GREEN
+
+A broader audit found additional latent runtime failures that ordinary Vite builds do not detect: APN lead submission depended on helpers that only existed in the parent module; APN quotation wizard used an unbound Supabase client and PDF helper; Global Search formatted dates through an unbound helper; APN partner profile had an exported helper with a parent-only dependency; Attendance's edit path passed undefined child dependencies and referenced the wrong component binding; the extracted Class Student module contained stale Admin implementations and hidden dependencies; and the public proposal route referenced parent-only proposal helpers. These paths have been made self-contained or explicitly wired through their runtime contracts.
+
+A new static runtime-integrity regression test parses every production JSX module and rejects unresolved lexical dependencies. Admin smoke coverage was expanded to 45 component cases including APN lead, APN quotation, Attendance edit, and Global Search. Full Vitest: 28 files / 170 tests passed at the last complete run; the expanded Admin smoke suite: 45/45 passed; production build and lockdown E2E passed; diff check passed.

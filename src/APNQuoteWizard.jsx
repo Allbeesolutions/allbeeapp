@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from "react";
 import * as Icons from "./icons.jsx";
+import { downloadQuotePdf } from "./APNLeadForm.jsx";
 
 export default function APNQuoteWizard(props) {
   const {  meRow, onSave, onClose, go  } = props;
-  const { APN_SERVICES, Field, Modal, QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE, emitToast, money, round2, shareQuoteVia, uid } = props.runtime || {};
+  const { APN_SERVICES, Field, Modal, QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE, emitToast, money, round2, shareQuoteVia, uid, supabase } = props.runtime || {};
   const { Check, Download, FileText, Mail, MessageCircle, Phone, RotateCcw, Save, Send } = Icons;
 
   const [step, setStep] = useState(0);
@@ -160,14 +161,14 @@ export default function APNQuoteWizard(props) {
       <div className="wizard-step" key={step}>
         {step === 0 && <>
         <div style={{ display: "grid", gap: 10 }}>
-          {APN_SERVICES.map(([k, l]) => chip(service === k, () => chooseService(k), l, k === "website" ? "Business websites and landing pages" : k === "marketing" ? "Monthly retainer for ads, content and social media" : "Course admission and training programs"))}
+          {APN_SERVICES.map(([k, l]) => <React.Fragment key={k}>{chip(service === k, () => chooseService(k), l, k === "website" ? "Business websites and landing pages" : k === "marketing" ? "Monthly retainer for ads, content and social media" : "Course admission and training programs")}</React.Fragment>)}
         </div>
         {priceBusy && <div className="hint-line" style={{ marginTop: 10 }}>Loading official pricing…</div>}
       </>}
 
       {step === 1 && <>
         <div style={{ display: "grid", gap: 10 }}>
-          {QUOTE_SITE_TYPES.map(([k, l, d]) => chip(siteType === k, () => setSiteType(k), l, d))}
+          {QUOTE_SITE_TYPES.map(([k, l, d]) => <React.Fragment key={k}>{chip(siteType === k, () => setSiteType(k), l, d)}</React.Fragment>)}
         </div>
       </>}
 

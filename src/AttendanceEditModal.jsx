@@ -1,3 +1,4 @@
+import React from "react";
 export default function AttendanceEditModal({ member, record, date, onSave, onClear, onClose, runtime }) {
   const { useState, Modal, Field, Check, Trash2, emitToast, fmtDate } = runtime;
   const toTimeInput = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
