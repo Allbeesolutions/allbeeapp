@@ -1,7 +1,8 @@
-import { APNAdminHub, apnPartnerProfileForm } from "./APNPartnerProfile.jsx";
-import { QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE, shareQuoteVia, downloadQuotePdf } from "./APNLeadForm.jsx";
-import { printProposalDocument, proposalSectionDisplay } from "./ProposalCenter.jsx";
-import TncManager from "./TncManager.jsx";
+import { QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE } from "./quoteCatalog.js";
+import { apnPartnerProfileForm } from "./APNPartnerProfile.jsx";
+import { printProposalDocument, proposalSectionDisplay } from "./proposalPrint.js";
+const shareQuoteVia = async (...args) => (await import("./APNLeadForm.jsx")).shareQuoteVia(...args);
+const downloadQuotePdf = async (...args) => (await import("./APNLeadForm.jsx")).downloadQuotePdf(...args);
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
@@ -19,6 +20,7 @@ import { createSessionRecovery } from "./sessionRecovery.js";
 import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
+const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 const LazyAPNAdmin = React.lazy(() => import("./APNAdmin.jsx"));
@@ -763,27 +765,36 @@ function buildQuery(tbl, columns, orderColumn, signal) {
   return q;
 }
 
-async function loadTableRows(table, columns, orderColumn, timeoutMs = TABLE_FETCH_TIMEOUT_MS, retries = 1) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    try {
-      const { data, error } = await pTimeout(buildQuery(table, columns, orderColumn, controller?.signal), timeoutMs, table, controller);
-      if (error) {
-        if (attempt === retries) console.warn(`[ALLBEE] table "${table}" unavailable: ${error.message}`);
-        continue;
+async function loadTableRows(table, columns, orderColumn, timeoutMs = TABLE_FETCH_TIMEOUT_MS, retries = 1, paginate = true) {
+  const pageSize = 500;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    let page = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      try {
+        let q = supabase.from(table).select(columns);
+        if (orderColumn) q = q.order(orderColumn, { ascending: false });
+        if (paginate && typeof q.range === "function") q = q.range(from, from + pageSize - 1);
+        if (controller && typeof q.abortSignal === "function") q = q.abortSignal(controller.signal);
+        const { data, error } = await pTimeout(q, timeoutMs, `${table}:${from}`, controller);
+        if (!error) { page = data || []; break; }
+        if (attempt === retries) console.warn(`[ALLBEE] table "${table}" page ${from} unavailable: ${error.message}`);
+      } catch (e) {
+        if (attempt === retries) console.warn(`[ALLBEE] table "${table}" page ${from} failed: ${e.message}`);
       }
-      return data || [];
-    } catch (e) {
-      if (attempt === retries) console.warn(`[ALLBEE] table "${table}" failed to load: ${e.message}`);
     }
+    if (page === null) break;
+    rows.push(...page);
+    if (!paginate || page.length < pageSize) break;
   }
-  return [];
+  return rows;
 }
 
 async function fetchBootstrapData() {
   const db = emptyDB();
   const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
-    t, await loadTableRows(t, "id,data", undefined, BOOTSTRAP_TIMEOUT_MS, 0)
+    t, await loadTableRows(t, "id,data", undefined, BOOTSTRAP_TIMEOUT_MS, 0, false)
   ]);
   for (const [t, rows] of loaded) {
     db[t] = (rows || [])
@@ -852,7 +863,7 @@ async function fetchAuditRows() {
   // Audit is append-only and can grow beyond the API's default 1,000-row limit.
   // Page newest-first so the UI always gets the complete history, then restore
   // chronological order for consumers that expect ascending source data.
-  const pageSize = 1000;
+  const pageSize = 500;
   const rows = [];
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
@@ -873,7 +884,7 @@ async function fetchAuditRows() {
 
 async function appendAuditEvent(entry) {
   const event = activityEntry({ id: uid(), ts: Date.now(), ...entry });
-  const { error } = await supabase.from("audit").insert({ id: event.id, data: event, updated_at: new Date().toISOString() });
+  const { error } = await supabase.rpc("audit_record", { p_data: event });
   if (error) throw new Error(error.message);
 }
 
@@ -882,6 +893,9 @@ async function applyDiff(prev, next) {
   const stamp = new Date().toISOString();
   const ops = [];
   for (const t of TABLES) {
+    // Audit has a dedicated append-only RPC path. Never replay it through the
+    // generic snapshot diff writer, which would bypass actor/timestamp controls.
+    if (t === "audit") continue;
     const before = new Map((prev?.[t] || []).map((x) => [x.id, x]));
     const after = new Map((next?.[t] || []).map((x) => [x.id, x]));
     const upserts = [];
@@ -4909,7 +4923,7 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
         </div>
       </div>
 
-      <TncManager config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} />
+      <React.Suspense fallback={<div className="card" aria-busy="true">Loading terms manager…</div>}><LazyTncManager config={config} saveTnc={saveTnc} saveRoleTnc={saveRoleTnc} /></React.Suspense>
 
       <CompanySettings config={config} saveCompany={saveCompany} />
 
@@ -6973,17 +6987,26 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const [finSnap, setFinSnap] = useState(null);
   const [snapTick, setSnapTick] = useState(0);
   const [agr, setAgr] = useState(null);
+  const [agrLoading, setAgrLoading] = useState(true);
+  const [agrError, setAgrError] = useState("");
 
   // The agreement gate answer comes from the server-side apn_agreement_status
-  // RPC (single source of truth). While it says REQUIRED, the whole portal is
-  // replaced by APNAgreementGate; acceptance there triggers this refetch.
+  // RPC (single source of truth). A failure is fail-closed: the partner cannot
+  // enter the portal until the legal status has been verified.
   const refreshAgreements = useCallback(async () => {
-    const { data, error } = await supabase.rpc("apn_agreement_status");
-    setAgr(error || !data ? null : data);
+    setAgrLoading(true); setAgrError("");
+    try {
+      const { data, error } = await supabase.rpc("apn_agreement_status");
+      if (error || !data) throw new Error(error?.message || "Agreement status could not be verified.");
+      setAgr(data);
+    } catch (e) {
+      setAgr(null); setAgrError(e?.message || "Agreement status could not be verified.");
+      throw e;
+    } finally { setAgrLoading(false); }
   }, []);
   useEffect(() => {
     refreshAgreements().catch(() => {});
-  }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pid, refreshAgreements]);
 
   // The portal's ONE refresh operation: reload the shared store (which every
   // APN page reads from) and bump the snapshot tick so the wallet facts and
@@ -7046,10 +7069,10 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
   if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} onRefresh={refreshPortal} />;
   if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
-  // AGREE-MENT GATE: while any required document is unaccepted the server's
-  // apn_agreement_status says required=true and the portal is fully replaced
-  // by the review screen (visually distinct from account-suspended).
-  if (agr && agr.required) return <APNAgreementGate isDark={isDark} onSignOut={signOut} required={agr.requiredList || []} onAccepted={refreshAgreements} />;
+  // AGREEMENT GATE: legal status is fail-closed. Never treat an RPC failure as
+  // an empty required list and accidentally grant portal access.
+  if (agrLoading || agrError) return <APNGate isDark={isDark} icon={agrError ? <ShieldAlert size={26} /> : <Hourglass size={26} />} tone={agrError ? "neg" : undefined} title={agrError ? "Agreement verification unavailable" : "Verifying agreements…"} body={agrError ? `We couldn't verify your APN agreement status. ${agrError}` : "Checking the current legal agreement status before opening your portal."} onSignOut={signOut} onRefresh={refreshAgreements} />;
+  if (agr?.required) return <APNAgreementGate isDark={isDark} onSignOut={signOut} required={agr.requiredList || []} onAccepted={refreshAgreements} />;
 
   const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
@@ -7910,6 +7933,7 @@ export default function App() {
   const [taskDetailId, setTaskDetailId] = useState(null); // full-page task detail
   const [config, setConfig] = useState(null);             // app_config (T&C body + version)
   const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
+  const [serverUnreadNotifs, setServerUnreadNotifs] = useState(null);
   const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
   const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
   const [navSort, setNavSort] = useState(() => { try { return localStorage.getItem("allbee_navsort") || "category"; } catch { return "category"; } });
@@ -7928,6 +7952,18 @@ export default function App() {
   const inactiveCount = useMemo(() => (isSuper ? inactiveMembers(team).length : 0), [isSuper, team]);
   const canFinance = canFinanceRole(role);  // the money (superadmin OR accountant)
   const me = { id: session?.user?.id, name: currentUser, role };
+
+  useEffect(() => {
+    let alive = true;
+    if (!session?.user?.id) { setServerUnreadNotifs(null); return () => { alive = false; }; }
+    const refreshUnread = async () => {
+      const { data, error } = await supabase.rpc("notification_unread_count");
+      if (alive && !error && typeof data === "number") setServerUnreadNotifs(data);
+    };
+    refreshUnread();
+    const timer = window.setInterval(refreshUnread, 30000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [session?.user?.id]);
 
   // ── tap feedback ──────────────────────────────────────────────────────
   // Subtle tap feedback on interactive elements, app-wide. Very light, and only
@@ -8250,6 +8286,10 @@ export default function App() {
   useEffect(() => { dbRef.current = db; }, [db]);
 
   const mutate = useCallback((updater, audit) => {
+    // Any local mutation invalidates an in-flight background hydration snapshot.
+    // Otherwise a slow full reload could finish after this optimistic change and
+    // replace the user's fresh state with an older server snapshot.
+    reloadGenerationRef.current += 1;
     // Never perform persistence as a side effect inside a React state updater.
     // React may invoke functional updaters more than once in development/Strict
     // Mode; doing I/O there can duplicate writes and audit events. Keep a
@@ -8315,47 +8355,49 @@ export default function App() {
   // client-side sweep — see README for the optional server-side cron upgrade.
   const purgedRef = useRef(false);
   const purgeExpired = useCallback(() => {
+    const prev = dbRef.current;
+    if (!prev || !prev.recycle?.length) return;
     const cutoff = Date.now() - RECYCLE_TTL_DAYS * 86400000;
-    setDb((prev) => {
-      if (!prev || !prev.recycle?.length) return prev;
-      const keep = prev.recycle.filter((r) => (r.deletedAt || 0) >= cutoff);
-      if (keep.length === prev.recycle.length) return prev;
-      const next = { ...prev, recycle: keep };
-      enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
-      return next;
-    });
+    const keep = prev.recycle.filter((r) => (r.deletedAt || 0) >= cutoff);
+    if (keep.length === prev.recycle.length) return;
+    const next = { ...prev, recycle: keep };
+    dbRef.current = next; setDb(next);
+    enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
   }, [enqueuePersist]);
 
   // Retention: drop testing screenshots older than 30 days (references + the
   // underlying storage objects) so QA images don't grow storage forever. Runs
   // once per load for admins, mirroring the recycle-bin sweep above.
   const purgeTestImages = useCallback(() => {
+    const prev = dbRef.current;
+    if (!prev || !(prev.testing || []).length) return;
     const cutoff = Date.now() - TEST_IMAGE_TTL_DAYS * 86400000;
-    setDb((prev) => {
-      if (!prev || !(prev.testing || []).length) return prev;
-      const toRemove = [];
-      let changed = false;
-      const testing = prev.testing.map((s) => {
-        if (!Array.isArray(s.bugs) || !s.bugs.length) return s;
-        let bugChanged = false;
-        const bugs = s.bugs.map((b) => {
-          if (!Array.isArray(b.images) || !b.images.length) return b;
-          const keep = b.images.filter((im) => (im.at || 0) >= cutoff);
-          if (keep.length === b.images.length) return b;
-          bugChanged = true;
-          for (const im of b.images) if ((im.at || 0) < cutoff) { const p = im.path || storagePathFromUrl(im.url); if (p) toRemove.push(p); }
-          return { ...b, images: keep };
-        });
-        if (!bugChanged) return s;
-        changed = true;
-        return { ...s, bugs };
+    const toRemove = [];
+    let changed = false;
+    const testing = prev.testing.map((s) => {
+      if (!Array.isArray(s.bugs) || !s.bugs.length) return s;
+      let bugChanged = false;
+      const bugs = s.bugs.map((b) => {
+        if (!Array.isArray(b.images) || !b.images.length) return b;
+        const keep = b.images.filter((im) => (im.at || 0) >= cutoff);
+        if (keep.length === b.images.length) return b;
+        bugChanged = true;
+        for (const im of b.images) if ((im.at || 0) < cutoff) { const path = im.path || storagePathFromUrl(im.url); if (path) toRemove.push(path); }
+        return { ...b, images: keep };
       });
-      if (!changed) return prev;
-      if (toRemove.length) { try { supabase.storage.from("attachments").remove(toRemove); } catch { /* best effort */ } }
-      const next = { ...prev, testing };
-      enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
-      return next;
+      if (!bugChanged) return s;
+      changed = true;
+      return { ...s, bugs };
     });
+    if (!changed) return;
+    const next = { ...prev, testing };
+    dbRef.current = next; setDb(next);
+    enqueuePersist(prev, next).then(async () => {
+      if (toRemove.length) {
+        const { error } = await supabase.storage.from("attachments").remove(toRemove);
+        if (error) console.warn(`[ALLBEE] test image storage cleanup failed: ${error.message}`);
+      }
+    }).catch((e) => setSyncError(e.message || String(e)));
   }, [enqueuePersist]);
 
   useEffect(() => {
@@ -8398,7 +8440,7 @@ export default function App() {
       if (auditAction) mutate((d) => d, { action: auditAction, module: "Team" });
       if (session) await loadPeople(session.user);
     }
-    catch (e) { setSyncError(e.message || String(e)); }
+    catch (e) { setSyncError(e.message || String(e)); throw e; }
   }, [session, loadPeople, mutate]);
 
   // Permanently remove a registered client (a self-signed-up portal account).
@@ -8782,7 +8824,7 @@ export default function App() {
     taskDetailId ? (detailTask ? detailTask.title : "Task") :
     NAV.find((n) => n[0] === safeRoute)?.[1] || "";
   const myPending = db.tasks.filter((t) => t.status !== "Completed" && (isAdmin || isTaskAssignee(t, me))).length;
-  const unreadNotifs = db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
+  const unreadNotifs = serverUnreadNotifs ?? db.notifications.filter((n) => notifVisibleTo(n, profile) && !(n.reads || []).includes(me.id)).length;
   const unreadChat = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id)).length;
   const portalClients = team.filter((p) => p.role === "client");
   // APN project summaries are expensive (each summary scans multiple APN collections).

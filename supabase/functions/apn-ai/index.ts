@@ -86,14 +86,14 @@ function sanitizeMessages(body: unknown) {
   const raw = (body || {}) as { messages?: Array<{ role?: string; content?: unknown }>; max_tokens?: unknown };
   const messages = Array.isArray(raw.messages) ? raw.messages : [];
   if (messages.length > MAX_MESSAGES) messages.length = MAX_MESSAGES;
-  const chat: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+  const chat: Array<{ role: "user" | "assistant"; content: string }> = [];
   let total = 0;
   for (const m of messages) {
     const content = String(m?.content ?? "").slice(0, MAX_MESSAGE_CHARS);
     total += content.length;
     if (total > MAX_TOTAL_CHARS) break;
     const role = m?.role === "assistant" ? "assistant" : "user";
-    if (role !== "system") chat.push({ role, content });
+    chat.push({ role, content });
   }
   if (chat.length === 0) return null;
   const maxTokens = Math.min(Number(raw.max_tokens) || 900, MAX_TOKENS);

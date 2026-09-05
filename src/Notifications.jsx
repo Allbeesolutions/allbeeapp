@@ -8,6 +8,8 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [preferences, setPreferences] = useState({ enabled: true, urgent_enabled: true, important_enabled: true, general_enabled: true });
   const [prefBusy, setPrefBusy] = useState(false);
+  const [userState, setUserState] = useState({});
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [snoozing, setSnoozing] = useState(null);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
@@ -17,13 +19,16 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
     if (!(isAdmin || notifVisibleTo(n, profile))) return false;
     if (level !== "All" && (n.level || "General") !== level) return false;
     if (!preferenceAllows(n)) return false;
-    if (onlyUnread && (n.reads || []).includes(me?.id)) return false;
+    const state = userState[n.id];
+    if (state?.snoozed_until && new Date(state.snoozed_until).getTime() > nowTick) return false;
+    if (onlyUnread && (userState[n.id]?.read_at ? true : (n.reads || []).includes(me?.id))) return false;
     const q = query.trim().toLowerCase();
     return !q || [n.title, n.body, n.by, n.senderName, n.audience].filter(Boolean).join(" ").toLowerCase().includes(q);
-  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [db.notifications, isAdmin, profile, level, onlyUnread, query, me?.id, preferences]);
-  const unreadCount = useMemo(() => [...db.notifications].filter((n) => (isAdmin || notifVisibleTo(n, profile)) && !(n.reads || []).includes(me?.id)).length, [db.notifications, isAdmin, profile, me?.id]);
-  useEffect(() => { let alive = true; runtime.supabase?.rpc("notification_preferences_get").then(({ data }) => { if (alive && data) setPreferences((p) => ({ ...p, ...data })); }).catch(() => {}); return () => { alive = false; }; }, [me?.id]);
-  const savePreferences = async (patch) => { const next = { ...preferences, ...patch }; setPreferences(next); setPrefBusy(true); try { const { data, error } = await runtime.supabase.rpc("notification_preferences_save", { p_enabled: !!next.enabled, p_urgent: !!next.urgent_enabled, p_important: !!next.important_enabled, p_general: !!next.general_enabled }); if (error) throw error; if (data) setPreferences(data); } catch {} finally { setPrefBusy(false); } };
+  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)), [db.notifications, isAdmin, profile, level, onlyUnread, query, me?.id, preferences, userState, nowTick]);
+  const unreadCount = useMemo(() => [...db.notifications].filter((n) => (isAdmin || notifVisibleTo(n, profile)) && !(userState[n.id]?.read_at || (!isAdmin && (n.reads || []).includes(me?.id)))).length, [db.notifications, isAdmin, profile, me?.id, userState]);
+  useEffect(() => { let alive = true; runtime.supabase?.rpc("notification_preferences_get").then(({ data }) => { if (alive && data) setPreferences((p) => ({ ...p, ...data })); }).catch(() => {}); runtime.supabase?.rpc("notification_user_state_get").then(({ data }) => { if (!alive || !Array.isArray(data)) return; setUserState(Object.fromEntries(data.map((x) => [x.notification_id, x]))); }).catch(() => {}); return () => { alive = false; }; }, [me?.id]);
+  useEffect(() => { const timer = window.setInterval(() => setNowTick(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
+  const savePreferences = async (patch) => { const previous = preferences; const next = { ...preferences, ...patch }; setPreferences(next); setPrefBusy(true); try { const { data, error } = await runtime.supabase.rpc("notification_preferences_save", { p_enabled: !!next.enabled, p_urgent: !!next.urgent_enabled, p_important: !!next.important_enabled, p_general: !!next.general_enabled }); if (error) throw error; if (data) setPreferences(data); } catch (e) { setPreferences(previous); runtime.emitToast?.(e?.message || "Notification preferences could not be saved.", "error"); } finally { setPrefBusy(false); } };
   const levelTone = (l) => l === "Urgent" ? "neg" : l === "Important" ? "accent" : "pri";
   const audienceLabel = (a) => {
     if (!a || a === "all") return "Everyone";
@@ -41,28 +46,28 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
       avatar: n.senderAvatar || person?.photo_url || "",
     };
   };
-  useEffect(() => {
-    if (!me?.id) return;
-    const unread = visible.filter((n) => !(n.reads || []).includes(me.id)).map((n) => n.id);
-    if (!unread.length) return;
-    mutate((d) => ({ ...d, notifications: d.notifications.map((x) => unread.includes(x.id)
-      ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) } : x) }), null);
-  }, [visible.length, me?.id, isAdmin]);
-  const markRead = (n) => {
-    if ((n.reads || []).includes(me.id)) return;
-    mutate((d) => ({ ...d, notifications: d.notifications.map((x) => x.id === n.id
-      ? { ...x, reads: Array.from(new Set([...(x.reads || []), me.id])) } : x) }), null);
+  const markRead = async (n) => {
+    if (!me?.id || isAdmin || userState[n.id]?.read_at) return;
+    const previous = userState[n.id];
+    setUserState((s) => ({ ...s, [n.id]: { ...(s[n.id] || {}), notification_id: n.id, read_at: new Date().toISOString() } }));
+    try {
+      const { error } = await runtime.supabase.rpc("notification_mark_read", { p_id: n.id });
+      if (error) throw error;
+    } catch (e) {
+      setUserState((s) => ({ ...s, [n.id]: previous || { notification_id: n.id } }));
+      runtime.emitToast?.(e?.message || "Could not mark notification as read.", "error");
+    }
   };
   const del = (n) => removeItem("notifications", n, { name: n.title, audit: `deleted notification "${n.title}"` });
   const enablePush = async () => { setPushBusy(true); try { await enableAllBeePush(); setPushEnabled(true); } catch (e) { setPushEnabled(false); runtime.emitToast?.(e?.message || "Push notifications could not be enabled.", "error"); } finally { setPushBusy(false); } };
-  const snooze = async (n, minutes) => { setSnoozing(n.id); try { const { data, error } = await runtime.supabase.rpc("notification_snooze", { p_id: n.id, p_minutes: minutes }); if (error) throw error; mutate((d) => ({ ...d, notifications: d.notifications.map((x) => x.id === n.id ? { ...x, snoozedUntil: data?.snoozed_until, snoozeCount: data?.snooze_count } : x) }), null); } catch (e) { runtime.emitToast?.(e?.message || "Could not snooze notification.", "error"); } finally { setSnoozing(null); } };
+  const snooze = async (n, minutes) => { setSnoozing(n.id); const previous = userState[n.id]; try { const { data, error } = await runtime.supabase.rpc("notification_snooze", { p_id: n.id, p_minutes: minutes }); if (error) throw error; setUserState((s) => ({ ...s, [n.id]: { ...(s[n.id] || {}), notification_id: n.id, snoozed_until: data?.snoozed_until } })); setNowTick(Date.now()); } catch (e) { setUserState((s) => ({ ...s, [n.id]: previous || { notification_id: n.id } })); runtime.emitToast?.(e?.message || "Could not snooze notification.", "error"); } finally { setSnoozing(null); } };
   return (
     <div className="content">
       <div className="page-head"><h3>Notifications {unreadCount > 0 && <span className="badge pri" style={{ marginLeft: 7 }}>{unreadCount} unread</span>}</h3><span className="spacer" /><button className="btn sm" onClick={enablePush} disabled={pushBusy}>{pushBusy ? "Enabling…" : pushEnabled ? "Push enabled" : "Enable browser push"}</button>{isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>}</div>
       <div className="toolbar" style={{ marginBottom: 12 }}><div className="search" style={{ flex: 1 }}><SearchIcon size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search notifications…" aria-label="Search notifications" /></div><select className="select" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: "auto" }}><option>All</option><option>Urgent</option><option>Important</option><option>General</option></select><label className="tag" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}><input type="checkbox" checked={onlyUnread} onChange={(e) => setOnlyUnread(e.target.checked)} />Unread only</label><details className="tag" style={{ marginLeft: "auto" }}><summary style={{ cursor: "pointer" }}>Notification preferences</summary><div style={{ position: "absolute", zIndex: 5, marginTop: 8, padding: 12, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "var(--shadow)", display: "grid", gap: 7 }}><label><input type="checkbox" disabled={prefBusy} checked={preferences.enabled} onChange={(e) => savePreferences({ enabled: e.target.checked })} /> Notifications enabled</label><label><input type="checkbox" disabled={prefBusy || !preferences.enabled} checked={preferences.urgent_enabled} onChange={(e) => savePreferences({ urgent_enabled: e.target.checked })} /> Urgent</label><label><input type="checkbox" disabled={prefBusy || !preferences.enabled} checked={preferences.important_enabled} onChange={(e) => savePreferences({ important_enabled: e.target.checked })} /> Important</label><label><input type="checkbox" disabled={prefBusy || !preferences.enabled} checked={preferences.general_enabled} onChange={(e) => savePreferences({ general_enabled: e.target.checked })} /> General</label></div></details></div>
       {visible.length === 0 ? <div className="card"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text={isAdmin ? "Broadcast an update to everyone, a role, or one person — with a priority level." : "Notifications from your admins show up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "notification" })}><Bell size={16} />New notification</button>} /></div>
         : <div className="notifications-list">{visible.map((n) => {
-          const seen = (n.reads || []).includes(me.id);
+          const seen = isAdmin || !!userState[n.id]?.read_at || (n.reads || []).includes(me.id);
           const sender = senderFor(n);
           return (
             <div key={n.id} className="card stat notification-card" style={{ borderLeft: `3px solid var(${n.level === "Urgent" ? "--neg" : "--primary"})`, position: "relative" }}>

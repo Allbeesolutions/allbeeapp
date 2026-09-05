@@ -43,11 +43,11 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
   };
   const onlineCount = (team || []).filter((p) => p.id !== me.id && isOnline(p)).length;
   const startEdit = (m) => { setEditId(m.id); setEditText(m.text); };
-  const saveEdit = (m) => { const t = editText.trim(); if (!t) { setEditId(null); return; } mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? { ...x, text: t, editedAt: Date.now() } : x) }), null); setEditId(null); setEditText(""); };
+  const saveEdit = async (m) => { const t = editText.trim(); if (!t) { setEditId(null); return; } try { const { data, error } = await supabase.rpc("chat_edit_message", { p_id: m.id, p_text: t }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? data : x) }), null); setEditId(null); setEditText(""); } catch (e) { emitToast(e?.message || "Could not edit message.", "error"); } };
   // Delete = tombstone (keeps message order, works under existing chat RLS).
   // Admins can delete anyone's; everyone else only their own.
   const del = (m) => setConfirmDelete(m);
-  const deleteNow = () => { if (!confirmDelete) return; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? { ...x, deleted: true, text: "", attachment: null, deletedBy: me.name } : x) }), null); setConfirmDelete(null); };
+  const deleteNow = async () => { if (!confirmDelete) return; try { const { data, error } = await supabase.rpc("chat_delete_message", { p_id: confirmDelete.id }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? data : x) }), null); setConfirmDelete(null); } catch (e) { emitToast(e?.message || "Could not delete message.", "error"); } };
   // Names of teammates who've seen one of my messages.
   const seenNames = (m) => (m.seenBy || []).filter((u) => u !== me.id).map((u) => ((team || []).find((p) => p.id === u)?.name) || "Someone").filter(Boolean);
   const employeeView = (<>

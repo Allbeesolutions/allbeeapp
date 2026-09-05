@@ -60,11 +60,14 @@ export default function TestDetail({ sessionId, db, mutate, isAdmin, me, current
     patch((x) => ({ ...x, bugs: [...(x.bugs || []), bug] }), A(`reported an issue on "${s.title}"`));
     setBugText(""); setBugImgs([]); setImgErr("");
   };
-  const removeBug = (bug) => {
+  const removeBug = async (bug) => {
     if (!(isAdmin || bug.byId === me.id)) return;
     // best-effort remove the stored screenshots so they don't linger
     const paths = (bug.images || []).map((im) => im.path || storagePathFromUrl(im.url)).filter(Boolean);
-    if (paths.length) { try { supabase.storage.from("attachments").remove(paths); } catch { /* ignore */ } }
+    if (paths.length) {
+      try { const { error } = await supabase.storage.from("attachments").remove(paths); if (error) throw error; }
+      catch (e) { runtime.emitToast?.(e?.message || "Could not remove the attached screenshot. The issue was kept.", "error"); return; }
+    }
     patch((x) => ({ ...x, bugs: (x.bugs || []).filter((b) => b.id !== bug.id) }), A(`removed an issue from "${s.title}"`));
   };
   const saveNotes = () => { if (notes !== (s.notes || "")) patch((x) => ({ ...x, notes })); };

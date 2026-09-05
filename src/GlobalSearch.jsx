@@ -82,6 +82,7 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
   const [dateTo, setDateTo] = useState("");
   const [recentSearches, setRecentSearches] = useState([]);
   const [savedSearches, setSavedSearches] = useState([]);
+  const [serverResults, setServerResults] = useState(null);
   const inputRef = useRef(null);
   const dialogRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -139,16 +140,25 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
   }, [db, team, allowKey, isAdmin, me.id, profile, notifVisibleTo]);
 
   useEffect(() => { let alive=true; Promise.all([supabase.rpc("global_search_recent",{p_limit:8}),supabase.from("global_search_saved").select("id,name,query,filters").order("created_at",{ascending:false}).limit(8)]).then(([r,s])=>{ if(alive){setRecentSearches(Array.isArray(r.data)?r.data:[]);setSavedSearches(Array.isArray(s.data)?s.data:[]);} }).catch(()=>{}); return ()=>{alive=false;}; }, []);
+  useEffect(() => {
+    let alive=true; const term=q.trim();
+    if(!term){ setServerResults(null); return () => { alive=false; }; }
+    const timer=setTimeout(async()=>{
+      const {data,error}=await supabase.rpc("global_search_v6",{p_query:term,p_module:moduleFilter,p_route:routeFilter,p_date_from:dateFrom||null,p_date_to:dateTo||null,p_limit:120});
+      if(!alive)return;
+      setServerResults(error ? [] : (Array.isArray(data)?data:[]));
+    },180);
+    return ()=>{ alive=false; clearTimeout(timer); };
+  }, [q,moduleFilter,routeFilter,dateFrom,dateTo]);
   useEffect(() => { const term=q.trim(); if(!term) return; const t=setTimeout(()=>{ supabase.auth.getUser().then(({data})=>{const uid=data?.user?.id;if(uid) return supabase.from("global_search_history").insert({user_id:uid,query:term,filters:{module:moduleFilter,route:routeFilter,dateFrom,dateTo}});}).catch(()=>{}); },800); return ()=>clearTimeout(t); }, [q]);
 
   const results = useMemo(() => {
     const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!toks.length) {
-      // no query → show the modules as quick navigation
       return index.filter((r) => r.module === "Navigation").slice(0, 12);
     }
     const scored = [];
-    for (const r of index) {
+    for (const r of (serverResults !== null ? serverResults : index)) {
       if (moduleFilter !== "All" && r.module !== moduleFilter) continue;
       if (routeFilter !== "All" && r.route !== routeFilter) continue;
       if (dateFrom && (!r.dateISO || r.dateISO.slice(0, 10) < dateFrom)) continue;
@@ -163,7 +173,7 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
     }
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, 40).map((x) => x.r);
-  }, [q, index, moduleFilter, routeFilter, dateFrom, dateTo]);
+  }, [q, index, serverResults, moduleFilter, routeFilter, dateFrom, dateTo]);
 
   useEffect(() => { setSel(0); }, [q]);
   const curSel = Math.min(sel, Math.max(0, results.length - 1));

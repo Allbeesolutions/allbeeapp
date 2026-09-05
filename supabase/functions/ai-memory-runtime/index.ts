@@ -25,9 +25,14 @@ Deno.serve(async(req)=>{
   const admin=createClient(url,service);let client=createClient(url,anon,{global:{headers:{Authorization:auth}}});
   const isWorker=Boolean(workerKey&&secret&&workerKey===secret);if(isWorker)client=admin;
   else {if(!auth)return json({error:"Authentication required."},401);const {data:u,error:ue}=await client.auth.getUser();if(ue||!u.user)return json({error:"Authentication required."},401);}
-  const body=await req.json().catch(()=>({}));const mode=String(body.mode||"query");const key=Deno.env.get("OPENAI_API_KEY");
+  const body=await req.json().catch(()=>({}));const mode=String(body.mode||"query");
+  if(mode==="index" && !isWorker) return json({error:"Worker authorization required for indexing."},403);
+  const key=Deno.env.get("OPENAI_API_KEY");
   if(!key)return json({error:"Embedding provider is not configured. Set OPENAI_API_KEY in the Supabase function secrets."},503);
-  if(mode==="index")return json(await workerTick(admin,key));
+  if(mode==="index") {
+    if(!isWorker)return json({error:"Memory indexing is restricted to the background worker."},403);
+    return json(await workerTick(admin,key));
+  }
   if(mode==="query"){const q=String(body.query||"").trim();if(!q)return json({rows:[]});const [vector]=await embed(key,q);const {data,error}=await client.rpc("ai_memory_hybrid_search",{p_query:q,p_embedding:vector,p_limit:Math.min(Math.max(Number(body.limit||8),1),12)});if(error)return json({error:error.message},400);return json({rows:data||[],method:"hybrid"});}
   return json({error:"Unsupported memory mode."},400);
  }catch(e){return json({error:e instanceof Error?e.message:"AI memory runtime failed."},500)}

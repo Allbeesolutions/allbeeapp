@@ -1,5 +1,5 @@
 export default function TeamChat({ db, mutate, me, members, teamId, onRefresh, runtime = {} }) {
-  const { Empty, Send, Avatar, Confirm, fmtDateTime, uid, useState, useRef, useEffect } = runtime;
+  const { Empty, Send, Avatar, Confirm, fmtDateTime, uid, useState, useRef, useEffect, supabase, emitToast } = runtime;
   const [text, setText] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
   const endRef = useRef(null);
@@ -13,16 +13,23 @@ export default function TeamChat({ db, mutate, me, members, teamId, onRefresh, r
   useEffect(() => {
     const unseen = (db.team_chat || []).filter((m) => m.teamId === teamId && m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id));
     if (!unseen.length) return;
-    const ids = new Set(unseen.map((m) => m.id));
-    mutate((d) => ({ ...d, team_chat: d.team_chat.map((m) => ids.has(m.id) ? { ...m, seenBy: Array.from(new Set([...(m.seenBy || []), me.id])) } : m) }), null);
-  }, [db.team_chat, me.id, teamId, mutate]);
+    supabase?.rpc("team_chat_mark_seen", { p_ids: unseen.map((m) => m.id) }).catch((e) => emitToast?.(e?.message || "Could not save chat read state.", "error"));
+  }, [db.team_chat, me.id, teamId, supabase, emitToast]);
   const send = () => {
     const t = text.trim(); if (!t) return;
     setText("");
     mutate((d) => ({ ...d, team_chat: [...(d.team_chat || []), { id: uid(), teamId, userId: me.id, userName: me.name, text: t, createdAt: Date.now() }] }), null);
   };
   const del = (m) => setConfirmDelete(m);
-  const deleteNow = () => { if (!confirmDelete) return; mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === confirmDelete.id ? { ...x, deleted: true, text: "", deletedBy: me.name } : x) }), null); setConfirmDelete(null); };
+  const deleteNow = async () => {
+    if (!confirmDelete) return;
+    try {
+      const { data, error } = await supabase.rpc("team_chat_delete_message", { p_id: confirmDelete.id });
+      if (error) throw error;
+      mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === confirmDelete.id ? data : x) }), null);
+      setConfirmDelete(null);
+    } catch (e) { emitToast?.(e?.message || "Could not delete message.", "error"); }
+  };
   const photo = (id) => members.find((p) => p.id === id)?.photo_url;
   return (<>
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 360 }}>

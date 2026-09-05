@@ -8,7 +8,8 @@
 // login screen; the security boundary is the code check itself (plus rate
 // limiting). There is intentionally NO remote unlock action here — recovery is
 // performed by the infrastructure owner in the Supabase SQL console only.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+type AdminClient = SupabaseClient<any>;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +25,7 @@ const SECRET = Deno.env.get("FOUNDER_LOCKDOWN_CODE") || "";
 const RATE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const RATE_MAX = 5;                    // verify attempts per window per client
 
-const reserveAttempt = async (admin, client: string): Promise<number> => {
+const reserveAttempt = async (admin: AdminClient, client: string): Promise<number> => {
   const nowIso = new Date().toISOString();
   await admin
     .from("emergency_lockdown_attempts")
@@ -51,7 +52,7 @@ const reserveAttempt = async (admin, client: string): Promise<number> => {
   return data.attempts + 1;
 };
 
-const clearAttempts = async (admin, client: string) => {
+const clearAttempts = async (admin: AdminClient, client: string) => {
   await admin
     .from("emergency_lockdown_attempts")
     .upsert({ client_key: client, window_start: new Date().toISOString(), attempts: 0, updated_at: new Date().toISOString() }, { onConflict: "client_key" });
@@ -75,7 +76,7 @@ const sha256Hex = async (value: string) => {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 
-const codeIsValid = async (admin, candidate: string): Promise<boolean> => {
+const codeIsValid = async (admin: AdminClient, candidate: string): Promise<boolean> => {
   if (SECRET) return timingSafeEqual(candidate, SECRET);
   const { data } = await admin
     .from("emergency_lockdown")
@@ -87,7 +88,7 @@ const codeIsValid = async (admin, candidate: string): Promise<boolean> => {
   return timingSafeEqual((await sha256Hex(candidate)).toLowerCase(), String(stored).toLowerCase());
 };
 
-const readState = async (admin) => {
+const readState = async (admin: AdminClient) => {
   const { data } = await admin
     .from("emergency_lockdown")
     .select("locked, locked_at, locked_by, updated_at")
@@ -96,7 +97,7 @@ const readState = async (admin) => {
   return data ?? null;
 };
 
-const applyLockdown = async (admin) => {
+const applyLockdown = async (admin: AdminClient) => {
   const now = new Date().toISOString();
   const { error } = await admin
     .from("emergency_lockdown")

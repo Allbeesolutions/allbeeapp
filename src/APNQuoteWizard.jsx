@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from "react";
 import * as Icons from "./icons.jsx";
-import { downloadQuotePdf } from "./APNLeadForm.jsx";
+
 
 export default function APNQuoteWizard(props) {
   const {  meRow, onSave, onClose, go  } = props;
-  const { APN_SERVICES, Field, Modal, QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE, emitToast, money, round2, shareQuoteVia, uid, supabase } = props.runtime || {};
+  const { APN_SERVICES, Field, Modal, QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE, emitToast, money, round2, shareQuoteVia, uid, supabase, downloadQuotePdf } = props.runtime || {};
   const { Check, Download, FileText, Mail, MessageCircle, Phone, RotateCcw, Save, Send } = Icons;
 
   const [step, setStep] = useState(0);

@@ -122,9 +122,12 @@ describe("APN Portal Navigation", () => {
       />
     );
 
-    // Verify we start on Home tab
-    expect(screen.getByText("Test Partner")).toBeTruthy();
-    expect(screen.getByText("Revenue generated")).toBeTruthy();
+    // Agreement verification is now fail-closed, so wait for the authoritative
+    // gate check before asserting the portal surface.
+    await waitFor(() => {
+      expect(screen.getByText("Test Partner")).toBeTruthy();
+      expect(screen.getByText("Revenue generated")).toBeTruthy();
+    });
 
     // Click on Team Chat tab
     const chatTabButton = screen.getAllByRole("button", { name: /team chat/i })[0];
