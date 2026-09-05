@@ -5,7 +5,10 @@
       "namespace": "android_app",
       "package_name": "com.allbeesolutions.app.twa",
       "sha256_cert_fingerprints": [
-        "6C:34:AE:8B:25:ED:77:2A:30:10:59:CD:3F:3C:90:89:55:E7:1F:A3:42:48:11:1F:70:07:EC:1E:A6:8F:4C:4C"
+        "6C:34:AE:8B:25:ED:77:2A:30:10:59:CD:3F:3C:90:89:55:E7:1F:A3:42:48:11:1F:70:07:EC:1E:A6:8F:4C:4C",
+        "01:F0:AF:25:0E:F6:7F:F0:03:20:2A:F8:88:65:46:A4:60:FD:8D:07:D9:6D:90:57:8C:D5:73:1C:A1:11:21:9E",
+        "7D:72:D5:00:CC:60:D7:30:8B:6C:F4:91:8D:F3:30:2E:8F:0F:33:94:DB:DE:13:E6:00:BC:56:1E:87:E5:EE:F3",
+        "A9:61:F7:3E:E5:CD:0B:AF:E3:6A:0C:19:42:FB:5E:1A:BE:D8:6A:A2:5E:67:55:EB:E3:6A:68:8A:B5:E6:7C:0F"
       ]
     }
   }
