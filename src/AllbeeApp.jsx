@@ -8993,8 +8993,8 @@ export default function App() {
                   onClick={() => go("accounts")}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("accounts"); } }}>
                   <Wallet size={14} color="var(--muted)" />
-                  <span className="lbl">Balance</span>
-                  <span className="val mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</span>
+                  <span className="lbl">Account balance</span>
+                  <span className="val mono" style={{ color: bal.account < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.account)}</span>
                 </div>
               )}
               <div className="usermenu">
