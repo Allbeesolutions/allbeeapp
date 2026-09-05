@@ -1,6 +1,7 @@
 import { APNAdminHub, apnPartnerProfileForm } from "./APNPartnerProfile.jsx";
 import { QUOTE_BUSINESS_EMAIL, QUOTE_DISCLAIMER, QUOTE_SERVICE_LABEL, QUOTE_SITE_TYPES, QUOTE_STEP_LABELS, QUOTE_TECHS, QUOTE_URGENT_RATE, shareQuoteVia, downloadQuotePdf } from "./APNLeadForm.jsx";
 import { printProposalDocument, proposalSectionDisplay } from "./ProposalCenter.jsx";
+import TncManager from "./TncManager.jsx";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
@@ -158,6 +159,16 @@ const REWARD_KINDS = ["Star performer", "On-time hero", "Team player", "Goal sma
 const VAULT_CATEGORIES = ["Social", "Website", "Hosting", "Email", "Domain", "Banking", "Tools", "Other"];
 const HELP_STATUS_LABEL = { open: "Open", in_progress: "In progress", resolved: "Resolved", closed: "Closed" };
 const HELP_STATUS_TONE = (s) => ({ open: "pri", in_progress: "accent", resolved: "pos", closed: "" }[s] || "pri");
+
+function SearchHighlight({ text, q }) {
+  const query = String(q || "").trim();
+  if (!query || !text) return <>{text}</>;
+  const escaped = query.split(/\s+/).filter(Boolean).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!escaped.length) return <>{text}</>;
+  const re = new RegExp(`(${escaped.join("|")})`, "ig");
+  const test = new RegExp(`^(${escaped.join("|")})$`, "i");
+  return <>{String(text).split(re).map((part, i) => test.test(part) ? <mark key={i} className="hl">{part}</mark> : <span key={i}>{part}</span>)}</>;
+}
 
 function Concepts({ db, mutate, openModal, removeItem }) {
   const list = [...(db.concepts || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -4727,6 +4738,71 @@ function sessionAuditFilter(key) { try { return JSON.parse(sessionStorage.getIte
 function activityValue(value) { if (value == null || value === "") return "—"; if (typeof value === "string") return value; try { return JSON.stringify(value, null, 2); } catch { return String(value); } }
 function downloadActivityCsv(rows) { const columns = ["Event ID", "Timestamp", "User", "Module", "Action", "Entity", "Entity ID", "Description", "Previous Value", "New Value"]; const cell = (v) => `"${String(v == null ? "" : typeof v === "object" ? JSON.stringify(v) : v).replace(/"/g, '""')}"`; const csv = [columns, ...rows.map((a) => [a.id, a.ts ? new Date(a.ts).toISOString() : "", a.user || "System", activityModuleOf(a.module), a.action || "", a.entity || "", a.entityId || "", a.description || "", activityValue(a.previousValue), activityValue(a.newValue)])].map((row) => row.map(cell).join(",")).join("\r\n"); const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `allbee-audit-${todayISO()}.csv`; a.click(); URL.revokeObjectURL(url); }
 
+function activityTimelineLabel(activity) {
+  const text = `${activity.action || ""} ${activity.description || ""}`.toLowerCase();
+  if (/delete|removed|archived|rejected/.test(text)) return "Deleted";
+  if (/complete|paid|converted|closed/.test(text)) return "Completed";
+  if (/approv|accept|reactivat/.test(text)) return "Approved";
+  if (/edit|updated|changed|modified|reset|transfer|assigned/.test(text)) return "Edited";
+  if (/creat|add|register|received|submitted|upload|logged|recorded/.test(text)) return "Created";
+  return activity.action || "Activity";
+}
+
+function activityRelated(db, activity) {
+  const id = activity?.entityId;
+  if (!id) return null;
+  const module = activityModuleOf(activity.module);
+  const table = module === "Tasks" ? "tasks" : module === "APN" ? "apn_users" : module === "Leads" ? "leads" : module === "Clients" ? "clients" : module === "Invoices" ? "invoices" : module === "Quotations" ? "quotations" : module === "Finance" ? (activity.entity === "Withdrawals" ? "withdrawals" : "transactions") : null;
+  const record = table ? (db[table] || []).find((x) => x.id === id) : null;
+  if (!record) return null;
+  return { module, table, record, label: module === "APN" ? "Open partner profile" : `Open ${module.slice(0, -1).toLowerCase() || "record"}` };
+}
+
+function ActivityDetailsDrawer({ activity, db, isSuper, onClose, onRelated }) {
+  const drawerRef = useRef(null);
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => {
+    if (!activity) return undefined;
+    const previous = document.activeElement;
+    const drawer = drawerRef.current;
+    const first = drawer?.querySelector("button:not(:disabled), [href], [tabindex]:not([tabindex=\"-1\"])");
+    first?.focus();
+    return () => { if (previous && typeof previous.focus === "function") previous.focus(); };
+  }, [activity, onClose]);
+  if (!activity) return null;
+  const related = activityRelated(db, activity);
+  const module = activityModuleOf(activity.module);
+  const timelineRows = [...(db.audit || [])].filter((x) => activity.entityId && x.entityId === activity.entityId && activityModuleOf(x.module) === module).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const sequence = timelineRows.length ? timelineRows : [activity];
+  return (
+    <div className="activity-drawer-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <aside ref={drawerRef} className={`activity-drawer${maximized ? " maximized" : ""}`} role="dialog" aria-modal="true" aria-labelledby="activity-drawer-title" tabIndex={-1} onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+        if (e.key !== "Tab") return;
+        const nodes = Array.from(drawerRef.current?.querySelectorAll("button:not(:disabled), [href], [tabindex]:not([tabindex=\"-1\"])") || []);
+        if (!nodes.length) return;
+        const first = nodes[0]; const last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }}>
+        <div className="activity-drawer-head"><div><h3 id="activity-drawer-title">Activity details</h3><div className="hint-line">{activity.description || activity.action || "Activity event"}</div></div><span style={{ flex: 1 }} /><button className="iconbtn" onClick={() => setMaximized((current) => !current)} aria-label={maximized ? "Restore activity details" : "Maximize activity details"} title={maximized ? "Restore" : "Maximize"}>{maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button><button className="iconbtn" onClick={onClose} aria-label="Close activity details" title="Close activity details"><X size={18} /></button></div>
+        <div className="activity-drawer-body">
+          <div className="activity-detail-grid">
+            {[['Event ID', activity.id], ['Timestamp', activity.ts ? fmtDateTime(activity.ts) : "—"], ['User', activity.user || "System"], ['Module', module], ['Action', activity.action], ['Entity', activity.entity], ['Entity ID', activity.entityId]].map(([label, value]) => <div key={label}><div className="k">{label}</div><div className="activity-detail-value">{activityValue(value)}</div></div>)}
+          </div>
+          <div className="activity-detail-block"><div className="k">Human-readable description</div><div>{activity.description || `${activity.user || "System"} ${activity.action || "performed an action"}`}</div></div>
+          <div className="activity-detail-grid">
+            {[['Previous value', activity.previousValue], ['New value', activity.newValue], ['Device information', activity.device || "Future-ready"], ['IP address', activity.ip || "Future-ready"], ['Browser', activity.browser || "Future-ready"]].map(([label, value]) => <div key={label}><div className="k">{label}</div><pre className="activity-detail-value activity-detail-pre">{activityValue(value)}</pre></div>)}
+          </div>
+          {related && <div className="activity-detail-block"><div className="k">Related link</div><button className="btn sm" onClick={() => onRelated(related, activity)}><ExternalLink size={13} />{related.label}</button></div>}
+          <div className="activity-detail-block"><div className="k">Timeline</div><div className="activity-timeline">{sequence.map((x, i) => <div className="activity-timeline-item" key={x.id || i}><span className="activity-timeline-dot" /><div><b>{activityTimelineLabel(x)}</b><div className="hint-line">{x.description || x.action || "Activity"}</div><div className="activity-detail-meta">{x.ts ? fmtDateTime(x.ts) : "—"} · {x.user || "System"}</div></div>{i < sequence.length - 1 && <span className="activity-timeline-line" />}</div>)}</div></div>
+          {isSuper && <div className="hint-line">This activity record is immutable. Export is available from the filtered Audit Log.</div>}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function AuditLog({ db, isSuper, onOpenActivity }) {
   const [user, setUser] = useState(() => sessionAuditFilter("user") || "all");
   const [module, setModule] = useState(() => sessionAuditFilter("module") || "all");
@@ -4867,6 +4943,45 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
       </div>
 
       {importOpen && <ImportData mutate={mutate} currentUser={currentUser} onClose={() => setImportOpen(false)} />}
+    </div>
+  );
+}
+
+function AISettings({ config, saveAI }) {
+  const init = aiConfigOf(config);
+  const [f, setF] = useState(init);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDone(false); };
+  const save = async () => { setBusy(true); try { await saveAI({ ...f, enabled: !!f.enabled, mode: "function", functionName: "ai-chat-v2", model: AI_RUNTIME_MODEL, apiKey: "" }); setDone(true); } finally { setBusy(false); } };
+  return (
+    <div className="card stat" style={{ marginBottom: 14 }}>
+      <div className="lbl" style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: "var(--ink)", display: "flex", alignItems: "center", gap: 7 }}>
+        <Sparkles size={14} color="var(--primary)" /> ALLBEE AI assistant
+      </div>
+      <p className="hint-line" style={{ lineHeight: 1.6, marginBottom: 14 }}>
+        Adds a built-in AI on the <b style={{ color: "var(--ink)" }}>ALLBEE AI</b> screen that staff can ask to draft quotations, reply to clients and summarise work — grounded in your live data.
+      </p>
+
+      <label className="perm-item" style={{ marginBottom: 12 }}>
+        <input type="checkbox" checked={f.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+        <span>Turn ALLBEE AI on for the team</span>
+      </label>
+
+      <Field label="How the app reaches the AI">
+        <div className="input mono" style={{ background: "var(--surface-2)", color: "var(--ink)" }}>Supabase Edge Function · server-side · secure</div>
+      </Field>
+
+      <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 12, background: "var(--primary-soft)" }}>
+        <Sparkles size={15} /> Production AI is routed through the <b>ai-chat-v2</b> Supabase Edge Function. The API key never reaches the browser.
+      </div>
+
+      <Field label="Model" hint="Production model is fixed server-side so legacy model settings cannot break ALLBEE AI.">
+        <div className="input mono" style={{ background: "var(--surface-2)", color: "var(--ink)" }}>OpenAI GPT-OSS 120B · Groq</div>
+      </Field>
+
+      <button className="btn primary" onClick={save} disabled={busy}>{busy ? <RefreshCw size={16} className="spin" /> : <Check size={16} />}{done ? "Saved" : "Save AI settings"}</button>
     </div>
   );
 }
@@ -6962,7 +7077,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
             runtime={{ ...Icons, useState, useEffect, useRef, useCallback, useReducedMotion, supabase, fmtDateTime, emitToast, Empty, Avatar, apnIdFor, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, MessageCircle, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL }} />
         </React.Suspense>
       );
-      case "withdrawals": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading withdrawal center…</div></div>}><LazyAPNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} runtime={{ ...Icons, Empty, money, fmtDate, fmtDateTime, apnRequestAmount, apnWithdrawalLabel, apnWalletLabel, apnWithdrawalTone, apnWithdrawalWalletFor, apnPayoutDate, apnSnapshotWallet, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectSummary, APN_WITHDRAWAL_TYPES, APN_COMM_REVERSED, APNMetric, supabase, emitToast }} /></React.Suspense>;
+      case "withdrawals": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading withdrawal center…</div></div>}><LazyAPNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} runtime={{ ...Icons, Empty, money, fmtDate, fmtDateTime, apnRequestAmount, apnWithdrawalLabel, apnWalletLabel, apnWithdrawalTone, apnWithdrawalWalletFor, apnPayoutDate, apnSnapshotWallet, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectSummary, APN_WITHDRAWAL_TYPES, APN_COMM_REVERSED, APNMetric, supabase, emitToast, APNWithdrawalRequestModal }} /></React.Suspense>;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
@@ -8762,7 +8877,7 @@ export default function App() {
       case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ ...Icons, Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks: LazyTasks }} />;</React.Suspense>;
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
-      case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat }} /></React.Suspense>;
+      case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm }} /></React.Suspense>;
       case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ ...Icons, Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, round2, avatarColor }} /></React.Suspense>;
       case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ ...Icons, Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, avatarColor, round2, todayISO }} /></React.Suspense>;
       case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ ...Icons, money, fmtDate, Empty, staffEarnings }} /></React.Suspense>;
@@ -8912,8 +9027,8 @@ export default function App() {
           onRefresh={async () => { await reload(); if (session) try { await loadPeople(session.user); } catch { /* ignore */ } }} />
 
         {/* MODALS */}
-        {modal?.type === "income" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
-        {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 }} /></React.Suspense>}
+        {modal?.type === "income" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>}
+        {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>}
         {modal?.type === "withdraw" && <React.Suspense fallback={<LoadingScreen />}><LazyWithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, USERS, todayISO, round2, uid, money }} /></React.Suspense>}
         {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
         {modal?.type === "leave" && <React.Suspense fallback={<LoadingScreen />}><LazyLeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, SelectOther, Check, uid, todayISO, daysBetween, LEAVE_TYPES }} /></React.Suspense>}

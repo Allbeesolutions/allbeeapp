@@ -43,6 +43,7 @@ import ProjectForm from "./ProjectForm.jsx";
 import PlannedForm from "./PlannedForm.jsx";
 import StudentForm from "./StudentForm.jsx";
 import VaultForm from "./VaultForm.jsx";
+import TncManager from "./TncManager.jsx";
 
 const Child = ({ children }) => <div>{children}</div>;
 const supabase = {
@@ -110,6 +111,7 @@ describe("Admin route component smoke audit", () => {
     ["APN Quote wizard", APNQuoteWizard, { meRow: me, onSave: vi.fn(), onClose: vi.fn(), go: vi.fn(), runtime: { ...runtime, APN_SERVICES: [["website", "Website Development"]], QUOTE_BUSINESS_EMAIL: { key: "business_email", label: "Business Email", amount: 999 }, QUOTE_DISCLAIMER: "Disclaimer", QUOTE_SERVICE_LABEL: { website: "Website Development" }, QUOTE_SITE_TYPES: [["static", "Static", ""]], QUOTE_STEP_LABELS: ["Service"], QUOTE_TECHS: ["React"], QUOTE_URGENT_RATE: 0.1, shareQuoteVia: vi.fn(), downloadQuotePdf: vi.fn(), supabase } }],
     ["Attendance edit modal", AttendanceEditModal, { member: me, record: null, date: "2026-09-05", onSave: vi.fn(), onClear: vi.fn(), onClose: vi.fn(), runtime: { ...runtime, useState: React.useState } }],
     ["Global search", GlobalSearch, { db, team, profile: me, role: "admin", me, allowedRoutes: ["dashboard"], go: vi.fn(), openTask: vi.fn(), openModal: vi.fn(), onClose: vi.fn(), nav: [], notifVisibleTo: vi.fn(() => true), activityModuleOf: (x) => x }],
+    ["Terms manager", TncManager, { config: {}, saveTnc: vi.fn(), saveRoleTnc: vi.fn() }],
   ];
   it.each(cases)("renders %s without a render-time exception", async (_name, Component, props) => {
     expect(() => render(<Component {...props} />)).not.toThrow();

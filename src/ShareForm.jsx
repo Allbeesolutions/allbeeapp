@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 export default function ShareForm({ kind, initial, onSave, onClose, currentUser, db, apnProjects = [], apnPartners = [], runtime }) {
-  const { supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2 } = runtime;
+  const { supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check } = runtime;
   const isIncome = kind === "income";
   // An income whose transaction already carries APN attribution (stored on the
   // row itself, so even an orphan APN income without a local project row is

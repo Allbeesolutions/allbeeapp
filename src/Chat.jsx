@@ -1,7 +1,7 @@
 import React from "react";
 
 export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime }) {
-  const { useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat } = runtime;
+  const { useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm } = runtime;
   const [chatChannel, setChatChannel] = useState("employee");
   const [apnUnread, setApnUnread] = useState(0);
   const [text, setText] = useState("");

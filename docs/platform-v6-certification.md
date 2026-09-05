@@ -151,3 +151,15 @@ Status: CODE-COMPLETE / LOCAL CERTIFICATION GREEN
 A broader audit found additional latent runtime failures that ordinary Vite builds do not detect: APN lead submission depended on helpers that only existed in the parent module; APN quotation wizard used an unbound Supabase client and PDF helper; Global Search formatted dates through an unbound helper; APN partner profile had an exported helper with a parent-only dependency; Attendance's edit path passed undefined child dependencies and referenced the wrong component binding; the extracted Class Student module contained stale Admin implementations and hidden dependencies; and the public proposal route referenced parent-only proposal helpers. These paths have been made self-contained or explicitly wired through their runtime contracts.
 
 A new static runtime-integrity regression test parses every production JSX module and rejects unresolved lexical dependencies. Admin smoke coverage was expanded to 45 component cases including APN lead, APN quotation, Attendance edit, and Global Search. Full Vitest: 28 files / 170 tests passed at the last complete run; the expanded Admin smoke suite: 45/45 passed; production build and lockdown E2E passed; diff check passed.
+
+
+## Execution checkpoint — 2026-09-05 Settings crash / hidden lexical dependency audit
+Status: FIXED IN CODE / LOCAL VERIFICATION GREEN / DEPLOYMENT PENDING
+
+Production screenshot evidence showed Settings crashing with `ReferenceError: TncManager is not defined`. Root cause: an earlier admin-route extraction removed the `TncManager` implementation while leaving the Settings JSX reference. The same extraction had also left several latent cross-module bindings that normal Vite builds do not detect until the affected route is rendered.
+
+Fixes: restored the Terms & Conditions manager as self-contained `src/TncManager.jsx` and imported it into `AllbeeApp`; restored the previously removed `ActivityDetailsDrawer`, activity helper functions, and `AISettings`; supplied the missing `Confirm` runtime to Team Chat; supplied `Check` to ShareForm; supplied the missing icons/modal/request component to APN Withdrawal Center; supplied `Empty`/`Plus` to APN Admin Partners; and added a local command-palette `SearchHighlight` helper. Existing behavior and authorization rules were preserved.
+
+Regression hardening: `StaticRuntimeIntegrity.test.jsx` now also checks uppercase JSX component identifiers for lexical bindings, catching the exact class of `TncManager` failure that the earlier scanner missed. Admin smoke coverage now includes the real `TncManager` component. Targeted verification passed 47 tests (46 Admin smoke + 1 static integrity), full Vitest remains 29 files / 175 tests, production build passes, and `git diff --check` passes.
+
+Deployment gate: these fixes must be committed and deployed to Vercel before the currently open production browser can receive them. After deployment, `https://app.allbeesolutions.com` must be checked again and the Settings route refreshed for browser-side confirmation. Notifications real push delivery and real partner-signup smoke remain separate external release gates.

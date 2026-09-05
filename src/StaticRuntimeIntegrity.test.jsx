@@ -27,6 +27,13 @@ function unresolved(file) {
       if ((parent.isJSXOpeningElement() || parent.isJSXClosingElement()) && parent.node.name === p.node) return;
       names.add(name);
     },
+    JSXIdentifier(p) {
+      const name = p.node.name;
+      if (!/^[A-Z]/.test(name)) return;
+      const parent = p.parentPath;
+      if (!parent.isJSXOpeningElement() || parent.node.name !== p.node) return;
+      if (!p.scope.hasBinding(name)) names.add(name);
+    },
   });
   return [...names].sort();
 }
