@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function Vault(props) {
   const {  db, mutate, openModal, removeItem  } = props;
-  const { Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor } = props.runtime || {};
+  const { Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor, emitToast } = props.runtime || {};
   const { Copy, ExternalLink, Eye, EyeOff, KeyRound, LockIcon, Pencil, Plus, Search, Trash2, User } = Icons;
 
   const [q, setQ] = useState("");
@@ -12,7 +12,16 @@ export default function Vault(props) {
   const list = q.trim() ? all.filter((v) => (v.service + " " + (v.category || "") + " " + (v.username || "")).toLowerCase().includes(q.toLowerCase())) : all;
   const del = (v) => removeItem("vault", v, { name: v.service, audit: `deleted credential "${v.service}"` });
   const logVault = (action) => mutate((d) => d, { action, module: "Passwords" });
-  const copy = (t, v, what) => { try { navigator.clipboard?.writeText(t || ""); logVault(`copied ${what} for "${v.service}"`); } catch { /* clipboard may be blocked */ } };
+  const copy = async (t, v, what) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(t || "");
+      logVault(`copied ${what} for "${v.service}"`);
+      emitToast?.(what === "password" ? "Password copied" : "Username copied", "success");
+    } catch {
+      emitToast?.(`Couldn't copy ${what}.`, "error");
+    }
+  };
   const toggleReveal = (v) => setReveal((r) => { const now = !r[v.id]; if (now) logVault(`viewed password for "${v.service}"`); return { ...r, [v.id]: now }; });
   return (
     <div className="content">
