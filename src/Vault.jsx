@@ -4,21 +4,51 @@ import * as Icons from "./icons.jsx";
 export default function Vault(props) {
   const {  db, mutate, openModal, removeItem  } = props;
   const { Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor, emitToast } = props.runtime || {};
-  const { Copy, ExternalLink, Eye, EyeOff, KeyRound, LockIcon, Pencil, Plus, Search, Trash2, User } = Icons;
+  const { Copy, ExternalLink, Eye, EyeOff, KeyRound, LockIcon, Pencil, Plus, Search, Trash2, User, Check, AlertTriangle } = Icons;
 
   const [q, setQ] = useState("");
   const [reveal, setReveal] = useState({});
+  const [copyToast, setCopyToast] = useState("");
+  const copyTimer = useRef(null);
   const all = [...db.vault].sort((a, b) => (a.service || "").localeCompare(b.service || ""));
   const list = q.trim() ? all.filter((v) => (v.service + " " + (v.category || "") + " " + (v.username || "")).toLowerCase().includes(q.toLowerCase())) : all;
   const del = (v) => removeItem("vault", v, { name: v.service, audit: `deleted credential "${v.service}"` });
   const logVault = (action) => mutate((d) => d, { action, module: "Passwords" });
+  const showCopyToast = (message) => {
+    setCopyToast(message);
+    clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopyToast(""), 2600);
+  };
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   const copy = async (t, v, what) => {
+    const value = String(t || "");
+    let copied = false;
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(t || "");
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        copied = true;
+      }
+    } catch { /* use legacy fallback below */ }
+    if (!copied) {
+      try {
+        const area = document.createElement("textarea");
+        area.value = value;
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed";
+        area.style.left = "-9999px";
+        area.style.top = "0";
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        copied = document.execCommand("copy");
+        area.remove();
+      } catch { copied = false; }
+    }
+    if (copied) {
       logVault(`copied ${what} for "${v.service}"`);
-      emitToast?.(what === "password" ? "Password copied" : "Username copied", "success");
-    } catch {
+      showCopyToast(what === "password" ? "Password copied" : "Username copied");
+    } else {
+      showCopyToast(`Couldn't copy ${what}.`);
       emitToast?.(`Couldn't copy ${what}.`, "error");
     }
   };
@@ -49,6 +79,11 @@ export default function Vault(props) {
             </div>
           ))}
       </div>
+      {copyToast && <div className={`toast ${copyToast.startsWith("Couldn't") ? "error" : "success"}`} role="status" style={{ position: "fixed", right: 18, bottom: 18, zIndex: 1000, width: "min(380px,calc(100vw - 28px))" }}>
+        {copyToast.startsWith("Couldn't") ? <AlertTriangle size={17} className="toast-icon" aria-hidden="true" /> : <Check size={17} className="toast-icon" aria-hidden="true" />}
+        <div className="toast-body">{copyToast}</div>
+        <button type="button" className="toast-close" aria-label="Dismiss notification" onClick={() => setCopyToast("")}>×</button>
+      </div>}
     </div>
   );
 }
