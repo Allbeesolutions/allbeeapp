@@ -14,13 +14,9 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
   const [confirmDelete, setConfirmDelete] = useState(null);
   const list = [...db.chat].filter((m) => !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
-  // Realtime can lag on mobile/background tabs — gently re-pull while the chat is
-  // open so new messages show up without a manual refresh.
-  useEffect(() => {
-    if (!onRefresh) return;
-    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") onRefresh(); }, 12000);
-    return () => clearInterval(t);
-  }, [onRefresh]);
+  // The app-level Supabase Realtime channel already watches chat/team_chat and
+  // performs scoped reloads on actual database changes. Avoid a 12-second polling
+  // loop here; it created continuous egress even when nobody was sending messages.
   const refresh = async () => { if (!onRefresh) return; setRefreshing(true); try { await onRefresh(); } finally { setTimeout(() => setRefreshing(false), 400); } };
   // Read receipts: mark messages from others as seen by me (converges once all seen).
   useEffect(() => {

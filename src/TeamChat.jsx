@@ -5,11 +5,9 @@ export default function TeamChat({ db, mutate, me, members, teamId, onRefresh, r
   const endRef = useRef(null);
   const list = [...(db.team_chat || [])].filter((m) => m.teamId === teamId && !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
-  useEffect(() => {
-    if (!onRefresh) return;
-    const t = setInterval(() => { if (typeof document === "undefined" || document.visibilityState === "visible") onRefresh(); }, 12000);
-    return () => clearInterval(t);
-  }, [onRefresh]);
+  // The app-level Supabase Realtime channel already watches team_chat and
+  // performs scoped reloads on actual database changes. Avoid a 12-second polling
+  // loop here; it created continuous egress even when nobody was sending messages.
   useEffect(() => {
     const unseen = (db.team_chat || []).filter((m) => m.teamId === teamId && m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id));
     if (!unseen.length) return;

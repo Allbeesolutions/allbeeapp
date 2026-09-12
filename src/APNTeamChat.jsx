@@ -51,7 +51,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       }
     };
     beat(true);
-    const timer = setInterval(() => beat(true), 15000);
+    const timer = setInterval(() => beat(true), 30000);
     return () => {
       active = false;
       clearInterval(timer);
@@ -177,9 +177,14 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     if (isOpen) { loadConversations(); setSelected(null); setMessages([]); }
   }, [isOpen, refreshTick, loadConversations]);
 
-  // Realtime: subscribe to the chat tables (RLS still gates reads). On any
-  // change, refetch the relevant slice rather than trusting client-only updates.
-  // Use a pid-namespaced name to prevent duplicate-channel errors on rapid remounts.
+  // Read state remains authoritative in apn_chat_read_states; read/write RPCs
+  // update it, but it does not need a realtime subscription that would trigger
+  // a full contact reload for every read receipt.
+  // Realtime is the source of truth. Do not refetch the entire contact list on
+  // every presence/read-state heartbeat: presence is a 15-second write while this
+  // screen is open, so treating it as a full chat refresh creates a hidden egress
+  // multiplier. Message events refresh the open thread; friend-request events
+  // refresh the conversation/contact lists; presence is applied locally.
   useEffect(() => {
     if (!isOpen) return;
     const chName = `apn-team-chat:${pid}`;
@@ -187,29 +192,43 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     let timerId = null;
     let inFlight = null;
     let queued = false;
+    let queuedTable = null;
     const refreshChat = (table) => {
       queued = true;
+      queuedTable = table || queuedTable;
       if (timerId || inFlight) return;
       timerId = setTimeout(async () => {
         timerId = null;
         if (!queued || !mountedRef.current) return;
         queued = false;
+        const tableNow = queuedTable;
+        queuedTable = null;
         const selectedNow = selectedRef.current;
-        const refresh = table === "apn_chat_messages" && selectedNow
+        const refresh = tableNow === "apn_chat_messages" && selectedNow
           ? loadMessages(selectedNow, { open: false })
           : loadConversations(false);
         inFlight = refresh.catch(() => {}).finally(() => {
           inFlight = null;
-          if (queued) refreshChat(table);
+          if (queued) refreshChat(queuedTable);
         });
       }, 180);
     };
-    ["apn_chat_messages", "apn_chat_conversations", "apn_chat_read_states", "apn_friend_requests", "apn_chat_presence"].forEach((table) =>
-      ch.on("postgres_changes", { event: "*", schema: "public", table }, () => refreshChat(table)));
+    const applyPresence = (payload) => {
+      const row = payload?.new || payload?.old;
+      if (!row?.user_id || !mountedRef.current) return;
+      const userId = String(row.user_id);
+      setContacts((rows) => rows.map((c) => String(c.contact_id) === userId
+        ? { ...c, availability: row.online && row.updated_at && (Date.now() - new Date(row.updated_at).getTime() < 45000) ? "online" : "offline", last_seen: row.last_seen || c.last_seen }
+        : c));
+    };
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, () => refreshChat("apn_chat_messages"));
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_friend_requests" }, () => refreshChat("apn_friend_requests"));
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_presence" }, applyPresence);
     ch.subscribe();
     return () => {
       if (timerId) clearTimeout(timerId);
       queued = false;
+      queuedTable = null;
       supabase.removeChannel(ch);
     };
   }, [isOpen, loadConversations, loadMessages]);

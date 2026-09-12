@@ -4651,23 +4651,44 @@ export function AdminAPNChat({ me, onUnreadChange }) {
 
   useEffect(() => () => { mounted.current = false; }, []);
 
+  // APN chat is event-driven. The old implementation polled every 10 seconds
+  // and then reloaded conversations + contacts + messages again, even though
+  // Realtime was already subscribed. That multiplied egress and database calls
+  // dramatically. Keep contacts on their own slower-changing path and refresh
+  // conversations/messages only when a relevant database event arrives.
+  const loadConversations = useCallback(async (quiet = false) => {
+    try {
+      const { data, error } = await supabase.rpc("apn_list_conversations");
+      if (error) throw new Error(error.message);
+      if (!mounted.current) return;
+      const rows = data || [];
+      setConversations(rows);
+      const unread = rows.reduce((n, c) => n + Number(c.unread_count || 0), 0);
+      onUnreadChange?.(unread);
+    } catch (e) {
+      if (mounted.current && !quiet) setErr(e.message || "Could not load APN chats.");
+    }
+  }, [onUnreadChange]);
+
+  const loadContacts = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("apn_list_chat_contacts");
+      if (error) throw new Error(error.message);
+      if (!mounted.current) return;
+      setContacts(data || []);
+    } catch (e) {
+      if (mounted.current) setErr(e.message || "Could not load APN contacts.");
+    }
+  }, []);
+
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
-      const [cv, ct] = await Promise.all([
-        supabase.rpc("apn_list_conversations"),
-        supabase.rpc("apn_list_chat_contacts")
-      ]);
-      if (cv.error) throw new Error(cv.error.message);
-      if (!mounted.current) return;
-      setConversations(cv.data || []);
-      if (!ct.error) setContacts(ct.data || []);
-      const unread = (cv.data || []).reduce((n, c) => n + Number(c.unread_count || 0), 0);
-      onUnreadChange?.(unread);
-    } catch (e) {
-      if (mounted.current) setErr(e.message || "Could not load APN chats.");
-    } finally { if (mounted.current) setLoading(false); }
-  }, [onUnreadChange]);
+      await Promise.all([loadConversations(quiet), loadContacts()]);
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }, [loadConversations, loadContacts]);
 
   const open = useCallback(async (conv) => {
     const requestId = ++openRequestRef.current;
@@ -4679,9 +4700,9 @@ export function AdminAPNChat({ me, onUnreadChange }) {
     setMessages(rows);
     const last = rows[rows.length - 1];
     if (last) await supabase.rpc("apn_admin_mark_read", { p_conversation_id: conv.conversation_id || conv.id, p_message_id: last.id });
-    await load(true);
+    await loadConversations(true);
     requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; });
-  }, [load]);
+  }, [loadConversations]);
 
   useEffect(() => { load(); }, [load]);
   const selectedRef = useRef(null);
@@ -4697,26 +4718,24 @@ export function AdminAPNChat({ me, onUnreadChange }) {
       if (timerId || inFlight) return;
       timerId = setTimeout(async () => {
         timerId = null;
-        if (!queued) return;
+        if (!queued || !mounted.current) return;
         queued = false;
-        inFlight = load(true).then(async () => {
-          const current = selectedRef.current;
-          if (current) await open(current);
-        }).catch(() => {}).finally(() => {
+        const current = selectedRef.current;
+        inFlight = (current ? open(current) : loadConversations(true)).catch(() => {}).finally(() => {
           inFlight = null;
           if (queued) refreshChat();
         });
       }, 120);
     };
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, refreshChat).subscribe();
-    const timer = setInterval(refreshChat, 10000);
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.subscribe();
     return () => {
-      clearInterval(timer);
       if (timerId) clearTimeout(timerId);
       queued = false;
       supabase.removeChannel(ch);
     };
-  }, [load, open, me.id]);
+  }, [loadConversations, loadContacts, open, me.id]);
 
   const send = async () => {
     const body = text.trim(); if (!body || !selected) return;
