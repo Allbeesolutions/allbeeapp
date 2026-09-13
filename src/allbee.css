@@ -1422,3 +1422,121 @@ img, video, canvas, svg { max-width:100%; }
 .apn-tc-reaction{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:2px 7px;font-size:11px;cursor:pointer;color:var(--ink)}
 .apn-tc-reaction.mine{background:var(--primary-soft);border-color:var(--primary)}
 .apn-tc-compose-mode{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;margin-bottom:6px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:12px;color:var(--muted)}
+
+/* ── UI audit v6 — consistency, responsive safety, accessibility ─────────── */
+/* Keep every primary work surface centered without shrinking dense tables. */
+.content { margin-inline:auto; }
+.page-head { min-height:40px; }
+.page-head > :first-child { min-width:0; }
+.page-head .hint-line { max-width:760px; }
+.card > .item-row:first-child { min-height:58px; }
+
+/* One predictable control language across forms and toolbars. */
+.btn, .iconbtn, .userchip, .company-pill, .navitem, .seg button, .preset, .linkbtn,
+.dropdown button, .password-toggle { -webkit-user-select:none; user-select:none; }
+.btn { min-height:40px; }
+.btn.sm { min-height:34px; }
+.iconbtn { min-width:40px; min-height:40px; }
+.field + .field { margin-top:0; }
+.input, .select, .textarea { min-height:42px; }
+.select { cursor:pointer; }
+.textarea { overflow:auto; }
+
+/* Dense data surfaces remain readable on narrow screens instead of forcing the
+   page itself wider than the viewport. */
+.table-wrap { overscroll-behavior-inline:contain; }
+.table-wrap::-webkit-scrollbar { height:8px; width:8px; }
+.table-wrap::-webkit-scrollbar-thumb { background:var(--border); border-radius:99px; }
+.table-wrap::-webkit-scrollbar-track { background:transparent; }
+
+/* Safe text wrapping for long IDs, URLs, filenames and AI output. */
+.item-title, .detail-head h3, .page-head h3, .hint-line, .item-meta,
+.meta-grid .v, .apn-profile-kv span, .activity-detail-value { overflow-wrap:anywhere; }
+
+/* Drawer/detail surfaces need their own scroll container on small screens. */
+.activity-drawer-head { min-height:64px; }
+.activity-drawer-body { overscroll-behavior:contain; }
+.activity-detail-grid { min-width:0; }
+
+/* Never let an action row create horizontal page overflow. */
+.toolbar, .quick-actions, .page-head, .detail-head, .modal-foot { min-width:0; }
+.toolbar > *, .page-head > *, .detail-head > * { min-width:0; }
+
+/* Keyboard users get a clear, non-layout-shifting focus treatment. */
+.allbee :where(button,a,input,select,textarea,[tabindex="0"]):focus-visible {
+  outline:3px solid color-mix(in srgb,var(--primary) 34%,transparent);
+  outline-offset:2px;
+}
+.allbee :where(button,a):disabled:focus-visible { outline-color:var(--border); }
+
+@media (max-width:900px) {
+  .content { max-width:none; }
+  .cards-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sumrow { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .filterbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .crm-kanban { grid-template-columns:repeat(7,minmax(230px,1fr)); }
+  .apn-profile-grid { grid-template-columns:1fr; }
+}
+
+@media (max-width:760px) {
+  .page-head { align-items:center; margin-bottom:13px; }
+  .page-head h3 { line-height:1.2; }
+  .page-head .spacer { display:none; }
+  .page-head > .btn.primary { width:100%; order:10; }
+  .page-head > .btn:not(.primary) { min-width:40px; }
+  .toolbar { gap:8px; margin-bottom:12px; }
+  .toolbar > .search { flex:1 1 100%; order:-2; }
+  .toolbar > .select, .toolbar > .seg { flex:1 1 0; min-width:0; }
+  .cards-grid, .sumrow, .filterbar { grid-template-columns:1fr; }
+  .ai-health-grid, .ai-score-grid { grid-template-columns:1fr 1fr; }
+  .ai-command-grid { grid-template-columns:1fr 1fr; }
+  .quick-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .quick-actions .btn { width:100%; }
+  .detail-head { align-items:flex-start; }
+  .detail-head .spacer { display:none; }
+  .meta-grid { grid-template-columns:1fr 1fr; }
+  .activity-detail-grid { grid-template-columns:1fr; }
+  .composer { gap:7px; }
+  .composer .btn { flex:0 0 auto; }
+  .modal-foot { gap:8px; }
+  .modal-foot .btn { min-height:42px; }
+  .dropdown { max-width:calc(100vw - 20px); }
+  .lock { padding:16px; }
+  .lock-card { padding:28px 20px; }
+}
+
+@media (max-width:480px) {
+  .content { padding-left:10px; padding-right:10px; }
+  .page-head h3 { font-size:19px; }
+  .page-head .hint-line { width:100%; }
+  .quick-actions { grid-template-columns:1fr; }
+  .meta-grid { grid-template-columns:1fr; }
+  .filterbar { gap:8px; }
+  .ai-health-grid, .ai-score-grid, .ai-command-grid { grid-template-columns:1fr; }
+  .table-wrap table.tbl { min-width:560px; }
+  table.tbl th { padding:9px 11px; }
+  table.tbl td { padding:10px 11px; }
+  .item-row { padding:12px; gap:10px; }
+  .row-actions { opacity:1; }
+  .empty { padding:40px 16px; }
+  .modal-body { padding-top:16px; padding-bottom:18px; }
+  .modal-foot { padding-top:10px; padding-bottom:max(10px,env(safe-area-inset-bottom)); }
+}
+
+@media (max-width:360px) {
+  .topbar { gap:5px; }
+  .topbar .hamburger, .topbar .iconbtn, .topbar .userchip { width:40px; min-width:40px; height:40px; min-height:40px; }
+  .topbar .search-trigger { min-width:40px; height:40px; min-height:40px; }
+  .topbar .userchip .avatar { width:32px !important; height:32px !important; }
+  .content { padding-left:8px; padding-right:8px; }
+  .btn { padding-left:11px; padding-right:11px; }
+}
+
+/* Reduced-motion is a hard accessibility preference, including transforms
+   introduced by the audit layer. */
+@media (prefers-reduced-motion:reduce) {
+  .allbee *, .allbee *::before, .allbee *::after {
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important;
+  }
+}
