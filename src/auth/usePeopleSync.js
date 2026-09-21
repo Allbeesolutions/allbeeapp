@@ -22,7 +22,7 @@ export function usePeopleSync({ session, supabase, ensureProfile, fetchTeam, fet
     }
     loadPeople(session.user);
     const ch = supabase.channel("allbee-people")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadPeople(session.user))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, () => loadPeople(session.user))
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "app_config" }, () => loadPeople(session.user))
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "fin_locks" }, async () => setLocks(await fetchLocks()));
     ch.subscribe();
