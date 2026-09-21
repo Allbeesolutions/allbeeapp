@@ -7141,12 +7141,21 @@ export default function App() {
     const started = performance.now();
     try {
       const initial = await fetchBootstrapData();
+      // Mark this route as hydrated before publishing `db` so the route effect
+      // cannot start a second identical fetch between setDb() and the scoped pass.
+      loadedRouteRef.current = `${route}|${profile?.role || ""}`;
       setDb(initial);
       setLoading(false);
       setSyncError(null);
-      // Do not hydrate the whole company database in the background. Load only
-      // the active screen's scope after the shell is interactive.
-      const scope = routeDataTables(route);
+      // Do not hydrate the whole company database in the background. The initial
+      // bootstrap already contains the common dashboard tables, so fetch only
+      // the active route's additional datasets after the shell is interactive.
+      const bootstrapSet = new Set(["transactions","tasks","attendance","leave","updates","announcements","notifications","chat","projects","clients","invoices","payroll"]);
+      const scope = routeDataTables(route).filter((table) => !bootstrapSet.has(table));
+      if (!scope.length) {
+        if (import.meta.env.DEV) console.info(`[ALLBEE] bootstrap reused for route=${route}`, snapshotQueryMetrics());
+        return;
+      }
       const scoped = await fetchAll({ includeTables: scope });
       if (reloadGenerationRef.current === 0) setDb((current) => ({ ...current, ...scoped }));
       if (import.meta.env.DEV) console.info(`[ALLBEE] screen-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
