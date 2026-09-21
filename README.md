@@ -317,3 +317,16 @@ sync.
 Financial and business tables are restricted to admins by Row Level Security;
 attendance / leave / daily updates are scoped to their owner; tasks are scoped
 to the people involved.
+## Production architecture (2026)
+
+- **Frontend:** React 18 + Vite 5, deployed on Vercel.
+- **Backend:** Supabase Auth, Postgres/RLS, RPCs and Edge Functions.
+- **Data loading:** screen-scoped route datasets with bounded event/history reads; realtime subscriptions follow the active screen.
+- **Authentication:** `username-login` resolves usernames server-side and returns a Supabase Auth session; client UX distinguishes credential, quota, rate-limit, server and network failures.
+- **CRM/Finance:** normalized RPC-driven workflows (`crm_v5_dashboard`, `finance_v5_dashboard`) are used for canonical dashboard snapshots.
+- **AI:** browser calls the server-side AI gateway; provider credentials are not stored in the client.
+- **Verification:** `npm ci`, `npm test -- --run`, `npm run build`, and production endpoint smoke checks are the release baseline.
+
+### Data/egress diagnostics
+
+Development builds expose aggregate query counts and estimated JSON payload bytes at `window.__ALLBEE_DATA_METRICS__`. This is a client-payload diagnostic, not a replacement for Supabase's provider-level egress meter.

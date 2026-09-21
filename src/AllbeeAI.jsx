@@ -96,7 +96,7 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
           {isAdmin ? (
             <>
               <p className="hint-line" style={{ lineHeight: 1.6, maxWidth: 460, margin: "0 auto 16px" }}>
-                Turn on ALLBEE AI in Settings. The quickest secure way is a small Supabase Edge Function that holds your API key; you can also paste a key directly for internal testing.
+                Turn on ALLBEE AI in Settings. The secure production path uses the ALLBEE AI gateway; provider credentials remain server-side.
               </p>
               <button className="btn primary" onClick={() => go("settings")}><SettingsIcon size={16} />Set up AI in Settings</button>
             </>

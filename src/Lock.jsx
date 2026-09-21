@@ -60,11 +60,7 @@ export default function Lock({ isDark, setDark, runtime }) {
           invokePromise,
           new Promise((_, reject) => setTimeout(() => reject(new Error("timeout:invoke")), 15000)),
         ]);
-        if (error) {
-          const msg = String(error?.message || error || "");
-          if (/timeout|abort|fetch/i.test(msg)) throw new Error("Authentication service is not responding. Please wait a moment and try again.");
-          throw new Error("Invalid login credentials.");
-        }
+        if (error) throw Object.assign(new Error(authMessage(error)), { authStatus: authStatus(error) });
         if (!data?.session?.access_token || !data?.session?.refresh_token) throw new Error("Invalid login credentials.");
         const sessionResult = await Promise.race([
           supabase.auth.setSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token }),
@@ -85,7 +81,8 @@ export default function Lock({ isDark, setDark, runtime }) {
       const raw = (e && (e.message || e.error_description || e.msg || e.hint || e.details)) || (typeof e === "string" ? e : "");
       const clean = typeof raw === "string" ? raw.trim() : "";
       let msg = clean && clean !== "{}" ? clean : "";
-      if (!msg || /database error saving new user/i.test(msg)) {
+      if (mode === "signin") msg = authMessage(e, "Authentication failed. Please try again.");
+      else if (!msg || /database error saving new user/i.test(msg)) {
         msg = acctType === "partner"
           ? "We couldn't create the partner account. Your database may not allow the 'partner' role yet — see the APN setup (profiles.role must permit 'partner'). If it does, this email may already be registered; try another."
           : "We couldn't create the account. Please try again, or use a different email.";
@@ -102,8 +99,22 @@ export default function Lock({ isDark, setDark, runtime }) {
       if (error || data?.error) throw error || new Error(data.error);
       setNotice("Password reset email sent. Check your inbox for the secure reset link.");
       emitToast("Password reset email sent.", "success");
-    } catch (e) { setErr(e?.message || "Password reset failed. Please try again."); emitToast("Password reset failed. Please try again.", "error"); }
+    } catch (e) { const msg = authMessage(e, "Password reset failed. Please try again."); setErr(msg); emitToast(msg, "error"); }
     finally { setResetBusy(false); }
+  };
+  const authStatus = (e) => {
+    const direct = Number(e?.context?.status || e?.status || e?.response?.status);
+    return Number.isFinite(direct) && direct > 0 ? direct : 0;
+  };
+  const authMessage = (e, fallback = "Authentication failed. Please try again.") => {
+    const status = authStatus(e);
+    const raw = String(e?.message || e || "");
+    if (status === 401 || /invalid login credentials|invalid.*credential/i.test(raw)) return "Invalid username/email or password.";
+    if (status === 402 || /exceed_egress_quota|payment required|quota/i.test(raw)) return "ALLBEE authentication is temporarily unavailable because the backend service has reached its usage limit. Please try again after service restoration.";
+    if (status === 429 || /rate limit|too many requests|429/i.test(raw)) return "Too many authentication attempts. Please wait a minute and try again.";
+    if (status >= 500 || /edge function|internal server|bad gateway|service unavailable/i.test(raw)) return "Authentication service is temporarily unavailable. Please try again shortly.";
+    if (/timeout|abort|network|failed to fetch|fetch/i.test(raw)) return "We couldn't reach the authentication service. Check your connection and try again.";
+    return fallback;
   };
   const onKey = (e) => { if (e.key === "Enter") submit(); };
 
@@ -137,31 +148,31 @@ export default function Lock({ isDark, setDark, runtime }) {
 
             {acctType === "partner" ? (
               <div style={{ textAlign: "left" }}>
-                <div className="field"><label>Full name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder="Your full name" /></div>
+                <div className="field"><label htmlFor="apn-full-name">Full name</label><input id="apn-full-name" className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder="Your full name" /></div>
                 <div className="grid2">
-                  <div className="field"><label>Mobile number</label><input className="input" value={apn.mobile} onChange={(e) => upApn("mobile", e.target.value)} placeholder="10-digit mobile" /></div>
-                  <div className="field"><label>Date of birth</label><input className="input" type="date" value={apn.dob} onChange={(e) => upApn("dob", e.target.value)} /></div>
+                  <div className="field"><label htmlFor="apn-mobile">Mobile number</label><input id="apn-mobile" className="input" value={apn.mobile} onChange={(e) => upApn("mobile", e.target.value)} placeholder="10-digit mobile" /></div>
+                  <div className="field"><label htmlFor="apn-dob">Date of birth</label><input id="apn-dob" className="input" type="date" value={apn.dob} onChange={(e) => upApn("dob", e.target.value)} /></div>
                 </div>
                 <div className="grid2">
                   <div className="field"><label>District</label><SearchableSelect value={apn.district} onChange={(value) => upApn("district", value)} ariaLabel="APN district" options={[{ value: "", label: "Select district…" }, ...TN_DISTRICTS.map((d) => ({ value: d, label: d }))]} /></div>
-                  <div className="field"><label>Taluk</label><input className="input" value={apn.taluk} onChange={(e) => upApn("taluk", e.target.value)} placeholder="Taluk" /></div>
+                  <div className="field"><label htmlFor="apn-taluk">Taluk</label><input id="apn-taluk" className="input" value={apn.taluk} onChange={(e) => upApn("taluk", e.target.value)} placeholder="Taluk" /></div>
                 </div>
                 <div className="grid2">
-                  <div className="field"><label>City / town</label><input className="input" value={apn.city} onChange={(e) => upApn("city", e.target.value)} placeholder="City" /></div>
-                  <div className="field"><label>Occupation</label><input className="input" value={apn.occupation} onChange={(e) => upApn("occupation", e.target.value)} placeholder="Student, freelancer…" /></div>
+                  <div className="field"><label htmlFor="apn-city">City / town</label><input id="apn-city" className="input" value={apn.city} onChange={(e) => upApn("city", e.target.value)} placeholder="City" /></div>
+                  <div className="field"><label htmlFor="apn-occupation">Occupation</label><input id="apn-occupation" className="input" value={apn.occupation} onChange={(e) => upApn("occupation", e.target.value)} placeholder="Student, freelancer…" /></div>
                 </div>
                 <div className="grid2">
-                  <div className="field"><label>College (optional)</label><input className="input" value={apn.college} onChange={(e) => upApn("college", e.target.value)} placeholder="College" /></div>
-                  <div className="field"><label>Username</label><input className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" aria-describedby="signup-username-status" />{apn.username.trim() && <div id="signup-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
+                  <div className="field"><label htmlFor="apn-college">College (optional)</label><input id="apn-college" className="input" value={apn.college} onChange={(e) => upApn("college", e.target.value)} placeholder="College" /></div>
+                  <div className="field"><label htmlFor="apn-username">Username</label><input id="apn-username" className="input" value={apn.username} onChange={(e) => upApn("username", e.target.value)} placeholder="Choose a username" aria-describedby="signup-username-status" />{apn.username.trim() && <div id="signup-username-status" className="hint-line" style={{ color: usernameCheck.available === false ? "var(--neg)" : usernameCheck.available === true ? "var(--pos)" : undefined }}>{usernameCheck.checking ? "Checking availability…" : usernameCheck.available === false ? "Username already taken" : usernameCheck.available === true ? "Username available" : "Availability will be checked when saved."}</div>}</div>
                 </div>
-                <div className="field"><label>Referral code <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><input className="input mono" value={apn.referralCode} onChange={(e) => upApn("referralCode", e.target.value.toUpperCase())} placeholder="Enter a partner's code" />{apn.referralCode && <div className="hint-line">The code is linked once your APN profile is created. You may add one later from My Network.</div>}</div>
-                <div className="field"><label>Why do you want to join APN?</label><textarea className="textarea" value={apn.reason} onChange={(e) => upApn("reason", e.target.value)} placeholder="Tell us briefly why you'd like to become a partner…" /></div>
+                <div className="field"><label htmlFor="apn-referral">Referral code <span className="hint-line" style={{ display: "inline" }}>(optional)</span></label><input id="apn-referral" className="input mono" value={apn.referralCode} onChange={(e) => upApn("referralCode", e.target.value.toUpperCase())} placeholder="Enter a partner's code" />{apn.referralCode && <div className="hint-line">The code is linked once your APN profile is created. You may add one later from My Network.</div>}</div>
+                <div className="field"><label htmlFor="apn-reason">Why do you want to join APN?</label><textarea id="apn-reason" className="textarea" value={apn.reason} onChange={(e) => upApn("reason", e.target.value)} placeholder="Tell us briefly why you'd like to become a partner…" /></div>
                 <p className="hint-line" style={{ fontSize: 12 }}>APN partners are independent and commission-based — no salary and no joining fee. You must be 18 or older. Applications are approved by an admin.</p>
               </div>
             ) : acctType === "staff" || acctType === "client" ? (
               <div className="field" style={{ textAlign: "left" }}>
-                <label>Your name</label>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder={acctType === "client" ? "Your name or business" : "e.g. Priya"} />
+                <label htmlFor="account-name">Your name</label>
+                <input id="account-name" className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder={acctType === "client" ? "Your name or business" : "e.g. Priya"} />
                 {acctType === "client" && <p className="hint-line" style={{ fontSize: 12, marginTop: 6 }}>Client accounts see only their own project updates and quotations.</p>}
               </div>
             ) : (
@@ -177,8 +188,8 @@ export default function Lock({ isDark, setDark, runtime }) {
                   ))}
                 </div>
                 <div className="field">
-                  <label>Admin access code</label>
-                  <input className="input" value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={onKey} placeholder="Provided by ALLBEE" />
+                  <label htmlFor="admin-access-code">Admin access code</label>
+                  <input id="admin-access-code" className="input" value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={onKey} placeholder="Provided by ALLBEE" />
                 </div>
               </div>
             )}
@@ -187,8 +198,8 @@ export default function Lock({ isDark, setDark, runtime }) {
 
         <div style={{ textAlign: "left" }}>
           <div className="field">
-            <label>{mode === "signin" ? "Username or email" : "Email"}</label>
-            <input className="input" type={mode === "signin" ? "text" : "email"} autoComplete={mode === "signin" ? "username" : "email"} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={onKey} placeholder={mode === "signin" ? "username or you@allbee.in" : "you@allbee.in"} />
+            <label htmlFor="auth-identifier">{mode === "signin" ? "Username or email" : "Email"}</label>
+            <input id="auth-identifier" className="input" type={mode === "signin" ? "text" : "email"} autoComplete={mode === "signin" ? "username" : "email"} value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={onKey} placeholder={mode === "signin" ? "username or you@allbee.in" : "you@allbee.in"} />
             {mode === "signup" && email.trim().includes("@") && <div className="hint-line" style={{ color: emailCheck.available === false ? "var(--neg)" : emailCheck.available === true ? "var(--pos)" : undefined }}>{emailCheck.checking ? "Checking email availability…" : emailCheck.available === false ? "Email already registered" : emailCheck.available === true ? "Email available" : ""}</div>}
           </div>
           <PasswordField label="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={onKey} autoComplete={mode === "signin" ? "current-password" : "new-password"} placeholder="••••••••" />

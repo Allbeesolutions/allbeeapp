@@ -1,6 +1,7 @@
 {
   "name": "allbee-app",
   "private": true,
+  "packageManager": "npm@10",
   "version": "1.0.1",
   "type": "module",
   "description": "ALLBEE — internal business management app for ALLBEE SOLUTIONS (Haji & Alim)",

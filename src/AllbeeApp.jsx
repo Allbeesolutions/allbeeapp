@@ -19,9 +19,14 @@ const {
 } = Icons;
 import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
+import { useAuthSession } from "./auth/useAuthSession.js";
+import { ROLE_LABEL, ROLE_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, STATUS_ACTIVE, GRANTABLE_MODULES, TNC_ROLES, isSuperRole, isAdminRole, canFinanceRole, navAllowed, pendingTnc, roleTncOf, acceptedRoleTnc } from "./app/permissions.js";
+import { NAV, NAV_CATEGORIES, NAV_CATEGORY, navCategoryOf, NAV_SORT_LABEL, parseHash } from "./app/navigation.js";
+export { parseHash };
 import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
+import { snapshotQueryMetrics } from "./data/queryMetrics.js";
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
@@ -405,59 +410,6 @@ export function FounderTap({ className, src, alt, style, onClick, children, ...r
    superadmin (Haji & Alim) · admin · accountant · staff · intern.
    The money (Share & accounts, Withdrawals) is superadmin + accountant only;
    a plain admin runs the team and business but never sees the partner split. */
-const ROLE_LABEL = { superadmin: "Super admin", admin: "Admin", accountant: "Accountant", staff: "Staff", intern: "Intern", partner: "APN Partner", district_head: "District Head", state_head: "State Head" };
-const ROLE_OPTIONS = ["admin", "accountant", "staff", "intern"]; // an admin may assign these — never superadmin
-const STATUS_LABEL = { active: "Active", on_leave: "On leave", suspended: "Suspended", resigned: "Resigned", terminated: "Terminated" };
-const STATUS_OPTIONS = ["active", "on_leave", "suspended", "resigned", "terminated"];
-// statuses that revoke sign-in (the row's `active` flag is set from this)
-const STATUS_ACTIVE = { active: true, on_leave: true, suspended: false, resigned: false, terminated: false };
-// business modules an admin can grant to an individual staff member, one by one
-const GRANTABLE_MODULES = [["projects", "Projects"], ["inhouse", "In-house projects"], ["leads", "Leads"], ["clients", "Clients"], ["quotations", "Quotations"], ["invoices", "Invoices"], ["portal-posts", "Client updates"], ["courses", "Courses"], ["marketing", "Marketing"], ["concepts", "Concepts"], ["testing", "Testing"], ["sheets", "Sheets"], ["prompts", "Prompts"]];
-// Who must accept Terms & Conditions before using the app. Partners (superadmin)
-// author the agreements, so they're exempt; everyone else signs.
-const TNC_ROLES = ["admin", "accountant", "staff", "intern"];
-// The two layers of T&C: ONE general agreement for everyone (tnc_body/tnc_version),
-// plus a per-role agreement (tnc_roles → { role: {body, version} }). A user must
-// accept both their general and their role-specific agreement to gain access.
-function roleTncOf(config) { try { return JSON.parse((config && config.tnc_roles) || "{}") || {}; } catch { return {}; } }
-function acceptedRoleTnc(profile) { const a = profile && profile.tnc_roles_accepted; return a && typeof a === "object" ? a : {}; }
-// Every agreement this user still needs to accept (general first, then role-specific).
-function pendingTnc(config, profile, role) {
-  if (!profile || !TNC_ROLES.includes(role)) return [];
-  const out = [];
-  const gv = Number(config?.tnc_version || 0);
-  if (gv > 0 && Number(profile.tnc_version || 0) < gv)
-    out.push({ key: "all", title: "Company terms — everyone", body: config?.tnc_body || "", version: gv });
-  const rc = roleTncOf(config)[role];
-  if (rc && Number(rc.version || 0) > 0 && Number(acceptedRoleTnc(profile)[role] || 0) < Number(rc.version))
-    out.push({ key: role, title: `${ROLE_LABEL[role] || role} terms`, body: rc.body || "", version: Number(rc.version) });
-  return out;
-}
-
-const isSuperRole = (r) => r === "superadmin";
-const isAdminRole = (r) => r === "superadmin" || r === "admin";        // management level
-const canFinanceRole = (r) => r === "superadmin" || r === "accountant"; // the money
-
-// Which nav entries a user can see, derived from their role + granted modules.
-function navAllowed(tag, role, perms) {
-  const sa = isSuperRole(role), adm = isAdminRole(role);
-  const acc = role === "accountant", staff = role === "staff", intern = role === "intern";
-  if (tag === "everyone") return true;               // dashboard
-  if (tag === "work") return adm || staff || intern;  // tasks, attendance, daily updates
-  if (tag === "leave") return adm || staff;           // leave (not interns, not accountant)
-  if (tag === "finance") return sa || acc;            // share & accounts, withdrawals, planned
-  if (tag === "admin") return adm;                    // team, progress, recycle, audit, settings
-  if (tag === "collab") return true;                  // announcements, chat, docs, knowledge (any internal user)
-  if (tag === "vault") return sa;                     // password vault (partners only for now)
-  if (tag === "super") return sa;                     // superadmin-only (e.g. Team leads)
-  if (tag === "insight") return adm;                  // performance, rewards
-  if (tag.startsWith("perm:")) {
-    const mod = tag.slice(5);
-    return adm || (staff && Array.isArray(perms?.modules) && perms.modules.includes(mod));
-  }
-  return adm;
-}
-
 /* ── helpers ──────────────────────────────────────────────────────────── */
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 // LOCAL calendar date as YYYY-MM-DD. We deliberately do NOT use toISOString(),
@@ -649,7 +601,7 @@ const AGREEMENT_READS = {
 
 async function fetchReferralData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(REFERRAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(REFERRAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, undefined, TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
@@ -660,21 +612,21 @@ async function fetchApnActionBadgeReads() {
 
 async function fetchWithdrawalData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(WITHDRAWAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(WITHDRAWAL_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, undefined, TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchCRMData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(CRM_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, "created_at")]);
+  const entries = await mapWithConcurrency(Object.entries(CRM_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, "created_at", TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchAIData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(AI_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, table === "ai_settings" ? "updated_at" : "created_at")]);
+  const entries = await mapWithConcurrency(Object.entries(AI_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, table === "ai_settings" ? "updated_at" : "created_at", TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
@@ -692,21 +644,21 @@ async function fetchPartnerFinancialSnapshot() {
 
 async function fetchClientData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(CLIENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(CLIENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, undefined, TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchHelpdeskData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(HELPDESK_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(HELPDESK_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, undefined, TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
 
 async function fetchAgreementData() {
   const out = {};
-  const entries = await mapWithConcurrency(Object.entries(AGREEMENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns)]);
+  const entries = await mapWithConcurrency(Object.entries(AGREEMENT_READS), TABLE_FETCH_CONCURRENCY, async ([table, columns]) => [table, await loadTableRows(supabase, table, columns, undefined, TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))]);
   for (const [table, rows] of entries) out[table] = rows;
   return out;
 }
@@ -727,12 +679,68 @@ async function fetchAgreementData() {
 // for 30+ seconds even though the shell itself was ready.
 const TABLE_FETCH_TIMEOUT_MS = 8000;
 const TABLE_FETCH_CONCURRENCY = 10;
+// Historical/event-heavy collections are deliberately bounded per screen.
+// Users can request older history from the module itself instead of paying the
+// network cost at sign-in or on every realtime refresh.
+const TABLE_FETCH_LIMITS = Object.freeze({
+  audit: 500, chat: 250, team_chat: 250, notifications: 300,
+  apn_activity: 300, apn_timeline: 300, apn_communications: 250,
+  apn_warnings: 250, apn_notes: 250, apn_admin_notes: 250,
+  apn_withdrawal_status_history: 300, apn_withdrawal_audit: 300, apn_wallet_transactions: 500,
+  crm_activities: 500, crm_audit: 500, crm_files: 300, support_ticket_messages: 500, support_ticket_audit: 300,
+  ai_history: 200, ai_insights: 300, ai_recommendations: 300, business_automation_queue: 300,
+});
+const tableFetchLimit = (table) => TABLE_FETCH_LIMITS[table] || Infinity;
 const BOOTSTRAP_TABLES = Object.freeze([
   "transactions", "tasks", "attendance", "leave", "updates", "announcements",
   "notifications", "chat", "projects", "clients", "invoices", "payroll"
 ]);
 const BOOTSTRAP_TIMEOUT_MS = 4500;
 
+// Screen-scoped data policy. The workspace is intentionally NOT hydrated with
+// every collection at sign-in. Common dashboard data is loaded first; deeper
+// datasets are fetched only when the user opens the corresponding module.
+const ROUTE_DATASETS = Object.freeze({
+  dashboard: ["transactions","tasks","attendance","leave","updates","announcements","notifications","projects","clients","invoices","payroll","teams"],
+  tasks: ["tasks","projects","team_chat"],
+  attendance: ["attendance"],
+  leave: ["leave"],
+  updates: ["updates","teams"],
+  announcements: ["announcements"],
+  notifications: ["notifications"],
+  chat: ["chat","team_chat"],
+  teamchat: ["team_chat"],
+  clients: ["clients","crm_clients","crm_activities","crm_files"],
+  leads: ["leads","crm_leads","crm_lead_assignments","crm_follow_ups","crm_activities","crm_audit"],
+  quotations: ["quotations","crm_quotations","crm_quotation_versions","crm_activities"],
+  projects: ["projects","crm_projects","crm_project_milestones","crm_activities","crm_files","crm_revenue_collections"],
+  invoices: ["invoices","transactions"],
+  finance: ["transactions","invoices","payroll","crm_revenue_collections", ...Object.keys(WITHDRAWAL_READS), ...Object.keys(CRM_READS)],
+  payroll: ["payroll","teams"],
+  documents: ["documents","vault","apn_documents","crm_files"],
+  knowledge: ["knowledge","documents"],
+  vault: ["vault","documents"],
+  rewards: ["rewards"],
+  testing: ["testing"],
+  marketing: ["marketing"],
+  inhouse: ["inhouse"],
+  sheets: ["sheets"],
+  courses: ["students","class_students"],
+  performance: ["attendance","tasks","updates","rewards","teams"],
+  crm: [...Object.keys(CRM_READS),"clients","leads","quotations","projects"],
+  enterprisecrm: [...Object.keys(CRM_READS),"clients","leads","quotations","projects"],
+  apn: ["apn_users","apn_attendance","apn_targets","apn_training","apn_quizzes","apn_leads","apn_quotations","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_achievements","apn_notifications","apn_documents","apn_timeline","apn_warnings","apn_notes","apn_activity","apn_transfer_history","apn_communications","apn_admin_notes","apn_admin_consoles","apn_zone_requests", ...Object.keys(REFERRAL_READS), ...Object.keys(WITHDRAWAL_READS), ...Object.keys(CRM_READS), ...Object.keys(AI_READS), ...Object.keys(CLIENT_READS), ...Object.keys(HELPDESK_READS), ...Object.keys(AGREEMENT_READS), "apn_action_badge_reads"],
+  apnwallet: ["apn_users", ...Object.keys(WITHDRAWAL_READS), ...Object.keys(REFERRAL_READS)],
+  apnadmin: ["apn_users","apn_targets","apn_training","apn_quizzes","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_notifications","apn_documents","apn_timeline","apn_warnings","apn_notes","apn_activity","apn_admin_notes","apn_admin_consoles","apn_zone_requests", ...Object.keys(REFERRAL_READS), ...Object.keys(WITHDRAWAL_READS), ...Object.keys(AGREEMENT_READS), "apn_action_badge_reads"],
+  support: ["support_tickets","support_ticket_messages","support_ticket_audit"],
+  portal: ["portal_posts","support_tickets","support_ticket_messages","support_ticket_audit"],
+  ai: [...Object.keys(AI_READS),"clients","leads","quotations","projects"],
+  automation: ["business_automation_queue", ...Object.keys(AI_READS)],
+});
+const routeDataTables = (route) => {
+  const base = ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard;
+  return [...new Set(["notifications", ...BOOTSTRAP_TABLES, ...base])];
+};
 
 async function mapWithConcurrency(items, limit, fn) {
   const out = new Array(items.length);
@@ -783,7 +791,7 @@ async function fetchAll({ excludeTables = [], includeTables = null } = {}) {
   if (shouldLoad("apn_action_badge_reads")) jobs.push(["apn_action_badge_reads", APN_ACTION_BADGE_READS, undefined, true]);
 
   const loaded = await mapWithConcurrency(jobs, TABLE_FETCH_CONCURRENCY, async ([table, columns, orderColumn]) => [
-    table, await loadTableRows(supabase, table, columns, orderColumn)
+    table, await loadTableRows(supabase, table, columns, orderColumn, TABLE_FETCH_TIMEOUT_MS, 1, true, 500, tableFetchLimit(table))
   ]);
   for (const [table, rows] of loaded) {
     if (TABLES.includes(table)) {
@@ -815,24 +823,14 @@ async function buildBackupSnapshot(db) {
   return snapshot;
 }
 
-async function fetchAuditRows() {
-  // Audit is append-only and can grow beyond the API's default 1,000-row limit.
-  // Page newest-first so the UI always gets the complete history, then restore
-  // chronological order for consumers that expect ascending source data.
-  const pageSize = 500;
-  const rows = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("audit")
-      .select("id,data,updated_at")
-      .order("updated_at", { ascending: false })
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(`Loading audit: ${error.message}`);
-    const page = data || [];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return rows
+async function fetchAuditRows(limit = TABLE_FETCH_LIMITS.audit) {
+  const { data, error } = await supabase
+    .from("audit")
+    .select("id,data,updated_at")
+    .order("updated_at", { ascending: false })
+    .range(0, Math.max(0, limit - 1));
+  if (error) throw new Error(`Loading audit: ${error.message}`);
+  return (data || [])
     .map((r) => ({ ...(r.data || {}), id: r.id }))
     .filter((x) => x && typeof x === "object")
     .sort((a, b) => (a?.ts || 0) - (b?.ts || 0));
@@ -949,55 +947,19 @@ const AI_DEFAULT_ENDPOINT = "https://api.anthropic.com/v1/messages";
 function aiConfigOf(config) {
   let raw = {};
   try { raw = JSON.parse((config && config.ai) || "{}") || {}; } catch { raw = {}; }
-  // Production ALLBEE AI is always server-side. Ignore legacy/direct settings
-  // so an old browser-stored llama model can never break the shared assistant.
-  return {
-    enabled: !!raw.enabled,
-    mode: "function",
-    functionName: "ai-chat-v2",
-    endpoint: AI_DEFAULT_ENDPOINT,
-    model: AI_RUNTIME_MODEL,
-    apiKey: "",
-  };
+  // One production gateway: provider credentials stay in the Edge Function.
+  return { enabled: !!raw.enabled, mode: "function", functionName: "ai-chat-v2", model: AI_RUNTIME_MODEL, apiKey: "" };
 }
-// Ready to answer? Function mode just needs a name (we can't see if it's deployed
-// until we call it); direct mode needs a key.
-function aiConfigured(cfg) {
-  if (!cfg || !cfg.enabled) return false;
-  return cfg.mode === "direct" ? !!cfg.apiKey : !!cfg.functionName;
-}
-// Send a chat turn and return the assistant's plain text. Tolerates a few
-// response shapes so a simple Edge Function ({ text }) or a passthrough of the
-// raw Anthropic response ({ content: [...] }) both work.
+function aiConfigured(cfg) { return !!cfg?.enabled && cfg?.mode === "function" && !!cfg?.functionName; }
 async function callAI(cfg, system, messages) {
-  const model = cfg.model || AI_DEFAULT_MODEL;
-  if (cfg.mode !== "direct") {
-    const { data, error } = await supabase.functions.invoke(cfg.functionName || "ai-chat-v2", {
-      body: { system, model, max_tokens: 1400, messages },
-    });
-    if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function. Is it deployed?`);
-    if (data && data.error) throw new Error(typeof data.error === "string" ? data.error : "The AI function returned an error.");
-    if (typeof data === "string") return data.trim();
-    if (data && typeof data.text === "string") return data.text.trim();
-    if (data && Array.isArray(data.content)) return data.content.filter((b) => b && b.type === "text").map((b) => b.text).join("\n").trim();
-    return typeof data === "object" ? JSON.stringify(data) : String(data ?? "");
-  }
-  const res = await fetch(cfg.endpoint || AI_DEFAULT_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": cfg.apiKey || "",
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({ model, max_tokens: 1400, system, messages }),
-  });
-  if (!res.ok) {
-    let t = ""; try { t = await res.text(); } catch { /* ignore */ }
-    throw new Error(`AI error ${res.status}${t ? ": " + t.slice(0, 300) : ""}`);
-  }
-  const data = await res.json();
-  return (data.content || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n").trim();
+  if (!aiConfigured(cfg)) throw new Error("ALLBEE AI is not configured.");
+  const { data, error } = await supabase.functions.invoke(cfg.functionName, { body: { system, model: cfg.model || AI_DEFAULT_MODEL, max_tokens: 1400, messages } });
+  if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function.`);
+  if (data?.error) throw new Error(typeof data.error === "string" ? data.error : "The AI gateway returned an error.");
+  if (typeof data === "string") return data.trim();
+  if (typeof data?.text === "string") return data.text.trim();
+  if (Array.isArray(data?.content)) return data.content.filter((b) => b?.type === "text").map((b) => b.text).join("\n").trim();
+  return typeof data === "object" ? JSON.stringify(data) : String(data ?? "");
 }
 // Contact details are masked before the snapshot leaves the browser, so the
 // model only ever sees partial emails/phones (never full client PII).
@@ -1981,8 +1943,8 @@ function ExpenseSharePanel({ db }) {
   );
 }
 
-function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true, showOps = true, team = [], isSuper = false }) {
-  const m = monthStats(db);
+function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true, showOps = true, team = [], isSuper = false, snapshot = null }) {
+  const m = snapshot?.finance?.transactions ? { rev: Number(snapshot.finance.transactions.income) || 0, exp: Number(snapshot.finance.transactions.expenses) || 0 } : monthStats(db);
   const apnSummary = showOps ? apnCommissionDashboardSummary(db) : null;
   const pending = db.tasks.filter((t) => t.status !== "Completed").length;
   const active = db.projects.filter((p) => p.stage !== "Completed").length;
@@ -3922,100 +3884,6 @@ class ErrorBoundary extends React.Component {
     );
     return this.props.children;
   }
-}
-
-const NAV = [
-  ["dashboard", "Dashboard", LayoutDashboard, "everyone"],
-  ["assistant", "ALLBEE AI", Sparkles, "everyone"],
-  ["ai-center", "AI Intelligence", Sparkles, "insight"],
-  ["knowledge-engine", "Pricing & Knowledge", BookOpen, "admin"],
-  ["requirement-builder", "Requirement Builder", MessageCircle, "admin"],
-  ["proposal-center", "Proposal Center", FileText, "admin"],
-  ["tasks", "Tasks", ListTodo, "work"],
-  ["attendance", "Attendance", UserCheck, "work"],
-  ["leave", "Leave", Plane, "leave"],
-  ["updates", "Daily updates", MessageSquare, "work"],
-  ["chat", "Team chat", Send, "collab"],
-  ["leads", "Leads & pipeline", UserPlus, "perm:leads"],
-  ["clients", "Clients", Building2, "perm:clients"],
-  ["quotations", "Quotations", FileText, "perm:quotations"],
-  ["invoices", "Invoices", Banknote, "perm:invoices"],
-  ["portal-posts", "Client updates", ExternalLink, "perm:portal-posts"],
-  ["support", "Support", Headset, "collab"],
-  ["projects", "Projects", FolderKanban, "perm:projects"],
-  ["inhouse", "In-house projects", Home, "perm:inhouse"],
-  ["testing", "Testing", ClipboardCheck, "perm:testing"],
-  ["courses", "Courses", GraduationCap, "perm:courses"],
-  ["class-students", "Class students", GraduationCap, "admin"],
-  ["marketing", "Marketing", Megaphone, "perm:marketing"],
-  ["concepts", "Concepts", Lightbulb, "perm:concepts"],
-  ["accounts", "Share & accounts", Wallet, "finance"],
-  ["withdrawals", "Withdrawals", ArrowDownToLine, "finance"],
-  ["planned", "Planned expenses", CalendarClock, "finance"],
-  ["vault", "Passwords", KeyRound, "vault"],
-  ["notifications", "Notifications", Bell, "everyone"],
-  ["announcements", "Announcements", MegaphoneIcon, "collab"],
-  ["documents", "Documents", Paperclip, "collab"],
-  ["knowledge", "Knowledge base", BookOpen, "collab"],
-  ["prompts", "Prompts", Sparkles, "perm:prompts"],
-  ["sheets", "Sheets", Sheet, "perm:sheets"],
-  ["terms", "Terms & conditions", BadgeCheck, "everyone"],
-  ["performance", "Performance", TrendingUp, "insight"],
-  ["rewards", "Rewards", Award, "collab"],
-  ["earnings", "My earnings", Coins, "everyone"],
-  ["team", "Team", Users, "admin"],
-  ["team-leads", "Team leads", ShieldCheck, "super"],
-  ["apn", "APN network", GaugeCircle, "admin"],
-  ["myteam", "My team", Users, "everyone"],
-  ["staff-salary", "Staff salary", Banknote, "admin"],
-  ["progress", "Progress", Activity, "work"],
-  ["recently-deleted", "Recently deleted", Trash2, "admin"],
-  ["audit", "Audit log", ScrollText, "admin"],
-  ["activity", "Activity", Eye, "admin"],
-  ["profile", "My profile", User, "everyone"],
-  ["settings", "Settings", SettingsIcon, "admin"],
-];
-
-// Sidebar grouping: which category each module belongs to when "Grouped" sort is on.
-const NAV_CATEGORIES = [
-  ["overview", "Overview"],
-  ["work", "Work"],
-  ["sales", "Sales & delivery"],
-  ["finance", "Finance"],
-  ["content", "Content & team"],
-  ["admin", "Admin"],
-  ["personal", "Personal"],
-];
-const NAV_CATEGORY = {
-  dashboard: "overview", notifications: "overview", myteam: "overview", assistant: "overview", "ai-center": "overview",
-  tasks: "work", attendance: "work", leave: "work", updates: "work", progress: "work", chat: "work",
-  leads: "sales", clients: "sales", quotations: "sales", invoices: "sales", "portal-posts": "sales", support: "sales", projects: "sales", inhouse: "sales", courses: "sales", "class-students": "sales", marketing: "sales", concepts: "sales", testing: "sales",
-  accounts: "finance", withdrawals: "finance", planned: "finance", earnings: "finance", "staff-salary": "finance",
-  announcements: "content", documents: "content", knowledge: "content", prompts: "content", sheets: "content", rewards: "content", performance: "content",
-  team: "admin", "team-leads": "admin", apn: "admin", "knowledge-engine": "admin", "requirement-builder": "admin", "proposal-center": "admin", vault: "admin", "recently-deleted": "admin", audit: "admin", activity: "admin", settings: "admin",
-  profile: "personal", terms: "personal",
-};
-const navCategoryOf = (k) => NAV_CATEGORY[k] || "personal";
-const NAV_SORT_LABEL = { category: "Grouped", az: "A–Z", custom: "Custom" };
-
-// Parse the URL hash into a view. Supports deep links like #/accounts/haji,
-// #/tasks/<id> and #/recently-deleted, plus #/<navkey> for ordinary pages.
-export function parseHash(hash) {
-  const h = (hash || "").replace(/^#\/?/, "").trim();
-  if (!h) return { route: "dashboard", account: null, task: null };
-  const parts = h.split("/");
-  // Legacy admin links from the pre-hash router were emitted as /admin and
-  // occasionally picked up punctuation (for example /admin..;). Treat those
-  // spellings as aliases for the canonical APN admin route instead of rendering
-  // a dead/blank route. Normal navigation always emits #/apn.
-  if (/^admin(?:[.;]+)?$/i.test(parts[0])) return { route: "apn", account: null, task: null, legacyAdmin: true };
-  if (parts[0] === "accounts" && parts[1]) {
-    const k = parts[1].toLowerCase();
-    return { route: "accounts", account: k === "haji" ? "Haji" : k === "alim" ? "Alim" : null, task: null };
-  }
-  if (parts[0] === "tasks" && parts[1]) return { route: "tasks", account: null, task: decodeURIComponent(parts[1]) };
-  if (parts[0] === "recently-deleted") return { route: "recently-deleted", account: null, task: null };
-  return { route: parts[0], account: null, task: null };
 }
 
 function PasswordRecovery({ isDark, onComplete }) {
@@ -7988,6 +7856,7 @@ export default function App() {
   const [config, setConfig] = useState(null);             // app_config (T&C body + version)
   const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
   const [serverUnreadNotifs, setServerUnreadNotifs] = useState(null);
+  const [dashboardSnapshot, setDashboardSnapshot] = useState(null);
   const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
   const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
   const [navSort, setNavSort] = useState(() => { try { return localStorage.getItem("allbee_navsort") || "category"; } catch { return "category"; } });
@@ -8019,6 +7888,24 @@ export default function App() {
     return () => { alive = false; window.clearInterval(timer); };
   }, [session?.user?.id]);
 
+  // Canonical server-side dashboard snapshots. These RPCs already exist in the
+  // production schema for Finance and CRM; using them here prevents the dashboard
+  // from recomputing headline totals from every loaded row. Failures fall back to
+  // the local projections so the dashboard remains resilient.
+  useEffect(() => {
+    if (!session?.user?.id || route !== "dashboard") return;
+    let alive = true;
+    Promise.all([
+      supabase.rpc("finance_v5_dashboard"),
+      supabase.rpc("crm_v5_dashboard"),
+      supabase.rpc("ai_get_dashboard"),
+    ]).then(([finance, crm, ai]) => {
+      if (!alive) return;
+      setDashboardSnapshot({ finance: finance.data || null, crm: crm.data || null, ai: ai.data || null, generatedAt: new Date().toISOString() });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [session?.user?.id, route]);
+
   // ── tap feedback ──────────────────────────────────────────────────────
   // Subtle tap feedback on interactive elements, app-wide. Very light, and only
   // on real taps of buttons/nav (not typing or scrolling). Works where the device
@@ -8045,50 +7932,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // ── auth session ──────────────────────────────────────────────────────
-  const handleAuthRecovery = useMemo(() => createSessionRecovery(
-    async () => {
-      const { data, error } = await supabase.auth.refreshSession();
-      if (error) throw error;
-      return data.session ?? null;
-    },
-    (e) => {
-      setSyncError(e?.message || "Your session expired. Please sign in again.");
-      setSession(null);
-    },
-  ), []);
-
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) return;
-      if (error) { setSyncError(error.message || "Could not restore your session."); return; }
-      setSession(data.session ?? null);
-    }).catch((e) => { if (mounted) setSyncError(e?.message || "Could not restore your session."); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
-      if (_evt === "PASSWORD_RECOVERY") setPasswordRecovery(true);
-      // Record a fresh sign-in time (best-effort; the column may not exist yet).
-      if (_evt === "SIGNED_IN" && s && s.user) {
-        supabase.from("profiles").update({ last_login: new Date().toISOString() }).eq("id", s.user.id).then(() => {}, () => {});
-        const actor = s.user.user_metadata?.name || s.user.email?.split("@")[0] || "System";
-        appendAuditEvent({ user: actor, userId: s.user.id, action: "logged in", module: "System", entity: "Authentication", description: `${actor} logged in` }).catch(() => {});
-      }
-      // Supabase auto-refreshes the JWT whenever the tab/app regains focus and
-      // fires TOKEN_REFRESHED with a brand-new session object. That object change
-      // used to re-run the data-load effect, flip `loading`, and remount the whole
-      // page — wiping anything you were typing. Only update when the actual signed-in
-      // user changes (sign in / sign out / switch account); ignore pure token
-      // refreshes by returning the previous reference so React skips the update.
-      if (_evt === "SIGNED_OUT") authRecoveryRef.current = false;
-      setSession((prev) => {
-        const prevId = prev && prev.user ? prev.user.id : null;
-        const nextId = s && s.user ? s.user.id : null;
-        if (prevId === nextId) return prev;   // same user → no churn, no reload
-        return s ?? null;
-      });
-    });
-    return () => { mounted = false; sub.subscription.unsubscribe(); };
-  }, []);
+  // ── auth session (extracted to auth/useAuthSession.js) ────────────────
+  useAuthSession({ supabase, setSession, setPasswordRecovery, setSyncError, appendAuditEvent, authRecoveryRef });
 
   // ── load my profile + the team + config, with live updates ────────────
   const loadPeople = useCallback(async (user) => {
@@ -8120,7 +7965,7 @@ export default function App() {
     const generation = ++reloadGenerationRef.current;
     // Coalesce only identical snapshot requests. A full refresh must never
     // accidentally reuse a partial dirty-table request (or vice versa).
-    const normalizedTables = normalizeRealtimeTableSet(tables);
+    const normalizedTables = normalizeRealtimeTableSet(tables) || routeDataTables(route);
     const requestKey = normalizedTables ? normalizedTables.join("|") : "*";
     const request = reloadInFlightRef.current && reloadInFlightKeyRef.current === requestKey
       ? reloadInFlightRef.current
@@ -8150,7 +7995,7 @@ export default function App() {
       };
       if (generation === reloadGenerationRef.current) setLoading(false);
     }
-  }, []);
+  }, [route]);
 
   // Recover after network restoration / laptop wake without forcing a full
   // remount. The existing reload generation + queue provide the race safety.
@@ -8178,25 +8023,39 @@ export default function App() {
       setDb(initial);
       setLoading(false);
       setSyncError(null);
-      // Full hydration is intentionally detached from the first paint. It fills
-      // APN/CRM/AI/referral/audit data after the shell is already interactive.
-      const hydrationGeneration = ++reloadGenerationRef.current;
-      const hydrationRequest = fetchAll({ excludeTables: BOOTSTRAP_TABLES });
-      hydrationRequest.then((full) => {
-        if (hydrationGeneration !== reloadGenerationRef.current) return;
-        // The fast payload already contains these collections. Avoid querying
-        // them twice during startup while preserving the first-paint snapshot.
-        setDb((current) => ({ ...full, ...Object.fromEntries(BOOTSTRAP_TABLES.map((t) => [t, current?.[t] || []])) }));
-      }).catch((e) => {
-        if (hydrationGeneration === reloadGenerationRef.current) setSyncError(e.message || String(e));
-      });
-      console.info(`[ALLBEE] fast bootstrap ready in ${Math.round(performance.now() - started)}ms`);
+      // Do not hydrate the whole company database in the background. Load only
+      // the active screen's scope after the shell is interactive.
+      const scope = routeDataTables(route);
+      const scoped = await fetchAll({ includeTables: scope });
+      if (reloadGenerationRef.current === 0) setDb((current) => ({ ...current, ...scoped }));
+      if (import.meta.env.DEV) console.info(`[ALLBEE] screen-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
     } catch (e) {
       setDb((current) => current || emptyDB());
       setLoading(false);
       setSyncError(e.message || String(e));
     }
-  }, []);
+  }, [route]);
+
+  const [routeDataLoading, setRouteDataLoading] = useState(false);
+  const loadedRouteRef = useRef("");
+  useEffect(() => {
+    if (!session || !db || !route) return;
+    const key = `${route}|${profile?.role || ""}`;
+    if (loadedRouteRef.current === key) return;
+    loadedRouteRef.current = key;
+    let alive = true;
+    setRouteDataLoading(true);
+    fetchAll({ includeTables: routeDataTables(route) }).then((fresh) => {
+      if (!alive) return;
+      setDb((current) => ({ ...current, ...fresh }));
+      setSyncError(null);
+    }).catch((e) => {
+      if (alive) setSyncError(e.message || String(e));
+    }).finally(() => {
+      if (alive) setRouteDataLoading(false);
+    });
+    return () => { alive = false; };
+  }, [route, session?.user?.id, profile?.role, db]);
 
   const markApnActionBadgeSeen = useCallback(async (actionType) => {
     if (!profile?.id || !APN_ACTION_BADGE_MAP.some((item) => item.actionType === actionType)) return;
@@ -8292,16 +8151,15 @@ export default function App() {
     };
     const configureChannel = (name, statusHandler) => {
       const channel = supabase.channel(name);
-      TABLES.filter((t) => t !== "audit").forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(REFERRAL_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(WITHDRAWAL_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(CRM_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(AI_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(CLIENT_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(HELPDESK_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      Object.keys(AGREEMENT_READS).forEach((t) => channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload));
-      channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
-      channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, scheduleAuditReload);
+      const scoped = new Set(routeDataTables(route));
+      scoped.forEach((t) => {
+        if (t === "audit") channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, scheduleAuditReload);
+        else channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload);
+      });
+      // The current user's notification badge remains live even when the active
+      // screen does not otherwise consume the notifications collection.
+      if (!scoped.has("notifications")) channel.on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, scheduleReload);
+      if (!scoped.has("apn_action_badge_reads")) channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
       channel.subscribe(statusHandler);
       return { unsubscribe: () => supabase.removeChannel(channel) };
     };
@@ -8315,7 +8173,7 @@ export default function App() {
       if (reloadTimer) clearTimeout(reloadTimer);
       if (auditTimer) clearTimeout(auditTimer);
     };
-  }, [session, reload, bootstrap]);
+  }, [session, reload, bootstrap, route]);
 
   // If an admin changes my role or the modules I'm granted while I'm signed in,
   // my row-level access changes — so refetch everything under the new permissions
@@ -8919,7 +8777,7 @@ export default function App() {
       case "dashboard":
         return (role === "staff" || role === "intern")
           ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
-          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} onOpenActivity={setActivityDetail} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} />;
+          : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} onOpenActivity={setActivityDetail} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} snapshot={dashboardSnapshot} />;
       case "tasks": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading tasks…</div></div>}><LazyTasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} runtime={{ Empty, Progress, assigneeText, avatarColor, canActOnTask, canEditTask, fmtDate, haptic, isMultiAssignee, isTaskAssignee, nextTaskState, priorityTone, taskAction, taskAssignees }} /></React.Suspense>;
       case "assistant": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "34%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>}><LazyAllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>;
       case "ai-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading AI Intelligence…</div></div>}><LazyAIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} mutate={mutate} runtime={{ Empty, Field, money, fmtDate, fmtDateTime, ROLE_LABEL, Search, TrendingUp, Users, Target, Activity, FileText, RefreshCw, Check, AlertTriangle, ArrowRight, emitToast, exportRowsToExcel, exportRowsToPDF, todayISO, supabase }} /></React.Suspense>;
