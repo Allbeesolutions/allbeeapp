@@ -38,7 +38,7 @@ import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, W
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
-import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones, apnMonthlyAnalytics } from "./modules/apn/analytics.js";
+import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones, apnMonthlyAnalytics, apnActivityHistory, apnDerivedTimeline, apnTimelineEntry, apnTargetProgress } from "./modules/apn/analytics.js";
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel } from "./modules/apn/helpers.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -4411,70 +4411,6 @@ function apnHealthScore(db, partner, profile) {
   const score = Math.round(attendance * .15 + activity * .15 + training * .1 + quiz * .1 + leadQuality * .15 + conversions * .2 + warnings * .05 + login * .1);
   return { score, band: apnHealthBand(score), parts: { attendance, activity, training, quiz, leadQuality, conversions, warnings, login } };
 }
-const apnTimelineEntry = (partnerId, eventType, title, description, performedBy = "System", performedById = null, at = Date.now()) => ({
-  id: `apn-timeline:${partnerId}:${eventType}`,
-  partnerId, eventType, title, description, performedBy, performedById, createdAt: at,
-});
-function apnDerivedTimeline(db, partner) {
-  const pid = partner.id;
-  const out = [];
-  if (partner.createdAt) out.push(apnTimelineEntry(pid, "registered", "Partner Registered", `${partner.name} joined the APN network.`, "System", null, partner.createdAt));
-  if (partner.approvedAt) out.push(apnTimelineEntry(pid, "approved", "Approved by Super Admin", "The APN application was approved.", partner.approvedBy || "Super Admin", null, partner.approvedAt));
-  if (partner.district && (partner.districtAssignedAt || partner.createdAt)) out.push(apnTimelineEntry(pid, "district-assigned", "District Assigned", `Assigned to ${partner.district}.`, partner.districtAssignedBy || "System", null, partner.districtAssignedAt || partner.createdAt));
-  (db.apn_transfer_history || []).filter((x) => x.partnerId === pid).forEach((x) => out.push(apnTimelineEntry(pid, `district-changed:${x.id}`, "District Changed", `${x.previousDistrict || "Unassigned"} → ${x.newDistrict || "Unassigned"}${x.reason ? ` · ${x.reason}` : ""}.`, x.changedBy || "System", null, x.effectiveDate || x.createdAt)));
-  const leads = (db.apn_leads || []).filter((x) => x.partnerId === pid).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const quotes = (db.apn_quotations || []).filter((x) => x.partnerId === pid).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const converted = leads.find((x) => x.status === "Converted");
-  const commission = (db.apn_commissions || []).filter((x) => x.partnerId === pid).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  if (Object.keys(partner.quizPasses || {}).length) out.push(apnTimelineEntry(pid, "quiz-completed", "Quiz Completed", "A partner quiz was completed.", "System", null, partner.quizCompletedAt || partner.updatedAt || partner.createdAt));
-  if (APN_SERVICES.every(([k]) => partner.unlocked?.[k])) out.push(apnTimelineEntry(pid, "training-completed", "Training Completed", "All APN training categories are complete.", "System", null, partner.trainingCompletedAt || partner.updatedAt || partner.createdAt));
-  if (leads[0]) out.push(apnTimelineEntry(pid, "first-lead", "First Lead Submitted", `First lead submitted for ${leads[0].clientName || "a client"}.`, "System", null, leads[0].createdAt));
-  if (quotes[0]) out.push(apnTimelineEntry(pid, "first-quotation", "First Quotation Generated", `First quotation generated for ${quotes[0].clientName || "a client"}.`, "System", null, quotes[0].createdAt));
-  if (converted) out.push(apnTimelineEntry(pid, "first-conversion", "First Client Converted", `First client converted: ${converted.clientName || "client"}.`, "System", null, converted.updatedAt || converted.createdAt));
-  if (commission[0]) out.push(apnTimelineEntry(pid, "first-commission", "First Commission Earned", `First commission recorded: ${money(commission[0].amount)}.`, "System", null, commission[0].createdAt));
-  const paid = commission.find((x) => x.status === "Paid");
-  if (paid) out.push(apnTimelineEntry(pid, "commission-paid", "Commission Paid", `${money(paid.amount)} commission was paid.`, "System", null, paid.paidAt || paid.updatedAt || paid.createdAt));
-  apnCommissionProjectsOf(db, pid).forEach((project) => {
-    out.push(apnTimelineEntry(pid, `commission-project:${project.id}`, "Commission Project Created", `${project.projectName || project.project || "Project"} · ${money(project.projectValue)} at ${project.commissionRate || project.rate || 0}%.`, project.createdBy || "Admin", null, project.createdAt));
-    apnRevenueCollectionsOf(db, project.id).forEach((collection) => out.push(apnTimelineEntry(pid, `revenue-collection:${collection.id}`, "Revenue Collection Added", `Received ${money(collection.receivedAmount)} · commission credited ${money(collection.commissionGenerated)}${Number(collection.incentive) ? ` · incentive ${money(collection.incentive)}` : ""}.`, collection.createdBy || "Admin", null, collection.createdAt || collection.receivedDate)));
-    const summary = apnProjectSummary(db, project);
-    if (summary.status === "Completed") out.push(apnTimelineEntry(pid, `commission-completed:${project.id}`, "Project Completed", `Total commission ${money(summary.commissionEarned)}.`, "System", null, project.updatedAt || project.createdAt));
-  });
-  if (partner.promotedAt) out.push(apnTimelineEntry(pid, "promoted", "Promoted", "Partner was promoted to District Head.", partner.promotedBy || "Super Admin", null, partner.promotedAt));
-  if (partner.demotedAt) out.push(apnTimelineEntry(pid, "demoted", "Demoted", "Partner level or hierarchy was changed.", partner.demotedBy || "Super Admin", null, partner.demotedAt));
-  if (partner.suspendedAt) out.push(apnTimelineEntry(pid, "suspended", "Suspended", partner.suspensionReason || "Partner account suspended.", partner.suspendedBy || "Super Admin", null, partner.suspendedAt));
-  if (partner.reactivatedAt) out.push(apnTimelineEntry(pid, "reactivated", "Reactivated", partner.reactivationReason || "Partner account reactivated.", partner.reactivatedBy || "Super Admin", null, partner.reactivatedAt));
-  if (partner.deletedAt) out.push(apnTimelineEntry(pid, "deleted", "Deleted (Archived)", partner.deleteReason || "Partner account archived.", partner.deletedBy || "Super Admin", null, partner.deletedAt));
-  return out;
-}
-
-
-
-function apnActivityHistory(db, partner, profile) {
-  const pid = partner.id;
-  const rows = [];
-  const add = (id, ts, eventType, title, description, user = "System") => { if (ts) rows.push({ id: `activity:${id}`, ts: typeof ts === "number" ? ts : Date.parse(ts) || 0, eventType, title, description, user }); };
-  (db.apn_activity || []).filter((x) => x.partnerId === pid).forEach((x) => add(x.id, x.createdAt || x.ts, x.eventType || "activity", x.title || "Activity", x.description || "", x.performedBy || x.user || "System"));
-  apnDerivedTimeline(db, partner).forEach((x) => add(x.id, x.createdAt, x.eventType, x.title, x.description, x.performedBy));
-  (db.apn_timeline || []).filter((x) => x.partnerId === pid).forEach((x) => add(x.id, x.createdAt, x.eventType || "timeline", x.title, x.description, x.performedBy));
-  apnLeadsOf(db, pid).forEach((x) => { add(`lead-created:${x.id}`, x.createdAt, "lead", "Lead Created", x.clientName || "Lead submitted", x.createdBy || "System"); if (x.updatedAt && x.updatedAt !== x.createdAt) add(`lead-updated:${x.id}`, x.updatedAt, "lead", "Lead Updated", `${x.clientName || "Lead"} · ${x.status || "updated"}`, x.updatedBy || "System"); });
-  (db.apn_quotations || []).filter((x) => x.partnerId === pid).forEach((x) => add(`quotation:${x.id}`, x.createdAt, "quotation", "Quotation Generated", x.clientName || x.project || "Quotation", x.createdBy || "System"));
-  apnCommsOf(db, pid).forEach((x) => add(`commission:${x.id}`, x.createdAt, "commission", `Commission ${x.status || "recorded"}`, `${money(x.amount)} · ${x.project || "Project"}`, x.updatedBy || "System"));
-  apnCommissionProjectsOf(db, pid).forEach((project) => {
-    add(`commission-project:${project.id}`, project.createdAt, "commission-project", "Commission Project Created", `${project.projectName || project.project || "Project"} · ${money(project.projectValue)}`, project.createdBy || "Admin");
-    apnRevenueCollectionsOf(db, project.id).forEach((collection) => add(`revenue-collection:${collection.id}`, collection.createdAt || collection.receivedDate, "revenue-collection", "Revenue Collection Added", `Received ${money(collection.receivedAmount)} · commission credited ${money(collection.commissionGenerated)}${Number(collection.incentive) ? ` · incentive ${money(collection.incentive)}` : ""}`, collection.createdBy || "Admin"));
-    if (apnProjectSummary(db, project).status === "Completed") add(`commission-project-completed:${project.id}`, project.updatedAt || project.createdAt, "project-completed", "Project Completed", `Total commission ${money(apnProjectSummary(db, project).commissionEarned)}.`, "System");
-  });
-  if (Object.keys(partner.unlocked || {}).length) add("training-started", partner.trainingStartedAt || partner.updatedAt, "training", "Training Started", "Partner training activity began.", "System");
-  (db.apn_targets || []).filter((x) => x.partnerId === pid).forEach((x) => { const progress = apnTargetProgress(db, x); if (progress.goal && progress.raw >= progress.goal) add(`target-achieved:${x.id}`, x.achievedAt || x.updatedAt || x.createdAt, "target", "Target Achieved", x.title || "Target completed", "System"); });
-  (db.apn_attendance || []).filter((x) => x.partnerId === pid).forEach((x) => add(`attendance:${x.id}`, x.createdAt || x.at, "attendance", "Attendance Check-in", x.date || "Partner checked in", x.createdBy || "System"));
-  (db.apn_communications || []).filter((x) => x.partnerId === pid).forEach((x) => add(`communication:${x.id}`, x.createdAt, "communication", `${x.type || "Communication"} · ${x.status || "Logged"}`, x.subject || x.message || "", x.sender || "Admin"));
-  (db.apn_notifications || []).filter((x) => x.audience === `partner:${pid}`).forEach((x) => add(`notification:${x.id}`, x.createdAt, "notification", "Notification", x.title || x.body || "", x.createdBy || "Admin"));
-  (db.audit || []).filter((x) => x.module === "APN" && x.partnerId === pid).forEach((x) => add(`audit:${x.id}`, x.ts, "admin", "Administrative Action", x.action, x.user || "Admin"));
-  if (partner.lastLogin || profile?.last_login) add("login", partner.lastLogin || profile.last_login, "login", "Login", "Partner signed in.", partner.name);
-  if (partner.lastLogout) add("logout", partner.lastLogout, "logout", "Logout", "Partner signed out.", partner.name);
-  return rows.filter((x) => x.ts).sort((a, b) => b.ts - a.ts);
-}
 function apnRecommendations(db, partner, profile) {
   const s = apnPartnerStats(db, partner.id); const health = apnHealthScore(db, partner, profile); const out = [];
   if (s.completed >= 1 && partner.role !== "district_head") out.push("This partner qualifies for promotion.");
@@ -4710,17 +4646,6 @@ function apnAchievementsFor(db, pid) {
 }
 
 /* ── targets ─────────────────────────────────────────────────────────── */
-function apnTargetProgress(db, t) {
-  const leads = apnLeadsOf(db, t.partnerId).filter((l) => (l.createdAt || 0) >= (t.createdAt || 0));
-  const metric = t.metric || "leads";
-  let raw;
-  if (metric === "leads") raw = leads.length;
-  else if (metric === "conversions") raw = leads.filter((l) => l.status === "Converted").length;
-  else raw = leads.filter((l) => l.status === "Converted" && l.service === metric).length;
-  const goal = Number(t.goal) || 0;
-  return { raw, count: goal ? Math.min(raw, goal) : raw, goal, pct: goal ? Math.min(100, Math.round((raw / goal) * 100)) : 0 };
-}
-
 /* ── notifications visibility ────────────────────────────────────────── */
 function apnNotifVisible(n, meRow) {
   const a = n.audience || "all";
