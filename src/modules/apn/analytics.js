@@ -52,6 +52,21 @@ export const apnCommissionRuleForProject = (projectNumber) => {
 };
 const apnLevelForCompleted = (n) => apnCommissionRuleForProject((Number(n) || 0) + 1);
 
+export const apnMonthKey = (date) => { const d = date instanceof Date ? date : new Date(date || 0); return isNaN(d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+export function apnMonthlyAnalytics(db, pid, count = 6) {
+  const now = new Date();
+  const months = Array.from({ length: count }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (count - i - 1), 1);
+    return { key: apnMonthKey(d), label: d.toLocaleDateString("en-IN", { month: "short", year: "numeric" }), leads: 0, revenue: 0, commission: 0, attendance: 0 };
+  });
+  const byKey = new Map(months.map((m) => [m.key, m]));
+  apnLeadsOf(db, pid).forEach((l) => { const row = byKey.get(apnMonthKey(l.createdAt)); if (row) { row.leads += 1; if (l.status === "Converted") row.revenue += Number(l.revenue) || 0; } });
+  apnCommsOf(db, pid).forEach((c) => { const row = byKey.get(apnMonthKey(c.createdAt || c.paidAt)); if (row) { row.commission += Number(c.amount) || 0; if (c.source === "manual") { row.leads += 1; row.revenue += Number(c.revenue) || 0; } } });
+  apnCommissionProjectsOf(db, pid).forEach((project) => apnRevenueCollectionsOf(db, project.id).forEach((collection) => { const row = byKey.get(apnMonthKey(collection.receivedDate || collection.createdAt)); if (row) { row.commission += Number(collection.commissionGenerated) || 0; row.revenue += Number(collection.receivedAmount) || 0; } }));
+  (db.apn_attendance || []).filter((a) => a.partnerId === pid).forEach((a) => { const row = byKey.get(apnMonthKey(a.createdAt || a.at || a.date)); if (row) row.attendance += 1; });
+  return months.map((m) => ({ ...m, revenue: round2(m.revenue), commission: round2(m.commission), attendance: Math.min(100, Math.round((m.attendance / new Date(Number(m.key.slice(0, 4)), Number(m.key.slice(5)) || 1, 0).getDate()) * 100)) }));
+}
+
 export function apnMilestones(db, partner) {
   const s = apnPartnerStats(db, partner.id);
   const leads = apnLeadsOf(db, partner.id).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
