@@ -161,8 +161,12 @@ export function AdminAPNChat({ me, onUnreadChange }) {
         });
       }, 120);
     };
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, refreshChat);
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
     ch.subscribe();
     return () => {
       if (timerId) clearTimeout(timerId);

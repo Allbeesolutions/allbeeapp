@@ -7284,7 +7284,12 @@ export default function App() {
         channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
         channel.on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
       }
-      if (!scoped.has("apn_action_badge_reads")) channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
+      if (!scoped.has("apn_action_badge_reads")) {
+        const badgeFilter = `user_id=eq.${session.user.id}`;
+        channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_action_badge_reads", filter: badgeFilter }, scheduleReload);
+        channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_action_badge_reads", filter: badgeFilter }, scheduleReload);
+        channel.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_action_badge_reads", filter: badgeFilter }, scheduleReload);
+      }
       channel.subscribe(statusHandler);
       return { unsubscribe: () => supabase.removeChannel(channel) };
     };
