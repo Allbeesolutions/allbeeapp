@@ -1,3 +1,6 @@
+import { APN_COMM_REVERSED, APN_COMMISSION_RULES, APN_LEAD_REJECTED, APN_TARGET_METRICS } from "./constants.js";
+import { localISODate } from "../../utils/dateFormat.js";
+
 export const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", banned: "Banned", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
 export const apnStatusClass = (s) => s === "active" ? "status-active" : s === "pending" ? "status-on_leave" : s === "suspended" || s === "banned" ? "status-terminated" : s === "inactive" ? "status-inactive" : s === "deleted" ? "status-deleted" : "status-on_leave";
 export const apnAdminLevel = (u, stats) => u?.level || (u?.role === "state_head" ? "State Head" : u?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
@@ -35,3 +38,23 @@ export const apnLastActivity = (db, pid, partner) => {
   }
   return Math.max(...times.map((x) => typeof x === "number" ? x : Date.parse(x || "") || 0));
 };
+
+export const apnLevelForCompleted = (n) => apnCommissionRuleForProject((Number(n) || 0) + 1);
+export const apnCommissionRuleForProject = (projectNumber) => {
+  const number = Math.max(1, Number(projectNumber) || 1);
+  return APN_COMMISSION_RULES.find((rule) => number >= rule.minProject && number <= rule.maxProject) || APN_COMMISSION_RULES[APN_COMMISSION_RULES.length - 1];
+};
+export const apnRateForPrior = (prior) => apnCommissionRuleForProject((Number(prior) || 0) + 1).rate;
+export const apnNextLevel = (n) => {
+  const c = Number(n) || 0;
+  if (c >= 10) return null;
+  const next = c < 2 ? APN_COMMISSION_RULES[1] : APN_COMMISSION_RULES[2];
+  return { next, remaining: Math.max(0, next.minProject - c), pct: Math.min(100, Math.round((c / next.minProject) * 100)) };
+};
+export const apnLeadTone = (s) => (s === "Converted" ? "pos" : APN_LEAD_REJECTED.has(s) ? "neg" : s === "Approved" || s === "Quotation Sent" ? "pri" : "");
+export const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : s === "Approved" ? "pri" : s === APN_COMM_REVERSED ? "neg" : "");
+export function apnPayoutDate(fromISO) {
+  const d = fromISO ? new Date(fromISO) : new Date();
+  return localISODate(new Date(d.getFullYear(), d.getMonth() + 1, 5));
+}
+export const apnMetricLabel = (m) => (APN_TARGET_METRICS.find((x) => x[0] === m)?.[1]) || "Leads";

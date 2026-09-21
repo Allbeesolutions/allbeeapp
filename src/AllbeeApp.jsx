@@ -40,7 +40,7 @@ import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones, apnMonthlyAnalytics, apnActivityHistory, apnDerivedTimeline, apnTimelineEntry, apnTargetProgress } from "./modules/apn/analytics.js";
-import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel } from "./modules/apn/helpers.js";
+import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel, apnLevelForCompleted, apnCommissionRuleForProject, apnRateForPrior, apnNextLevel, apnLeadTone, apnCommTone, apnPayoutDate, apnMetricLabel } from "./modules/apn/helpers.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4395,39 +4395,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
    never employees — and never touch internal accounts, balances, or the vault.
 ══════════════════════════════════════════════════════════════════════ */
 
-
-const apnLevelForCompleted = (n) => {
-  const c = Number(n) || 0;
-  return apnCommissionRuleForProject(c + 1);
-};
-const apnCommissionRuleForProject = (projectNumber) => {
-  const number = Math.max(1, Number(projectNumber) || 1);
-  return APN_COMMISSION_RULES.find((rule) => number >= rule.minProject && number <= rule.maxProject) || APN_COMMISSION_RULES[APN_COMMISSION_RULES.length - 1];
-};
-// Rate for the next project; prior completions determine its project number.
-const apnRateForPrior = (prior) => apnCommissionRuleForProject((Number(prior) || 0) + 1).rate;
-const apnNextLevel = (n) => {
-  const c = Number(n) || 0;
-  if (c >= 10) return null;
-  const next = c < 2 ? APN_COMMISSION_RULES[1] : APN_COMMISSION_RULES[2];
-  return { next, remaining: Math.max(0, next.minProject - c), pct: Math.min(100, Math.round((c / next.minProject) * 100)) };
-};
-
-
-
-const apnLeadTone = (s) => (s === "Converted" ? "pos" : APN_LEAD_REJECTED.has(s) ? "neg" : s === "Approved" || s === "Quotation Sent" ? "pri" : "");
-
-
-
-const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : s === "Approved" ? "pri" : s === APN_COMM_REVERSED ? "neg" : "");
-// Commissions are paid on the 5th of the following month — never immediately.
-function apnPayoutDate(fromISO) {
-  const d = fromISO ? new Date(fromISO) : new Date();
-  return localISODate(new Date(d.getFullYear(), d.getMonth() + 1, 5));
-}
-
-
-const apnMetricLabel = (m) => (APN_TARGET_METRICS.find((x) => x[0] === m)?.[1]) || "Leads";
 
 /* ── WP4 — zones, campaigns, ties & governed targets ─────────────────── */
 // The network runs on rolling month-based zones (zone1 … zone6). Each zone
