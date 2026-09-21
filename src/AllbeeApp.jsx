@@ -40,6 +40,7 @@ import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, W
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
+import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
@@ -431,55 +432,6 @@ export function FounderTap({ className, src, alt, style, onClick, children, ...r
    a plain admin runs the team and business but never sees the partner split. */
 /* ── helpers ──────────────────────────────────────────────────────────── */
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-// LOCAL calendar date as YYYY-MM-DD. We deliberately do NOT use toISOString(),
-// which returns the date in UTC: for India (UTC+5:30) any check-in before
-// 5:30 AM local time would otherwise be stamped with the *previous* day, so the
-// record showed up under yesterday and "today's" filter never matched it (which
-// also made the app ask the person to check in again). fmtDate/clockTime/
-// sameMonth all already work in local time, so this keeps everything consistent.
-const localISODate = (value = new Date()) => {
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-};
-const todayISO = () => localISODate();
-const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-
-function money(n, { sign = false } = {}) {
-  const v = round2(n || 0);
-  const neg = v < 0;
-  const s = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(Math.abs(v));
-  const core = "₹" + s;
-  if (neg) return "−" + core;
-  if (sign) return "+" + core;
-  return core;
-}
-function dateValue(value) {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (typeof value === "number") return new Date(value);
-  const text = String(value);
-  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00` : text);
-}
-function pad2(value) { return String(value).padStart(2, "0"); }
-function formatDateValue(value, withTime = false) {
-  const d = dateValue(value);
-  if (!d || Number.isNaN(d.getTime())) return value ? String(value) : "—";
-  const date = `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
-  if (!withTime) return date;
-  const hours = d.getHours();
-  const hour = hours % 12 || 12;
-  return `${date} ${pad2(hour)}:${pad2(d.getMinutes())} ${hours >= 12 ? "PM" : "AM"}`;
-}
-function fmtDate(iso) { return formatDateValue(iso); }
-function fmtTime(ts) { return formatDateValue(ts, true); }
-const sameMonth = (iso, ref = new Date()) => {
-  const d = new Date(iso + "T00:00:00");
-  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
-};
-
 // Subtle haptic feedback — only for meaningful actions (task accept/complete,
 // leave & withdrawal decisions, notifications). No-op where unsupported.
 function haptic(pattern = 12) {
