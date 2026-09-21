@@ -23,6 +23,12 @@ import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 import { useAuthSession } from "./auth/useAuthSession.js";
 import { usePeopleSync } from "./auth/usePeopleSync.js";
+import { AI_RUNTIME_MODEL, aiConfigOf, aiConfigured, callAI } from "./ai/gateway.js";
+
+function maskEmail(e) { const s = String(e || "").trim(); const at = s.indexOf("@"); if (!s) return ""; if (at <= 1) return s.slice(0, 1) + "***"; return s.slice(0, 1) + "***@" + s.slice(at + 1); }
+function maskPhone(p) { const digits = String(p || "").replace(/\D/g, ""); if (!digits) return ""; if (digits.length < 5) return "***"; return "****" + digits.slice(-4); }
+function scrubText(v) { const s = String(v ?? ""); if (!s) return s; let out = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, maskEmail); return out.replace(/\+?\d[\d\s().-]{7,}\d/g, (token) => { const digits = (token.match(/\d/g) || []).join(""); return digits.length >= 10 ? "****" + digits.slice(-4) : token; }); }
+function renderAIInline(text, keyPrefix = "ai") { const parts = String(text ?? "").split(/(\*\*[^*]+\*\*|`[^`]+`)/g); return parts.map((part, i) => { if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={`${keyPrefix}-b-${i}`} style={{ color: "var(--ink)", fontWeight: 800 }}>{part.slice(2, -2)}</strong>; if (/^`[^`]+`$/.test(part)) return <code key={`${keyPrefix}-c-${i}`} style={{ padding: "2px 5px", borderRadius: 5, background: "var(--primary-soft)", color: "var(--primary)", fontSize: "0.92em" }}>{part.slice(1, -1)}</code>; return <React.Fragment key={`${keyPrefix}-t-${i}`}>{part}</React.Fragment>; }); }
 import { ROLE_LABEL, ROLE_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, STATUS_ACTIVE, GRANTABLE_MODULES, TNC_ROLES, isSuperRole, isAdminRole, canFinanceRole, navAllowed, pendingTnc, roleTncOf, acceptedRoleTnc } from "./app/permissions.js";
 import { NAV, NAV_CATEGORIES, NAV_CATEGORY, navCategoryOf, NAV_SORT_LABEL, parseHash } from "./app/navigation.js";
 export { parseHash };
@@ -588,72 +594,6 @@ async function saveConfig(patch) {
   const rows = Object.entries(patch).map(([key, value]) => ({ key, value: value == null ? "" : String(value) }));
   const { error } = await supabase.from("app_config").upsert(rows, { onConflict: "key" });
   if (error) throw new Error(error.message);
-}
-
-/* ── ALLBEE AI — built-in assistant ────────────────────────────────────────
-   The AI config lives in app_config under the "ai" key (one JSON blob). Two
-   ways to run it:
-     • mode "function" (recommended): a Supabase Edge Function holds the API key
-       server-side; the browser only calls supabase.functions.invoke(name).
-     • mode "direct" (quick start / internal use): the browser calls the model
-       API directly with a key stored in config. The key is visible to anyone
-       who can open the app, so prefer the function for anything shared. */
-const AI_RUNTIME_MODEL = "openai/gpt-oss-120b";
-const AI_DEFAULT_MODEL = AI_RUNTIME_MODEL;
-const AI_DEFAULT_ENDPOINT = "https://api.anthropic.com/v1/messages";
-function aiConfigOf(config) {
-  let raw = {};
-  try { raw = JSON.parse((config && config.ai) || "{}") || {}; } catch { raw = {}; }
-  // One production gateway: provider credentials stay in the Edge Function.
-  return { enabled: !!raw.enabled, mode: "function", functionName: "ai-chat-v2", model: AI_RUNTIME_MODEL, apiKey: "" };
-}
-function aiConfigured(cfg) { return !!cfg?.enabled && cfg?.mode === "function" && !!cfg?.functionName; }
-async function callAI(cfg, system, messages) {
-  if (!aiConfigured(cfg)) throw new Error("ALLBEE AI is not configured.");
-  const { data, error } = await supabase.functions.invoke(cfg.functionName, { body: { system, model: cfg.model || AI_DEFAULT_MODEL, max_tokens: 1400, messages } });
-  if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function.`);
-  if (data?.error) throw new Error(typeof data.error === "string" ? data.error : "The AI gateway returned an error.");
-  if (typeof data === "string") return data.trim();
-  if (typeof data?.text === "string") return data.text.trim();
-  if (Array.isArray(data?.content)) return data.content.filter((b) => b?.type === "text").map((b) => b.text).join("\n").trim();
-  return typeof data === "object" ? JSON.stringify(data) : String(data ?? "");
-}
-// Contact details are masked before the snapshot leaves the browser, so the
-// model only ever sees partial emails/phones (never full client PII).
-function maskEmail(e) {
-  const s = String(e || "").trim();
-  const at = s.indexOf("@");
-  if (!s) return "";
-  if (at <= 1) return s.slice(0, 1) + "***";
-  return s.slice(0, 1) + "***@" + s.slice(at + 1);
-}
-function maskPhone(p) {
-  const digits = String(p || "").replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.length < 5) return "***";
-  return "****" + digits.slice(-4);
-}
-// Conservative free-text sanitizer for the AI snapshot: masks emails and
-// plausible phone numbers (10+ digits, with optional separators) inside any
-// note/description field. Everything else is preserved for business meaning.
-function scrubText(v) {
-  const s = String(v ?? "");
-  if (!s) return s;
-  let out = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, maskEmail);
-  return out.replace(/\+?\d[\d\s().-]{7,}\d/g, (token) => {
-    const digits = (token.match(/\d/g) || []).join("");
-    return digits.length >= 10 ? "****" + digits.slice(-4) : token;
-  });
-}
-// A compact, bounded snapshot of the workspace so the assistant can answer
-// questions and draft quotations/replies grounded in real ALLBEE data.
-function renderAIInline(text, keyPrefix = "ai") {
-  const parts = String(text ?? "").split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, i) => {
-    if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={`${keyPrefix}-b-${i}`} style={{ color: "var(--ink)", fontWeight: 800 }}>{part.slice(2, -2)}</strong>;
-    if (/^`[^`]+`$/.test(part)) return <code key={`${keyPrefix}-c-${i}`} style={{ padding: "2px 5px", borderRadius: 5, background: "var(--primary-soft)", color: "var(--primary)", fontSize: "0.92em" }}>{part.slice(1, -1)}</code>;
-    return <React.Fragment key={`${keyPrefix}-t-${i}`}>{part}</React.Fragment>;
-  });
 }
 
 function renderAIText(text) {
