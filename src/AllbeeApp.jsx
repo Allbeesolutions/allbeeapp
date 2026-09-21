@@ -2975,17 +2975,13 @@ function LastSeen({ team }) {
   const [q, setQ] = useState("");
   const [view, setView] = useState("all"); // all | inactive
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const { data, error } = await supabase.from("profiles").select("id,last_login,last_logout");
-        if (error) throw error;
-        if (!alive) return;
-        const m = {}; for (const r of data || []) m[r.id] = r; setAct(m);
-      } catch { if (alive) { setColsMissing(true); setAct({}); } }
-    })();
-    return () => { alive = false; };
-  }, []);
+    const m = {};
+    for (const person of team || []) {
+      if (person?.id) m[person.id] = { id: person.id, last_login: person.last_login, last_logout: person.last_logout };
+    }
+    setAct(m);
+    setColsMissing(false);
+  }, [team]);
   const people = team.filter(isInternalMember);
   const inactive = people.filter(isInactiveWeek);
   const inactiveSet = new Set(inactive.map((p) => p.id));

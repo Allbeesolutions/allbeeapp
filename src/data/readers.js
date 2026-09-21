@@ -278,7 +278,7 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
   async function fetchBootstrapData() {
     const db = emptyDB();
     const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
-      t, await loadTableRows(supabase, t, "id,data", undefined, BOOTSTRAP_TIMEOUT_MS, 0, false)
+      t, await loadTableRows(supabase, t, "id,data", "created_at", BOOTSTRAP_TIMEOUT_MS, 0, true, 500, 500)
     ]);
     for (const [t, rows] of loaded) {
       db[t] = (rows || [])
