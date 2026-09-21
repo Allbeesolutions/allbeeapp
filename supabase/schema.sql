@@ -34,7 +34,7 @@ create table if not exists public.app_config (
 );
 -- CHANGE THIS CODE, then share it only with Haji and Alim.
 insert into public.app_config (key, value)
-values ('admin_signup_code', 'ALLBEE-ADMIN-2025')
+values ('admin_signup_code', '')
 on conflict (key) do nothing;
 -- Terms & Conditions live here too. Version 0 = nothing published yet (no gate).
 -- Publishing/editing T&C from the app bumps the version, which forces every

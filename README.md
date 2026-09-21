@@ -152,7 +152,7 @@ password and the region closest to you (Mumbai / `ap-south-1` for India).
 2. Create the database
 Open SQL Editor → New query, paste all of `supabase/schema.sql`, and Run.
 This creates every table, the roles system, and the security rules. While you're
-there, change the admin code: the file sets it to `ALLBEE-ADMIN-2025` — edit
+there, configure the admin signup secret through a secure deployment/SQL secret-management process before enabling admin signup — do not commit the secret to the repository
 that line before running, or update it later in the `app_config` table. Share
 this code only with Haji and Alim.
 3. Connect the app
