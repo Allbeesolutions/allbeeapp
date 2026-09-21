@@ -29,3 +29,30 @@ export const APN_TIEUPS = {
 };
 export const APN_INACTIVE_DAYS = 30;
 export const APN_ACTION_PENDING_STATUSES = new Set(["pending", "under_review", "pending approval", "needs_publish", "unpublished", "draft"]);
+
+export const APN_COMMISSION_RULES = Object.freeze([
+  Object.freeze({ key: 0, name: "Trainee Partner", rate: 10, minProject: 1, maxProject: 1 }),
+  Object.freeze({ key: 1, name: "Active Partner", rate: 15, minProject: 2, maxProject: 9 }),
+  Object.freeze({ key: 2, name: "Growth Partner", rate: 20, minProject: 10, maxProject: Infinity }),
+]);
+
+export const APN_WITHDRAWAL_TYPES = [
+  ["commission", "Commission"], ["referral", "Referral"], ["incentive", "Incentive"],
+];
+
+export const APN_TICKET_STATUSES = ["open", "under_review", "waiting_for_partner", "answered", "resolved", "closed"];
+export const APN_TICKET_TONE = { open: "pri", under_review: "accent", waiting_for_partner: "accent", answered: "pos", resolved: "pos", closed: "" };
+export const APN_AI_CHIPS = [
+  ["My wallet", "What is my wallet balance and when can I withdraw?"],
+  ["My commission", "Why haven't I received my commission yet? Explain from my records."],
+  ["My reversal", "Which reversals appear on my account and why were they made?"],
+  ["My projects", "Which of my projects and revenue collections are on record?"],
+  ["My referrals", "How much have I earned from referrals and when were they effective?"],
+  ["Rules", "Explain the current commission ladder and caps under the active rule version."],
+  ["Escalate to support", "I need help from the ALLBEE support team."],
+];
+
+export const APN_APPROVERS = [
+  { name: "Syed Hasan Kuddos Sahib", designation: "Co-Founder & CFO" },
+  { name: "Mohamed Backer Alim Sahib", designation: "Founder & CEO" },
+];

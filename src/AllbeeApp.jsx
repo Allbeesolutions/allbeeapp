@@ -32,6 +32,7 @@ import Accounts from "./modules/finance/Accounts.jsx";
 import Withdrawals from "./modules/finance/Withdrawals.jsx";
 import Planned from "./modules/finance/Planned.jsx";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
+import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
@@ -4526,11 +4527,7 @@ function resolveApnId(rows = [], requested) {
 
 // Single source of truth for APN progression: project 1 earns 10%, projects
 // 2–9 earn 15%, and project 10 onward earns 20%.
-const APN_COMMISSION_RULES = Object.freeze([
-  Object.freeze({ key: 0, name: "Trainee Partner", rate: 10, minProject: 1, maxProject: 1 }),
-  Object.freeze({ key: 1, name: "Active Partner", rate: 15, minProject: 2, maxProject: 9 }),
-  Object.freeze({ key: 2, name: "Growth Partner", rate: 20, minProject: 10, maxProject: Infinity }),
-]);
+
 
 
 
@@ -6248,9 +6245,6 @@ class APNTabErrorBoundary extends React.Component {
 /* Shared APN partner-page helpers. Keep these in the portal module because the
    lazy APN pages receive them through runtime; defining them in another lazy
    module makes the portal render fail before the child component can load. */
-const APN_WITHDRAWAL_TYPES = [
-  ["commission", "Commission"], ["referral", "Referral"], ["incentive", "Incentive"],
-];
 const apnWithdrawalWalletFor = (db, pid, type) => (db.apn_withdrawal_wallets || []).find((row) => row.partner_id === pid && row.wallet_type === type) || { wallet_type: type, pending: 0, approved: 0, withdrawable: 0, locked: 0, paid: 0, lifetime: 0, monthly: 0, today: 0, total_requested: 0, total_approved: 0, total_rejected: 0, total_processing: 0 };
 const apnWithdrawalTone = (status) => ({ pending: "pri", under_review: "accent", approved: "pos", processing: "accent", paid: "pos", rejected: "neg", cancelled: "neg", expired: "neg" }[status] || "");
 const apnWithdrawalLabel = (status) => String(status || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -6263,17 +6257,6 @@ const referralLinkFor = (code) => {
   return `${window.location.origin}/apn/register?ref=${encodeURIComponent(code)}`;
 };
 const referralQrFor = (link) => link ? `https://quickchart.io/qr?size=220&text=${encodeURIComponent(link)}` : "";
-const APN_TICKET_STATUSES = ["open", "under_review", "waiting_for_partner", "answered", "resolved", "closed"];
-const APN_TICKET_TONE = { open: "pri", under_review: "accent", waiting_for_partner: "accent", answered: "pos", resolved: "pos", closed: "" };
-const APN_AI_CHIPS = [
-  ["My wallet", "What is my wallet balance and when can I withdraw?"],
-  ["My commission", "Why haven't I received my commission yet? Explain from my records."],
-  ["My reversal", "Which reversals appear on my account and why were they made?"],
-  ["My projects", "Which of my projects and revenue collections are on record?"],
-  ["My referrals", "How much have I earned from referrals and when were they effective?"],
-  ["Rules", "Explain the current commission ladder and caps under the active rule version."],
-  ["Escalate to support", "I need help from the ALLBEE support team."],
-];
 const apnAiCategoryFor = (q) => {
   const s = String(q || "");
   if (/withdraw|settlement|payout|release/i.test(s)) return "Withdrawal";
@@ -6502,10 +6485,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
    APN ADMIN (internal) — run by Haji / Alim / admins. Approvals, District Head
    appointment and reactivation are partner-only (superadmin) actions.
 ══════════════════════════════════════════════════════════════════════ */
-const APN_APPROVERS = [
-  { name: "Syed Hasan Kuddos Sahib", designation: "Co-Founder & CFO" },
-  { name: "Mohamed Backer Alim Sahib", designation: "Founder & CEO" },
-];
 const apnApproverFor = (actor) => /syed|haji/i.test(String(actor || "")) ? APN_APPROVERS[0] : APN_APPROVERS[1];
 const apnNotificationSender = (n) => {
   const approvedBy = n?.approvedBy || {};
