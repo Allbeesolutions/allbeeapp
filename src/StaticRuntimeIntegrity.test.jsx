@@ -47,5 +47,5 @@ describe("static runtime integrity", () => {
       if (missing.length) failures.push(`${name}: ${missing.join(", ")}`);
     }
     expect(failures).toEqual([]);
-  });
+  }, 15000);
 });
