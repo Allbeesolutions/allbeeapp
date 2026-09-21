@@ -35,6 +35,7 @@ import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import APNAgreementReader from "./modules/apn/AgreementReader.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
+import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
@@ -4489,57 +4490,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
    surface, its own permissions. Partners are independent, commission-only —
    never employees — and never touch internal accounts, balances, or the vault.
 ══════════════════════════════════════════════════════════════════════ */
-
-
-const apnPadId = (n) => APN_ID_PREFIX + String(n).padStart(4, "0");
-const apnLeadId = (n) => "APN-L-" + String(n).padStart(4, "0");
-
-
-function apnNumberOf(value) { return Number(String(value || "").replace(/\D/g, "")) || 0; }
-function apnIdFor(partner) {
-  return partner?.apnId || "—";
-}
-function normalizeManualApnId(value) {
-  const raw = String(value || "").trim().toUpperCase();
-  if (!raw) return null;
-  const match = raw.match(/^(?:APN-TN-)?(\d{4})$/);
-  return match ? apnPadId(Number(match[1])) : null;
-}
-function nextAvailableApnNumber(rows = [], requested) {
-  const occupied = new Set((rows || []).map((row) => apnNumberOf(row.apnId)).filter(Boolean));
-  let number = Math.max(Number(requested) || 0, APN_MIN_DYNAMIC_NUMBER);
-  while (occupied.has(number) || APN_RESERVED_NUMBERS.has(number)) number += 1;
-  return number;
-}
-function resolveApnId(rows = [], requested) {
-  const manual = normalizeManualApnId(requested);
-  if (manual) {
-    const duplicate = (rows || []).some((row) => apnIdFor(row) === manual || row.apnId === manual);
-    if (duplicate) throw new Error(`${manual} is already assigned to another partner.`);
-    return manual;
-  }
-  return apnPadId(nextAvailableApnNumber(rows));
-}
-
-
-
-
-
-
-// Single source of truth for APN progression: project 1 earns 10%, projects
-// 2–9 earn 15%, and project 10 onward earns 20%.
-
-
-
-
-
-function apnPercent(value, label) {
-  if (value === "" || value == null) return null;
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < APN_PERCENT_MIN || number > APN_PERCENT_MAX) throw new Error(`${label} must be between 0 and 100.`);
-  return number;
-}
-
 
 
 const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", banned: "Banned", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
