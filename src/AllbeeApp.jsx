@@ -40,6 +40,7 @@ import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones, apnMonthlyAnalytics, apnActivityHistory, apnDerivedTimeline, apnTimelineEntry, apnTargetProgress } from "./modules/apn/analytics.js";
+import { apnCurrentZone, apnZonePeriodKey, apnZoneTone, apnConsoleRow, apnCampaignOf, apnGovernedTargets, apnGovernedLimit, apnCalculatedGovernedExplanation, apnReciprocal, apnFormRules } from "./modules/apn/network.js";
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel, apnLevelForCompleted, apnCommissionRuleForProject, apnRateForPrior, apnNextLevel, apnLeadTone, apnCommTone, apnPayoutDate, apnMetricLabel } from "./modules/apn/helpers.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -4400,24 +4401,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 // The network runs on rolling month-based zones (zone1 … zone6). Each zone
 // has a start/end window; a partner's zone is stored on their row (`zone`)
 // and mirrors the apex zone they joined through a zone request.
-const apnMonthStart = (offset = 0) => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + offset, 1); };
-function apnZonePeriods(count = 6) {
-  return Array.from({ length: count }, (_, i) => {
-    const start = apnMonthStart(i);
-    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
-    return { key: `zone${i + 1}`, label: start.toLocaleDateString("en-IN", { month: "short", year: "numeric" }), startAt: start.getTime(), endAt: end.getTime(), startIso: localISODate(start) };
-  });
-}
-const apnZonePeriodKey = (ts) => {
-  const t = Number(ts) || Date.now();
-  return apnZonePeriods(6).find((p) => t >= p.startAt && t <= p.endAt)?.key || "zone1";
-};
-function apnCurrentZone(db) {
-  const consoleRow = apnConsoleRow(db);
-  const period = apnZonePeriods(6).find((p) => p.key === apnZonePeriodKey(consoleRow?.zoneStartAt || Date.now())) || apnZonePeriods(6)[0];
-  return { key: period.key, label: period.label, period };
-}
-const apnZoneTone = (key) => ({ zone1: "pri", zone2: "pos", zone3: "accent", zone4: "pri", zone5: "pos", zone6: "accent" }[key] || "");
 function apnZoneRank(db, pid, zoneKey) {
   const pool = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
   const arr = pool.map((u) => ({ id: u.id, v: apnPartnerStats(db, u.id).revenue })).sort((a, b) => b.v - a.v);
@@ -4435,69 +4418,6 @@ function apnZoneStats(db, zoneKey) {
     commissions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).commission.earned, 0),
   };
 }
-// Sweep: every partner belongs to a zone; old rows without one are mapped from
-// their registration month so the hub HUD is never empty.
-
-// Hub console row: the admin-side campaign/zone settings live in a row of
-// apn_admin_consoles tagged kind:"console". All hub cards read from here.
-function apnConsoleRow(db) {
-  return [...(db.apn_admin_consoles || [])].filter((c) => c.kind === "console").sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] || {};
-}
-function apnCampaignOf(db) {
-  const c = apnConsoleRow(db);
-  const memberCount = Number(c.apnMemberCount) || 0;
-  const targetCount = Number(c.apnTargetCount) || 0;
-  return {
-    active: !!c.apnCampaignActive,
-    memberCount,
-    targetCount,
-    message: c.apnCampaignMessage || `WORLDWIDE CAMPAIGN — ${memberCount} of ${targetCount} partners have joined`,
-    joined: targetCount > 0 ? Math.min(100, Math.round((memberCount / targetCount) * 100)) : 0,
-    under: targetCount > 0 && memberCount < targetCount,
-  };
-}
-// One active admin-assigned target at a time per partner (the govern limit);
-// anything the partner creates themselves does not count against them.
-
-function apnGovernedTargets(db, pid) {
-  return (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.selfCreated);
-}
-function apnGovernedLimit(db, pid) {
-  const targets = apnGovernedTargets(db, pid);
-  return { count: targets.length, limit: APN_GOVERNED_TARGETS_LIMIT, full: targets.length >= APN_GOVERNED_TARGETS_LIMIT };
-}
-function apnCalculatedGovernedExplanation(db, pid) {
-  const g = apnGovernedLimit(db, pid);
-  if (!g.count) return "No admin-assigned targets right now — your targets are your own.";
-  if (g.full) return `You currently have ${g.count} admin-assigned target${g.count === 1 ? "" : "s"} (limit ${g.limit}). Acknowledge it on the Targets tab to clear the counter.`;
-  return `You have ${g.count} admin-assigned target${g.count === 1 ? "" : "s"} of ${g.limit} allowed.`;
-}
-// Express tie-ups: submitting a lead/quote can mark a tie-up with the client.
-// When the client also works with us on the other side of the deal the tie is
-// reciprocal — both parties are governed by the same relationship.
-
-function apnReciprocal(db, meRow) {
-  const mine = apnLeadsOf(db, meRow?.id).filter((l) => l.tieUp);
-  if (!mine.length) return { any: false, count: 0 };
-  const clients = new Set(mine.map((l) => String(l.mobile || "").replace(/\D/g, "")));
-  let count = 0;
-  for (const l of (db.apn_leads || [])) {
-    if (!String(l.mobile || "").replace(/\D/g, "") || clients.has(String(l.mobile || "").replace(/\D/g, ""))) continue;
-    if (mine.some((m) => String(m.mobile || "").replace(/\D/g, "") === String(l.mobile || "").replace(/\D/g, "") && l.partnerId !== meRow?.id)) count += 1;
-  }
-  return { any: count > 0, count };
-}
-// Express form rules: which fields a form surfaces depends on the chosen
-// service (kept in one place so all three forms agree).
-function apnFormRules(service) {
-  switch (service) {
-    case "website": return { showBusiness: true, showBudget: true, showCollege: false, showTieUps: true };
-    case "marketing": return { showBusiness: true, showBudget: true, showCollege: false, showTieUps: true };
-    case "course": return { showBusiness: false, showBudget: false, showCollege: true, showTieUps: true };
-    default: return { showBusiness: true, showBudget: false, showCollege: true, showTieUps: true };
-  }
-}
-
 /* ── partner lookups ─────────────────────────────────────────────────── */
 const apnMe = (db, pid) => (db.apn_users || []).find((u) => u.id === pid) || null;
 const apnAvatarUrl = (partner, profile) => partner?.profilePicture || partner?.photo_url || partner?.photoUrl || profile?.photo_url || "";
