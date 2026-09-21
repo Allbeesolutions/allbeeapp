@@ -83,3 +83,21 @@ export function apnFormRules(service) {
   }
 }
 
+
+export function apnZoneRank(db, pid, zoneKey, apnLivePartners, apnPartnerStats, apnZonePeriodKey) {
+  const pool = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
+  const arr = pool.map((u) => ({ id: u.id, v: apnPartnerStats(db, u.id).revenue })).sort((a, b) => b.v - a.v);
+  const idx = arr.findIndex((x) => x.id === pid);
+  return { rank: idx < 0 ? null : idx + 1, total: arr.length };
+}
+export function apnZoneStats(db, zoneKey, apnLivePartners, apnEffectiveStatus, apnPartnerStats, apnZonePeriodKey, round2) {
+  const members = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
+  return {
+    members: members.length,
+    active: members.filter((u) => apnEffectiveStatus(u) === "active").length,
+    revenue: round2(members.reduce((s, u) => s + apnPartnerStats(db, u.id).revenue, 0)),
+    leads: members.reduce((s, u) => s + apnPartnerStats(db, u.id).submitted, 0),
+    conversions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).converted, 0),
+    commissions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).commission.earned, 0),
+  };
+}

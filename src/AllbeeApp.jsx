@@ -40,7 +40,7 @@ import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones, apnMonthlyAnalytics, apnActivityHistory, apnDerivedTimeline, apnTimelineEntry, apnTargetProgress } from "./modules/apn/analytics.js";
-import { apnCurrentZone, apnZonePeriodKey, apnZoneTone, apnConsoleRow, apnCampaignOf, apnGovernedTargets, apnGovernedLimit, apnCalculatedGovernedExplanation, apnReciprocal, apnFormRules } from "./modules/apn/network.js";
+import { apnCurrentZone, apnZonePeriodKey, apnZoneTone, apnConsoleRow, apnCampaignOf, apnGovernedTargets, apnGovernedLimit, apnCalculatedGovernedExplanation, apnReciprocal, apnFormRules, apnZoneRank, apnZoneStats } from "./modules/apn/network.js";
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel, apnLevelForCompleted, apnCommissionRuleForProject, apnRateForPrior, apnNextLevel, apnLeadTone, apnCommTone, apnPayoutDate, apnMetricLabel } from "./modules/apn/helpers.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -4401,23 +4401,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 // The network runs on rolling month-based zones (zone1 … zone6). Each zone
 // has a start/end window; a partner's zone is stored on their row (`zone`)
 // and mirrors the apex zone they joined through a zone request.
-function apnZoneRank(db, pid, zoneKey) {
-  const pool = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
-  const arr = pool.map((u) => ({ id: u.id, v: apnPartnerStats(db, u.id).revenue })).sort((a, b) => b.v - a.v);
-  const idx = arr.findIndex((x) => x.id === pid);
-  return { rank: idx < 0 ? null : idx + 1, total: arr.length };
-}
-function apnZoneStats(db, zoneKey) {
-  const members = apnLivePartners(db).filter((u) => (u.zone || apnZonePeriodKey(u.createdAt)) === zoneKey);
-  return {
-    members: members.length,
-    active: members.filter((u) => apnEffectiveStatus(u) === "active").length,
-    revenue: round2(members.reduce((s, u) => s + apnPartnerStats(db, u.id).revenue, 0)),
-    leads: members.reduce((s, u) => s + apnPartnerStats(db, u.id).submitted, 0),
-    conversions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).converted, 0),
-    commissions: members.reduce((s, u) => s + apnPartnerStats(db, u.id).commission.earned, 0),
-  };
-}
 /* ── partner lookups ─────────────────────────────────────────────────── */
 const apnMe = (db, pid) => (db.apn_users || []).find((u) => u.id === pid) || null;
 const apnAvatarUrl = (partner, profile) => partner?.profilePicture || partner?.photo_url || partner?.photoUrl || profile?.photo_url || "";
@@ -5027,8 +5010,8 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
   const activeTarget = targets.find((t) => apnTargetProgress(db, t).pct < 100) || targets[0];
   const campaign = apnCampaignOf(db);
   const zone = apnCurrentZone(db);
-  const zRank = apnZoneRank(db, pid, zone.key);
-  const zStats = apnZoneStats(db, zone.key);
+  const zRank = apnZoneRank(db, pid, zone.key, apnLivePartners, apnPartnerStats, apnZonePeriodKey);
+  const zStats = apnZoneStats(db, zone.key, apnLivePartners, apnEffectiveStatus, apnPartnerStats, apnZonePeriodKey, round2);
   const myZoneRequest = (db.apn_zone_requests || []).find((r) => r.partnerId === pid && ["pending", "requested"].includes(r.status));
   const reciprocal = apnReciprocal(db, meRow);
   const refEarnings = (db.apn_referral_earnings || []).filter((row) => row.referrer_id === pid);
