@@ -22,6 +22,7 @@ const {
 import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 import { useAuthSession } from "./auth/useAuthSession.js";
+import { usePeopleSync } from "./auth/usePeopleSync.js";
 import { ROLE_LABEL, ROLE_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, STATUS_ACTIVE, GRANTABLE_MODULES, TNC_ROLES, isSuperRole, isAdminRole, canFinanceRole, navAllowed, pendingTnc, roleTncOf, acceptedRoleTnc } from "./app/permissions.js";
 import { NAV, NAV_CATEGORIES, NAV_CATEGORY, navCategoryOf, NAV_SORT_LABEL, parseHash } from "./app/navigation.js";
 export { parseHash };
@@ -7185,28 +7186,8 @@ export default function App() {
   // ── auth session (extracted to auth/useAuthSession.js) ────────────────
   useAuthSession({ supabase, setSession, setPasswordRecovery, setSyncError, appendAuditEvent, authRecoveryRef });
 
-  // ── load my profile + the team + config, with live updates ────────────
-  const loadPeople = useCallback(async (user) => {
-    try {
-      await ensureProfile(user);
-      const [list, cfg, lk] = await Promise.all([fetchTeam(), fetchConfig(), fetchLocks()]);
-      setTeam(list);
-      setConfig(cfg);
-      setLocks(lk);
-      setProfile(list.find((p) => p.id === user.id) || null);
-    } catch (e) { setSyncError(e.message || String(e)); setProfile(null); }
-  }, []);
-
-  useEffect(() => {
-    if (!session) { setProfile(undefined); setTeam([]); setConfig(null); setLocks([]); return; }
-    loadPeople(session.user);
-    const ch = supabase.channel("allbee-people")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadPeople(session.user))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "app_config" }, () => loadPeople(session.user))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "fin_locks" }, async () => setLocks(await fetchLocks()));
-    ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [session, loadPeople]);
+  // ── profile/team/config sync (extracted) ───────────────────────────────
+  const loadPeople = usePeopleSync({ session, supabase, ensureProfile, fetchTeam, fetchConfig, fetchLocks, setTeam, setConfig, setLocks, setProfile, setSyncError });
 
   const reloadGenerationRef = useRef(0);
   const reloadInFlightRef = useRef(null);
