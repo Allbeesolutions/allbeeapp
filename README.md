@@ -330,3 +330,21 @@ to the people involved.
 ### Data/egress diagnostics
 
 Development builds expose aggregate query counts and estimated JSON payload bytes at `window.__ALLBEE_DATA_METRICS__`. This is a client-payload diagnostic, not a replacement for Supabase's provider-level egress meter.
+
+## Current architecture (September 2026)
+
+- `src/auth/useAuthSession.js` owns session restoration and auth-state subscription.
+- `src/app/navigation.js` owns route parsing/navigation metadata; `src/app/permissions.js` centralizes role/permission helpers.
+- `src/data/readers.js` contains screen-scoped reads, bounded collection loading, dashboard snapshots and audit/backup readers. `src/data/queryMetrics.js` records client-side request/row/payload diagnostics; these metrics are diagnostic only and are not Supabase billing telemetry.
+- APN is being extracted incrementally under `src/modules/apn/`: constants, identity helpers, display helpers, agreement reader/shared gates, and the inactive-account gate are already separated. Remaining APN business logic is intentionally extracted in dependency-safe slices rather than through a wholesale rewrite.
+- Finance has focused modules under `src/modules/finance/`; CRM has its own `EnterpriseCRM.jsx` surface with saved views, bulk lead actions and unified customer/project timelines.
+- AI requests use the server-side `ai-chat-v2` gateway; provider secrets are not exposed to the browser.
+- Production deployment is currently performed with Vercel CLI because the GitHub remote rejects the configured push identity. Production alias: `https://allbeeapp-six.vercel.app`.
+
+## Release verification
+
+Before production deployment, run the full Vitest suite and `npm run build`. The current suite contains 31 test files / 191 tests. `npm audit --omit=dev` should remain clean. Public smoke checks should include `/`, `/manifest.webmanifest`, and `/.well-known/assetlinks.json`.
+
+## Production verification limitations
+
+Authenticated role smoke tests, live APN financial reconciliation, and Supabase billing-level egress measurement require authorized production credentials/management telemetry. They must not be represented as verified from local mocks or client-side diagnostics.

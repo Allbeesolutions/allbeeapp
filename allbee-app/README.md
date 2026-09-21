@@ -222,3 +222,7 @@ allbee-app/
 - Financial and business tables are restricted to admins by Row Level Security;
   attendance / leave / daily updates are scoped to their owner; tasks are scoped
   to the people involved.
+
+## Architecture note
+
+The app now uses screen-scoped data readers (`src/data/readers.js`), centralized auth/session and permission helpers, and incremental APN/Finance module extraction. Client-side query metrics are diagnostics only; they do not represent Supabase billing telemetry. Authenticated production smoke tests and live billing/egress verification require authorized production access.
