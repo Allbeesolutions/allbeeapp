@@ -52,6 +52,21 @@ export const apnCommissionRuleForProject = (projectNumber) => {
 };
 const apnLevelForCompleted = (n) => apnCommissionRuleForProject((Number(n) || 0) + 1);
 
+export function apnMilestones(db, partner) {
+  const s = apnPartnerStats(db, partner.id);
+  const leads = apnLeadsOf(db, partner.id).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const converted = leads.filter((x) => x.status === "Converted");
+  const first = (id, label, done, at) => ({ id, label, done, at: at || null });
+  const out = [
+    first("first-lead", "First Lead", leads.length > 0, leads[0]?.createdAt),
+    first("first-client", "First Client", converted.length > 0, converted[0]?.updatedAt || converted[0]?.createdAt),
+  ];
+  [10000, 50000, 100000].forEach((value) => out.push(first(`revenue-${value}`, `₹${value.toLocaleString("en-IN")} Revenue`, s.revenue >= value, leads.find((x) => x.status === "Converted" && Number(x.revenue) >= value)?.createdAt)));
+  [10, 50, 100].forEach((value) => out.push(first(`clients-${value}`, `${value} Clients`, s.converted >= value, converted[value - 1]?.updatedAt || converted[value - 1]?.createdAt)));
+  out.push(first("district-head", "District Head Promotion", partner.role === "district_head" || partner.level === "District Head", partner.promotedAt));
+  return out;
+}
+
 export function apnPartnerStats(db, pid) {
   const leads = apnLeadsOf(db, pid);
   const submitted = leads.length;

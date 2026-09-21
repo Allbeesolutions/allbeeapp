@@ -38,7 +38,7 @@ import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, W
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
-import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats } from "./modules/apn/analytics.js";
+import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones } from "./modules/apn/analytics.js";
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel } from "./modules/apn/helpers.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -4488,17 +4488,6 @@ function apnActivityHistory(db, partner, profile) {
   if (partner.lastLogin || profile?.last_login) add("login", partner.lastLogin || profile.last_login, "login", "Login", "Partner signed in.", partner.name);
   if (partner.lastLogout) add("logout", partner.lastLogout, "logout", "Logout", "Partner signed out.", partner.name);
   return rows.filter((x) => x.ts).sort((a, b) => b.ts - a.ts);
-}
-function apnMilestones(db, partner) {
-  const s = apnPartnerStats(db, partner.id);
-  const leads = apnLeadsOf(db, partner.id).slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const converted = leads.filter((x) => x.status === "Converted");
-  const first = (id, label, done, at) => ({ id, label, done, at: at || null });
-  const out = [first("first-lead", "First Lead", leads.length > 0, leads[0]?.createdAt), first("first-client", "First Client", converted.length > 0, converted[0]?.updatedAt || converted[0]?.createdAt)];
-  [10000, 50000, 100000].forEach((value) => out.push(first(`revenue-${value}`, `₹${value.toLocaleString("en-IN")} Revenue`, s.revenue >= value, leads.find((x) => x.status === "Converted" && Number(x.revenue) >= value)?.createdAt)));
-  [10, 50, 100].forEach((value) => out.push(first(`clients-${value}`, `${value} Clients`, s.converted >= value, converted[value - 1]?.updatedAt || converted[value - 1]?.createdAt)));
-  out.push(first("district-head", "District Head Promotion", partner.role === "district_head" || partner.level === "District Head", partner.promotedAt));
-  return out;
 }
 function apnRecommendations(db, partner, profile) {
   const s = apnPartnerStats(db, partner.id); const health = apnHealthScore(db, partner, profile); const out = [];
