@@ -259,7 +259,7 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
   });
   const routeDataTables = (route) => {
     const base = ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard;
-    return [...new Set(["notifications", ...BOOTSTRAP_TABLES, ...base])];
+    // The initial shell bootstrap is loaded separately. Route refreshes must stay truly scoped\n    // so a navigation event does not silently re-fetch the global bootstrap payload.\n    return [...new Set(["notifications", ...base])];
   };
 
   async function mapWithConcurrency(items, limit, fn) {
