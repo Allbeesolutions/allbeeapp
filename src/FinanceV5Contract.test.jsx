@@ -6,6 +6,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const sql = read("supabase/migrations/20260904162000_finance_v5_certification.sql");
 const combinedSql = read("supabase/migrations/20260906010000_combine_apn_commission_finance_entries.sql");
 const app = read("src/AllbeeApp.jsx");
+const accounts = read("src/modules/finance/Accounts.jsx");
 const reconFinalSql = read("supabase/migrations/20260906030000_finance_reconciliation_final_scope.sql");
 
 describe("Finance v5 contracts", () => {
@@ -28,8 +29,8 @@ describe("Finance v5 contracts", () => {
   });
   it("surfaces Finance v5 controls in Share & accounts", () => {
     expect(app).toContain("finance_v5_dashboard");
-    expect(app).toContain("Finance v5 control panel");
-    expect(app).toContain("Reconciliation");
+    expect(accounts).toContain("Finance v5 control panel");
+    expect(accounts).toContain("Reconciliation");
   });
   it("uses one Finance deduction for the APN commission pool with component breakdown", () => {
     expect(combinedSql).toContain("apn_consolidate_finance_commission_expense");
@@ -57,8 +58,8 @@ describe("Finance v5 contracts", () => {
     expect(reconFinalSql).toContain("exceptions");
   });
   it("explains the forward forecast and keeps reconciliation text inside its card", () => {
-    expect(app).toContain("Projected net cash · next 3 months");
-    expect(app).toContain("Review Finance reconciliation");
-    expect(app).toContain('whiteSpace: "normal"');
+    expect(accounts).toContain("Projected net cash · next 3 months");
+    expect(accounts).toContain("Review Finance reconciliation");
+    expect(accounts).toContain('whiteSpace: "normal"');
   });
 });

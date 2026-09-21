@@ -27,6 +27,10 @@ import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
 import { snapshotQueryMetrics } from "./data/queryMetrics.js";
+import Accounts from "./modules/finance/Accounts.jsx";
+import Withdrawals from "./modules/finance/Withdrawals.jsx";
+import Planned from "./modules/finance/Planned.jsx";
+
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
@@ -2522,191 +2526,6 @@ function AccountFull({ db, user, goBack }) {
   );
 }
 
-function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks = [], lockPeriod, unlockPeriod, isSuper, currentUser }) {
-  const [view, setView] = useState("all");
-  const [q, setQ] = useState("");
-  const [financeV5, setFinanceV5] = useState(null);
-  const [financeV5Error, setFinanceV5Error] = useState("");
-  const refreshFinanceV5 = useCallback(async () => {
-    if (!isSuper) return;
-    const { data, error } = await supabase.rpc("finance_v5_dashboard");
-    if (error) { setFinanceV5Error(error.message); return; }
-    setFinanceV5(data || null); setFinanceV5Error("");
-  }, [isSuper]);
-  useEffect(() => { refreshFinanceV5(); }, [refreshFinanceV5]);
-  const thisPeriod = todayISO().slice(0, 7);
-  const lockedThis = locks.includes(thisPeriod);
-  const doLock = async (p, on) => { try { on ? await lockPeriod(p, currentUser) : await unlockPeriod(p); emitToast(on ? "Period locked." : "Period unlocked.", "success"); } catch (e) { emitToast(e.message || "Couldn't update the lock.", "error"); } };
-  const list = useMemo(() => {
-    let r = [...db.transactions].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt));
-    if (view !== "all") r = r.filter((t) => t.kind === view);
-    if (q.trim()) { const s = q.toLowerCase(); r = r.filter((t) => [t.client, t.project, t.category, t.notes].join(" ").toLowerCase().includes(s)); }
-    return r;
-  }, [db.transactions, view, q]);
-
-  const del = async (t) => {
-    // APN income is a cross-module financial posting. Revoke the APN project
-    // first so the partner wallet/project/collections are reversed before the
-    // finance rows are soft-deleted into the recycle bin.
-    if (t.kind === "income" && t.incomeSource === "apn" && t.apnProjectId) {
-      try {
-        const { error } = await supabase.rpc("apn_finalize_finance_income_revoke", {
-          p_transaction_id: t.id,
-          p_reason: `Finance income entry deleted by ${currentUser || "Finance"}.`,
-        });
-        if (error) throw new Error(error.message);
-        emitToast("APN income revoked and commission reversed.", "success");
-      } catch (e) {
-        emitToast(e.message || "Could not revoke the APN income entry.", "error");
-        return;
-      }
-    }
-    removeItem("transactions", t, {
-      name: `${t.kind === "income" ? "Income" : "Expense"} ${money(t.amount)}${t.client ? " · " + t.client : ""}`,
-      cascadeRows: t.kind === "income" && t.apnProjectId ? (db.transactions || []).filter((x) => x.id !== t.id && (x.apnCommissionOfIncome === t.id || x.id === "apn-expense:" + t.id)) : [],
-      cascadeLabel: "APN commission expense",
-      audit: `deleted a ${t.kind} of ${money(t.amount)}${(db.transactions || []).some((x) => x.id !== t.id && (x.apnCommissionOfIncome === t.id || x.id === "apn-expense:" + t.id)) ? " and its APN commission expense" : ""}`,
-    });
-  };
-
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Share & accounts</h3><span className="spacer" />
-        <button className="btn" onClick={() => openModal({ type: "expense" })}><Plus size={16} />Add expense</button>
-        <button className="btn primary" onClick={() => openModal({ type: "income" })}><Plus size={16} />Add income</button>
-      </div>
-
-      {lockedThis && <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}><LockIcon size={15} /> {fmtPeriod(thisPeriod)} is locked — income, expenses and withdrawals dated this month are frozen{isSuper ? "." : " until a partner unlocks it."}</div>}
-      {isSuper && financeV5Error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />Finance v5 reconciliation could not load: {financeV5Error}</div>}
-      {isSuper && financeV5 && <div className="card" style={{ marginBottom: 16 }}><div className="item-row"><div className="item-main"><div className="item-title"><ShieldCheck size={15} style={{ verticalAlign: -2 }} /> Finance v5 control panel</div><div className="item-meta">Authoritative transaction totals, APN commission expense linkage, paid withdrawals, and forward cash forecast.</div></div><button className="btn sm" onClick={refreshFinanceV5}>Refresh</button></div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))" }}><div className="card stat"><div className="lbl">Income</div><div className="num mono">{money(financeV5.transactions.income)}</div></div><div className="card stat"><div className="lbl">Expenses</div><div className="num mono">{money(financeV5.transactions.expenses)}</div></div><div className="card stat"><div className="lbl">Net cash</div><div className="num mono">{money(financeV5.transactions.net)}</div></div><div className="card stat"><div className="lbl">APN commission expenses</div><div className="num mono">{money(financeV5.apn.commission_expenses)}</div></div><div className="card stat finance-v5-forecast-card" title="Projected net cash for the next 3 months: forecast revenue minus forecast expenses."><div className="lbl">3-month forward forecast</div><div className="num mono">{money(financeV5.forecast.net)}</div><div className="sub">Projected net cash · next 3 months</div></div><div className="card stat finance-v5-reconciliation-card"><div className="lbl">Reconciliation</div><div className={`num mono ${financeV5.reconciliation.status === "balanced" ? "pos-txt" : "neg-txt"}`} style={{ fontSize: 20, lineHeight: 1.15, whiteSpace: "normal", overflowWrap: "anywhere" }}>{financeV5.reconciliation.status === "balanced" ? "Balanced" : `${financeV5.reconciliation.exceptions} exceptions`}</div><div className="sub">{financeV5.reconciliation.status === "balanced" ? "All APN commission mappings agree" : "Review Finance reconciliation"}</div></div></div></div>}
-
-      {isSuper && (
-        <div className="card stat" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <LockIcon size={16} color="var(--muted)" />
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontWeight: 700 }}>Financial locking</div>
-              <div className="hint-line" style={{ fontSize: 12 }}>Lock a closed month to freeze its books. Only partners can lock or unlock.</div>
-            </div>
-            <button className={"btn sm " + (lockedThis ? "" : "primary")} onClick={() => doLock(thisPeriod, !lockedThis)}>
-              {lockedThis ? <><UnlockIcon size={13} />Unlock {fmtPeriod(thisPeriod)}</> : <><LockIcon size={13} />Lock {fmtPeriod(thisPeriod)}</>}
-            </button>
-          </div>
-          {locks.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            {locks.map((p) => <span key={p} className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><LockIcon size={11} />{fmtPeriod(p)}<button className="iconbtn" style={{ width: 20, height: 20 }} onClick={() => doLock(p, false)} title="Unlock"><X size={11} /></button></span>)}
-          </div>}
-        </div>
-      )}
-
-      <div className="cards-grid" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 16 }}>
-        <div className="card balance-card" onClick={() => openBalance("Haji")}><div className="stripe" style={{ background: "var(--haji)" }} />
-          <div className="who"><span className="dot" style={{ background: "var(--haji)" }} /> Haji</div>
-          <div className="amt mono" style={{ fontSize: 24, color: bal.Haji < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.Haji)}</div>
-          <div className="hint">Breakdown <ChevronRight size={13} /></div></div>
-        <div className="card balance-card" onClick={() => openBalance("Alim")}><div className="stripe" style={{ background: "var(--alim)" }} />
-          <div className="who"><span className="dot" style={{ background: "var(--alim)" }} /> Alim</div>
-          <div className="amt mono" style={{ fontSize: 24, color: bal.Alim < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.Alim)}</div>
-          <div className="hint">Breakdown <ChevronRight size={13} /></div></div>
-        <div className="card stat"><div className="lbl"><Wallet size={14} /> Company balance</div>
-          <div className="num mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</div>
-          <div className="sub">Haji + Alim · {db.transactions.length} entries</div></div>
-        <div className="card stat account-balance-card" role="button" tabIndex={0} title="View APN partner balance details" onClick={() => openBalance("__account__")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openBalance("__account__"); } }} style={{ cursor: "pointer" }}><div className="lbl"><Wallet size={14} /> Account balance</div>
-          <div className="num mono" style={{ color: bal.account < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.account)}</div>
-          <div className="sub">Company + unwithdrawn APN commission {money(bal.apnCommission)} · View details</div></div>
-      </div>
-
-      <ExpenseSharePanel db={db} />
-
-      <div className="toolbar">
-        <div className="search"><Search size={16} color="var(--muted)" /><input placeholder="Search client, project, notes…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <div className="seg">{[["all", "All"], ["income", "Income"], ["expense", "Expenses"]].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
-      </div>
-
-      <div className="card">
-        {list.length === 0 ? (
-          <Empty icon={<Wallet size={22} color="var(--muted)" />} title="No entries yet" text="Record your first income or expense to start tracking the partner split."
-            action={<button className="btn primary" onClick={() => openModal({ type: "income" })}><Plus size={16} />Add income</button>} />
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Date</th><th>Client / project</th><th>Category</th><th className="num-cell">Amount</th><th>Split</th><th></th></tr></thead>
-              <tbody>
-                {list.map((t) => (
-                  <tr key={t.id}>
-                    <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtDate(t.date)}</td>
-                    <td><div style={{ fontWeight: 600 }}>{t.project || t.client || "—"}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{t.client || ""}</div></td>
-                    <td><span className={"badge " + (t.kind === "income" ? "pos" : "neg")}>{t.kind === "income" ? "Income" : "Expense"}</span> <span className="tag">{t.category}</span>{t.kind === "expense" && expenseScope(t) === "company" && <span className="tag" style={{ marginLeft: 4 }}>Shared</span>}{t.kind === "income" && Number(t.apnCommissionDistributionTotal) > 0 && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>APN deductions {money(t.apnCommissionDistributionTotal)} · partner {money(t.apnPartnerCommission || 0)} · referral {money(t.apnReferralCommission || 0)} · district {money(t.apnDistrictCommission || 0)} · state {money(t.apnStateCommission || 0)}</div>}{t.kind === "expense" && t.apnCommissionCombined && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Single APN deduction · partner {money(t.apnPartnerCommission || 0)} · referral {money(t.apnReferralCommission || 0)} · district {money(t.apnDistrictCommission || 0)} · state {money(t.apnStateCommission || 0)}</div>}{t.apnCommissionExpense && t.apnCommissionOfIncome && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Linked to project income</div>}{t.apnWithdrawalExpense && <div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Paid APN withdrawal · wallet {t.apnWalletType || "commission"}</div>}</td>
-                    <td className={"num-cell mono " + (t.kind === "income" ? "pos-txt" : "neg-txt")} style={{ fontWeight: 700 }}>{money(t.kind === "income" ? t.amount : -t.amount, { sign: t.kind === "income" })}</td>
-                    <td style={{ minWidth: 130 }}><SplitBar h={t.hajiPct} a={t.alimPct} legend={false} /><div className="split-legend"><span>H {t.hajiPct}%</span><span>A {t.alimPct}%</span></div></td>
-                    <td><div className="row-actions">
-                      <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: t.kind, initial: t })}><Pencil size={14} /></button>
-                      <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete entry?", body: `Remove this ${t.kind} of ${money(t.amount)}? Balances will recalculate.`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(t) })}><Trash2 size={14} /></button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Withdrawals({ db, bal, mutate, openModal, removeItem, isSuper, currentUser }) {
-  const list = [...db.withdrawals].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt));
-  const del = (w) => removeItem("withdrawals", w, { name: `Withdrawal ${money(w.amount)} · ${w.user}`, audit: `deleted a withdrawal of ${money(w.amount)}` });
-  const statusOf = (w) => w.status || "approved"; // legacy rows (no status) already moved money
-  const tone = (s) => s === "approved" ? "pos" : s === "rejected" ? "neg" : "pri";
-  const setStatus = (w, s) => { haptic(s === "approved" ? 12 : [10, 30, 10]); mutate((d) => ({ ...d, withdrawals: d.withdrawals.map((x) => x.id === w.id ? { ...x, status: s, approvedBy: currentUser, approvedAt: Date.now() } : x) }),
-    { action: `${s === "approved" ? "approved" : "rejected"} withdrawal of ${money(w.amount)} for ${w.user}`, module: "Withdrawals" }); };
-  const pending = list.filter((w) => statusOf(w) === "pending").length;
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Withdrawals</h3><span className="spacer" />
-        <button className="btn primary" onClick={() => openModal({ type: "withdraw" })}><Plus size={16} />Record withdrawal</button></div>
-
-      {pending > 0 && <div className="banner" style={{ marginLeft: 0, marginRight: 0 }}><Hourglass size={15} /> {pending} withdrawal{pending > 1 ? "s" : ""} awaiting a partner's approval. Only approved withdrawals affect the balances.</div>}
-
-      <div className="cards-grid" style={{ gridTemplateColumns: "1fr 1fr", margin: "16px 0" }}>
-        {USERS.map((u) => (
-          <div key={u} className="card stat"><div className="lbl"><span className="dot" style={{ background: avatarColor(u) }} /> {u} available</div>
-            <div className="num mono" style={{ color: bal[u] < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal[u])}</div>
-            {bal[u] < 0 && <div className="sub neg-txt">Negative — to be settled by future profit share</div>}</div>
-        ))}
-      </div>
-
-      <div className="card">
-        {list.length === 0 ? (
-          <Empty icon={<ArrowDownToLine size={22} color="var(--muted)" />} title="No withdrawals yet" text="A partner can withdraw up to their current balance. Each withdrawal needs a partner's approval before it moves money." />
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Date</th><th>Partner</th><th className="num-cell">Amount</th><th>Status</th><th>Notes</th><th></th></tr></thead>
-              <tbody>{list.map((w) => {
-                const st = statusOf(w);
-                return (
-                <tr key={w.id} style={st === "rejected" ? { opacity: 0.55 } : undefined}>
-                  <td className="mono" style={{ whiteSpace: "nowrap" }}>{fmtDate(w.date)}</td>
-                  <td><span className="badge" style={{ background: "var(--surface-2)" }}><span className="dot" style={{ background: avatarColor(w.user), display: "inline-block", marginRight: 5 }} />{w.user}</span></td>
-                  <td className="num-cell mono neg-txt" style={{ fontWeight: 700 }}>{money(-w.amount)}</td>
-                  <td><span className={"badge " + tone(st)} style={{ textTransform: "capitalize" }}>{st}</span></td>
-                  <td style={{ color: "var(--muted)", fontSize: 13 }}>{w.notes || "—"}</td>
-                  <td><div className="row-actions">
-                    {isSuper && st !== "approved" && <button className="btn sm primary" onClick={() => setStatus(w, "approved")} title="Approve"><Check size={13} /></button>}
-                    {isSuper && st !== "rejected" && <button className="btn sm danger" onClick={() => setStatus(w, "rejected")} title="Reject"><X size={13} /></button>}
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete withdrawal?", body: `Remove this ${money(w.amount)} withdrawal for ${w.user}?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(w) })}><Trash2 size={14} /></button>
-                  </div></td>
-                </tr>
-              ); })}</tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function priorityTone(p) { return p === "Urgent" || p === "High" ? "neg" : p === "Medium" ? "pri" : ""; }
 
 function Progress({ db, mutate, isAdmin = true, currentUser, me, openTask }) {
@@ -4436,45 +4255,6 @@ function Leads({ db, mutate, openModal, removeItem, isAdmin }) {
   );
 }
 
-function Planned({ db, mutate, openModal, removeItem, openIncome, canFinance }) {
-  const list = [...db.planned].sort((a, b) => (a.nextDue || "").localeCompare(b.nextDue || ""));
-  const del = (p) => removeItem("planned", p, { name: p.title, audit: `deleted planned expense "${p.title}"` });
-  const monthlyTotal = list.filter((p) => p.recurrence === "Monthly").reduce((s, p) => s + (Number(p.amount) || 0), 0);
-  const dueTone = (p) => { if (!p.nextDue) return "muted"; const today = todayISO(); return p.nextDue < today ? "neg" : p.nextDue <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) ? "accent" : "muted"; };
-  const recordPaid = (p) => {
-    openIncome({ kind: "expense", category: p.category, amount: p.amount, notes: p.title, source: { kind: "planned", id: p.id } });
-  };
-  return (
-    <div className="content">
-      <div className="page-head"><h3>Planned & recurring expenses</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "planned" })}><Plus size={16} />New</button></div>
-      <div className="sumrow">
-        <div className="card"><div className="k"><CalendarClock size={14} /> Recurring monthly</div><div className="v mono">{money(monthlyTotal)}</div></div>
-        <div className="card"><div className="k"><Banknote size={14} /> Items tracked</div><div className="v mono">{list.length}</div></div>
-      </div>
-      <div className="card">
-        {list.length === 0 ? <Empty icon={<CalendarClock size={22} color="var(--muted)" />} title="Nothing planned yet" text="Track rent, subscriptions and other regular costs, and log them as expenses when paid." action={<button className="btn primary" onClick={() => openModal({ type: "planned" })}><Plus size={16} />New planned expense</button>} />
-          : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>Expense</th><th>Repeats</th><th>Next due</th><th className="num-cell">Amount</th><th></th></tr></thead>
-            <tbody>{list.map((p) => (
-              <tr key={p.id}>
-                <td><div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{p.title}{p.status && <span className={"badge " + (p.status === "Purchased" ? "pos" : p.status === "Cancelled" ? "neg" : p.status === "Approved" ? "accent" : "pri")} style={{ fontSize: 10 }}>{p.status}</span>}</div><div className="hint-line" style={{ fontSize: 11 }}>{p.category}</div></td>
-                <td>{p.recurrence}</td>
-                <td><span className={"badge " + dueTone(p)}>{p.nextDue ? fmtDate(p.nextDue) : "—"}</span></td>
-                <td className="num-cell mono">{money(p.amount)}</td>
-                <td><div className="row-actions">
-                  <select className="select" style={{ width: "auto", padding: "4px 6px" }} value={p.status || "Planned"} onChange={(e) => mutate((d) => ({ ...d, planned: d.planned.map((x) => x.id === p.id ? { ...x, status: e.target.value } : x) }), { action: `set planned "${p.title}" to ${e.target.value}`, module: "Planned expenses" })}>{PLANNED_STATUS.map((x) => <option key={x}>{x}</option>)}</select>
-                  {canFinance && <button className="btn sm primary" onClick={() => recordPaid(p)}>Log expense</button>}
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "planned", initial: p })}><Pencil size={14} /></button>
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={14} /></button>
-                </div></td>
-              </tr>
-            ))}</tbody>
-          </table></div>}
-      </div>
-    </div>
-  );
-}
-
 function Announcements({ db, mutate, openModal, removeItem, isAdmin, me }) {
   const list = [...db.announcements].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const del = (a) => removeItem("announcements", a, { name: a.title, audit: `deleted announcement "${a.title}"` });
@@ -4657,6 +4437,8 @@ export function AdminAPNChat({ me, onUnreadChange }) {
     </div>
   );
 }
+
+
 
 
 function PortalRefreshButton({ onRefresh }) {
@@ -8803,8 +8585,9 @@ export default function App() {
       case "activity": return <LastSeen team={team} />;
       case "myteam": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading my team…</div></div>}><LazyMyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} runtime={{ useState, todayISO, teamOfUser, teamRosterIds, Empty, Users, Avatar, isTaskAssignee, sameMonth, round2, sumHours, ROLE_LABEL, attStatus, fmtDate, attendanceFor, clockTime, ListTodo, priorityTone, assigneeText, CalendarClock, ContactButtons, Confirm, TeamChat: LazyTeamChat }} /></React.Suspense>;
       case "staff-salary": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading staff salary…</div></div>}><LazyStaffSalary db={db} team={team} mutate={mutate} me={me} runtime={{ ...Icons, money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL, uid, staffEarnings, SalaryRow }} /></React.Suspense>;
-      case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} />;
-      case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} />;
+const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty, USERS, avatarColor, haptic }), [supabase, emitToast]);
+      case "accounts": return <Accounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} helpers={financeComponentHelpers} />;
+      case "withdrawals": return <Withdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} helpers={financeComponentHelpers} />;
       case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} />;
       case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
       case "courses": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading courses…</div></div>}> <LazyCourses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts }} />;</React.Suspense>;
@@ -8824,7 +8607,7 @@ export default function App() {
       case "invoices": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading invoices…</div></div>}><LazyInvoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ useState, Banknote, BadgeCheck, FileText, Plus, Pencil, Trash2, Empty, money, todayISO, fmtDate, INVOICE_STATUS }} /></React.Suspense>;
       case "portal-posts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading client updates…</div></div>}><LazyPortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ ...Icons, Empty, Plus, Trash2, ExternalLink, Building2, Link2, Pencil, fmtDateTime }} /></React.Suspense>;
       case "support": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading support…</div></div>}> <LazyAPNHelpdesk db={db} me={me} team={team} isAdmin={isAdmin} onRefresh={reload} runtime={{ Avatar, Empty, HELP_STATUS_LABEL, HELP_STATUS_TONE, Invoices: LazyInvoices, Notifications: LazyNotifications, emitToast, fmtDateTime, supabase }} />;</React.Suspense>;
-      case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} />;
+      case "planned": return <Planned db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} openIncome={openIncome} canFinance={canFinance} helpers={financeComponentHelpers} />;
       case "vault": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading vault…</div></div>}> <LazyVault db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} runtime={{ Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor, emitToast }} />;</React.Suspense>;
       case "notifications": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading notifications…</div></div>}><LazyNotifications db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} profile={profile} team={team} runtime={{ useEffect, notifVisibleTo, NOTIF_AUDIENCES, ROLE_LABEL, Avatar, Empty, Bell, Users, Check, BadgeCheck, Trash2, ArrowRight, Search, fmtDateTime, supabase }} /></React.Suspense>;
       case "announcements": return <Announcements db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} />;
