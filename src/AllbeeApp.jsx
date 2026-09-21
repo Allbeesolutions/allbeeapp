@@ -32,7 +32,8 @@ import Accounts from "./modules/finance/Accounts.jsx";
 import Withdrawals from "./modules/finance/Withdrawals.jsx";
 import Planned from "./modules/finance/Planned.jsx";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
-import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS } from "./modules/apn/constants.js";
+import APNAgreementReader from "./modules/apn/AgreementReader.jsx";
+import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
@@ -5165,39 +5166,6 @@ function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid }) {
    partner sees APNAgreementGate, not the portal. Acceptance is always
    recorded through the apn_agreement_accept RPC (identity + version + hash
    resolved server-side), never through mutate.                               */
-const AGREEMENT_CATEGORIES = ["Agreement", "Terms & Conditions", "Commission Schedule", "Code of Conduct", "Privacy & Data Notice", "IP & Brand", "Confidentiality", "Lead & Client Management", "Quotation & Sales", "Training & Certification", "Suspension & Termination", "Dispute & Grievance"];
-
-function APNAgreementReader({ doc, onClose, footer, simple = false, onToggleSimple }) {
-  const simpleBody = doc.body_simple || doc.simpleBody || "";
-  const body = (simple ? simpleBody : (doc.body || simpleBody)) || "";
-  const simpleAvailable = !!(doc.body_simple || doc.simpleBody);
-  return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ width: "min(94vw, 720px)", maxHeight: "88vh", overflow: "auto", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 16, padding: "20px 22px" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-          <div className="cmdk-ic" style={{ flexShrink: 0 }}><ScrollText size={18} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: 17, lineHeight: 1.3 }}>{doc.title}</div>
-            <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>
-              {doc.category} · Version {doc.version} · {doc.mandatory ? "Required document" : "Optional"} · Effective {fmtDate(doc.effectiveFrom || doc.effective_from)}
-              {doc.material === undefined || doc.material === null ? "" : doc.material === false ? " · Editorial change" : " · Material change"}
-              {doc.changeSummary || doc.change_summary ? ` · ${doc.changeSummary || doc.change_summary}` : ""}
-            </div>
-          </div>
-          <button className="iconbtn" onClick={onClose} aria-label="Close document" title="Close document"><X size={16} /></button>
-        </div>
-        {simpleAvailable && onToggleSimple && (
-          <div style={{ display: "flex", gap: 6, margin: "10px 0 2px" }}>
-            <button className={"btn xs" + (simple ? "" : " primary")} onClick={() => onToggleSimple(false)}>Full text</button>
-            <button className={"btn xs" + (simple ? " primary" : "")} onClick={() => onToggleSimple(true)}>Simple English</button>
-          </div>
-        )}
-        <div style={{ marginTop: 12, fontSize: 14.5, lineHeight: 1.75, color: "var(--ink)", whiteSpace: "pre-wrap" }}>{body || "This document has no readable text yet."}</div>
-        {footer}
-      </div>
-    </div>
-  );
-}
 
 /* ── agreement review gate (step before the portal; amber, distinct from the
    suspended state's red and the pending state's purple) ──────────────────── */
@@ -5223,7 +5191,7 @@ function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
   return (
     <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
       <ToastHost />
-      {reading && <APNAgreementReader doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={<button className="btn primary" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={() => markRead(reading.id)}><Check size={15} />I've read this document</button>} />}
+      {reading && <APNAgreementReader formatDate={fmtDate} doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={<button className="btn primary" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={() => markRead(reading.id)}><Check size={15} />I've read this document</button>} />}
       <div className="lock-card gate-card" style={{ width: "min(94vw, 540px)", maxHeight: "92vh", overflow: "auto" }}>
           <div className="lock-badge" style={{ background: "linear-gradient(135deg,#c8901b,#8a5f00)" }}><ScrollText size={26} /></div>
           <h1>Agreement review required</h1>
@@ -5307,7 +5275,7 @@ function APNAgreementCenter({ db, pid, onRefresh }) {
           {(company.signatories || []).length > 0 && <div className="hint-line" style={{ fontSize: 11.5, marginTop: 4 }}>Signatories: {(company.signatories || []).map((s) => s.name + " (" + s.role + ")").join(" · ")}</div>}
         </div>
       )}
-      {reading && <APNAgreementReader doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={(() => { const done = satisfied(reading); const acc = myAccepts.get(reading.id); const acceptedNow = !!acc && acc.version === reading.version; return (
+      {reading && <APNAgreementReader formatDate={fmtDate} doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={(() => { const done = satisfied(reading); const acc = myAccepts.get(reading.id); const acceptedNow = !!acc && acc.version === reading.version; return (
         <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
           {acceptedNow && <span className="badge pos" style={{ alignSelf: "center" }}><Check size={12} />Accepted · {fmtDate(acc.accepted_at)}</span>}
           {done && !acceptedNow && <span className="badge" style={{ alignSelf: "center" }}>Covered by your earlier acceptance (editorial change)</span>}

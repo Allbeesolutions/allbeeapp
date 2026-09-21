@@ -56,3 +56,5 @@ export const APN_APPROVERS = [
   { name: "Syed Hasan Kuddos Sahib", designation: "Co-Founder & CFO" },
   { name: "Mohamed Backer Alim Sahib", designation: "Founder & CEO" },
 ];
+
+export const AGREEMENT_CATEGORIES = ["Agreement", "Terms & Conditions", "Commission Schedule", "Code of Conduct", "Privacy & Data Notice", "IP & Brand", "Confidentiality", "Lead & Client Management", "Quotation & Sales", "Training & Certification", "Suspension & Termination", "Dispute & Grievance"];
