@@ -94,9 +94,9 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
         // UNION ORDER BY error. Keep Team Chat usable while the database function
         // cache catches up by reading the same source tables directly.
         const [partnersRes, adminsRes, presenceRes] = await Promise.all([
-          supabase.from("apn_users").select("id,data").neq("id", pid),
-          supabase.from("profiles").select("id,name,role,photo_url,active,status").neq("id", pid).in("role", ["admin", "superadmin"]),
-          supabase.from("apn_chat_presence").select("user_id,online,last_seen,updated_at")
+          supabase.from("apn_users").select("id,data").neq("id", pid).limit(500),
+          supabase.from("profiles").select("id,name,role,photo_url,active,status").neq("id", pid).in("role", ["admin", "superadmin"]).limit(200),
+          supabase.from("apn_chat_presence").select("user_id,online,last_seen,updated_at").limit(500)
         ]);
         if (!mountedRef.current) return;
         if (partnersRes.error) throw new Error(contactsRes.error.message);
@@ -221,9 +221,14 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
         ? { ...c, availability: row.online && row.updated_at && (Date.now() - new Date(row.updated_at).getTime() < 45000) ? "online" : "offline", last_seen: row.last_seen || c.last_seen }
         : c));
     };
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, () => refreshChat("apn_chat_messages"));
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_friend_requests" }, () => refreshChat("apn_friend_requests"));
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_presence" }, applyPresence);
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_chat_messages" }, () => refreshChat("apn_chat_messages"));
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_chat_messages" }, () => refreshChat("apn_chat_messages"));
+    ch.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_chat_messages" }, () => refreshChat("apn_chat_messages"));
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_friend_requests" }, () => refreshChat("apn_friend_requests"));
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_friend_requests" }, () => refreshChat("apn_friend_requests"));
+    ch.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_friend_requests" }, () => refreshChat("apn_friend_requests"));
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_chat_presence" }, applyPresence);
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_chat_presence" }, applyPresence);
     ch.subscribe();
     return () => {
       if (timerId) clearTimeout(timerId);

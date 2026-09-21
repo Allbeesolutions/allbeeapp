@@ -43,7 +43,7 @@ export default function ProposalCenter({ isAdmin, runtime }) {
       if (listError) throw new Error(listError.message);
       if (summaryError) throw new Error(summaryError.message);
       setData(list || { items: [], total: 0 }); setSummary(counts || {});
-      if (tab === "sections") { const { data: defs, error: defError } = await supabase.from("proposal_section_definitions").select("id,template_id,section_key,name,section_type,sort_order,enabled,default_content,archived_at,created_by,created_at,updated_at").order("sort_order"); if (defError) throw new Error(defError.message); setSections(defs || []); }
+      if (tab === "sections") { const { data: defs, error: defError } = await supabase.from("proposal_section_definitions").select("id,template_id,section_key,name,section_type,sort_order,enabled,default_content,archived_at,created_by,created_at,updated_at").order("sort_order").limit(200); if (defError) throw new Error(defError.message); setSections(defs || []); }
     } catch (e) { setError(e.message || "Proposal Center could not load."); }
     finally { setBusy(false); }
   }, [isAdmin, query, status, tab]);
