@@ -48,7 +48,16 @@ export default function ProposalCenter({ isAdmin, runtime }) {
     finally { setBusy(false); }
   }, [isAdmin, query, status, tab]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { const ch = supabase.channel("proposal-center").on("postgres_changes", { event: "*", schema: "public", table: "proposals" }, load).on("postgres_changes", { event: "*", schema: "public", table: "proposal_versions" }, load).on("postgres_changes", { event: "*", schema: "public", table: "proposal_analytics" }, load).on("postgres_changes", { event: "*", schema: "public", table: "proposal_section_definitions" }, load).subscribe(); return () => supabase.removeChannel(ch); }, [load]);
+  useEffect(() => {
+    const ch = supabase.channel("proposal-center");
+    const on = (table, event) => ch.on("postgres_changes", { event, schema: "public", table }, load);
+    ["INSERT", "UPDATE", "DELETE"].forEach((event) => on("proposals", event));
+    ["INSERT", "UPDATE", "DELETE"].forEach((event) => on("proposal_versions", event));
+    on("proposal_analytics", "INSERT");
+    ["INSERT", "UPDATE", "DELETE"].forEach((event) => on("proposal_section_definitions", event));
+    ch.subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [load]);
   const openProposal = async (id) => { setBusy(true); setError(""); try { const { data: detail, error: rpcError } = await supabase.rpc("proposal_get", { p_proposal_id: id }); if (rpcError) throw new Error(rpcError.message); setSelected(detail); } catch (e) { setError(e.message || "Proposal could not load."); } finally { setBusy(false); } };
   const action = async (name, comment = "") => { if (!selected?.proposal?.id) return; setBusy(true); setError(""); try { const { data: detail, error: rpcError } = await supabase.rpc("proposal_record_action", { p_proposal_id: selected.proposal.id, p_action: name, p_comment: comment, p_token: null, p_signer_name: null, p_signer_email: null, p_signature: null }); if (rpcError) throw new Error(rpcError.message); setSelected(detail); await load(); emitToast(`Proposal ${name.replace(/_/g, " ")}.`, "success"); } catch (e) { setError(e.message || "Proposal action failed."); } finally { setBusy(false); } };
   const share = async () => { if (!selected?.proposal?.id) return; setBusy(true); try { const { data: link, error: rpcError } = await supabase.rpc("proposal_regenerate_public_link", { p_proposal_id: selected.proposal.id }); if (rpcError) throw new Error(rpcError.message); const url = `${window.location.origin}${window.location.pathname}#/proposal/${link.public_token}`; await navigator.clipboard?.writeText(url); emitToast("Customer proposal link copied.", "success"); } catch (e) { setError(e.message || "Could not create proposal link."); } finally { setBusy(false); } };
