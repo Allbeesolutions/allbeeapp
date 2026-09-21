@@ -29,4 +29,21 @@ describe("accessibility hardening", () => {
     expect(source).toMatch(/aria-checked=/);
     expect(source).toMatch(/<label[^>]*className="thumb-add-label"/);
   });
+
+  it("does not introduce unlabeled image or button primitives", () => {
+    const files = fs.readdirSync(root).filter((name) => name.endsWith(".jsx") && !name.endsWith(".test.jsx"));
+    for (const file of files) {
+      const source = read(file);
+      for (const match of source.matchAll(/<img\b([^>]*)>/g)) {
+        expect(match[1], `${file}: image is missing alt text`).toMatch(/\balt=/);
+      }
+      for (const match of source.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
+        const attrs = match[1];
+        const rawBody = match[2];
+        const body = rawBody.replace(/<[^>]+>/g, " ").replace(/\{[^}]*\}/g, " ").trim();
+        const labeled = /\baria-label=|\baria-labelledby=|\btitle=/.test(attrs) || body.length > 0 || rawBody.includes("{" );
+        expect(labeled, `${file}: button needs an accessible/text label`).toBe(true);
+      }
+    }
+  });
 });
