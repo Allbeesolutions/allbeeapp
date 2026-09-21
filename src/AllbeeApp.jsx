@@ -526,9 +526,18 @@ async function replaceAll(clean) {
 
 /* ── people (profiles / roles) ────────────────────────────────────────── */
 async function fetchTeam() {
-  const { data, error } = await supabase.from("profiles").select("id,name,email,role,active,created_at,status,mobile,dob,photo_url,perms,tnc_version,tnc_roles_accepted,approved,designation,last_active,last_login,last_logout,username").order("created_at", { ascending: true });
-  if (error) throw new Error(`Loading team: ${error.message}`);
-  return data || [];
+  const rows = await loadTableRows(
+    supabase,
+    "profiles",
+    "id,name,email,role,active,created_at,status,mobile,dob,photo_url,perms,tnc_version,tnc_roles_accepted,approved,designation,last_active,last_login,last_logout,username",
+    "created_at",
+    8000,
+    1,
+    true,
+    500,
+    5000,
+  );
+  return rows.slice().sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
 }
 // The live Terms & Conditions + version live in app_config; staff can read only
 // the tnc_* keys (the admin sign-up code is locked away by row-level security).
@@ -683,9 +692,8 @@ async function nextApnNumber() {
 // Financial period locks ('YYYY-MM'). Partners lock/unlock; the DB blocks writes
 // to a locked month for everyone else.
 async function fetchLocks() {
-  const { data, error } = await supabase.from("fin_locks").select("period").order("period", { ascending: true });
-  if (error) return [];
-  return (data || []).map((r) => r.period);
+  const rows = await loadTableRows(supabase, "fin_locks", "period", "period", 8000, 1, true, 500, 5000);
+  return rows.map((r) => r.period).filter(Boolean).sort();
 }
 async function lockPeriod(period, who) {
   const { error } = await supabase.from("fin_locks").upsert({ period, locked_by: who || null }, { onConflict: "period" });
