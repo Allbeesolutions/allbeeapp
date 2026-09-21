@@ -3921,8 +3921,12 @@ export function AdminAPNChat({ me, onUnreadChange }) {
         });
       }, 120);
     };
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_chat_messages" }, refreshChat);
-    ch.on("postgres_changes", { event: "*", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_chat_messages" }, refreshChat);
+    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
+    ch.on("postgres_changes", { event: "DELETE", schema: "public", table: "apn_friend_requests" }, () => { loadContacts(); loadConversations(true); });
     ch.subscribe();
     return () => {
       if (timerId) clearTimeout(timerId);
@@ -7274,12 +7278,16 @@ export default function App() {
       const channel = supabase.channel(name);
       const scoped = new Set(routeDataTables(route));
       scoped.forEach((t) => {
-        if (t === "audit") channel.on("postgres_changes", { event: "*", schema: "public", table: "audit" }, scheduleAuditReload);
+        if (t === "audit") channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "audit" }, scheduleAuditReload);
         else channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload);
       });
       // The current user's notification badge remains live even when the active
       // screen does not otherwise consume the notifications collection.
-      if (!scoped.has("notifications")) channel.on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, scheduleReload);
+      if (!scoped.has("notifications")) {
+        channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
+        channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
+        channel.on("postgres_changes", { event: "DELETE", schema: "public", table: "notifications", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
+      }
       if (!scoped.has("apn_action_badge_reads")) channel.on("postgres_changes", { event: "*", schema: "public", table: "apn_action_badge_reads", filter: `user_id=eq.${session.user.id}` }, scheduleReload);
       channel.subscribe(statusHandler);
       return { unsubscribe: () => supabase.removeChannel(channel) };
