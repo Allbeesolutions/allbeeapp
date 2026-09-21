@@ -6,6 +6,7 @@ const shareQuoteVia = async (...args) => (await import("./APNLeadForm.jsx")).sha
 const downloadQuotePdf = async (...args) => (await import("./APNLeadForm.jsx")).downloadQuotePdf(...args);
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import { APNInactive } from "./modules/apn/Inactive.jsx";
+import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./modules/apn/helpers.js";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
 import PrivacyPolicy from "./PrivacyPolicy.jsx";
@@ -4493,9 +4494,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 ══════════════════════════════════════════════════════════════════════ */
 
 
-const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", banned: "Banned", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
-const apnStatusClass = (s) => s === "active" ? "status-active" : s === "pending" ? "status-on_leave" : s === "suspended" || s === "banned" ? "status-terminated" : s === "inactive" ? "status-inactive" : s === "deleted" ? "status-deleted" : "status-on_leave";
-const apnAdminLevel = (u, stats) => u?.level || (u?.role === "state_head" ? "State Head" : u?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
 const apnTargetFor = (db, pid, resetAt = 0) => [...(db.apn_targets || [])]
   .filter((t) => t.partnerId === pid && (t.createdAt || 0) > (resetAt || 0))
   .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
@@ -4529,7 +4527,6 @@ const apnLastSeenLabel = (partner, profile) => {
   if (days === 1) return "Yesterday";
   return `${days} days ago`;
 };
-const apnHealthBand = (score) => score >= 95 ? "Excellent" : score >= 75 ? "Good" : score >= 50 ? "Needs Attention" : "Critical";
 function apnHealthScore(db, partner, profile) {
   const pid = partner?.id;
   const stats = apnPartnerStats(db, pid);
