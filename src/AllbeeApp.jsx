@@ -39,6 +39,7 @@ import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats } from "./modules/apn/analytics.js";
+import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel } from "./modules/apn/helpers.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4394,39 +4395,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 ══════════════════════════════════════════════════════════════════════ */
 
 
-const apnTargetFor = (db, pid, resetAt = 0) => [...(db.apn_targets || [])]
-  .filter((t) => t.partnerId === pid && (t.createdAt || 0) > (resetAt || 0))
-  .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
-const apnAttendanceScore = (db, pid, override) => {
-  if (override != null && override !== "") return Number(override) || 0;
-  const rows = (db.apn_attendance || []).filter((a) => a.partnerId === pid);
-  if (!rows.length) return 0;
-  const recent = rows.filter((a) => (a.createdAt || Date.parse(a.date || "") || 0) >= Date.now() - 30 * 86400000);
-  return Math.min(100, Math.round((recent.length / 30) * 100));
-};
-const apnLastActivity = (db, pid, partner) => {
-  const times = [partner?.lastActivity, partner?.lastCheckIn, partner?.lastLogin, partner?.updatedAt, partner?.createdAt];
-  for (const coll of ["apn_attendance", "apn_leads", "apn_quotations", "apn_commissions"]) {
-    for (const row of (db[coll] || [])) if (row.partnerId === pid) times.push(row.createdAt || row.updatedAt);
-  }
-  for (const row of apnCommissionProjectsOf(db, pid)) for (const collection of apnRevenueCollectionsOf(db, row.id)) times.push(collection.createdAt || collection.receivedDate);
-  return Math.max(...times.map((x) => typeof x === "number" ? x : Date.parse(x || "") || 0));
-};
-const apnLastSeenAt = (partner, profile) => {
-  const vals = [profile?.last_active, partner?.lastSeen, partner?.lastLogin, partner?.lastActivity, partner?.lastCheckIn];
-  return Math.max(...vals.map((x) => typeof x === "number" ? x : Date.parse(x || "") || 0));
-};
-const apnLastSeenLabel = (partner, profile) => {
-  const ts = apnLastSeenAt(partner, profile);
-  if (!ts) return "Never Logged In";
-  if (profile?.last_active && Date.now() - ts <= 2 * 60 * 1000) return "Online Now";
-  const mins = Math.max(1, Math.floor((Date.now() - ts) / 60000));
-  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
-  const days = Math.floor(mins / 1440);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  return `${days} days ago`;
-};
 function apnHealthScore(db, partner, profile) {
   const pid = partner?.id;
   const stats = apnPartnerStats(db, pid);
