@@ -114,12 +114,14 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       // always overlay the live profile photo when it is available.
       const contactIds = contactRows.map((c) => String(c.contact_id || "")).filter(Boolean);
       if (contactIds.length) {
-        const profileRes = await supabase.from("profiles").select("id,photo_url").in("id", contactIds);
-        if (!mountedRef.current) return;
-        if (!profileRes.error) {
-          const photos = new Map((profileRes.data || []).map((r) => [String(r.id), r.photo_url || null]));
-          contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null }));
+        const photos = new Map();
+        for (let i = 0; i < contactIds.length; i += 100) {
+          const batch = contactIds.slice(i, i + 100);
+          const profileRes = await supabase.from("profiles").select("id,photo_url").in("id", batch);
+          if (!mountedRef.current) return;
+          if (!profileRes.error) (profileRes.data || []).forEach((r) => photos.set(String(r.id), r.photo_url || null));
         }
+        contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null }));
       }
       if (!mountedRef.current) return;
       setContacts(contactRows);
