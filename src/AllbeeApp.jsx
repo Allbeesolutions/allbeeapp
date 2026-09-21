@@ -31,6 +31,7 @@ import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, W
 import Accounts from "./modules/finance/Accounts.jsx";
 import Withdrawals from "./modules/finance/Withdrawals.jsx";
 import Planned from "./modules/finance/Planned.jsx";
+import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
@@ -5093,46 +5094,6 @@ async function ensureApnProfile(user, existingRows) {
   return true;
 }
 
-/* ── APN shared UI + gates ───────────────────────────────────────────── */
-function APNGate({ isDark, icon, title, body, name, tone, onSignOut, onRefresh }) {
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await onRefresh();
-      emitToast("Status checked successfully", "success");
-    } catch (e) {
-      emitToast("Failed to check status", "error");
-    } finally {
-      setRefreshing(false);
-    }
-  };
-  return (
-    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
-      <ToastHost />
-      <div className="lock-card gate-card">
-        <div className="lock-badge" style={tone === "neg" ? { background: "linear-gradient(135deg,var(--neg),#a92a2a)" } : undefined}>{icon}</div>
-        <h1>{title}</h1>
-        <p>{body}</p>
-        {onRefresh && (
-          <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={handleRefresh} disabled={refreshing}>
-            <RefreshCw size={15} className={refreshing ? "spin" : ""} />
-            {refreshing ? "Checking status…" : "Check status"}
-          </button>
-        )}
-        <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
-      </div>
-    </div>
-  );
-}
-function APNMetric({ k, v, icon, tone, onClick }) {
-  return <div className="apn-metric" role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined} style={onClick ? { cursor: "pointer" } : undefined}>
-    <div className="k">{icon}{k}{onClick && <span className="hint-line" style={{ marginLeft: "auto", fontSize: 11 }}>View</span>}</div>
-    <div className="v" style={tone ? { color: `var(--${tone})` } : undefined}>{v}</div>
-  </div>;
-}
-
-/* ── attendance check-in (Check in → type OK → confirm) ──────────────── */
 function APNCheckIn({ db, pid, mutate }) {
   const [step, setStep] = useState("idle");
   const [word, setWord] = useState("");
@@ -6414,13 +6375,13 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   );
 
   const eff = meRow.status === "rejected" ? "rejected" : (profile.active === false && profile.status !== "pending") ? "suspended" : apnEffectiveStatus(meRow);
-  if (eff === "pending") return <APNGate isDark={isDark} icon={<Hourglass size={26} />} title="Waiting for Approval" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) was successfully submitted and is awaiting admin approval. You'll get full access as soon as it's approved.`} onSignOut={signOut} onRefresh={refreshPortal} />;
-  if (eff === "rejected") return <APNGate isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
-  if (eff === "suspended") return <APNGate isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} onRefresh={refreshPortal} />;
+  if (eff === "pending") return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} icon={<Hourglass size={26} />} title="Waiting for Approval" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) was successfully submitted and is awaiting admin approval. You'll get full access as soon as it's approved.`} onSignOut={signOut} onRefresh={refreshPortal} />;
+  if (eff === "rejected") return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
+  if (eff === "suspended") return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} onRefresh={refreshPortal} />;
   if (eff === "inactive") return <APNInactive meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
   // AGREEMENT GATE: legal status is fail-closed. Never treat an RPC failure as
   // an empty required list and accidentally grant portal access.
-  if (agrLoading || agrError) return <APNGate isDark={isDark} icon={agrError ? <ShieldAlert size={26} /> : <Hourglass size={26} />} tone={agrError ? "neg" : undefined} title={agrError ? "Agreement verification unavailable" : "Verifying agreements…"} body={agrError ? `We couldn't verify your APN agreement status. ${agrError}` : "Checking the current legal agreement status before opening your portal."} onSignOut={signOut} onRefresh={refreshAgreements} />;
+  if (agrLoading || agrError) return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} icon={agrError ? <ShieldAlert size={26} /> : <Hourglass size={26} />} tone={agrError ? "neg" : undefined} title={agrError ? "Agreement verification unavailable" : "Verifying agreements…"} body={agrError ? `We couldn't verify your APN agreement status. ${agrError}` : "Checking the current legal agreement status before opening your portal."} onSignOut={signOut} onRefresh={refreshAgreements} />;
   if (agr?.required) return <APNAgreementGate isDark={isDark} onSignOut={signOut} required={agr.requiredList || []} onAccepted={refreshAgreements} />;
 
   const stats = apnPartnerStats(db, pid);
