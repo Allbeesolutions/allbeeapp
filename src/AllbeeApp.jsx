@@ -31,6 +31,7 @@ import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, W
 import Accounts from "./modules/finance/Accounts.jsx";
 import Withdrawals from "./modules/finance/Withdrawals.jsx";
 import Planned from "./modules/finance/Planned.jsx";
+import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRICTS, APN_SERVICES, APN_SERVICE_LABEL, APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_PERCENT_MIN, APN_PERCENT_MAX, APN_SUSPEND_REASONS, APN_WARNING_TYPES, APN_REACTIVATION_REASONS, APN_TAG_OPTIONS, APN_DOCUMENT_TYPES, APN_COMMUNICATION_TYPES, APN_LEAD_STATUS, APN_LEAD_REJECTED, APN_COMM_STATUS, APN_COMM_REVERSED, APN_TARGET_METRICS, APN_GOVERNED_TARGETS_LIMIT, APN_TIEUPS, APN_INACTIVE_DAYS, APN_ACTION_PENDING_STATUSES } from "./modules/apn/constants.js";
 
 const LazyTncManager = React.lazy(() => import("./TncManager.jsx"));
 const LazyAPNTeamChat = React.lazy(() => import("./APNTeamChat.jsx"));
@@ -4486,11 +4487,11 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
    never employees — and never touch internal accounts, balances, or the vault.
 ══════════════════════════════════════════════════════════════════════ */
 
-const APN_ID_PREFIX = "APN-TN-";
+
 const apnPadId = (n) => APN_ID_PREFIX + String(n).padStart(4, "0");
 const apnLeadId = (n) => "APN-L-" + String(n).padStart(4, "0");
-const APN_RESERVED_NUMBERS = new Set([2, 3]);
-const APN_MIN_DYNAMIC_NUMBER = 6;
+
+
 function apnNumberOf(value) { return Number(String(value || "").replace(/\D/g, "")) || 0; }
 function apnIdFor(partner) {
   return partner?.apnId || "—";
@@ -4517,10 +4518,10 @@ function resolveApnId(rows = [], requested) {
   return apnPadId(nextAvailableApnNumber(rows));
 }
 
-const TN_DISTRICTS = ["Ariyalur", "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri", "Dindigul", "Erode", "Kallakurichi", "Kancheepuram", "Kanniyakumari", "Karur", "Krishnagiri", "Madurai", "Mayiladuthurai", "Nagapattinam", "Namakkal", "Nilgiris", "Perambalur", "Pudukkottai", "Ramanathapuram", "Ranipet", "Salem", "Sivaganga", "Tenkasi", "Thanjavur", "Theni", "Thoothukudi", "Tiruchirappalli", "Tirunelveli", "Tirupathur", "Tiruppur", "Tiruvallur", "Tiruvannamalai", "Tiruvarur", "Vellore", "Viluppuram", "Virudhunagar"];
 
-const APN_SERVICES = [["website", "Website Development"], ["marketing", "Digital Marketing"], ["course", "Course Admission"]];
-const APN_SERVICE_LABEL = { website: "Website", marketing: "Digital marketing", course: "Course" };
+
+
+
 
 // Single source of truth for APN progression: project 1 earns 10%, projects
 // 2–9 earn 15%, and project 10 onward earns 20%.
@@ -4529,19 +4530,19 @@ const APN_COMMISSION_RULES = Object.freeze([
   Object.freeze({ key: 1, name: "Active Partner", rate: 15, minProject: 2, maxProject: 9 }),
   Object.freeze({ key: 2, name: "Growth Partner", rate: 20, minProject: 10, maxProject: Infinity }),
 ]);
-const APN_ADMIN_LEVELS = ["Trainee", "Partner", "Senior Partner", "District Head", "State Head"];
-const APN_ADMIN_STATUSES = ["pending", "active", "inactive", "suspended", "deleted"];
-const APN_PERCENT_MIN = 0;
-const APN_PERCENT_MAX = 100;
+
+
+
+
 function apnPercent(value, label) {
   if (value === "" || value == null) return null;
   const number = Number(value);
   if (!Number.isFinite(number) || number < APN_PERCENT_MIN || number > APN_PERCENT_MAX) throw new Error(`${label} must be between 0 and 100.`);
   return number;
 }
-const APN_SUSPEND_REASONS = ["Spam", "Fake Leads", "Policy Violation", "Requested by Admin", "Other"];
-const APN_WARNING_TYPES = ["Poor Lead Quality", "Fake Information", "Customer Complaint", "Spam Behaviour", "Policy Violation", "Inactivity", "Other"];
-const APN_REACTIVATION_REASONS = ["Training Completed", "Investigation Closed", "Admin Decision", "Mistaken Suspension", "Other"];
+
+
+
 const apnStatusLabel = (s) => ({ pending: "Pending", active: "Active", inactive: "Inactive", suspended: "Suspended", banned: "Banned", deleted: "Deleted", rejected: "Rejected" }[s] || s || "Pending");
 const apnStatusClass = (s) => s === "active" ? "status-active" : s === "pending" ? "status-on_leave" : s === "suspended" || s === "banned" ? "status-terminated" : s === "inactive" ? "status-inactive" : s === "deleted" ? "status-deleted" : "status-on_leave";
 const apnAdminLevel = (u, stats) => u?.level || (u?.role === "state_head" ? "State Head" : u?.role === "district_head" ? "District Head" : (stats?.level?.name || "Trainee").replace(/ Partner$/, ""));
@@ -4631,9 +4632,9 @@ function apnDerivedTimeline(db, partner) {
   if (partner.deletedAt) out.push(apnTimelineEntry(pid, "deleted", "Deleted (Archived)", partner.deleteReason || "Partner account archived.", partner.deletedBy || "Super Admin", null, partner.deletedAt));
   return out;
 }
-const APN_TAG_OPTIONS = ["Website Expert", "Software Sales", "High Performer", "New Partner", "Needs Training", "Premium Partner", "Follow-up Required", "Top Closer"];
-const APN_DOCUMENT_TYPES = ["Aadhaar", "PAN", "Bank Passbook", "Photo", "Agreement", "Certificate", "Other"];
-const APN_COMMUNICATION_TYPES = ["Notification", "Email", "WhatsApp Message", "Manual Call", "Internal Message"];
+
+
+
 const apnMonthKey = (date) => { const d = date instanceof Date ? date : new Date(date || 0); return isNaN(d) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 function apnMonthlyAnalytics(db, pid, count = 6) {
   const now = new Date();
@@ -4721,12 +4722,12 @@ const apnNextLevel = (n) => {
   return { next, remaining: Math.max(0, next.minProject - c), pct: Math.min(100, Math.round((c / next.minProject) * 100)) };
 };
 
-const APN_LEAD_STATUS = ["Submitted", "Approved", "Duplicate", "Invalid", "Fake", "Quotation Sent", "Converted", "Lost"];
-const APN_LEAD_REJECTED = new Set(["Duplicate", "Invalid", "Fake", "Lost"]);
+
+
 const apnLeadTone = (s) => (s === "Converted" ? "pos" : APN_LEAD_REJECTED.has(s) ? "neg" : s === "Approved" || s === "Quotation Sent" ? "pri" : "");
 
-const APN_COMM_STATUS = ["Pending", "Approved", "Payable", "Paid"];
-const APN_COMM_REVERSED = "Reversed";
+
+
 const apnCommTone = (s) => (s === "Paid" ? "pos" : s === "Payable" ? "accent" : s === "Approved" ? "pri" : s === APN_COMM_REVERSED ? "neg" : "");
 // Commissions are paid on the 5th of the following month — never immediately.
 function apnPayoutDate(fromISO) {
@@ -4734,7 +4735,7 @@ function apnPayoutDate(fromISO) {
   return localISODate(new Date(d.getFullYear(), d.getMonth() + 1, 5));
 }
 
-const APN_TARGET_METRICS = [["leads", "Leads"], ["conversions", "Conversions"], ["website", "Website projects"], ["course", "Course admissions"], ["marketing", "Marketing projects"]];
+
 const apnMetricLabel = (m) => (APN_TARGET_METRICS.find((x) => x[0] === m)?.[1]) || "Leads";
 
 /* ── WP4 — zones, campaigns, ties & governed targets ─────────────────── */
@@ -4799,7 +4800,7 @@ function apnCampaignOf(db) {
 }
 // One active admin-assigned target at a time per partner (the govern limit);
 // anything the partner creates themselves does not count against them.
-const APN_GOVERNED_TARGETS_LIMIT = 1;
+
 function apnGovernedTargets(db, pid) {
   return (db.apn_targets || []).filter((t) => t.partnerId === pid && !t.selfCreated);
 }
@@ -4816,11 +4817,7 @@ function apnCalculatedGovernedExplanation(db, pid) {
 // Express tie-ups: submitting a lead/quote can mark a tie-up with the client.
 // When the client also works with us on the other side of the deal the tie is
 // reciprocal — both parties are governed by the same relationship.
-const APN_TIEUPS = {
-  website: ["Website + maintenance", "Referral swap", "Joint marketing"],
-  marketing: ["Joint campaign", "Referral swap", "Regular retainer"],
-  course: ["Admissions partner", "Campus referral", "Franchise interest"],
-};
+
 function apnReciprocal(db, meRow) {
   const mine = apnLeadsOf(db, meRow?.id).filter((l) => l.tieUp);
   if (!mine.length) return { any: false, count: 0 };
@@ -4849,7 +4846,7 @@ const apnAvatarUrl = (partner, profile) => partner?.profilePicture || partner?.p
 const apnUnlocked = (u) => (u && u.unlocked && typeof u.unlocked === "object" ? u.unlocked : {});
 
 /* ── attendance & activity ───────────────────────────────────────────── */
-const APN_INACTIVE_DAYS = 30;
+
 const apnCheckedInToday = (db, pid) => (db.apn_attendance || []).some((a) => a.partnerId === pid && a.date === todayISO());
 const apnAttendanceBase = (u) => Math.max(u?.lastCheckIn || 0, u?.reactivatedAt || 0, u?.approvedAt || 0, u?.createdAt || 0);
 function apnAutoInactive(u) {
@@ -5009,7 +5006,7 @@ function apnNotifVisible(n, meRow) {
   return true;
 }
 
-const APN_ACTION_PENDING_STATUSES = new Set(["pending", "under_review", "pending approval", "needs_publish", "unpublished", "draft"]);
+
 const apnActionPending = (value) => APN_ACTION_PENDING_STATUSES.has(String(value || "").trim().toLowerCase());
 const apnActionRowTime = (row) => {
   const value = row?.updatedAt ?? row?.createdAt ?? row?.updated_at ?? row?.created_at ?? row?.requested_at ?? row?.linked_at ?? row?.issuedAt ?? row?.uploadedAt;
