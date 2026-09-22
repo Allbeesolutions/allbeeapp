@@ -5860,6 +5860,7 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ok, setOk] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(Boolean(pause));
   const [reveal, setReveal] = useState(false);
   const signedOutRef = useRef(false);
   // Hidden logo-tap entrance to the founder authorization flow — shared with
@@ -5899,7 +5900,7 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
     setCountAnim(!reduceMotionRef.current);
     setTapCount((c) => {
       // The 20th genuine tap opens the founder emergency portal immediately.
-      if (c >= 19) { setArmed(false); setStatus("locked"); return 0; }
+      if (c >= 19) { setArmed(false); setRecoveryOpen(true); setStatus("locked"); return 0; }
       return c + 1;
     });
   }, []);
@@ -5946,13 +5947,17 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
       const r = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", code: candidate }),
+        body: JSON.stringify({ action: (recoveryOpen ? "recover" : "verify"), code: candidate }),
       });
       const j = await r.json().catch(() => ({}));
       if (r.status === 429) setError("Too many attempts. Wait a few minutes, then try again.");
       else if (r.status === 401 || j.ok === false) setError("Incorrect authorization code.");
       else if (!r.ok || j.ok !== true) setError("The authorization service could not be reached. Try again.");
-      else { setCode(""); setOk(true); }
+      else {
+        setCode(""); setOk(false);
+        if (recoveryOpen) { setRecoveryOpen(false); setTapCount(0); setStatus("unlocked"); }
+        else setOk(true);
+      }
     } catch {
       setError("Could not reach the authorization service — check your connection.");
     } finally { setBusy(false); }
@@ -5982,11 +5987,24 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
               {import.meta.env.MODE === "development" && <button className="linkbtn" onClick={() => setStatus("unlocked")}>Development build — skip the check</button>}
             </>
           )}
-          {status === "locked" && card(
+          {status === "locked" && !recoveryOpen && (
+            <div
+              className="founder-blank-recovery"
+              onClick={tap}
+              role="presentation"
+              aria-label="Locked ALLBEE recovery surface"
+              style={{ minHeight: "100vh", width: "100%", cursor: "default", userSelect: "none" }}
+            >
+              {tapCount >= 17 && tapCount <= 19 && (
+                <div className={`founder-tap-count${countAnim ? " shift" : ""}`} aria-hidden="true">{20 - tapCount}</div>
+              )}
+            </div>
+          )}
+          {status === "locked" && recoveryOpen && card(
             <>
-              <p className="founder-gate-sub">Our services are temporarily unavailable.</p>
-              <div className="founder-gate-status active"><ShieldAlert size={15} /> Founder-controlled maintenance in progress</div>
-              <label className="founder-gate-label" htmlFor="founder-code">Authorization code</label>
+              <p className="founder-gate-sub">{recoveryOpen ? "ALLBEE recovery portal" : "Our services are temporarily unavailable."}</p>
+              <div className="founder-gate-status active"><ShieldAlert size={15} /> {recoveryOpen ? "Founder recovery authorization required" : "Founder-controlled maintenance in progress"}</div>
+              <label className="founder-gate-label" htmlFor="founder-code">{recoveryOpen ? "Recovery code" : "Authorization code"}</label>
               <div className="founder-code-row">
                 <input id="founder-code" className="input" type={reveal ? "text" : "password"} value={code}
                   onChange={(e) => setCode(e.target.value)} placeholder="Enter code" autoComplete="off" autoFocus
@@ -5996,11 +6014,11 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
                 </button>
               </div>
               <button className="btn primary founder-gate-btn" disabled={busy || !code.trim()} onClick={authorize}>
-                {busy ? <RefreshCw size={15} className="spin" /> : <ShieldCheck size={15} />}{busy ? "Verifying…" : "Authorize"}
+                {busy ? <RefreshCw size={15} className="spin" /> : <ShieldCheck size={15} />}{busy ? "Verifying…" : (recoveryOpen ? "Recover ALLBEE" : "Authorize")}
               </button>
               {error && <div className="auth-msg err"><AlertTriangle size={14} /> {error}</div>}
-              {ok && <div className="auth-msg ok"><CheckCircle2 size={14} /> Authorized. Services restore when the founder completes protocol #301.</div>}
-              <p className="hint-line founder-gate-hint">Expected for authorized personnel only. If you are not authorized, please close this window.</p>
+              {ok && <div className="auth-msg ok"><CheckCircle2 size={14} /> Authorized. Services are now in founder lockdown.</div>}
+              <p className="hint-line founder-gate-hint">Founder recovery is restricted to the configured emergency code.</p>
             </>
           )}
         </div>

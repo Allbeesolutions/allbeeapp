@@ -6,8 +6,8 @@
 //
 // Deployed with --no-verify-jwt because it must be reachable from the signed-out
 // login screen; the security boundary is the code check itself (plus rate
-// limiting). There is intentionally NO remote unlock action here — recovery is
-// performed by the infrastructure owner in the Supabase SQL console only.
+// limiting). The same founder code can also execute the explicit recovery action
+// after the app has entered emergency lockdown.
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 type AdminClient = SupabaseClient<any>;
 
@@ -108,6 +108,17 @@ const applyLockdown = async (admin: AdminClient) => {
   return true;
 };
 
+const recoverLockdown = async (admin: AdminClient) => {
+  const now = new Date().toISOString();
+  const { error } = await admin
+    .from("emergency_lockdown")
+    .update({ locked: false, locked_at: null, locked_by: "founder-recovery", updated_at: now })
+    .eq("id", "founder");
+  if (error) return false;
+  await admin.from("emergency_lockdown_audit").insert({ action: "recover", actor: "founder-recovery" });
+  return true;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -123,7 +134,7 @@ Deno.serve(async (req) => {
     }
 
     // verify — rate-limited authorization check; on success applies lockdown.
-    if (action === "verify") {
+    if (action === "verify" || action === "recover") {
       const client = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
       const attemptNo = await reserveAttempt(admin, client);
       if (attemptNo > RATE_MAX) return json({ error: "Too many attempts. Try again later." }, 429);
@@ -134,6 +145,11 @@ Deno.serve(async (req) => {
       }
       await clearAttempts(admin, client);
       const row = await readState(admin);
+      if (action === "recover") {
+        if (!row?.locked) return json({ ok: true, already: true });
+        if (!(await recoverLockdown(admin))) return json({ error: "Recovery could not be applied." }, 500);
+        return json({ ok: true, recovered: true });
+      }
       if (row?.locked) return json({ ok: true, already: true });
       if (!(await applyLockdown(admin))) return json({ error: "Lockdown could not be applied." }, 500);
       return json({ ok: true });

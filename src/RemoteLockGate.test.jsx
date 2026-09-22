@@ -36,7 +36,7 @@ describe("RemoteLockGate (pause mode)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Founder-controlled maintenance in progress")).toBeTruthy();
+      expect(screen.getByText("Founder recovery authorization required")).toBeTruthy();
     });
     expect(screen.queryByText("WRAPPED APP CONTENT")).toBeNull();
     expect(signOut).toHaveBeenCalled();
@@ -44,8 +44,8 @@ describe("RemoteLockGate (pause mode)", () => {
 
   it("disables authorize until a code is entered", async () => {
     render(<RemoteLockGate isDark={false} pause />);
-    const input = await screen.findByLabelText(/authorization code/i);
-    const button = screen.getByRole("button", { name: /authorize/i });
+    const input = await screen.findByLabelText(/recovery code/i);
+    const button = screen.getByRole("button", { name: /recover allbee/i });
     expect(button.disabled).toBe(true);
     fireEvent.change(input, { target: { value: "123456" } });
     expect(button.disabled).toBe(false);
@@ -54,12 +54,55 @@ describe("RemoteLockGate (pause mode)", () => {
   it("reveals and hides the code with the eye toggle", async () => {
     render(<RemoteLockGate isDark={false} pause />);
     const toggle = await screen.findByRole("button", { name: /show code/i });
-    const input = screen.getByLabelText(/authorization code/i);
+    const input = screen.getByLabelText(/recovery code/i);
     fireEvent.click(toggle);
     expect(input.getAttribute("type")).toBe("text");
     fireEvent.click(screen.getByRole("button", { name: /hide code/i }));
     expect(input.getAttribute("type")).toBe("password");
   });
+});
+
+describe("RemoteLockGate — recovery from the blank lockdown surface", () => {
+  it("locks to a blank surface, then opens recovery after 20 taps and accepts the recovery action", async () => {
+    vi.useRealTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ locked: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, recovered: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RemoteLockGate isDark={false} signOut={signOut}>
+        <div>WRAPPED APP CONTENT</div>
+      </RemoteLockGate>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Locked ALLBEE recovery surface")).toBeTruthy();
+    });
+    expect(screen.queryByText("WRAPPED APP CONTENT")).toBeNull();
+    expect(screen.queryByText(/recovery code/i)).toBeNull();
+
+    const surface = screen.getByLabelText("Locked ALLBEE recovery surface");
+    for (let i = 0; i < 20; i++) {
+      fireEvent.click(surface);
+      await new Promise((resolve) => setTimeout(resolve, 280));
+    }
+
+    expect(screen.getByLabelText(/recovery code/i)).toBeTruthy();
+    const input = screen.getByLabelText(/recovery code/i);
+    fireEvent.change(input, { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: /recover allbee/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("WRAPPED APP CONTENT")).toBeTruthy();
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining("/functions/v1/founder-lockdown"),
+      expect.objectContaining({
+        body: JSON.stringify({ action: "recover", code: "654321" }),
+      })
+    );
+  }, 20000);
 });
 
 describe("RemoteLockGate — hidden logo-tap countdown", () => {
@@ -94,7 +137,7 @@ describe("RemoteLockGate — hidden logo-tap countdown", () => {
     // 20th tap: the existing emergency authorization screen replaces the app shell
     await tapLogo(1);
     await waitFor(() => {
-      expect(screen.getByText(/authorization code/i)).toBeTruthy();
+      expect(screen.getByText(/recovery code/i)).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: /go to home dashboard/i })).toBeNull();
     await waitFor(() => expect(signOut).toHaveBeenCalled());
@@ -132,9 +175,9 @@ describe("RemoteLockGate — hidden logo-tap countdown", () => {
     render(<RemoteLockGate isDark={false} signOut={signOut} pause />);
     await tapLogo(20);
     expect(countdownShown()).toBeNull();
-    expect(screen.queryByText(/authorization code/i)).toBeTruthy();
-    expect(screen.getByText("Founder-controlled maintenance in progress")).toBeTruthy();
-    expect(screen.getByText(/not authorized/i)).toBeTruthy();
+    expect(screen.queryByText(/recovery code/i)).toBeTruthy();
+    expect(screen.getByText("Founder recovery authorization required")).toBeTruthy();
+    expect(screen.getByText(/recovery code/i)).toBeTruthy();
     await act(async () => {});
     expect(signOut).toHaveBeenCalled();
   }, 15000);
