@@ -42,6 +42,7 @@ import { APN_ID_PREFIX, APN_RESERVED_NUMBERS, APN_MIN_DYNAMIC_NUMBER, TN_DISTRIC
 import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectStatus, apnProjectSummary, apnFinancePostedFor, apnCommissionDashboardSummary, apnPartnerStats, apnMilestones, apnMonthlyAnalytics, apnActivityHistory, apnDerivedTimeline, apnTimelineEntry, apnTargetProgress } from "./modules/apn/analytics.js";
 import { apnCurrentZone, apnZonePeriodKey, apnZoneTone, apnConsoleRow, apnCampaignOf, apnGovernedTargets, apnGovernedLimit, apnCalculatedGovernedExplanation, apnReciprocal, apnFormRules, apnZoneRank, apnZoneStats } from "./modules/apn/network.js";
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel, apnLevelForCompleted, apnCommissionRuleForProject, apnRateForPrior, apnNextLevel, apnLeadTone, apnCommTone, apnPayoutDate, apnMetricLabel } from "./modules/apn/helpers.js";
+import { apnRankBy, apnLeaderboard, apnAchievementsFor } from "./modules/apn/leaderboard.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4450,37 +4451,6 @@ const apnSnapshotRate = (snap, completed) => {
   return rule && Number.isFinite(Number(rule.percent)) ? Number(rule.percent) : null;
 };
 const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
-function apnRankBy(db, pid, scope, metric) {
-  let pool = apnLivePartners(db);
-  const meRow = apnMe(db, pid);
-  if (scope === "district" && meRow) pool = pool.filter((u) => u.district === meRow.district);
-  const val = (u) => { const s = apnPartnerStats(db, u.id); return metric === "revenue" ? s.revenue : metric === "commission" ? s.commission.earned : metric === "leads" ? s.submitted : metric === "conversion" ? s.conv : metric === "attendance" ? apnAttendanceScore(db, u.id, u.attendanceScore) : metric === "health" ? apnHealthScore(db, u).score : s.completed; };
-  const arr = pool.map((u) => ({ id: u.id, v: val(u) })).sort((a, b) => b.v - a.v);
-  const idx = arr.findIndex((x) => x.id === pid);
-  return { rank: idx < 0 ? null : idx + 1, total: arr.length };
-}
-function apnLeaderboard(db, scope, district, metric) {
-  let pool = apnLivePartners(db);
-  if (scope === "district" && district) pool = pool.filter((u) => u.district === district);
-  const val = (u) => { const s = apnPartnerStats(db, u.id); return metric === "revenue" ? s.revenue : metric === "commission" ? s.commission.earned : metric === "leads" ? s.submitted : metric === "conversion" ? s.conv : metric === "attendance" ? apnAttendanceScore(db, u.id, u.attendanceScore) : metric === "health" ? apnHealthScore(db, u).score : s.completed; };
-  return pool.map((u) => ({ u, v: val(u) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 20);
-}
-const APN_ACHIEVEMENTS = [
-  { id: "first_deal", em: "🏆", label: "First Deal Closed", test: (s) => s.converted >= 1 },
-  { id: "first_lakh", em: "💰", label: "First ₹1 Lakh Revenue", test: (s) => s.revenue >= 100000 },
-  { id: "ten_clients", em: "🤝", label: "First 10 Clients", test: (s) => s.converted >= 10 },
-  { id: "fifty_club", em: "⭐", label: "50 Projects Club", test: (s) => s.completed >= 50 },
-  { id: "hundred_club", em: "👑", label: "100 Projects Club", test: (s) => s.completed >= 100 },
-];
-function apnAchievementsFor(db, pid) {
-  const s = apnPartnerStats(db, pid);
-  const got = APN_ACHIEVEMENTS.map((a) => ({ ...a, done: a.test(s) }));
-  const r = apnRankBy(db, pid, "district", "revenue");
-  got.push({ id: "district_top", em: "🥇", label: "District Top Performer", done: r.rank === 1 && s.revenue > 0 });
-  return got;
-}
-
-/* ── targets ─────────────────────────────────────────────────────────── */
 /* ── notifications visibility ────────────────────────────────────────── */
 function apnNotifVisible(n, meRow) {
   const a = n.audience || "all";
@@ -5004,8 +4974,8 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
   const snapWallet = apnSnapshotWallet(snap);
   const effRate = apnSnapshotRate(snap, stats.completed) ?? stats.level.rate;
   const next = apnNextLevel(stats.completed);
-  const cRank = apnRankBy(db, pid, "company", "revenue");
-  const dRank = apnRankBy(db, pid, "district", "revenue");
+  const cRank = apnRankBy(db, pid, "company", "revenue", apnLivePartners, apnMe, apnPartnerStats, apnAttendanceScore, apnHealthScore);
+  const dRank = apnRankBy(db, pid, "district", "revenue", apnLivePartners, apnMe, apnPartnerStats, apnAttendanceScore, apnHealthScore);
   const targets = (db.apn_targets || []).filter((t) => t.partnerId === pid);
   const activeTarget = targets.find((t) => apnTargetProgress(db, t).pct < 100) || targets[0];
   const campaign = apnCampaignOf(db);
@@ -5314,7 +5284,7 @@ function APNNotifications({ db, meRow }) {
 
 /* ── achievements ────────────────────────────────────────────────────── */
 function APNAchievements({ db, pid }) {
-  const list = apnAchievementsFor(db, pid);
+  const list = apnAchievementsFor(db, pid, apnPartnerStats, (d,p,s,m) => apnRankBy(d,p,s,m,apnLivePartners,apnMe,apnPartnerStats,apnAttendanceScore,apnHealthScore));
   return (
     <div>
       <div className="apn-section-h">Achievements</div>
@@ -5333,7 +5303,7 @@ function APNAchievements({ db, pid }) {
 function APNLeaderboard({ db, meRow, pid }) {
   const [scope, setScope] = useState("company");
   const [metric, setMetric] = useState("revenue");
-  const rows = apnLeaderboard(db, scope, meRow?.district, metric);
+  const rows = apnLeaderboard(db, scope, meRow?.district, metric, apnLivePartners, apnPartnerStats, apnAttendanceScore, apnHealthScore);
   const fmtVal = (v) => (["projects", "leads"].includes(metric) ? String(v) : ["conversion", "attendance", "health"].includes(metric) ? `${v}%` : money(v));
   return (
     <div>
