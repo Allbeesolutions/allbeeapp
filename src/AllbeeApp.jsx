@@ -49,6 +49,7 @@ import { apnCheckedInToday, apnAttendanceBase, apnAutoInactive, apnEffectiveStat
 import { apnMe, apnAvatarUrl, apnUnlocked, apnLivePartners } from "./modules/apn/partner.js";
 import { apnSnapshotWallet, apnSnapshotRate } from "./modules/apn/snapshot.js";
 import { apnDistrictHeadMembers, apnStateScope } from "./modules/apn/scope.js";
+import { apnWithdrawalWalletFor, apnWithdrawalTone, apnWithdrawalLabel, apnWalletLabel, apnRequestAmount } from "./modules/apn/wallet.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5515,11 +5516,6 @@ class APNTabErrorBoundary extends React.Component {
 /* Shared APN partner-page helpers. Keep these in the portal module because the
    lazy APN pages receive them through runtime; defining them in another lazy
    module makes the portal render fail before the child component can load. */
-const apnWithdrawalWalletFor = (db, pid, type) => (db.apn_withdrawal_wallets || []).find((row) => row.partner_id === pid && row.wallet_type === type) || { wallet_type: type, pending: 0, approved: 0, withdrawable: 0, locked: 0, paid: 0, lifetime: 0, monthly: 0, today: 0, total_requested: 0, total_approved: 0, total_rejected: 0, total_processing: 0 };
-const apnWithdrawalTone = (status) => ({ pending: "pri", under_review: "accent", approved: "pos", processing: "accent", paid: "pos", rejected: "neg", cancelled: "neg", expired: "neg" }[status] || "");
-const apnWithdrawalLabel = (status) => String(status || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-const apnWalletLabel = (type) => APN_WITHDRAWAL_TYPES.find(([key]) => key === type)?.[1] || type;
-const apnRequestAmount = (row) => Number(row.approved_amount ?? row.requested_amount) || 0;
 const referralCodeFor = (db, pid) => (db.apn_referral_codes || []).find((row) => row.partner_id === pid) || null;
 const referralWalletFor = (db, pid) => (db.apn_referral_wallets || []).find((row) => row.partner_id === pid) || { pending: 0, approved: 0, withdrawable: 0, paid: 0, lifetime: 0, monthly: 0 };
 const referralLinkFor = (code) => {
