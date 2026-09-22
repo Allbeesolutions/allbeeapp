@@ -1,9 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import { createSessionRecovery } from "./sessionRecovery.js";
+import fs from "node:fs";
+import path from "node:path";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("createSessionRecovery", () => {
+  it("guards people-sync state against stale concurrent loads", () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), "src/auth/usePeopleSync.js"), "utf8");
+    expect(source).toContain("const loadSequenceRef = useRef(0)");
+    expect(source).toContain("const sequence = ++loadSequenceRef.current");
+    expect(source).toContain("if (!current()) return;");
+  });
   it("coalesces concurrent refresh requests into one network call", async () => {
     let release;
     const refresh = vi.fn(() => new Promise((resolve) => { release = resolve; }));
