@@ -60,6 +60,7 @@ import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from ".
 import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
 import { APNDocuments, APNNotifications } from "./modules/apn/PortalContent.jsx";
 import { APNBankDetails } from "./modules/apn/BankDetails.jsx";
+import { APNAchievements, APNLeaderboard } from "./modules/apn/RankViews.jsx";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5055,52 +5056,6 @@ function APNTargets({ db, pid, mutate, go }) {
 }
 
 /* ── documents ───────────────────────────────────────────────────────── */
-function APNAchievements({ db, pid }) {
-  const list = apnAchievementsFor(db, pid, apnPartnerStats, (d,p,s,m) => apnRankBy(d,p,s,m,apnLivePartners,apnMe,apnPartnerStats,apnAttendanceScore,apnHealthScore));
-  return (
-    <div>
-      <div className="apn-section-h">Achievements</div>
-      <div className="apn-list">{list.map((a) => (
-        <div key={a.id} className={"apn-ach" + (a.done ? "" : " lock")}>
-          <span className="em">{a.em}</span>
-          <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{a.label}</div><div className="hint-line" style={{ fontSize: 12 }}>{a.done ? "Unlocked" : "Locked"}</div></div>
-          {a.done && <BadgeCheck size={18} color="var(--pos)" />}
-        </div>
-      ))}</div>
-    </div>
-  );
-}
-
-/* ── leaderboard ─────────────────────────────────────────────────────── */
-function APNLeaderboard({ db, meRow, pid }) {
-  const [scope, setScope] = useState("company");
-  const [metric, setMetric] = useState("revenue");
-  const rows = apnLeaderboard(db, scope, meRow?.district, metric, apnLivePartners, apnPartnerStats, apnAttendanceScore, apnHealthScore);
-  const fmtVal = (v) => (["projects", "leads"].includes(metric) ? String(v) : ["conversion", "attendance", "health"].includes(metric) ? `${v}%` : money(v));
-  return (
-    <div>
-      <div className="apn-section-h">Leaderboard</div>
-      <div className="apn-seg-scroll">
-        <button className={scope === "company" ? "on" : ""} onClick={() => setScope("company")}>Company</button>
-        <button className={scope === "district" ? "on" : ""} onClick={() => setScope("district")}>My district</button>
-      </div>
-      <div className="apn-seg-scroll">
-        {[["revenue", "Top revenue"], ["commission", "Top commission"], ["projects", "Top projects"]].map(([k, l]) => <button key={k} className={metric === k ? "on" : ""} onClick={() => setMetric(k)}>{l}</button>)}
-      </div>
-      <div className="apn-rowcard">
-        {rows.length === 0 ? <Empty icon={<Trophy size={22} color="var(--muted)" />} title="No ranking yet" text="Close deals to climb the leaderboard." />
-          : rows.map((r, i) => (
-            <div key={r.u.id} className="apn-rank" style={r.u.id === pid ? { background: "var(--primary-soft)", borderRadius: 10 } : undefined}>
-              <div className={"pos" + (i === 0 ? " g1" : i === 1 ? " g2" : i === 2 ? " g3" : "")}>{i + 1}</div>
-              <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}><Avatar name={r.u.name} url={apnAvatarUrl(r.u)} size={30} /><div><div style={{ fontWeight: 600 }}>{r.u.name}{r.u.id === pid ? " (you)" : ""}</div><div className="hint-line" style={{ fontSize: 11 }}>{r.u.district || "—"}</div></div></div>
-              <div className="mono" style={{ fontWeight: 700 }}>{fmtVal(r.v)}</div>
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
 /* ── Head management cockpits ────────────────────────────────────────── */
 function APNHeadPartnerCard({ db, partner, mutate, viewer, allowActions = true, onApprove, onReject, onLogCall, onRecommend }) {
   const stats = apnPartnerStats(db, partner.id);
@@ -5507,8 +5462,8 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
       case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
       case "notifications": return <APNNotifications db={db} meRow={meRow} Empty={Empty} Avatar={Avatar} fmtDateTime={fmtDateTime} />;
-      case "achievements": return <APNAchievements db={db} pid={pid} />;
-      case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
+      case "achievements": return <APNAchievements db={db} pid={pid} BadgeCheck={BadgeCheck} />;
+      case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} Empty={Empty} Trophy={Trophy} Avatar={Avatar} apnAvatarUrl={apnAvatarUrl} money={money} />;
       case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "profile": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading profile…</div></div>}><LazyAPNProfile db={db} meRow={meRow} stats={stats} snap={finSnap} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} runtime={{ ...Icons, apnSnapshotWallet, apnSnapshotRate, apnGovernedLimit, useState, useRef, useEffect, apnAvatarUrl, supabase, uploadAttachment, Field, APNMetric, money, TrendingUp, Coins, Award, ShieldHalf, ShieldCheck, apnCalculatedGovernedExplanation, Avatar, Upload, Check, apnIdFor, APNBankDetails, LogOut, TN_DISTRICTS, APN_SERVICE_LABEL }} /></React.Suspense>;
       default: return null;
