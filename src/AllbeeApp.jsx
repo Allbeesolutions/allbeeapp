@@ -30,7 +30,7 @@ import { AI_RUNTIME_MODEL, aiConfigOf, aiConfigured, callAI } from "./ai/gateway
 import { maskEmail, maskPhone, scrubText, renderAIInline } from "./utils/aiText.jsx";
 
 import { ROLE_LABEL, ROLE_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, STATUS_ACTIVE, GRANTABLE_MODULES, TNC_ROLES, isSuperRole, isAdminRole, canFinanceRole, navAllowed, pendingTnc, roleTncOf, acceptedRoleTnc } from "./app/permissions.js";
-import { NAV, NAV_CATEGORIES, NAV_CATEGORY, navCategoryOf, NAV_SORT_LABEL, parseHash } from "./app/navigation.js";
+import { NAV, NAV_CATEGORIES, NAV_CATEGORY, navCategoryOf, NAV_SORT_LABEL, parseHash, hashForRoute, hashForAccount, hashForTask, normalizeLegacyAdminPath } from "./app/navigation.js";
 export { parseHash };
 import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
@@ -7016,10 +7016,10 @@ export default function App() {
   const setHash = (h) => { if (window.location.hash !== h) window.location.hash = h; };
   const go = (r) => {
     setRoute(r); setAccountUser(null); setTaskDetailId(null); setMenuOpen(false);
-    setHash(r === "dashboard" ? "#/" : `#/${r}`);
+    setHash(hashForRoute(r));
   };
-  const openAccount = (u) => { setAccountUser(u); setTaskDetailId(null); setRoute("accounts"); setMenuOpen(false); setHash(`#/accounts/${String(u).toLowerCase()}`); };
-  const openTask = (id) => { setTaskDetailId(id); setAccountUser(null); setRoute("tasks"); setMenuOpen(false); setHash(`#/tasks/${encodeURIComponent(id)}`); };
+  const openAccount = (u) => { setAccountUser(u); setTaskDetailId(null); setRoute("accounts"); setMenuOpen(false); setHash(hashForAccount(u)); };
+  const openTask = (id) => { setTaskDetailId(id); setAccountUser(null); setRoute("tasks"); setMenuOpen(false); setHash(hashForTask(id)); };
   const openActivityRelated = (related, activity) => {
     setActivityDetail(null);
     if (related.table === "tasks" && related.record?.id) return openTask(related.record.id);
@@ -7030,22 +7030,13 @@ export default function App() {
   const goBackDetail = () => {
     const target = taskDetailId ? "tasks" : "accounts";
     setAccountUser(null); setTaskDetailId(null); setRoute(target);
-    setHash(`#/${target}`);
+    setHash(hashForRoute(target));
   };
 
   // keep the URL hash and the in-app view in sync (reload-safe deep links)
   useEffect(() => {
-    const normalizeLegacyAdminPath = () => {
-      const pathname = String(window.location.pathname || "");
-      if (/^\/admin(?:[.;]+)?\/?$/i.test(pathname)) {
-        try { window.history.replaceState(null, "", `${window.location.origin}/`); } catch { /* ignore */ }
-        if (window.location.hash !== "#/apn") window.location.hash = "#/apn";
-        return true;
-      }
-      return false;
-    };
     const apply = () => {
-      const normalized = normalizeLegacyAdminPath();
+      const normalized = normalizeLegacyAdminPath(window.location);
       const p = parseHash(window.location.hash);
       setAccountUser(p.account); setTaskDetailId(p.task);
       if (p.route) setRoute(p.route);

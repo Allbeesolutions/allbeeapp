@@ -17,3 +17,14 @@ export function parseHash(hash) {
   if (parts[0] === "recently-deleted") return { route:"recently-deleted", account:null, task:null };
   return { route:parts[0], account:null, task:null };
 }
+
+export const hashForRoute = (route) => route === "dashboard" ? "#/" : `#/${route}`;
+export const hashForAccount = (user) => `#/accounts/${String(user).toLowerCase()}`;
+export const hashForTask = (id) => `#/tasks/${encodeURIComponent(id)}`;
+export function normalizeLegacyAdminPath(locationLike = window.location) {
+  const pathname = String(locationLike?.pathname || "");
+  if (!/^\/admin(?:[.;]+)?\/?$/i.test(pathname)) return false;
+  try { locationLike.history?.replaceState?.(null, "", `${locationLike.origin || ""}/`); } catch { /* ignore */ }
+  if (locationLike.hash !== "#/apn") locationLike.hash = "#/apn";
+  return true;
+}
