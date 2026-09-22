@@ -14,7 +14,7 @@ export default function APNAdmin(props) {
   const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen } = props;
   const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, ...rest } = props.runtime || {};
   const { APNAdminActivityLog, APNAdminCommissions, APNAdminWithdrawals, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, APNAdminLeaderboard, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, AlertTriangle, Target, Bell, ActionBadge,
-    APN_ACTION_BADGE_MAP, APN_COMM_REVERSED, apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnCommissionProjectsOf, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry, apnDerivedTimeline, APN_TARGET_METRICS, apnIdFor, apnPartnerStats, apnRevenueCollectionsOf, exportRowsToExcel, round2, APNWarningForm, APNCreatePartnerForm, APNQuizForm, APNWithdrawalApprovalModal, APNBanForm, APNBulkForm, APNDeleteForm, APNDocForm, APNLeadManage, APNNoteForm, APNNotifForm, APNPermanentDeleteForm, APNReactivateForm, APNRejectForm, APNResetPasswordForm, APNSuspendForm, APNTargetForm, APNTrainingForm } = rest;
+    APN_ACTION_BADGE_MAP, APN_ACTION_PENDING_STATUSES, APN_COMM_REVERSED, apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnCommissionProjectsOf, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry, apnDerivedTimeline, APN_TARGET_METRICS, apnIdFor, apnPartnerStats, apnRevenueCollectionsOf, exportRowsToExcel, round2, APNWarningForm, APNCreatePartnerForm, APNQuizForm, APNWithdrawalApprovalModal, APNBanForm, APNBulkForm, APNDeleteForm, APNDocForm, APNLeadManage, APNNoteForm, APNNotifForm, APNPermanentDeleteForm, APNReactivateForm, APNRejectForm, APNResetPasswordForm, APNSuspendForm, APNTargetForm, APNTrainingForm } = rest;
   const [tab, setTab] = useState("partners");
   const [modal, setModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
@@ -403,7 +403,7 @@ export default function APNAdmin(props) {
     });
   };
 
-  const actionBadges = apnAdminActionCounts(db, currentUserId);
+  const actionBadges = apnAdminActionCounts(db, currentUserId, APN_ACTION_PENDING_STATUSES, APN_ACTION_BADGE_MAP);
   const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["support", "Support", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["agreements", "Agreements", 0], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
   const selectTab = (nextTab) => {
     setTab(nextTab);
