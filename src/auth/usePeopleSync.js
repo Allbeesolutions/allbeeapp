@@ -15,14 +15,29 @@ export function usePeopleSync({ session, supabase, ensureProfile, fetchTeam, fet
     try {
       // Authentication must never be blocked by the full staff/config/finance
       // bootstrap. In particular, APN partners can remain on the loading screen
-      // forever if one unrelated table is slow. Resolve the current profile first.
-      await ensureProfile(supabase, user);
-      const { data: ownProfile, error: profileError } = await withTimeout(
+      // forever if one unrelated table is slow. Resolve the current profile directly
+      // first, with a hard timeout. Do not run an unbounded ensureProfile request
+      // before this critical read.
+      let { data: ownProfile, error: profileError } = await withTimeout(
         supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", user.id).maybeSingle(),
         10000,
         "profile"
       );
       if (profileError) throw profileError;
+
+      // Only provision a missing profile as a recovery path, and bound both the
+      // provisioning request and the verification read. Existing APN profiles
+      // therefore never depend on an upsert before authentication can continue.
+      if (!ownProfile) {
+        await withTimeout(ensureProfile(supabase, user), 10000, "ensure-profile");
+        const retry = await withTimeout(
+          supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", user.id).maybeSingle(),
+          10000,
+          "profile-retry"
+        );
+        ownProfile = retry.data;
+        if (retry.error) throw retry.error;
+      }
       if (!ownProfile) throw new Error("Your account profile could not be loaded. Please sign out and sign in again.");
       setProfile(ownProfile);
       setSyncError(null);
