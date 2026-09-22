@@ -6846,6 +6846,8 @@ export default function App() {
     ? <RemoteLockGate isDark={isDark} signOut={signOut} pause={LOCKDOWN_PAUSE_TEST}>{node}</RemoteLockGate>
     : node);
 
+  const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty, USERS, avatarColor, haptic }), [supabase, emitToast]);
+
   const publicPath = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
   if (publicPath === "/privacy-policy") return <PrivacyPolicy mode="privacy" />;
   if (publicPath === "/delete-account") return <PrivacyPolicy mode="delete" />;
@@ -6956,7 +6958,6 @@ export default function App() {
       case "activity": return <LastSeen team={team} />;
       case "myteam": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading my team…</div></div>}><LazyMyTeam db={db} team={team} me={me} mutate={mutate} onRefresh={reload} runtime={{ useState, todayISO, teamOfUser, teamRosterIds, Empty, Users, Avatar, isTaskAssignee, sameMonth, round2, sumHours, ROLE_LABEL, attStatus, fmtDate, attendanceFor, clockTime, ListTodo, priorityTone, assigneeText, CalendarClock, ContactButtons, Confirm, TeamChat: LazyTeamChat }} /></React.Suspense>;
       case "staff-salary": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading staff salary…</div></div>}><LazyStaffSalary db={db} team={team} mutate={mutate} me={me} runtime={{ ...Icons, money, fmtDate, Modal, Field, Empty, Avatar, emitToast, ROLE_LABEL, uid, staffEarnings, SalaryRow }} /></React.Suspense>;
-const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty, USERS, avatarColor, haptic }), [supabase, emitToast]);
       case "accounts": return <LazyAccounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} helpers={financeComponentHelpers} />;
       case "withdrawals": return <LazyWithdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} helpers={financeComponentHelpers} />;
       case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} />;
