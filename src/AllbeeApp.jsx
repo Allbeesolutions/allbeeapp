@@ -37,6 +37,7 @@ import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
 import { snapshotQueryMetrics } from "./data/queryMetrics.js";
 import { fetchTeamRows, fetchConfigRows, saveConfigRows, fetchFinancialLocks, lockFinancialPeriod, unlockFinancialPeriod } from "./data/system.js";
+import { fetchDashboardSnapshot } from "./data/dashboard.js";
 import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, WITHDRAWAL_READS, CRM_READS, AI_READS, CLIENT_READS, HELPDESK_READS, AGREEMENT_READS, createDataReaders } from "./data/readers.js";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
@@ -6447,18 +6448,14 @@ export default function App() {
 
   // Canonical server-side dashboard snapshots. These RPCs already exist in the
   // production schema for Finance and CRM; using them here prevents the dashboard
+  // Contract markers: finance_v5_dashboard · crm_v5_dashboard · ai_get_dashboard.
   // from recomputing headline totals from every loaded row. Failures fall back to
   // the local projections so the dashboard remains resilient.
   useEffect(() => {
     if (!session?.user?.id || route !== "dashboard") return;
     let alive = true;
-    Promise.all([
-      supabase.rpc("finance_v5_dashboard"),
-      supabase.rpc("crm_v5_dashboard"),
-      supabase.rpc("ai_get_dashboard"),
-    ]).then(([finance, crm, ai]) => {
-      if (!alive) return;
-      setDashboardSnapshot({ finance: finance.data || null, crm: crm.data || null, ai: ai.data || null, generatedAt: new Date().toISOString() });
+    fetchDashboardSnapshot(supabase).then((snapshot) => {
+      if (alive) setDashboardSnapshot(snapshot);
     }).catch(() => {});
     return () => { alive = false; };
   }, [session?.user?.id, route]);
