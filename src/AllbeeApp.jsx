@@ -52,6 +52,7 @@ import { apnDistrictHeadMembers, apnStateScope } from "./modules/apn/scope.js";
 import { apnWithdrawalWalletFor, apnWithdrawalTone, apnWithdrawalLabel, apnWalletLabel, apnRequestAmount } from "./modules/apn/wallet.js";
 import { apnAiCategoryFor } from "./modules/apn/ai.js";
 import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNotify } from "./modules/apn/admin-notifications.js";
+import { apnSafeHtml } from "./modules/apn/content.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -6087,11 +6088,6 @@ function APNWarningForm({ partner, onSave, onClose }) {
     </Modal>
   );
 }
-
-const apnSafeHtml = (html) => String(html || "")
-  .replace(/<\s*(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, "")
-  .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-  .replace(/<(?!\/?(b|strong|i|em|u|br|p|ul|ol|li)\b)[^>]*>/gi, "");
 
 function APNNoteForm({ initial, partner, onSave, onClose }) {
   const [html, setHtml] = useState(() => apnSafeHtml(initial?.bodyHtml || initial?.body || ""));
