@@ -58,6 +58,7 @@ import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNoti
 import { apnSafeHtml } from "./modules/apn/content.js";
 import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
 import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
+import { APNDocuments, APNNotifications } from "./modules/apn/PortalContent.jsx";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5053,42 +5054,6 @@ function APNTargets({ db, pid, mutate, go }) {
 }
 
 /* ── documents ───────────────────────────────────────────────────────── */
-function APNDocuments({ db }) {
-  const list = (db.apn_documents || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return (
-    <div>
-      <div className="apn-section-h">Sales materials</div>
-      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<FileText size={22} color="var(--muted)" />} title="No materials yet" text="Scripts, price lists, brochures and posters uploaded by admin appear here." /></div>
-        : <div className="apn-list">{list.map((d) => (
-          <div key={d.id} className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div className="cmdk-ic"><FileText size={16} /></div>
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{d.title}</div><div className="hint-line" style={{ fontSize: 12 }}>{d.category || "Material"}{d.notes ? " · " + d.notes : ""}</div></div>
-            <a className="btn sm" href={d.url} target="_blank" rel="noreferrer"><Download size={13} />Open</a>
-          </div>
-        ))}</div>}
-    </div>
-  );
-}
-
-/* ── notifications ───────────────────────────────────────────────────── */
-function APNNotifications({ db, meRow }) {
-  const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return (
-    <div>
-      <div className="apn-section-h">Notifications</div>
-      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text="Training, commission and target updates will appear here." /></div>
-        : <div className="apn-list">{list.map((n) => (
-          <div key={n.id} className="apn-rowcard">
-            {(() => { const sender = apnNotificationSender(n); return <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={sender.name} url={sender.avatar} size={26} fontSize={10} /><div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation}</div></div>{n.level && n.level !== "General" && <span className={"badge " + (n.level === "Urgent" ? "neg" : "accent")}>{n.level}</span>}</div>; })()}
-            {n.body && <div style={{ marginTop: 5, fontSize: 14, lineHeight: 1.5, color: "var(--ink)" }}>{n.body}</div>}
-            <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>{fmtDateTime(n.createdAt)}</div>
-          </div>
-        ))}</div>}
-    </div>
-  );
-}
-
-/* ── achievements ────────────────────────────────────────────────────── */
 function APNAchievements({ db, pid }) {
   const list = apnAchievementsFor(db, pid, apnPartnerStats, (d,p,s,m) => apnRankBy(d,p,s,m,apnLivePartners,apnMe,apnPartnerStats,apnAttendanceScore,apnHealthScore));
   return (
@@ -5557,11 +5522,11 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
       case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
-      case "documents": return <APNDocuments db={db} />;
+      case "documents": return <APNDocuments db={db} Empty={Empty} />;
       case "agreements": return <APNAgreementCenter db={db} pid={pid} onRefresh={refreshPortal} />;
       case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
       case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} />;
-      case "notifications": return <APNNotifications db={db} meRow={meRow} />;
+      case "notifications": return <APNNotifications db={db} meRow={meRow} Empty={Empty} Avatar={Avatar} fmtDateTime={fmtDateTime} />;
       case "achievements": return <APNAchievements db={db} pid={pid} />;
       case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} />;
       case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
