@@ -7,8 +7,8 @@ import { RemoteLockGate, FounderTap } from "./AllbeeApp.jsx";
 // UI instantly with ZERO network calls, replace the wrapped app, drain local
 // sessions (signOut), and reject/accept codes through the UI affordances.
 
-// Hidden logo-tap sequence (taps 1-16 idle → 17/18/19: 3/2/1 → 20 armed →
-// 21 opens the existing authorization screen). Taps are spaced past the
+// Hidden logo-tap sequence (taps 1-16 idle → 17/18/19: 3/2/1 →
+// 20 opens the existing authorization screen). Taps are spaced past the
 // one-physical-tap de-duplication guard (250ms) so each registers exactly once.
 const tapLogo = async (n) => {
   const logo = screen.getByAltText("ALLBEE");
@@ -91,10 +91,8 @@ describe("RemoteLockGate — hidden logo-tap countdown", () => {
     expect(countdownShown()?.textContent).toBe("2");
     await tapLogo(1);
     expect(countdownShown()?.textContent).toBe("1");
+    // 20th tap: the existing emergency authorization screen replaces the app shell
     await tapLogo(1);
-    expect(countdownShown()?.dataset.countdown).toBe("armed");
-    await tapLogo(1);
-    // 21st tap: the existing emergency authorization screen replaces the app shell
     await waitFor(() => {
       expect(screen.getByText(/authorization code/i)).toBeTruthy();
     });
@@ -128,15 +126,12 @@ describe("RemoteLockGate — hidden logo-tap countdown", () => {
     }
   }, 15000);
 
-  it("20 → armed completion state, 21 → opens the existing authorization screen", async () => {
+  it("20 taps opens the existing authorization screen", async () => {
     vi.useFakeTimers();
     const signOut = vi.fn().mockResolvedValue(undefined);
     render(<RemoteLockGate isDark={false} signOut={signOut} pause />);
     await tapLogo(20);
-    const armed = countdownShown();
-    expect(armed).not.toBeNull();
-    expect(armed.dataset.countdown).toBe("armed");
-    await tapLogo(1);
+    expect(countdownShown()).toBeNull();
     expect(screen.queryByText(/authorization code/i)).toBeTruthy();
     expect(screen.getByText("Founder-controlled maintenance in progress")).toBeTruthy();
     expect(screen.getByText(/not authorized/i)).toBeTruthy();

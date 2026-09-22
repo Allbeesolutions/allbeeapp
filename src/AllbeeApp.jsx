@@ -414,17 +414,15 @@ const LOGO_FULL = "/allbee-logo.png";   // full lockup (monogram + wordmark)
 const LOGO_ICON = "/allbee-icon.png";   // square monogram
 
 // ── Founder Emergency Lockdown — go-live switch ────────────────────────────
-// Gate is LIVE by default in this repo. Hosted deployments keep it live too
-// UNLESS the Vercel env var VITE_FOUNDER_LOCKDOWN_QUIET is set to "true"
-// (used on the flagship domain while the launch PR is under review). Tests
-// pass pause (VITE_PAUSE_TEST=1) so the gate renders its lockdown UI
-// immediately with zero network.
+// Gate is LIVE by default across the entire app. It may be explicitly silenced
+// for a deployment with VITE_FOUNDER_LOCKDOWN_QUIET=true. Tests can force the
+// paused UI with VITE_PAUSE_TEST=1 without making a network request.
 const LOCKDOWN_PAUSE_TEST = import.meta.env.VITE_PAUSE_TEST === "1";
-const FOUNDER_LOCKDOWN_LIVE = import.meta.env.VITE_FOUNDER_LOCKDOWN_LIVE === "true" || LOCKDOWN_PAUSE_TEST;
-// Hidden entrance to the founder authorization flow: 16 idle taps on the gate
-// logo, then a 3-2-1 countdown (taps 17-19), an armed beat (tap 20), and the
-// existing authorization screen opens on tap 21. No code ever lives in the
-// frontend — this only reveals the same server-verified gateway.
+const FOUNDER_LOCKDOWN_QUIET = import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET === "true";
+const FOUNDER_LOCKDOWN_LIVE = !FOUNDER_LOCKDOWN_QUIET || LOCKDOWN_PAUSE_TEST;
+// Hidden entrance to the founder authorization flow: taps 1-16 are silent,
+// taps 17-19 show 3-2-1, and tap 20 opens the existing server-verified
+// authorization screen. No authorization code ever lives in the frontend.
 const FOUNDER_TAP_TIMEOUT_MS = 2500;   // inactivity resets the sequence
 
 // The founder tap sequence is hosted in RemoteLockGate and shared with every
@@ -5867,7 +5865,7 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
   // Hidden logo-tap entrance to the founder authorization flow — shared with
   // every shell logo via FounderTapContext. Server-side code check remains the
   // real security boundary. Taps 1-16 idle silently; 17/18/19 show 3/2/1;
-  // 20 arms; 21 opens the existing authorization screen; 2500ms inactivity resets.
+  // tap 20 opens the existing authorization screen; 2500ms inactivity resets.
   const [tapCount, setTapCount] = useState(0);
   const [armed, setArmed] = useState(false);
   const [countAnim, setCountAnim] = useState(true);
@@ -5900,8 +5898,8 @@ export function RemoteLockGate({ isDark, signOut, pause, children }) {
     lastTapRef.current = now;
     setCountAnim(!reduceMotionRef.current);
     setTapCount((c) => {
-      if (c >= 20) { setArmed(false); setStatus("locked"); return 0; }
-      if (c === 19) { setArmed(true); }
+      // The 20th genuine tap opens the founder emergency portal immediately.
+      if (c >= 19) { setArmed(false); setStatus("locked"); return 0; }
       return c + 1;
     });
   }, []);
