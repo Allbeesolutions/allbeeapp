@@ -6129,7 +6129,7 @@ export default function App() {
     const generation = ++reloadGenerationRef.current;
     // Coalesce only identical snapshot requests. A full refresh must never
     // accidentally reuse a partial dirty-table request (or vice versa).
-    const normalizedTables = normalizeRealtimeTableSet(tables) || routeDataTables(route);
+    const normalizedTables = normalizeRealtimeTableSet(tables) || routeDataTables(route, role);
     const requestKey = normalizedTables ? normalizedTables.join("|") : "*";
     const request = reloadInFlightRef.current && reloadInFlightKeyRef.current === requestKey
       ? reloadInFlightRef.current
@@ -6194,7 +6194,7 @@ export default function App() {
       // bootstrap already contains the common dashboard tables, so fetch only
       // the active route's additional datasets after the shell is interactive.
       const bootstrapSet = new Set(["transactions","tasks","attendance","leave","updates","announcements","notifications","chat","projects","clients","invoices","payroll"]);
-      const scope = routeDataTables(route).filter((table) => !bootstrapSet.has(table));
+      const scope = routeDataTables(route, role).filter((table) => !bootstrapSet.has(table));
       if (!scope.length) {
         if (import.meta.env.DEV) console.info(`[ALLBEE] bootstrap reused for route=${route}`, snapshotQueryMetrics());
         return;
@@ -6218,7 +6218,7 @@ export default function App() {
     loadedRouteRef.current = key;
     let alive = true;
     setRouteDataLoading(true);
-    fetchAll({ includeTables: routeDataTables(route) }).then((fresh) => {
+    fetchAll({ includeTables: routeDataTables(route, profile?.role) }).then((fresh) => {
       if (!alive) return;
       setDb((current) => ({ ...current, ...fresh }));
       setSyncError(null);

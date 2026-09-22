@@ -16,5 +16,7 @@ describe("route data reader contract", () => {
     expect(routeDataTables("finance")).toContain("apn_withdrawal_requests");
     expect(routeDataTables("apnadmin")).toContain("apn_action_badge_reads");
     expect(routeDataTables("unknown-route")).toEqual(routeDataTables("dashboard"));
+    expect(routeDataTables("dashboard", "partner")).toContain("apn_users");
+    expect(routeDataTables("dashboard", "staff")).not.toContain("apn_users");
   });
 });

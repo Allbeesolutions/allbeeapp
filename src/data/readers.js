@@ -265,11 +265,16 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     ai: [...Object.keys(AI_READS),"clients","leads","quotations","projects"],
     automation: ["business_automation_queue", ...Object.keys(AI_READS)],
   });
-  const routeDataTables = (route) => {
+  const routeDataTables = (route, role = "") => {
     const base = ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard;
+    // APN partners need their identity row before the portal can render. Keep
+    // this single identity table in the dashboard fallback so a post-login
+    // reload can discover a newly-created APN profile without hydrating the
+    // entire APN dataset for every internal user.
+    const apnIdentity = role === "partner" || route === "apn" || route === "apnadmin" || route === "apnwallet" ? ["apn_users"] : [];
     // The initial shell bootstrap is loaded separately. Route refreshes must stay truly scoped
     // so a navigation event does not silently re-fetch the global bootstrap payload.
-    return [...new Set(["notifications", ...base])];
+    return [...new Set(["notifications", ...base, ...apnIdentity])];
   };
 
   async function mapWithConcurrency(items, limit, fn) {
