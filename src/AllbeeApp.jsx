@@ -51,6 +51,7 @@ import { apnSnapshotWallet, apnSnapshotRate } from "./modules/apn/snapshot.js";
 import { apnDistrictHeadMembers, apnStateScope } from "./modules/apn/scope.js";
 import { apnWithdrawalWalletFor, apnWithdrawalTone, apnWithdrawalLabel, apnWalletLabel, apnRequestAmount } from "./modules/apn/wallet.js";
 import { apnAiCategoryFor } from "./modules/apn/ai.js";
+import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNotify } from "./modules/apn/admin-notifications.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5271,7 +5272,7 @@ function APNStateHead({ db, meRow, mutate, patchDb, openModal }) {
       const { data, error } = await supabase.rpc("apn_state_head_approve_partner", { p_partner_id: partner.id });
       if (error) throw error;
       const at = Date.now();
-      patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? { ...u, status: "active", approvedAt: at, approvedBy: meRow.name, rejectedAt: null, rejectReason: null } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify(apnApprovalNotification(partner, meRow))] }));
+      patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === partner.id ? { ...u, status: "active", approvedAt: at, approvedBy: meRow.name, rejectedAt: null, rejectReason: null } : u), apn_notifications: [...(d.apn_notifications || []), apnNotify(apnApprovalNotification(partner, meRow), uid)] }));
       emitToast(`Approved ${data?.name || partner.name}.`, "success");
     } catch (e) { emitToast(e?.message || "Could not approve partner.", "error"); }
   };
@@ -5740,20 +5741,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
    APN ADMIN (internal) — run by Haji / Alim / admins. Approvals, District Head
    appointment and reactivation are partner-only (superadmin) actions.
 ══════════════════════════════════════════════════════════════════════ */
-const apnApproverFor = (actor) => /syed|haji/i.test(String(actor || "")) ? APN_APPROVERS[0] : APN_APPROVERS[1];
-const apnNotificationSender = (n) => {
-  const approvedBy = n?.approvedBy || {};
-  return { name: n?.senderName || approvedBy.name || n?.createdBy || "ALLBEE", designation: n?.senderDesignation || approvedBy.designation || n?.senderRole || "Admin", avatar: n?.senderAvatar || approvedBy.avatar || approvedBy.photo_url || "" };
-};
-const apnApprovalNotification = (partner, actor) => {
-  const approvedBy = apnApproverFor(actor);
-  return { title: "Welcome to APN 🎉", body: `Your partner account has been approved.\n\nApproved by\n${approvedBy.name}\n${approvedBy.designation}`, approvedBy, senderName: approvedBy.name, senderRole: approvedBy.designation, senderDesignation: approvedBy.designation, partnerId: partner.id, audience: `partner:${partner.id}` };
-};
-const apnNotify = (n) => {
-  const createdAt = Date.now();
-  return { id: uid(), title: n.title || "", body: n.body || "", audience: n.audience || "all", level: n.level || "General", reads: [], createdAt, createdDate: new Date(createdAt).toISOString().slice(0, 10), createdTime: new Date(createdAt).toTimeString().slice(0, 8), ...(n.approvedBy ? { approvedBy: n.approvedBy } : {}), ...(n.partnerId ? { partnerId: n.partnerId } : {}), ...(n.metadata ? { metadata: n.metadata } : {}), ...(n.senderName ? { senderName: n.senderName } : {}), ...(n.senderRole ? { senderRole: n.senderRole } : {}), ...(n.senderDesignation ? { senderDesignation: n.senderDesignation } : {}), ...(n.senderAvatar ? { senderAvatar: n.senderAvatar } : {}) };
-};
-
 /* ── admin forms ─────────────────────────────────────────────────────── */
 
 function APNCreatePartnerForm({ db, mutate, currentUser, canManage, onClose, inline = false }) {
@@ -6016,7 +6003,7 @@ function APNNotifForm({ partners, sender, onSave, onClose }) {
     if (!f.title.trim()) return;
     const audience = f.audience === "partner" ? "partner:" + f.partnerId : f.audience === "district" ? "district:" + f.district : "all";
     if (f.audience === "partner" && !f.partnerId) return;
-    onSave(apnNotify({ title: f.title.trim(), body: f.body.trim(), level: f.level, audience, senderName: sender?.name, senderRole: sender?.role, senderDesignation: sender?.designation, senderAvatar: sender?.avatar }));
+    onSave(apnNotify({ title: f.title.trim(), body: f.body.trim(), level: f.level, audience, senderName: sender?.name, senderRole: sender?.role, senderDesignation: sender?.designation, senderAvatar: sender?.avatar }, uid));
     onClose();
   };
   return (
@@ -7413,7 +7400,7 @@ export default function App() {
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
           <LazyAPNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
             runtime={{ ...Icons, supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, APN_SERVICE_LABEL, APN_ACTION_BADGE_MAP, APN_COMM_REVERSED, SearchableSelect, apnConsoleRow, apnCampaignOf, apnLivePartners, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, apnLeaderboard, apnLeadTone, ActionBadge, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminSupport,
-              apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry,
+              apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify: (n) => apnNotify(n, uid), apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry,
               apnActivityHistory, apnAttendanceScore, apnAvatarUrl, apnDerivedTimeline, apnLastActivity, apnMilestones, apnMonthlyAnalytics, apnPartnerProfileForm, apnRecommendations, apnRiskIndicators, apnTargetFor,
               APN_ADMIN_LEVELS, APN_ADMIN_STATUSES, APN_LEAD_REJECTED, APN_TARGET_METRICS, AGREEMENT_CATEGORIES, APNWarningForm, apnAdminLevel, apnLastSeenAt, apnStatusClass,
               APNCreatePartnerForm, APNQuizForm, APNWithdrawalApprovalModal, APNBanForm, APNBulkForm, APNDeleteForm, APNDocForm, APNLeadManage, APNNoteForm, APNNotifForm, APNPermanentDeleteForm, APNReactivateForm, APNRejectForm, APNResetPasswordForm, APNSuspendForm, APNTargetForm, APNTrainingForm, APNPartnerDashboard, APNPartnerAnalytics, APNPartnerActivity, APNPartnerDocuments, APNPartnerCommunications,
