@@ -7125,9 +7125,9 @@ const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, 
                 )}
               </div>
             </header>
-            <div className="page-enter" key={safeRoute + "|" + (taskDetailId || "") + "|" + (accountUser || "")}>
+            <main className="page-enter" key={safeRoute + "|" + (taskDetailId || "") + "|" + (accountUser || "")}>
               {renderPage()}
-            </div>
+            </main>
           </div>
         </div>
 
