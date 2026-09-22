@@ -47,6 +47,7 @@ import { apnNotifVisible, apnActionPending, apnActionRowTime, apnActionReadTime,
 import { apnBuildCommissions } from "./modules/apn/commission.js";
 import { apnCheckedInToday, apnAttendanceBase, apnAutoInactive, apnEffectiveStatus, apnAttendanceStreak } from "./modules/apn/attendance.js";
 import { apnMe, apnAvatarUrl, apnUnlocked, apnLivePartners } from "./modules/apn/partner.js";
+import { apnSnapshotWallet, apnSnapshotRate } from "./modules/apn/snapshot.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4413,17 +4414,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 // server-side source the ALLBEE AI uses). These helpers read ONLY the snapshot;
 // they never recompute or totalize (no client-side wallet math). Each returns
 // null when the snapshot is absent so callers can fall back to legacy figures.
-const apnSnapshotWallet = (snap) => (snap?.wallet && typeof snap.wallet === "object" ? snap.wallet : null);
-const apnSnapshotRate = (snap, completed) => {
-  const ladder = (snap?.ruleKnowledge?.ladder || []).filter((r) => r.commissionType === "partner");
-  if (!ladder.length) return null;
-  const rule = ladder.find((r) => completed >= Number(r.tierMin) && completed <= (Number(r.tierMax) || Infinity)) || ladder[ladder.length - 1];
-  return rule && Number.isFinite(Number(rule.percent)) ? Number(rule.percent) : null;
-};
-// Create the partner's APN row on first login from the details captured at
-// sign-up (mirrors ensureProfile). Assigns the next APN-TN id. A partner who
-// already holds an approved profile (invited by an admin) is activated
-// immediately; everybody else enters the pending queue for approval.
 async function ensureApnProfile(user, existingRows) {
   if ((existingRows || []).some((u) => u.id === user.id)) return false;
   let preApproved = false;
