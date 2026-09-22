@@ -43,6 +43,7 @@ import { apnLeadsOf, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsO
 import { apnCurrentZone, apnZonePeriodKey, apnZoneTone, apnConsoleRow, apnCampaignOf, apnGovernedTargets, apnGovernedLimit, apnCalculatedGovernedExplanation, apnReciprocal, apnFormRules, apnZoneRank, apnZoneStats } from "./modules/apn/network.js";
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel, apnLevelForCompleted, apnCommissionRuleForProject, apnRateForPrior, apnNextLevel, apnLeadTone, apnCommTone, apnPayoutDate, apnMetricLabel } from "./modules/apn/helpers.js";
 import { apnRankBy, apnLeaderboard, apnAchievementsFor } from "./modules/apn/leaderboard.js";
+import { apnNotifVisible, apnActionPending, apnActionRowTime, apnActionReadTime, apnUnseenActionCount, apnAdminActionCounts } from "./modules/apn/notifications.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4451,51 +4452,6 @@ const apnSnapshotRate = (snap, completed) => {
   return rule && Number.isFinite(Number(rule.percent)) ? Number(rule.percent) : null;
 };
 const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
-/* ── notifications visibility ────────────────────────────────────────── */
-function apnNotifVisible(n, meRow) {
-  const a = n.audience || "all";
-  if (a === "all") return true;
-  if (a.startsWith("partner:")) return a.slice(8) === meRow?.id;
-  if (a.startsWith("district:")) return a.slice(9) === meRow?.district;
-  return true;
-}
-
-
-const apnActionPending = (value) => APN_ACTION_PENDING_STATUSES.has(String(value || "").trim().toLowerCase());
-const apnActionRowTime = (row) => {
-  const value = row?.updatedAt ?? row?.createdAt ?? row?.updated_at ?? row?.created_at ?? row?.requested_at ?? row?.linked_at ?? row?.issuedAt ?? row?.uploadedAt;
-  const text = String(value || "");
-  const time = typeof value === "number" || /^\d{10,}$/.test(text) ? Number(value) : Date.parse(text);
-  return Number.isFinite(time) ? time : 0;
-};
-const apnActionReadTime = (db, viewerId, actionType) => {
-  const row = (db.apn_action_badge_reads || []).find((item) => item.user_id === viewerId && item.action_type === actionType);
-  const time = row?.seen_at ? Date.parse(row.seen_at) : 0;
-  return Number.isFinite(time) ? time : 0;
-};
-const apnUnseenActionCount = (rows, predicate, readAt) => (rows || []).filter((row) => predicate(row) && apnActionRowTime(row) > readAt).length;
-function apnAdminActionCounts(db, viewerId) {
-  const counts = {
-    partner_pending: apnUnseenActionCount(db.apn_users, (row) => row.status === "pending", apnActionReadTime(db, viewerId, "partner_pending")),
-    commission_pending: apnUnseenActionCount([...(db.apn_revenue_collections || []), ...(db.apn_commissions || [])], (row) => apnActionPending(row.commissionStatus || row.status), apnActionReadTime(db, viewerId, "commission_pending")),
-    withdrawal_pending: apnUnseenActionCount([...(db.apn_withdrawal_requests || []), ...(db.apn_withdrawal_batches || [])], (row) => apnActionPending(row.status), apnActionReadTime(db, viewerId, "withdrawal_pending")),
-    referral_pending: apnUnseenActionCount(db.apn_referral_earnings, (row) => row.status === "pending", apnActionReadTime(db, viewerId, "referral_pending")),
-    target_action: apnUnseenActionCount(db.apn_targets, (row) => row.acknowledged === false, apnActionReadTime(db, viewerId, "target_action")),
-    training_action: apnUnseenActionCount([...(db.apn_training || []), ...(db.apn_quizzes || [])], (row) => apnActionPending(row.status || row.approvalStatus), apnActionReadTime(db, viewerId, "training_action")),
-    material_action: apnUnseenActionCount(db.apn_documents, (row) => row.published === false || apnActionPending(row.status || row.approvalStatus || row.publishStatus), apnActionReadTime(db, viewerId, "material_action")),
-    notification_unread: apnUnseenActionCount(db.apn_notifications, () => true, apnActionReadTime(db, viewerId, "notification_unread")),
-  };
-  const result = Object.fromEntries(APN_ACTION_BADGE_MAP.map(({ actionType, tab }) => [tab, counts[actionType] || 0]));
-  return {
-    ...counts,
-    ...result,
-    training: counts.training_action,
-    materials: counts.material_action,
-    notify: counts.notification_unread,
-    total: Object.values(counts).reduce((sum, value) => sum + value, 0),
-  };
-}
-
 /* ── commission generation (partner rate + 1% district-head override) ─── */
 function apnBuildCommissions(d, lead) {
   const rows = [];
@@ -7507,7 +7463,7 @@ export default function App() {
   const financeApnPartners = modal?.type === "income" ? (db.apn_users || []).filter((partner) => partner.status === "active") : [];
   const actionCounts = (() => {
     const pending = (value) => ["pending", "Pending", "under_review", "processing", "Pending approval"].includes(value);
-    const apnActions = apnAdminActionCounts(db, profile?.id);
+    const apnActions = apnAdminActionCounts(db, profile?.id, APN_ACTION_PENDING_STATUSES, APN_ACTION_BADGE_MAP);
     const apnApprovals = apnActions.partners;
     const apnWithdrawals = apnActions.withdrawals;
     const apnCommissionApprovals = apnActions.commissions;
