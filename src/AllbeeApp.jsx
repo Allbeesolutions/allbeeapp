@@ -6327,7 +6327,7 @@ export default function App() {
       const scoped = new Set(routeDataTables(route));
       scoped.forEach((t) => {
         if (t === "audit") channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "audit" }, scheduleAuditReload);
-        else channel.on("postgres_changes", { event: "*", schema: "public", table: t }, scheduleReload);
+        else ["INSERT", "UPDATE", "DELETE"].forEach((event) => channel.on("postgres_changes", { event, schema: "public", table: t }, scheduleReload));
       });
       // The current user's notification badge remains live even when the active
       // screen does not otherwise consume the notifications collection.
