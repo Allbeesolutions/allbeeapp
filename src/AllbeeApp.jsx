@@ -46,6 +46,7 @@ import { apnRankBy, apnLeaderboard, apnAchievementsFor } from "./modules/apn/lea
 import { apnNotifVisible, apnActionPending, apnActionRowTime, apnActionReadTime, apnUnseenActionCount, apnAdminActionCounts } from "./modules/apn/notifications.js";
 import { apnBuildCommissions } from "./modules/apn/commission.js";
 import { apnCheckedInToday, apnAttendanceBase, apnAutoInactive, apnEffectiveStatus, apnAttendanceStreak } from "./modules/apn/attendance.js";
+import { apnMe, apnAvatarUrl, apnUnlocked, apnLivePartners } from "./modules/apn/partner.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4406,10 +4407,6 @@ const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 // has a start/end window; a partner's zone is stored on their row (`zone`)
 // and mirrors the apex zone they joined through a zone request.
 /* ── partner lookups ─────────────────────────────────────────────────── */
-const apnMe = (db, pid) => (db.apn_users || []).find((u) => u.id === pid) || null;
-const apnAvatarUrl = (partner, profile) => partner?.profilePicture || partner?.photo_url || partner?.photoUrl || profile?.photo_url || "";
-const apnUnlocked = (u) => (u && u.unlocked && typeof u.unlocked === "object" ? u.unlocked : {});
-
 /* ── derived stats, ranks, leaderboards, achievements ────────────────── */
 // APN finance/commission projections live in modules/apn/analytics.js.
 // WP7 — authoritative engine values projected by the snapshot RPC (the same
@@ -4423,7 +4420,6 @@ const apnSnapshotRate = (snap, completed) => {
   const rule = ladder.find((r) => completed >= Number(r.tierMin) && completed <= (Number(r.tierMax) || Infinity)) || ladder[ladder.length - 1];
   return rule && Number.isFinite(Number(rule.percent)) ? Number(rule.percent) : null;
 };
-const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
 // Create the partner's APN row on first login from the details captured at
 // sign-up (mirrors ensureProfile). Assigns the next APN-TN id. A partner who
 // already holds an approved profile (invited by an admin) is activated
