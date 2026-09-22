@@ -66,6 +66,7 @@ import { APNHeadPartnerCard } from "./modules/apn/HeadPartnerCard.jsx";
 import { APNDistrict } from "./modules/apn/DistrictHead.jsx";
 import { APNStateHead } from "./modules/apn/StateHead.jsx";
 import { APNSearch } from "./modules/apn/APNSearch.jsx";
+import { APNTabErrorBoundary } from "./modules/apn/APNTabErrorBoundary.jsx";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5134,26 +5135,6 @@ const CHAT_SECTIONS = ["person", "district", "state"];
 const CHAT_SECTION_LABEL = { person: "Friends", district: "District", state: "State" };
 
 /* ── tab error boundary ──────────────────────────────────────────────── */
-class APNTabErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, info) { console.error("[APN] Tab render error:", error, info?.componentStack?.slice(0, 400)); }
-  render() {
-    if (this.state.hasError) {
-      const msg = this.state.error?.message || "An unexpected error occurred.";
-      return (
-        <div style={{ padding: "40px 24px", textAlign: "center" }}>
-          <div style={{ color: "var(--neg)", marginBottom: 12 }}><AlertTriangle size={32} /></div>
-          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 16 }}>Something went wrong</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20, maxWidth: 320, margin: "0 auto 20px" }}>{msg}</div>
-          <button className="btn primary" onClick={() => this.setState({ hasError: false, error: null })}>Try again</button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 /* Shared APN partner-page helpers. Keep these in the portal module because the
    lazy APN pages receive them through runtime; defining them in another lazy
    module makes the portal render fail before the child component can load. */
