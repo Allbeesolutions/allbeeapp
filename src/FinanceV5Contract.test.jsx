@@ -28,6 +28,7 @@ describe("Finance v5 contracts", () => {
     expect(sql).toContain("if not public.is_admin() then raise exception 'Finance dashboard requires admin access.'");
   });
   it("surfaces Finance v5 controls in Share & accounts", () => {
+    expect(accounts).toMatch(/import React, \{[^}]*useCallback[^}]*useEffect[^}]*useMemo[^}]*useState[^}]*\} from "react"/);
     expect(app).toContain("finance_v5_dashboard");
     expect(accounts).toContain("Finance v5 control panel");
     expect(accounts).toContain("Reconciliation");
