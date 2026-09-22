@@ -65,6 +65,7 @@ import { APNTargets } from "./modules/apn/TargetViews.jsx";
 import { APNHeadPartnerCard } from "./modules/apn/HeadPartnerCard.jsx";
 import { APNDistrict } from "./modules/apn/DistrictHead.jsx";
 import { APNStateHead } from "./modules/apn/StateHead.jsx";
+import { APNSearch } from "./modules/apn/APNSearch.jsx";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5020,63 +5021,6 @@ function APNTraining({ db, meRow, pid, mutate }) {
    adds scoped management without changing the finance or authorization model. ── */
 
 /* ── APN global search ───────────────────────────────────────────────── */
-function APNSearch({ db, meRow, pid, go, onClose }) {
-  const [q, setQ] = useState("");
-  const inputRef = useRef(null);
-  const dialogRef = useRef(null);
-  const previousFocusRef = useRef(null);
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement;
-    const t = setTimeout(() => inputRef.current?.focus(), 30);
-    return () => {
-      clearTimeout(t);
-      const previous = previousFocusRef.current;
-      if (previous && typeof previous.focus === "function") previous.focus();
-    };
-  }, []);
-  const index = useMemo(() => {
-    const out = [];
-    for (const l of apnLeadsOf(db, pid)) out.push({ id: "l" + l.id, tab: "leads", module: "Lead", title: l.clientName, sub: `${APN_SERVICE_LABEL[l.service]} · ${l.status}`, text: searchHay(l) });
-    for (const qt of (db.apn_quotations || []).filter((x) => x.partnerId === pid)) out.push({ id: "q" + qt.id, tab: "quotations", module: "Quotation", title: qt.clientName, sub: money(qt.total), text: searchHay(qt) });
-    for (const d of (db.apn_documents || [])) out.push({ id: "d" + d.id, tab: "documents", module: "Material", title: d.title, sub: d.category || "", text: searchHay(d) });
-    for (const t of (db.apn_training || [])) out.push({ id: "t" + t.id, tab: "learn", module: "Training", title: t.title, sub: APN_SERVICE_LABEL[t.category] || "", text: searchHay(t) });
-    for (const t of (db.apn_targets || []).filter((x) => x.partnerId === pid)) out.push({ id: "tg" + t.id, tab: "targets", module: "Target", title: t.title, sub: apnMetricLabel(t.metric), text: searchHay(t) });
-    for (const n of (db.apn_notifications || []).filter((x) => apnNotifVisible(x, meRow))) out.push({ id: "n" + n.id, tab: "notifications", module: "Notification", title: n.title, sub: "", text: searchHay(n) });
-    return out;
-  }, [db, pid, meRow]);
-  const results = useMemo(() => {
-    const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (!toks.length) return [];
-    return index.filter((r) => toks.every((t) => r.text.includes(t))).slice(0, 40);
-  }, [q, index]);
-  return (
-    <div className="cmdk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={dialogRef} className="cmdk" role="dialog" aria-modal="true" aria-label="Search APN" onKeyDown={(e) => {
-        if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
-        if (e.key !== "Tab") return;
-        const nodes = Array.from(dialogRef.current?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
-        if (!nodes.length) return;
-        const first = nodes[0]; const last = nodes[nodes.length - 1];
-        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-      }}>
-        <div className="cmdk-input"><Search size={20} color="var(--muted)" aria-hidden="true" /><input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search leads, quotations, materials…" aria-label="Search APN records" /><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={onClose} aria-label="Close search" title="Close search"><X size={16} /></button></div>
-        <div className="cmdk-results">
-          {!q.trim() ? <div className="cmdk-empty">Search your leads, quotations, targets, training and materials.</div>
-            : results.length === 0 ? <div className="cmdk-empty">No matches for “{q}”.</div>
-              : results.map((r) => (
-                <div key={r.id} className="cmdk-item" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(r.tab); onClose(); } }} onMouseDown={(e) => { e.preventDefault(); go(r.tab); onClose(); }}>
-                  <div className="cmdk-ic"><Search size={15} /></div>
-                  <div className="cmdk-main"><div className="cmdk-title"><SearchHighlight text={r.title} q={q} /></div><div className="cmdk-path">{r.sub}</div></div>
-                  <span className="tag">{r.module}</span>
-                </div>
-              ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── global pull-to-refresh: ONE mechanism for every surface ───────────── */
 // The single authoritative pull-to-refresh implementation in the app. Every
 // surface (internal admin/staff app, APN portal, client portal) mounts one
@@ -5424,7 +5368,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       </nav>
       </div>
 
-      {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} />}
+      {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} APN_SERVICE_LABEL={APN_SERVICE_LABEL} money={money} SearchHighlight={SearchHighlight} />}
       {modal?.type === "apnLead" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading lead form…</div></div>}><LazyAPNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ APN_SERVICES, APN_TIEUPS, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO, uid }} /></React.Suspense>}
       {modal?.type === "apnQuote" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading quotation form…</div></div>}><LazyAPNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ useState, supabase, uid, round2, money, Modal, Field, APN_SERVICES, APN_TIEUPS, Send, X }} /></React.Suspense>}
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={async (reason) => { try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason || null, rejectedBy: meRow.name, rejectedAt: at } : u) })); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } finally { setModal(null); } }} onClose={() => setModal(null)} />}
