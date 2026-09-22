@@ -55,6 +55,7 @@ import { apnWithdrawalWalletFor, apnWithdrawalTone, apnWithdrawalLabel, apnWalle
 import { apnAiCategoryFor } from "./modules/apn/ai.js";
 import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNotify } from "./modules/apn/admin-notifications.js";
 import { apnSafeHtml } from "./modules/apn/content.js";
+import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -7051,21 +7052,11 @@ export default function App() {
         const pMode = apnEditing ? "edit" : (prev?.id ? "convert" : "create");
         const partner = (db.apn_users || []).find((row) => row.id === entry.apnPartnerId && row.status === "active");
         if (!partner) throw new Error("Select an active APN partner.");
-        const collections = (entry.apnCollections || []).map((row) => ({ ...row, projectId: entry.apnProjectId, partnerId: partner.id, receivedAmount: Number(row.receivedAmount) || 0, incentive: Number(row.incentive || 0), receivedDate: row.receivedDate || entry.date, createdBy: row.createdBy || currentUser, createdAt: row.createdAt || Date.now(), commissionStatus: row.commissionStatus || "Pending" }));
-        let received = 0; let earned = 0;
         const value = Number(entry.apnProjectValue) || 0;
         const rate = Number(entry.apnCommissionRate) || 0;
-        const maximum = round2(value * rate / 100);
-        const normalizedCollections = collections.map((row) => {
-          if (row.receivedAmount <= 0) throw new Error("Collection amounts must be greater than zero.");
-          if (row.incentive < 0) throw new Error("Incentives cannot be negative.");
-          received += row.receivedAmount;
-          if (received > value) throw new Error("Collections cannot exceed the APN project value.");
-          const commissionGenerated = round2(Math.min(Math.max(0, maximum - earned), row.receivedAmount * rate / 100));
-          earned += commissionGenerated;
-          return { ...row, commissionGenerated };
-        });
-        const project = { id: entry.apnProjectId, partnerId: partner.id, partnerName: partner.name, projectName: entry.apnProjectName.trim(), clientName: entry.apnClientName.trim(), category: entry.category || "website", projectValue: value, commissionRate: rate, maximumCommission: maximum, totalReceived: round2(received), totalCommissionPaid: 0, remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, maximum - earned)), status: received >= value ? "Completed" : "Processing", remarks: entry.notes || "Finance income receipt", createdBy: currentUser, createdAt: entry.createdAt || Date.now(), updatedAt: Date.now() };
+        const financeState = apnNormalizeFinanceCollections(entry.apnCollections || [], { projectId: entry.apnProjectId, partnerId: partner.id, value, rate, receivedDate: entry.date, createdBy: currentUser });
+        const { normalized: normalizedCollections, received, earned, maximum } = financeState;
+        const project = { id: entry.apnProjectId, partnerId: partner.id, partnerName: partner.name, projectName: entry.apnProjectName.trim(), clientName: entry.apnClientName.trim(), category: entry.category || "website", projectValue: value, commissionRate: rate, maximumCommission: maximum, totalReceived: received, totalCommissionPaid: 0, remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, maximum - earned)), status: received >= value ? "Completed" : "Processing", remarks: entry.notes || "Finance income receipt", createdBy: currentUser, createdAt: entry.createdAt || Date.now(), updatedAt: Date.now() };
         // Preflight the canonical DB state (create/convert only — an edit anchors
         // on its own project and the RPC itself refuses collisions): the same
         // partner+project+client may already exist under a different id (APN
@@ -7106,20 +7097,10 @@ export default function App() {
         if (alreadyPosted) throw new Error(`This project's income was already posted to finance on ${fmtDate(alreadyPosted.date)} (${money(alreadyPosted.amount)}). Edit that entry instead.`);
         const existing = (db.apn_revenue_collections || []).filter((row) => row.projectId === sourceProject.id).map((row) => ({ ...row }));
         const collection = { id: uid(), projectId: sourceProject.id, partnerId: sourceProject.partnerId, receivedAmount: Number(entry.amount) || 0, incentive: 0, remarks: entry.notes || "Finance income receipt", receivedDate: entry.date, commissionStatus: "Pending", createdBy: currentUser, createdAt: entry.createdAt || Date.now() };
-        const linkedCollections = [...existing, collection].sort((a, b) => String(a.receivedDate || a.createdAt).localeCompare(String(b.receivedDate || b.createdAt)));
-        let received = 0; let earned = 0;
-        const normalized = linkedCollections.map((row) => {
-          const amount = Number(row.receivedAmount) || 0;
-          if (amount <= 0) throw new Error("APN collection amounts must be greater than zero.");
-          received += amount;
-          const commission = round2(Math.min(Math.max(0, (Number(sourceProject.maximumCommission) || (Number(sourceProject.projectValue) * Number(sourceProject.commissionRate) / 100)) - earned), amount * (Number(sourceProject.commissionRate) || 0) / 100));
-          earned += commission;
-          return { ...row, receivedAmount: amount, commissionGenerated: commission };
-        });
-        if (received > Number(sourceProject.projectValue)) throw new Error("This income exceeds the APN project's remaining value.");
+        const linkedState = apnNormalizeLinkedCollections(existing, collection, sourceProject);
+        const { normalized, received, earned, maximum } = linkedState;
         const value = Number(sourceProject.projectValue) || 0;
-        const max = round2(value * (Number(sourceProject.commissionRate) || 0) / 100);
-        const linkedProject = { ...sourceProject, maximumCommission: max, totalReceived: round2(received), remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, max - earned)), status: apnProjectStatus(sourceProject, received), updatedAt: Date.now() };
+        const linkedProject = { ...sourceProject, maximumCommission: maximum, totalReceived: received, remainingAmount: round2(Math.max(0, value - received)), remainingCommission: round2(Math.max(0, maximum - earned)), status: apnProjectStatus(sourceProject, received), updatedAt: Date.now() };
         const { error } = await supabase.rpc("create_apn_income_transaction", { p_transaction: { ...entry, amount: Number(collection.receivedAmount) || 0, apnProjectId: sourceProject.id, apnCollectionIds: [collection.id], apnCollectionId: collection.id }, p_project: linkedProject, p_collections: normalized, p_mode: "create" });
         if (error) {
           if (/already exists/i.test(error.message)) await reload().catch(() => {});
