@@ -36,6 +36,7 @@ import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
 import { snapshotQueryMetrics } from "./data/queryMetrics.js";
+import { fetchTeamRows, fetchConfigRows, saveConfigRows, fetchFinancialLocks, lockFinancialPeriod, unlockFinancialPeriod } from "./data/system.js";
 import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, WITHDRAWAL_READS, CRM_READS, AI_READS, CLIENT_READS, HELPDESK_READS, AGREEMENT_READS, createDataReaders } from "./data/readers.js";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
@@ -539,37 +540,9 @@ async function replaceAll(clean) {
   return data;
 }
 
-/* ── people (profiles / roles) ────────────────────────────────────────── */
-async function fetchTeam() {
-  const rows = await loadTableRows(
-    supabase,
-    "profiles",
-    "id,name,email,role,active,created_at,status,mobile,dob,photo_url,perms,tnc_version,tnc_roles_accepted,approved,designation,last_active,last_login,last_logout,username",
-    "created_at",
-    8000,
-    1,
-    true,
-    500,
-    5000,
-  );
-  return rows.slice().sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
-}
-// The live Terms & Conditions + version live in app_config; staff can read only
-// the tnc_* keys (the admin sign-up code is locked away by row-level security).
-async function fetchConfig() {
-  const { data, error } = await supabase.from("app_config").select("key,value").in("key", ["tnc_version", "tnc_body", "tnc_roles", "company", "class_sheet_webhook", "ai"]);
-  if (error) return {}; // non-fatal — the T&C gate simply won't apply
-  const out = {};
-  for (const r of data || []) out[r.key] = r.value;
-  return out;
-}
 function companyOf(config) { try { return JSON.parse((config && config.company) || "{}") || {}; } catch { return {}; } }
 
-async function saveConfig(patch) {
-  const rows = Object.entries(patch).map(([key, value]) => ({ key, value: value == null ? "" : String(value) }));
-  const { error } = await supabase.from("app_config").upsert(rows, { onConflict: "key" });
-  if (error) throw new Error(error.message);
-}
+async function saveConfig(patch) { return saveConfigRows(supabase, patch); }
 
 function renderAIText(text) {
   const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
@@ -706,18 +679,8 @@ async function nextApnNumber() {
 }
 // Financial period locks ('YYYY-MM'). Partners lock/unlock; the DB blocks writes
 // to a locked month for everyone else.
-async function fetchLocks() {
-  const rows = await loadTableRows(supabase, "fin_locks", "period", "period", 8000, 1, true, 500, 5000);
-  return rows.map((r) => r.period).filter(Boolean).sort();
-}
-async function lockPeriod(period, who) {
-  const { error } = await supabase.from("fin_locks").upsert({ period, locked_by: who || null }, { onConflict: "period" });
-  if (error) throw new Error(error.message);
-}
-async function unlockPeriod(period) {
-  const { error } = await supabase.from("fin_locks").delete().eq("period", period);
-  if (error) throw new Error(error.message);
-}
+async function lockPeriod(period, who) { return lockFinancialPeriod(supabase, period, who); }
+async function unlockPeriod(period) { return unlockFinancialPeriod(supabase, period); }
 const fmtPeriod = (p) => { const [y, m] = (p || "").split("-"); const d = new Date(Number(y), Number(m) - 1, 1); return isNaN(d) ? p : d.toLocaleDateString("en-IN", { month: "long", year: "numeric" }); };
 const fmtDateTime = (ts) => formatDateValue(ts, true);
 // "5m ago" / "2h ago" / "3d ago" style relative time, for last-seen displays.
@@ -6456,6 +6419,10 @@ export default function App() {
     const raw = String(window.location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/");
     return query || (raw[0] === "proposal" && raw[1] ? decodeURIComponent(raw[1]) : "");
   }, []);
+
+  const fetchTeam = useCallback(() => fetchTeamRows(supabase, loadTableRows), [supabase]);
+  const fetchConfig = useCallback(() => fetchConfigRows(supabase), [supabase]);
+  const fetchLocks = useCallback(() => fetchFinancialLocks(supabase, loadTableRows), [supabase]);
 
   const currentUser = profile?.name || null;
   const role = profile?.role;
