@@ -4318,11 +4318,7 @@ const LazyTeamChat = React.lazy(() => import("./TeamChat.jsx"));
 /* ══════════════════════════════════════════════════════════════════════
    TESTING MODULE (website / app / software QA)
 ══════════════════════════════════════════════════════════════════════ */
-const testProgress = (s) => {
-  const list = Array.isArray(s.checklist) ? s.checklist : [];
-  return { done: list.filter((i) => i.done).length, total: list.length };
-};
-const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" : "pri");
+import { testProgress, testResultTone, collectText, searchHay, msToISO } from "./utils/search.js";
 
 // Create / edit a test session (admin). Seeds a checklist from one-item-per-line
 // text and links the session to a project so its history belongs to that project.
@@ -4337,16 +4333,6 @@ const testResultTone = (r) => (r === "Passed" ? "pos" : r === "Failed" ? "neg" :
 ══════════════════════════════════════════════════════════════════════ */
 // Deep-collect every string value in a record (skipping passwords) so search
 // scans titles, names, notes, descriptions, comments, checklist items, etc.
-function collectText(v, out) {
-  out = out || [];
-  if (v == null) return out;
-  if (typeof v === "string") { out.push(v); return out; }
-  if (Array.isArray(v)) { for (const x of v) collectText(x, out); return out; }
-  if (typeof v === "object") { for (const k of Object.keys(v)) { if (k === "password") continue; collectText(v[k], out); } return out; }
-  return out;
-}
-const searchHay = (obj) => collectText(obj).join(" ").toLowerCase();
-const msToISO = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : "");
 
 
 /* ══════════════════════════════════════════════════════════════════════
