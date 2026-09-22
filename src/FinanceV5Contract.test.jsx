@@ -7,6 +7,8 @@ const sql = read("supabase/migrations/20260904162000_finance_v5_certification.sq
 const combinedSql = read("supabase/migrations/20260906010000_combine_apn_commission_finance_entries.sql");
 const app = read("src/AllbeeApp.jsx");
 const accounts = read("src/modules/finance/Accounts.jsx");
+const planned = read("src/modules/finance/Planned.jsx");
+const withdrawals = read("src/modules/finance/Withdrawals.jsx");
 const reconFinalSql = read("supabase/migrations/20260906030000_finance_reconciliation_final_scope.sql");
 
 describe("Finance v5 contracts", () => {
@@ -32,6 +34,14 @@ describe("Finance v5 contracts", () => {
     expect(app).toContain("finance_v5_dashboard");
     expect(accounts).toContain("Finance v5 control panel");
     expect(accounts).toContain("Reconciliation");
+  });
+  it("keeps extracted finance screens bound to every React hook they use", () => {
+    for (const source of [accounts, planned, withdrawals]) {
+      expect(source).toMatch(/import React, \{[^}]*useState[^}]*\} from "react"/);
+      for (const hook of ["useEffect", "useMemo", "useCallback", "useRef"]) {
+        if (new RegExp("\\\\b" + hook + "\\\\b").test(source)) expect(source.split("\\n").slice(0, 12).join("\\n")).toContain(hook);
+      }
+    }
   });
   it("uses one Finance deduction for the APN commission pool with component breakdown", () => {
     expect(combinedSql).toContain("apn_consolidate_finance_commission_expense");
