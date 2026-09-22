@@ -57,6 +57,7 @@ import { apnAiCategoryFor } from "./modules/apn/ai.js";
 import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNotify } from "./modules/apn/admin-notifications.js";
 import { apnSafeHtml } from "./modules/apn/content.js";
 import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
+import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4385,39 +4386,6 @@ async function ensureApnProfile(user, existingRows) {
   return true;
 }
 
-function APNCheckIn({ db, pid, mutate }) {
-  const [step, setStep] = useState("idle");
-  const [word, setWord] = useState("");
-  const done = apnCheckedInToday(db, pid, todayISO);
-  const streak = apnAttendanceStreak(db, pid, localISODate);
-  const check = () => {
-    if (word.trim().toUpperCase() !== "OK") return;
-    haptic([10, 30, 10]);
-    mutate((d) => ({
-      ...d,
-      apn_attendance: [...(d.apn_attendance || []), { id: uid(), partnerId: pid, date: todayISO(), at: Date.now() }],
-      apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, lastCheckIn: Date.now() } : u),
-    }), { action: "checked in for APN attendance", module: "APN", entity: "APN Attendance", entityId: todayISO(), partnerId: pid });
-    setStep("idle"); setWord("");
-  };
-  return (
-    <div className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ flex: 1, minWidth: 160 }}>
-        <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 7 }}><UserCheck size={16} color={done ? "var(--pos)" : "var(--muted)"} />Daily attendance</div>
-        <div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{done ? `Checked in today · ${streak}-day streak` : "Check in daily to stay active. 30 days missed = inactive."}</div>
-      </div>
-      {done ? <span className="badge pos">Present</span>
-        : step === "idle" ? <button className="btn primary" onClick={() => setStep("typing")}><UserCheck size={15} />Check in</button>
-          : (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
-              <input className="input" autoFocus value={word} onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") check(); }} placeholder='Type "OK" to confirm' style={{ flex: 1 }} />
-              <button className="btn primary" onClick={check} disabled={word.trim().toUpperCase() !== "OK"}><Check size={15} />Confirm</button>
-            </div>
-          )}
-    </div>
-  );
-}
-
 /* ── inactive gate (needs Haji/Alim reactivation) ────────────────────── */
 
 /* ── APN agreement governance (pr-apn-partner-agreements) ────────────────
@@ -4862,7 +4830,7 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
         ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Highest commission level achieved ({effRate}%)</div>}
       </div>
 
-      <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} /></div>
+      <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} haptic={haptic} /></div>
 
       <button className="apn-ai-banner" type="button" onClick={() => go("ai")} aria-label="Open ALLBEE AI">
         <span className="apn-ai-banner-ic"><Sparkles size={17} /></span>
