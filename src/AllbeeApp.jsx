@@ -44,6 +44,7 @@ import { apnCurrentZone, apnZonePeriodKey, apnZoneTone, apnConsoleRow, apnCampai
 import { apnTargetFor, apnAttendanceScore, apnLastActivity, apnLastSeenAt, apnLastSeenLabel, apnLevelForCompleted, apnCommissionRuleForProject, apnRateForPrior, apnNextLevel, apnLeadTone, apnCommTone, apnPayoutDate, apnMetricLabel } from "./modules/apn/helpers.js";
 import { apnRankBy, apnLeaderboard, apnAchievementsFor } from "./modules/apn/leaderboard.js";
 import { apnNotifVisible, apnActionPending, apnActionRowTime, apnActionReadTime, apnUnseenActionCount, apnAdminActionCounts } from "./modules/apn/notifications.js";
+import { apnBuildCommissions } from "./modules/apn/commission.js";
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -4452,22 +4453,6 @@ const apnSnapshotRate = (snap, completed) => {
   return rule && Number.isFinite(Number(rule.percent)) ? Number(rule.percent) : null;
 };
 const apnLivePartners = (db) => (db.apn_users || []).filter((u) => u.status !== "rejected");
-/* ── commission generation (partner rate + 1% district-head override) ─── */
-function apnBuildCommissions(d, lead) {
-  const rows = [];
-  const pid = lead.partnerId;
-  const prior = apnPartnerStats({ ...d, apn_leads: (d.apn_leads || []).filter((row) => row.id !== lead.id) }, pid).completed;
-  const rate = apnRateForPrior(prior);
-  const revenue = Number(lead.revenue) || 0;
-  const project = lead.business || lead.clientName || "Project";
-  rows.push({ id: uid(), partnerId: pid, kind: "partner", leadId: lead.id, project, clientName: lead.clientName, service: lead.service, revenue, rate, amount: round2((revenue * rate) / 100), status: "Pending", createdAt: Date.now(), payoutDate: apnPayoutDate() });
-  // District/state head income is NOT created here: the engine pays heads
-  // server-side from apn_hierarchy_assignments on every revenue collection
-  // (wp3 trigger, idempotency key col:<collection>:district). Client-side
-  // kind=district rows would double-count that income (engine.district-client).
-  return rows;
-}
-
 // Create the partner's APN row on first login from the details captured at
 // sign-up (mirrors ensureProfile). Assigns the next APN-TN id. A partner who
 // already holds an approved profile (invited by an admin) is activated
