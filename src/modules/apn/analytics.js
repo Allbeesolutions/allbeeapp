@@ -1,5 +1,6 @@
-import { APN_COMM_REVERSED, APN_COMMISSION_RULES, APN_SERVICES } from "./constants.js";
+import { APN_COMM_REVERSED, APN_SERVICES } from "./constants.js";
 import { round2, money } from "../../utils/dateFormat.js";
+import { apnCommissionRuleForProject, apnLevelForCompleted } from "./helpers.js";
 
 export const apnLeadsOf = (db, pid) => (db.apn_leads || []).filter((l) => l.partnerId === pid);
 export const apnCommsOf = (db, pid) => (db.apn_commissions || []).filter((c) => c.partnerId === pid);
@@ -46,12 +47,6 @@ export function apnCommissionDashboardSummary(db) {
     collections: collections.length,
   };
 }
-export const apnCommissionRuleForProject = (projectNumber) => {
-  const number = Math.max(1, Number(projectNumber) || 1);
-  return APN_COMMISSION_RULES.find((rule) => number >= rule.minProject && number <= rule.maxProject) || APN_COMMISSION_RULES[APN_COMMISSION_RULES.length - 1];
-};
-const apnLevelForCompleted = (n) => apnCommissionRuleForProject((Number(n) || 0) + 1);
-
 export const apnTimelineEntry = (partnerId, eventType, title, description, performedBy = "System", performedById = null, at = Date.now()) => ({ id: `apn-timeline:${partnerId}:${eventType}`, partnerId, eventType, title, description, performedBy, performedById, createdAt: at });
 export function apnTargetProgress(db, t) {
   const leads = apnLeadsOf(db, t.partnerId).filter((l) => (l.createdAt || 0) >= (t.createdAt || 0));
