@@ -203,7 +203,11 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
   // Users can request older history from the module itself instead of paying the
   // network cost at sign-in or on every realtime refresh.
   const TABLE_FETCH_LIMITS = Object.freeze({
-    audit: 500, chat: 250, team_chat: 250, notifications: 300,
+    // High-volume/event streams: newest bounded window; dedicated screens can page deeper history.
+    audit: 500, chat: 250, team_chat: 250, notifications: 300, updates: 500,
+    attendance: 1000, leave: 500, tasks: 1000, transactions: 2000,
+    projects: 1000, clients: 1000, leads: 1000, quotations: 1000, invoices: 1000,
+    documents: 500, knowledge: 500, vault: 500, rewards: 500,
     apn_activity: 300, apn_timeline: 300, apn_communications: 250,
     apn_warnings: 250, apn_notes: 250, apn_admin_notes: 250,
     apn_withdrawal_status_history: 300, apn_withdrawal_audit: 300, apn_wallet_transactions: 500,
