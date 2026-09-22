@@ -3,7 +3,7 @@ import { useCallback, useEffect } from "react";
 export function usePeopleSync({ session, supabase, ensureProfile, fetchTeam, fetchConfig, fetchLocks, setTeam, setConfig, setLocks, setProfile, setSyncError }) {
   const loadPeople = useCallback(async (user) => {
     try {
-      await ensureProfile(user);
+      await ensureProfile(supabase, user);
       const [list, cfg, lk] = await Promise.all([fetchTeam(), fetchConfig(), fetchLocks()]);
       setTeam(list);
       setConfig(cfg);

@@ -24,6 +24,7 @@ import { supabase, SUPABASE_URL } from "./supabaseClient";
 import { createSessionRecovery } from "./sessionRecovery.js";
 import { useAuthSession } from "./auth/useAuthSession.js";
 import { usePeopleSync } from "./auth/usePeopleSync.js";
+import { ensureProfile, updateProfile } from "./auth/profile.js";
 import { AI_RUNTIME_MODEL, aiConfigOf, aiConfigured, callAI } from "./ai/gateway.js";
 
 import { maskEmail, maskPhone, scrubText, renderAIInline } from "./utils/aiText.jsx";
@@ -758,23 +759,6 @@ function ContactButtons({ person, message, compact = false, size = "sm", stop = 
     </span>
   );
 }
-// Make sure the signed-in user has a profile row (covers accounts made before
-// the database trigger existed). Defaults to a staff member; an admin can change
-// the role later from the Team screen.
-async function ensureProfile(user) {
-  const { data } = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
-  if (data) return;
-  const name = user.user_metadata?.name || (user.email ? user.email.split("@")[0] : "Member");
-  // approved:false means a brand-new (or previously-removed) account lands on
-  // "Awaiting approval" with no access until an admin lets them in — so deleting
-  // someone is durable even if their auth login still exists.
-  await supabase.from("profiles").upsert({ id: user.id, name, email: user.email, role: "staff", approved: false }, { onConflict: "id", ignoreDuplicates: true });
-}
-async function updateProfile(id, patch) {
-  const { error } = await supabase.from("profiles").update(patch).eq("id", id);
-  if (error) throw new Error(error.message);
-}
-
 /* ── HR derived helpers ───────────────────────────────────────────────── */
 const daysBetween = (from, to) => {
   if (!from || !to) return 0;
@@ -6947,7 +6931,7 @@ export default function App() {
 
   const changeProfile = useCallback(async (id, patch, auditAction) => {
     try {
-      await updateProfile(id, patch);
+      await updateProfile(supabase, id, patch);
       // Profile updates write straight to Postgres (not through `mutate`), so on
       // their own they never reach the audit log. When the caller supplies a
       // description (role/status/approval changes), record it so the Audit log
