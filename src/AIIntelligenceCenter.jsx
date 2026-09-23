@@ -167,7 +167,7 @@ export default function AIIntelligenceCenter(props) {
                 {tab === "ai-delivery" && <AICRMDelivery money={money} fmtDateTime={fmtDateTime} emitToast={emitToast} />}
                 {tab === "ai-memory" && <AIMemoryAdmin fmtDateTime={fmtDateTime} emitToast={emitToast} />}
                 {tab === "ai-executive" && <AIExecutiveV5 money={money} fmtDate={fmtDate} fmtDateTime={fmtDateTime} />}
-                {tab === "automation-v4" && <AutomationV4 fmtDateTime={fmtDateTime} emitToast={emitToast} />}
+                {tab === "automation" && <AutomationV4 fmtDateTime={fmtDateTime} emitToast={emitToast} />}
                 {tab === "platform-v6" && <PlatformV6Operations money={money} />}
         {tab === "overview" && <>
           {executiveSummary && <div className="card" style={{ marginBottom: 14 }}><div className="item-row" style={{ padding: 0 }}><div className="item-main"><div className="item-title"><Sparkles size={15} style={{ verticalAlign: -2, marginRight: 6, color: "var(--primary)" }} />Executive summary</div><div className="item-meta" style={{ marginTop: 6, lineHeight: 1.6 }}>{executiveSummary}</div></div></div></div>}

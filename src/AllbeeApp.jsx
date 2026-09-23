@@ -1474,7 +1474,18 @@ function ExpenseSharePanel({ db }) {
   );
 }
 
+const DASHBOARD_WIDGET_DEFAULTS = { money: true, birthdays: true, apn: true, activity: true };
+
 function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true, showOps = true, team = [], isSuper = false, snapshot = null }) {
+  const [customizing, setCustomizing] = useState(false);
+  const [widgets, setWidgets] = useState(() => {
+    try { return { ...DASHBOARD_WIDGET_DEFAULTS, ...(JSON.parse(localStorage.getItem("allbee_dashboard_widgets") || "{}") || {}) }; } catch { return DASHBOARD_WIDGET_DEFAULTS; }
+  });
+  const toggleWidget = (key) => setWidgets((current) => {
+    const next = { ...current, [key]: !current[key] };
+    try { localStorage.setItem("allbee_dashboard_widgets", JSON.stringify(next)); } catch { /* local preference only */ }
+    return next;
+  });
   const m = snapshot?.finance?.transactions ? { rev: Number(snapshot.finance.transactions.income) || 0, exp: Number(snapshot.finance.transactions.expenses) || 0 } : monthStats(db);
   const apnSummary = showOps ? apnCommissionDashboardSummary(db) : null;
   const pending = db.tasks.filter((t) => t.status !== "Completed").length;
@@ -1497,7 +1508,8 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
   }
   return (
     <div className="content">
-      <div className="page-head"><h3>Dashboard</h3></div>
+      <div className="page-head"><div><h3>Dashboard</h3><div className="hint-line">Your workspace, your layout.</div></div><span className="spacer" /><button className="btn sm" onClick={() => setCustomizing((v) => !v)} aria-expanded={customizing}><SettingsIcon size={14} />Customize</button></div>
+      {customizing && <div className="card" style={{ marginBottom: 14 }}><div style={{ fontWeight: 700, marginBottom: 8 }}>Dashboard widgets</div><div className="dashboard-customize-grid">{[["money","Finance & balances"],["birthdays","Birthdays"],["apn","APN commission"],["activity","Recent activity"]].map(([key,label]) => <label key={key} className="tag" style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}><input type="checkbox" checked={widgets[key]} onChange={() => toggleWidget(key)} />{label}</label>)}</div></div>}
 
       {awayList.length > 0 && (
         <div className="banner" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14, borderColor: "var(--neg)", background: "var(--neg-soft)", cursor: "pointer" }} onClick={() => go("activity")}>
@@ -1506,9 +1518,9 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
         </div>
       )}
 
-      <Birthdays team={team} />
+      {widgets.birthdays && <Birthdays team={team} />}
 
-      {showMoney && (
+      {showMoney && widgets.money && (
         <div className="card stat" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
           <div><div className="lbl"><Wallet size={14} /> Company balance</div>
             <div className="num mono" style={{ color: bal.company < 0 ? "var(--neg)" : "var(--ink)" }}>{money(bal.company)}</div>
@@ -1530,7 +1542,7 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
         </div>
       )}
 
-      {showMoney && (
+      {showMoney && widgets.money && (
         <div className="cards-grid" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
           {USERS.map((u) => (
             <div key={u} className="card balance-card" onClick={() => openBalance(u)}>
@@ -1543,7 +1555,7 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
         </div>
       )}
 
-      {showMoney && <ExpenseShareCards db={db} go={go} />}
+      {showMoney && widgets.money && <ExpenseShareCards db={db} go={go} />}
 
       {stats.length > 0 && (
         <div className="cards-grid appear" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", marginBottom: 18 }}>
@@ -1551,9 +1563,9 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
         </div>
       )}
 
-      {showOps && apnSummary && <div className="card" style={{ marginBottom: 18 }}><div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Coins size={15} /> APN commission collection</div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", padding: 12 }}><div className="card stat"><div className="lbl">Total project value</div><div className="num mono">{money(apnSummary.totalValue)}</div></div><div className="card stat"><div className="lbl">Revenue received</div><div className="num mono pos-txt">{money(apnSummary.totalReceived)}</div></div><div className="card stat"><div className="lbl">Outstanding revenue</div><div className="num mono">{money(apnSummary.outstanding)}</div></div><div className="card stat"><div className="lbl">Commission paid</div><div className="num mono">{money(apnSummary.commissionPaid)}</div></div><div className="card stat"><div className="lbl">Pending commission</div><div className="num mono">{money(apnSummary.pendingCommission)}</div></div><div className="card stat"><div className="lbl">Processing projects</div><div className="num">{apnSummary.processingProjects}</div></div><div className="card stat"><div className="lbl">Completed projects</div><div className="num">{apnSummary.completedProjects}</div></div></div></div>}
+      {showOps && widgets.apn && apnSummary && <div className="card" style={{ marginBottom: 18 }}><div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Coins size={15} /> APN commission collection</div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", padding: 12 }}><div className="card stat"><div className="lbl">Total project value</div><div className="num mono">{money(apnSummary.totalValue)}</div></div><div className="card stat"><div className="lbl">Revenue received</div><div className="num mono pos-txt">{money(apnSummary.totalReceived)}</div></div><div className="card stat"><div className="lbl">Outstanding revenue</div><div className="num mono">{money(apnSummary.outstanding)}</div></div><div className="card stat"><div className="lbl">Commission paid</div><div className="num mono">{money(apnSummary.commissionPaid)}</div></div><div className="card stat"><div className="lbl">Pending commission</div><div className="num mono">{money(apnSummary.pendingCommission)}</div></div><div className="card stat"><div className="lbl">Processing projects</div><div className="num">{apnSummary.processingProjects}</div></div><div className="card stat"><div className="lbl">Completed projects</div><div className="num">{apnSummary.completedProjects}</div></div></div></div>}
 
-      <div className="card activity-feed-card" role="button" tabIndex={0} aria-label="Open Admin audit log" title="Open Admin audit log"
+      {widgets.activity && <div className="card activity-feed-card" role="button" tabIndex={0} aria-label="Open Admin audit log" title="Open Admin audit log"
         onClick={openAudit} onKeyDown={openAudit}>
         <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Recent activity</div>
         {recent.length === 0 ? (
@@ -1565,7 +1577,7 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
               <div className="item-meta"><span>{activityModuleOf(a.module)}</span><span>{fmtTime(a.ts)}</span></div></div>
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -5143,7 +5155,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const refreshPortal = useCallback(async () => {
     await reload();
     setSnapTick((t) => t + 1);
-  }, [reload]);
+  }, []);
 
   // WP7 — authoritative financial facts for the portal: refetch on mount, on
   // tab switch, and after a refresh so wallet values stay current, while
@@ -6041,6 +6053,7 @@ export default function App() {
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState(null);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine !== false);
   const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
   const [route, setRoute] = useState("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -6105,6 +6118,25 @@ export default function App() {
     }).catch(() => {});
     return () => { alive = false; };
   }, [session?.user?.id, route]);
+
+  // ── global connection + notification UX ───────────────────────────────
+  useEffect(() => {
+    const online = () => { setIsOnline(true); emitToast("Back online — syncing ALLBEE…", "success"); };
+    const offline = () => { setIsOnline(false); emitToast("You are offline. Changes will retry when the connection returns.", "warning", { duration: 6000 }); };
+    window.addEventListener("online", online); window.addEventListener("offline", offline);
+    return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offline); };
+  }, []);
+  const seenNotificationIdsRef = useRef(null);
+  useEffect(() => {
+    if (!db?.notifications || !me?.id) return;
+    const visibleIds = new Set(db.notifications.filter((n) => isAdmin || notifVisibleTo(n, profile)).map((n) => n.id));
+    if (seenNotificationIdsRef.current === null) { seenNotificationIdsRef.current = visibleIds; return; }
+    const fresh = db.notifications.filter((n) => visibleIds.has(n.id) && !seenNotificationIdsRef.current.has(n.id));
+    seenNotificationIdsRef.current = visibleIds;
+    for (const n of fresh.slice(-3)) {
+      if (!(n.reads || []).includes(me.id)) emitToast(`${n.title || "New notification"}${n.body ? ` — ${String(n.body).slice(0, 110)}` : ""}`, n.level === "Urgent" ? "error" : n.level === "Important" ? "warning" : "info", { duration: 6500 });
+    }
+  }, [db?.notifications, me?.id, isAdmin, profile]);
 
   // ── tap feedback ──────────────────────────────────────────────────────
   // Subtle tap feedback on interactive elements, app-wide. Very light, and only
@@ -7071,9 +7103,8 @@ export default function App() {
       <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"}>
         <ToastHost />
 
-        {syncError && (
-          <div className="banner"><CloudOff size={15} /> Couldn't sync with the server: {syncError}</div>
-        )}
+        {!isOnline && <div className="banner offline-banner"><CloudOff size={15} /><b>Offline mode</b><span>Changes will retry when the connection returns.</span><button className="btn sm" onClick={() => reload().catch(() => {})}>Retry</button></div>}
+        {syncError && isOnline && <div className="banner"><CloudOff size={15} /> Couldn't sync with the server: {syncError}<button className="btn sm" style={{ marginLeft: "auto" }} onClick={() => reload().catch(() => {})}>Retry sync</button></div>}
 
         <div className="layout">
           {menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />}
@@ -7121,10 +7152,9 @@ export default function App() {
                   onClick={async () => { setTopBusy(true); try { await reload(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
                   <RefreshCw size={20} className={topBusy ? "spin" : ""} />
                 </button>
-                <button className="iconbtn" title="Announcements" style={{ position: "relative" }}
-                  onClick={() => { go("announcements"); if (me.id) changeProfile(me.id, { notif_seen_at: new Date().toISOString() }); }}>
+                <button className="iconbtn" title="Notifications" style={{ position: "relative" }} onClick={() => go("notifications")} aria-label={`Notifications${unreadNotifs ? `, ${unreadNotifs} unread` : ""}`}>
                   <Bell size={20} />
-                  {unseenAnn > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unseenAnn}</span>}
+                  {unreadNotifs > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unreadNotifs > 99 ? "99+" : unreadNotifs}</span>}
                 </button>
                 <div className="userchip" onClick={() => setUserMenu((v) => !v)}>
                   <Avatar name={currentUser} url={profile?.photo_url} size={26} />
@@ -7148,6 +7178,12 @@ export default function App() {
             </main>
           </div>
         </div>
+
+        <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
+          {[["dashboard", "Home", Home], ["tasks", "Tasks", ListTodo], ["notifications", "Alerts", Bell], ["assistant", "AI", Sparkles], ["search", "Search", Search]].map(([key, label, Icon]) => <button key={key} className={key === safeRoute ? "active" : ""} onClick={() => key === "search" ? setSearchOpen(true) : go(key)} aria-label={label}>
+            <span style={{ position: "relative" }}><Icon size={18} />{key === "notifications" && unreadNotifs > 0 && <i>{unreadNotifs > 9 ? "9+" : unreadNotifs}</i>}</span><small>{label}</small>
+          </button>)}
+        </nav>
 
         {/* global pull-to-refresh for the internal app — one mechanism for
             every admin/staff/intern route, driving the same shared reload

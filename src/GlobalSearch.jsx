@@ -109,9 +109,9 @@ function GlobalSearch({ db, team, profile, role, me, allowedRoutes, go, openTask
       if (!allow.has(key)) continue;
       out.push({ id: "nav:" + key, module: "Navigation", route: key, title: label, sub: "", user: "", dateISO: "", path: `Home > ${label}`, text: (label + " " + key).toLowerCase(), navTask: null });
     }
-    if (isAdmin) {
-      [["Open CRM", "leads"], ["Open Finance", "accounts"], ["Open APN", "apn"], ["Create Lead", "lead"], ["Create Quotation", "quotation"], ["Create Project", "project"], ["Open Client", "clients"], ["Search Partner", "apn"], ["Search Employee", "team"]].forEach(([title, command]) => {
-        out.push({ id: "ai-command:" + command + ":" + title, module: "AI commands", route: command === "lead" || command === "quotation" || command === "project" ? "ai-center" : command, title, sub: "Command bar", user: "", dateISO: "", path: `AI command > ${title}`, text: (title + " command ai").toLowerCase(), command });
+    if (true) {
+      [["Open Dashboard", "dashboard"], ["Open Tasks", "tasks"], ["Open Notifications", "notifications"], ["Open ALLBEE AI", "assistant"], ...(isAdmin ? [["Open CRM", "leads"], ["Open Finance", "accounts"], ["Open APN", "apn"], ["Create Lead", "lead"], ["Create Quotation", "quotation"], ["Create Project", "project"], ["Open Client", "clients"], ["Search Partner", "apn"], ["Search Employee", "team"]] : [])].forEach(([title, command]) => {
+        out.push({ id: "ai-command:" + command + ":" + title, module: "Command center", route: command === "lead" || command === "quotation" || command === "project" ? "ai-center" : command, title, sub: "Command bar", user: "", dateISO: "", path: `AI command > ${title}`, text: (title + " command ai").toLowerCase(), command });
       });
     }
     // people

@@ -1540,3 +1540,16 @@ img, video, canvas, svg { max-width:100%; }
     transition-duration:.001ms !important; scroll-behavior:auto !important;
   }
 }
+
+/* Feature Wave 1 — personalized dashboard + resilient mobile shell */
+.dashboard-customize-grid { display:flex; flex-wrap:wrap; gap:8px; }
+.offline-banner { position:sticky; top:0; z-index:260; background:var(--accent-soft); border-color:var(--accent); }
+.mobile-bottom-nav { display:none; }
+@media (max-width:768px) {
+  .mobile-bottom-nav { position:fixed; display:grid; grid-template-columns:repeat(5,1fr); left:0; right:0; bottom:0; z-index:240; padding:6px 4px calc(6px + env(safe-area-inset-bottom)); background:color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter:blur(14px); border-top:1px solid var(--border); box-shadow:0 -4px 18px rgba(0,0,0,.08); }
+  .mobile-bottom-nav button { border:0; background:none; color:var(--muted); min-width:0; display:flex; flex-direction:column; align-items:center; gap:3px; padding:5px 2px; border-radius:9px; cursor:pointer; }
+  .mobile-bottom-nav button.active { color:var(--primary); background:var(--primary-soft); }
+  .mobile-bottom-nav small { font:600 10px/1.1 inherit; }
+  .mobile-bottom-nav i { position:absolute; top:-5px; right:-8px; min-width:14px; height:14px; padding:0 3px; border-radius:8px; background:var(--neg); color:#fff; font:700 9px/14px inherit; font-style:normal; text-align:center; }
+  .content { padding-bottom:82px; }
+}

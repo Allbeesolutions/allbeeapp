@@ -1,3 +1,4 @@
+import { supabase } from "../supabaseClient";
 export const AI_RUNTIME_MODEL = "openai/gpt-oss-120b";
 export const AI_DEFAULT_MODEL = AI_RUNTIME_MODEL;
 
@@ -11,9 +12,9 @@ export function aiConfigured(cfg) {
   return !!cfg?.enabled && cfg?.mode === "function" && !!cfg?.functionName;
 }
 
-export async function callAI(supabase, cfg, system, messages) {
+export async function callAI(cfg, system, messages, client = supabase) {
   if (!aiConfigured(cfg)) throw new Error("ALLBEE AI is not configured.");
-  const { data, error } = await supabase.functions.invoke(cfg.functionName, { body: { system, model: cfg.model || AI_DEFAULT_MODEL, max_tokens: 1400, messages } });
+  const { data, error } = await client.functions.invoke(cfg.functionName, { body: { system, model: cfg.model || AI_DEFAULT_MODEL, max_tokens: 1400, messages } });
   if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function.`);
   if (data?.error) throw new Error(typeof data.error === "string" ? data.error : "The AI gateway returned an error.");
   if (typeof data === "string") return data.trim();
