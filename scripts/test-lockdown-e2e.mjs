@@ -31,6 +31,9 @@ const waitForPort = async (port, tries = 40) => {
   throw new Error(`port ${port} never came up`);
 };
 
+const activeServers = new Set();
+process.on("exit", () => { for (const child of activeServers) child.kill(); });
+
 const server = async (port, dir) => {
   // `vite preview` has no --outDir option; it serves the `dist` directory
   // relative to its working directory. The old test therefore always served
@@ -38,6 +41,8 @@ const server = async (port, dir) => {
   const viteBin = join(root, "node_modules", ".bin", "vite");
   const p = spawn(viteBin, ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], { cwd: dir, shell: false, stdio: "ignore" });
   await waitForPort(port);
+  activeServers.add(p);
+  p.on("exit", () => activeServers.delete(p));
   return p;
 };
 
@@ -54,16 +59,16 @@ const s1 = await server(4173, join(work, "paused"));
 const page1 = await browser.newPage();
 await page1.goto("http://127.0.0.1:4173/", { waitUntil: "domcontentloaded" });
 
-await page1.waitForSelector("text=Founder-controlled maintenance in progress", { timeout: 8000 }).catch(async (e) => {
+await page1.waitForSelector("text=Founder recovery authorization required", { timeout: 8000 }).catch(async (e) => {
   const body = await page1.evaluate(() => document.body.innerText.slice(0, 400)).catch(() => "");
   const url = page1.url();
   throw new Error(`gate text not found\nURL: ${url}\nBODY: ${JSON.stringify(body)}\n${e}`);
 });
-check("paused build shows the lockdown gate immediately (no network)", true);
+check("paused build shows the recovery portal immediately (no network)", true);
 
-const input = page1.getByLabel("Authorization code");
+const input = page1.getByLabel("Recovery code");
 await input.fill("111111");
-const authorizeBtn = page1.getByRole("button", { name: "Authorize" });
+const authorizeBtn = page1.getByRole("button", { name: "Recover ALLBEE" });
 await authorizeBtn.click();
 await page1.waitForFunction(() => document.body.innerText.includes("Incorrect authorization code") || document.body.innerText.includes("Could not reach the authorization service"), { timeout: 8000 });
 check("typed code + Authorize produces a visible rejection (no crash)", true);
