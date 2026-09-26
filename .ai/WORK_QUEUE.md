@@ -11,4 +11,8 @@
 - [ ] AB-003 Custom-domain ownership identification; divergent bundle resolved after GitHub push (current live bundle matches local build).
 - [ ] AB-006 Real signed-in role/mobile verification (authorized sessions needed; local mocks completed).
 - [ ] AB-004/007 Real APN network/egress profile and live realtime validation (authorized sessions needed; local scope profile completed).
-- [ ] Deploy/test transactional ordinary finance RPC after DB access, migration/security review and disposable-DB tests.
+- [x] Prepare and test ordinary finance transactional RPC in disposable PostgreSQL 17 (rollback, retry, concurrent same-key, grants); migration is local and not applied live.
+- [x] Extend mocked role data scopes, client navigation and APN lazy-tab deep-link tests; 224 tests pass.
+- [x] Reduce main chunk to 480.93 kB and coalesce simultaneous same-scope reads, with measured build and request tests.
+- [x] Read-only custom domain trace: registered under current team but absent from all 19 accessible project-domain lists; owning project still unknown.
+- [ ] Apply and certify transactional finance RPC after authorized AllBee DB access and live schema review, then switch ordinary save client path atomically.

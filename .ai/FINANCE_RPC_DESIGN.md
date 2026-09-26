@@ -1,4 +1,4 @@
-# Transactional finance write design (local design, not deployed)
+# Transactional finance write design (local migration tested, not deployed)
 
 ## Scope
 The ordinary income/expense save writes `transactions` and an optional `audit` event. A linked student payment also changes `students.paymentStatus`; a linked marketing receipt changes `marketing.lastPaid`. The browser's `applyDiff` issues table operations concurrently, so one can succeed while another fails. The UI now waits for the result, keeps the form open on failure, and reloads the three affected tables. The queue rebases a later retry, but it cannot roll back a partial first write. APN-attributed income already uses `create_apn_income_transaction` and stays on that atomic RPC path.
@@ -12,3 +12,6 @@ The ordinary income/expense save writes `transactions` and an optional `audit` e
 
 ## Migration and verification gate
 Add an idempotent migration for the request table and function, explicit grants/revokes, and rollback-safe indexes. Test duplicate key, mismatched payload, unauthorized role, period lock, stale version, missing linked row, source update failure, audit failure, and concurrent same-key calls against a disposable local Postgres schema. Verify live RLS and migration order with authorized AllBee management access before deployment. Replace only the ordinary `saveShare` branch after the RPC is deployed and verified; keep the old client path until then.
+
+## 2026-09-26 local implementation
+`supabase/migrations/20260926100000_finance_save_entry_v1.sql` contains the idempotent request ledger and SECURITY DEFINER RPC. `bash scripts/test-finance-rpc-local.sh` starts a disposable PostgreSQL 17 cluster, applies the migration twice, tests student and marketing updates, same-key retries, conflicting payloads, missing source, stale version, locked period, denied staff, audit and source update failure rollback, authenticated function grants versus private ledger, and two concurrent identical calls (one transaction and audit row). It passed locally. The ordinary client `saveShare` remains unchanged until this migration is applied and verified in the authorized AllBee project; otherwise the current production path could still partially persist. Confirm owner role, live schema compatibility, triggers/RLS and grants before applying. The local fixture models the relevant tables and policies, not the entire live database.

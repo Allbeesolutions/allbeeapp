@@ -10,7 +10,7 @@ import { APNInactive } from "./modules/apn/Inactive.jsx";
 import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./modules/apn/helpers.js";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
-import PrivacyPolicy from "./PrivacyPolicy.jsx";
+const LazyPrivacyPolicy = React.lazy(() => import("./PrivacyPolicy.jsx"));
 const {
   LayoutDashboard, Wallet, ArrowDownToLine, ListTodo, TrendingUp, Lightbulb,
   GraduationCap, Megaphone, FolderKanban, ScrollText, SettingsIcon,
@@ -36,6 +36,7 @@ import { createRealtimeReconnect } from "./realtimeReconnect.js";
 import { createPersistQueue } from "./persistQueue.js";
 import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeRefresh.js";
 import { snapshotQueryMetrics } from "./data/queryMetrics.js";
+import { coalesceRequest } from "./data/requestCoalescer.js";
 import { fetchTeamRows, fetchConfigRows, saveConfigRows, fetchFinancialLocks, lockFinancialPeriod, unlockFinancialPeriod } from "./data/system.js";
 import { fetchDashboardSnapshot } from "./data/dashboard.js";
 import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, WITHDRAWAL_READS, CRM_READS, AI_READS, CLIENT_READS, HELPDESK_READS, AGREEMENT_READS, createDataReaders } from "./data/readers.js";
@@ -58,16 +59,18 @@ import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNoti
 import { apnSafeHtml } from "./modules/apn/content.js";
 import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
 import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
-import { APNDocuments, APNNotifications } from "./modules/apn/PortalContent.jsx";
+const LazyAPNDocuments = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNDocuments })));
+const LazyAPNNotifications = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNNotifications })));
 import { APNBankDetails } from "./modules/apn/BankDetails.jsx";
-import { APNAchievements, APNLeaderboard } from "./modules/apn/RankViews.jsx";
-import { APNTargets } from "./modules/apn/TargetViews.jsx";
+const LazyAPNAchievements = React.lazy(() => import("./modules/apn/RankViews.jsx").then((m) => ({ default: m.APNAchievements })));
+const LazyAPNLeaderboard = React.lazy(() => import("./modules/apn/RankViews.jsx").then((m) => ({ default: m.APNLeaderboard })));
+const LazyAPNTargets = React.lazy(() => import("./modules/apn/TargetViews.jsx").then((m) => ({ default: m.APNTargets })));
 import { APNHeadPartnerCard } from "./modules/apn/HeadPartnerCard.jsx";
-import { APNDistrict } from "./modules/apn/DistrictHead.jsx";
-import { APNStateHead } from "./modules/apn/StateHead.jsx";
-import { APNSearch } from "./modules/apn/APNSearch.jsx";
+const LazyAPNDistrict = React.lazy(() => import("./modules/apn/DistrictHead.jsx").then((m) => ({ default: m.APNDistrict })));
+const LazyAPNStateHead = React.lazy(() => import("./modules/apn/StateHead.jsx").then((m) => ({ default: m.APNStateHead })));
+const LazyAPNSearch = React.lazy(() => import("./modules/apn/APNSearch.jsx").then((m) => ({ default: m.APNSearch })));
 import { APNTabErrorBoundary } from "./modules/apn/APNTabErrorBoundary.jsx";
-import { APNSupportTickets } from "./modules/apn/SupportTickets.jsx";
+const LazyAPNSupportTickets = React.lazy(() => import("./modules/apn/SupportTickets.jsx").then((m) => ({ default: m.APNSupportTickets })));
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
 
@@ -5248,16 +5251,16 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       );
       case "withdrawals": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading withdrawal center…</div></div>}><LazyAPNWithdrawalCenter db={db} pid={pid} goProfile={() => go("profile")} reload={reload} runtime={{ ...Icons, Empty, money, fmtDate, fmtDateTime, apnRequestAmount, apnWithdrawalLabel, apnWalletLabel, apnWithdrawalTone, apnWithdrawalWalletFor, apnPayoutDate, apnSnapshotWallet, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectSummary, APN_WITHDRAWAL_TYPES, APN_COMM_REVERSED, APNMetric, supabase, emitToast, APNWithdrawalRequestModal }} /></React.Suspense>;
       case "learn": return <APNTraining db={db} meRow={meRow} pid={pid} mutate={mutate} />;
-      case "targets": return <APNTargets db={db} pid={pid} mutate={mutate} go={go} Empty={Empty} APN_GOVERNED_TARGETS_LIMIT={APN_GOVERNED_TARGETS_LIMIT} apnMetricLabel={apnMetricLabel} />;
+      case "targets": return <LazyAPNTargets db={db} pid={pid} mutate={mutate} go={go} Empty={Empty} APN_GOVERNED_TARGETS_LIMIT={APN_GOVERNED_TARGETS_LIMIT} apnMetricLabel={apnMetricLabel} />;
       case "quotations": return <APNQuotations db={db} meRow={meRow} pid={pid} openModal={setModal} />;
-      case "documents": return <APNDocuments db={db} Empty={Empty} />;
+      case "documents": return <LazyAPNDocuments db={db} Empty={Empty} />;
       case "agreements": return <APNAgreementCenter db={db} pid={pid} onRefresh={refreshPortal} />;
       case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
-      case "support": return <APNSupportTickets pid={pid} refreshTick={snapTick} supabase={supabase} APNStatusBadge={APNStatusBadge} fmtDateTime={fmtDateTime} />;
-      case "notifications": return <APNNotifications db={db} meRow={meRow} Empty={Empty} Avatar={Avatar} fmtDateTime={fmtDateTime} />;
-      case "achievements": return <APNAchievements db={db} pid={pid} BadgeCheck={BadgeCheck} />;
-      case "leaderboard": return <APNLeaderboard db={db} meRow={meRow} pid={pid} Empty={Empty} Trophy={Trophy} Avatar={Avatar} apnAvatarUrl={apnAvatarUrl} money={money} />;
-      case "district": return isHead ? <APNDistrict db={db} meRow={meRow} mutate={mutate} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} APNMetric={APNMetric} Empty={Empty} APNHeadPartnerCard={APNHeadPartnerCard} Avatar={Avatar} money={money} round2={round2} /> : isStateHead ? <APNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} supabase={supabase} uid={uid} emitToast={emitToast} round2={round2} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} APNMetric={APNMetric} Empty={Empty} APNHeadPartnerCard={APNHeadPartnerCard} Avatar={Avatar} money={money} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
+      case "support": return <LazyAPNSupportTickets pid={pid} refreshTick={snapTick} supabase={supabase} APNStatusBadge={APNStatusBadge} fmtDateTime={fmtDateTime} />;
+      case "notifications": return <LazyAPNNotifications db={db} meRow={meRow} Empty={Empty} Avatar={Avatar} fmtDateTime={fmtDateTime} />;
+      case "achievements": return <LazyAPNAchievements db={db} pid={pid} BadgeCheck={BadgeCheck} />;
+      case "leaderboard": return <LazyAPNLeaderboard db={db} meRow={meRow} pid={pid} Empty={Empty} Trophy={Trophy} Avatar={Avatar} apnAvatarUrl={apnAvatarUrl} money={money} />;
+      case "district": return isHead ? <LazyAPNDistrict db={db} meRow={meRow} mutate={mutate} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} APNMetric={APNMetric} Empty={Empty} APNHeadPartnerCard={APNHeadPartnerCard} Avatar={Avatar} money={money} round2={round2} /> : isStateHead ? <LazyAPNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} supabase={supabase} uid={uid} emitToast={emitToast} round2={round2} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} APNMetric={APNMetric} Empty={Empty} APNHeadPartnerCard={APNHeadPartnerCard} Avatar={Avatar} money={money} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
       case "profile": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading profile…</div></div>}><LazyAPNProfile db={db} meRow={meRow} stats={stats} snap={finSnap} profile={profile} sessionEmail={session?.user?.email} mutate={mutate} onSignOut={signOut} reload={reload} isHead={isHead} go={go} runtime={{ ...Icons, apnSnapshotWallet, apnSnapshotRate, apnGovernedLimit, useState, useRef, useEffect, apnAvatarUrl, supabase, uploadAttachment, Field, APNMetric, money, TrendingUp, Coins, Award, ShieldHalf, ShieldCheck, apnCalculatedGovernedExplanation, Avatar, Upload, Check, apnIdFor, APNBankDetails, LogOut, TN_DISTRICTS, APN_SERVICE_LABEL }} /></React.Suspense>;
       default: return null;
     }
@@ -5312,7 +5315,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <div className="card" aria-busy="true">Loading APN tab…</div> : section()}</APNTabErrorBoundary></div></div>
+      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <div className="card" aria-busy="true">Loading APN tab…</div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading APN tab…</div>}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></div>
 
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
@@ -5326,7 +5329,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       </nav>
       </div>
 
-      {searchOpen && <APNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} APN_SERVICE_LABEL={APN_SERVICE_LABEL} money={money} SearchHighlight={SearchHighlight} />}
+      {searchOpen && <React.Suspense fallback={<div className="card" aria-busy="true">Loading search…</div>}><LazyAPNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} APN_SERVICE_LABEL={APN_SERVICE_LABEL} money={money} SearchHighlight={SearchHighlight} /></React.Suspense>}
       {modal?.type === "apnLead" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading lead form…</div></div>}><LazyAPNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ APN_SERVICES, APN_TIEUPS, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO, uid }} /></React.Suspense>}
       {modal?.type === "apnQuote" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading quotation form…</div></div>}><LazyAPNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ useState, supabase, uid, round2, money, Modal, Field, APN_SERVICES, APN_TIEUPS, Send, X }} /></React.Suspense>}
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={async (reason) => { try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason || null, rejectedBy: meRow.name, rejectedAt: at } : u) })); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } finally { setModal(null); } }} onClose={() => setModal(null)} />}
@@ -6181,19 +6184,16 @@ export default function App() {
   const loadPeople = usePeopleSync({ session, supabase, ensureProfile, fetchTeam, fetchConfig, fetchLocks, setTeam, setConfig, setLocks, setProfile, setSyncError });
 
   const reloadGenerationRef = useRef(0);
-  const reloadInFlightRef = useRef(null);
-  const reloadInFlightKeyRef = useRef(null);
+  const reloadInFlightRef = useRef(new Map());
   const reload = useCallback(async (tables = null) => {
     const generation = ++reloadGenerationRef.current;
     // Coalesce only identical snapshot requests. A full refresh must never
     // accidentally reuse a partial dirty-table request (or vice versa).
     const normalizedTables = normalizeRealtimeTableSet(tables) || routeDataTables(route, role, apnTab);
     const requestKey = normalizedTables ? normalizedTables.join("|") : "*";
-    const request = reloadInFlightRef.current && reloadInFlightKeyRef.current === requestKey
-      ? reloadInFlightRef.current
-      : fetchAll({ includeTables: normalizedTables });
-    reloadInFlightRef.current = request;
-    reloadInFlightKeyRef.current = requestKey;
+    // Keep each scope's pending request: A → B → A must reuse the first A.
+    const request = coalesceRequest(reloadInFlightRef.current, requestKey,
+      () => fetchAll({ includeTables: normalizedTables }));
     try {
       const fresh = await request;
       if (generation !== reloadGenerationRef.current) return fresh;
@@ -6211,10 +6211,6 @@ export default function App() {
       }
       throw e;
     } finally {
-      if (reloadInFlightRef.current === request) {
-        reloadInFlightRef.current = null;
-        reloadInFlightKeyRef.current = null;
-      };
       if (generation === reloadGenerationRef.current) setLoading(false);
     }
   }, [route, role, apnTab]);
@@ -6933,8 +6929,8 @@ export default function App() {
   const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty, USERS, avatarColor, haptic }), [supabase, emitToast]);
 
   const publicPath = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
-  if (publicPath === "/privacy-policy") return <PrivacyPolicy mode="privacy" />;
-  if (publicPath === "/delete-account") return <PrivacyPolicy mode="delete" />;
+  if (publicPath === "/privacy-policy") return <React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyPrivacyPolicy mode="privacy" /></React.Suspense>;
+  if (publicPath === "/delete-account") return <React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyPrivacyPolicy mode="delete" /></React.Suspense>;
   if (publicProposalToken) return gateChild(<ProposalPortal token={publicProposalToken} isDark={isDark} />);
   if (session === undefined) return <LoadingScreen isDark={isDark} />;
   if (!session) return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyLock isDark={isDark} setDark={setIsDark} runtime={{ supabase, useUsernameAvailability, useEmailAvailability, emitToast, FounderTap, ToastHost, SearchableSelect, PasswordField, LoginAccessAssistant, LOGO_FULL, TN_DISTRICTS, USERS, avatarColor, Users, Building2, GaugeCircle, ArrowLeft, AlertTriangle, Check, RefreshCw, LogIn, Mail, Sun, Moon }} /></React.Suspense>);

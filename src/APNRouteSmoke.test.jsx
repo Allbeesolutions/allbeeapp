@@ -49,3 +49,19 @@ describe("APN partner route smoke coverage", () => {
     });
   }
 });
+
+
+describe("lazy partner tab navigation", () => {
+  it("hydrates a direct Materials link then navigates to Rankings without a crash", async () => {
+    window.location.hash = "#/apn/documents";
+    render(<APNPortal db={baseDb} profile={profile} session={session} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("No materials yet")).toBeTruthy(), { timeout: 5000 });
+    expect(screen.queryByText("Something went wrong")).toBeNull();
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    fireEvent.click(screen.getByRole("button", { name: /Leaderboard/ }));
+    await waitFor(() => expect(screen.getByText("No ranking yet")).toBeTruthy(), { timeout: 5000 });
+    expect(window.location.hash).toBe("#/apn/leaderboard");
+    expect(screen.queryByText("Something went wrong")).toBeNull();
+  });
+});
