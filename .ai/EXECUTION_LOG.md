@@ -1,0 +1,10 @@
+# Execution Log
+
+2026-09-26: HHC used for repository edits, tests, build, audit, Vercel and public responsive checks. 209 tests/36 files passed; lockdown E2E passed before edits; build passed; npm audit production vulnerabilities 0. Supabase CLI 403; connector lacks AllBee project. Custom domain and allbeeapp-six bundle hashes differ. Public sign-in viewport checks showed no initial horizontal overflow, but several samples were still at service loading; signed-in UI unverified.
+2026-09-26 continuation: Supabase connector lacks AllBee project. Vercel project-domain API lists only allbeeapp-six.vercel.app; custom domain serves another bundle. Public sign-in widths 320–1440 had no overflow/page errors. Finance persistence feedback fixed; 209 tests/build pass. APN static route scope 80 tables.
+Local code commit 83104b3 (route data + finance persistence). Employee login at 320, 390, 768, 1440px had no overflow or page errors. No push/deployment; release blockers remain.
+Partner first-load test exposed route hydration cancellation: db state change cleaned up effect while loadedRouteRef suppressed retry. Changed dependency to db availability and gated partner portal until scoped data load. Regression passed, full tests 210/210 and build passed.
+
+2026-09-26 HAO status correction: HHC responds, allbeeapp is enabled in the orchestrator registry, autonomy watcher is running, PAUSE_ALL is absent, and WORK_QUEUE.json has no tasks. Production verification blockers were incorrectly described as a global HAO block. Set project state active and a local next action; retained release blockers separately.
+
+2026-09-26 five-work package: HHC performed code inspection/edits, targeted/full Vitest, Vite build, Chromium mock-role sweeps and Git review. First browser attempt hit public gate and was discarded; isolated mock reached signed-in surfaces with 32/32 zero overflow/page errors. 217 tests/38 files pass, build passes. Temporary mock files removed and original Supabase client restored. No push/deploy.

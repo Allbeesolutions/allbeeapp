@@ -1,0 +1,7 @@
+# Current State
+
+2026-09-26: All 49 internal routes now have explicit data mappings. Ordinary finance income/expense waits for persistence before success and refreshes affected rows after failure. 209 tests pass, Vite build passes, production dependency audit reports 0 vulnerabilities. Public sign-in passed viewport checks at 320, 360, 375, 390, 430, 768, 1024, 1440px with no horizontal overflow or page errors. HHC performed repository and browser checks. No production changes made.
+Code committed locally as 83104b3; main ahead of origin/main by one commit. Existing AGENTS.md and .ai state remain uncommitted.
+2026-09-26 continuation: partner home bootstrap now loads a scoped 14-table APN dataset before portal render. Fixed route fetch cancellation from db object dependency. New partner first-load integration test passes; full suite 210/210 and build passes. APN subroute remains broad at 80 tables and needs signed-in profiling.
+
+2026-09-26 local five-work continuation: partner/admin APN tabs scoped (6–14/13–24 tables) with role-specific first load and scoped refresh/realtime tests; income/expense failure feedback and partial-save retry tests; 32 mocked-role browser viewport checks at 320–1440 px showed no document overflow/page errors. Full tests 217/217, build pass. Request path mock profile: partner 27→20, client 15→10, admin 27→23, staff 15→15. Production gates remain in RELEASE_CHECKLIST.md.

@@ -1,0 +1,13 @@
+{
+  "protocol_version": 5,
+  "project": "allbeeapp",
+  "project_path": "/Users/hajihaz/projects/allbeeapp",
+  "status": "active",
+  "current_task": null,
+  "next_action": "External release gates in RELEASE_CHECKLIST.md; local five-work package verified.",
+  "blocked_reason": null,
+  "requires_high_reasoning": false,
+  "preferred_execution": "HHC_RDC_FIRST",
+  "usage_policy": "LOWEST_SUFFICIENT_MODEL",
+  "updated_at": "2026-09-26T13:43:42.463528+00:00"
+}

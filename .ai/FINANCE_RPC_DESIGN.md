@@ -1,0 +1,14 @@
+# Transactional finance write design (local design, not deployed)
+
+## Scope
+The ordinary income/expense save writes `transactions` and an optional `audit` event. A linked student payment also changes `students.paymentStatus`; a linked marketing receipt changes `marketing.lastPaid`. The browser's `applyDiff` issues table operations concurrently, so one can succeed while another fails. The UI now waits for the result, keeps the form open on failure, and reloads the three affected tables. The queue rebases a later retry, but it cannot roll back a partial first write. APN-attributed income already uses `create_apn_income_transaction` and stays on that atomic RPC path.
+
+## Proposed `finance_save_entry_v1`
+- Input: `p_entry jsonb`, `p_source_kind text`, `p_source_id text`, `p_idempotency_key uuid`, `p_expected_updated_at timestamptz` (nullable on create). Never accept client-supplied actor, audit timestamp, or arbitrary table name.
+- Execute as one `SECURITY DEFINER` PostgreSQL function with a fixed `search_path`, owned by a dedicated privileged role. Grant `EXECUTE` only to `authenticated`; derive actor and role from `auth.uid()` and server-side finance permission helpers. Recheck source row access and any period lock on the server.
+- Validate kind, positive finite amount, date, share sum of 100, length and identity fields. Reject APN attribution here; use the existing APN RPC. Lock the target transaction and linked source row (`FOR UPDATE`). Compare version/updated_at on edits to prevent a stale overwrite.
+- Reserve the idempotency key in a unique request table tied to actor and payload hash. Same actor/key/hash returns the committed result; same key with different payload errors. Use one transaction for the transaction upsert, optional student/marketing update, append-only audit row, and idempotency result. Any failure rolls back all writes. Do not use client-side compensating deletes.
+- Return `{id, updated_at, source_updated_at, request_id}`. The client sends one RPC, waits for confirmation, then reloads `transactions` and only the linked source table. On ambiguous timeout it retries the identical key; on conflict it reloads and asks the user to review. No new SQL should be applied until migration/RLS/grant review can reach the AllBee Supabase project.
+
+## Migration and verification gate
+Add an idempotent migration for the request table and function, explicit grants/revokes, and rollback-safe indexes. Test duplicate key, mismatched payload, unauthorized role, period lock, stale version, missing linked row, source update failure, audit failure, and concurrent same-key calls against a disposable local Postgres schema. Verify live RLS and migration order with authorized AllBee management access before deployment. Replace only the ordinary `saveShare` branch after the RPC is deployed and verified; keep the old client path until then.
