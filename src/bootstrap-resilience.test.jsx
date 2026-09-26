@@ -18,6 +18,7 @@ vi.mock("./supabaseClient", () => {
       select: () => builder, order: () => builder, eq: () => builder, in: () => builder,
       neq: () => builder, limit: () => builder, filter: () => builder, range: () => builder, single: () => builder,
       insert: () => builder, update: () => builder, upsert: () => builder, delete: () => builder,
+      maybeSingle: () => Promise.resolve({ data: tbl === "profiles" ? PROFILE : null, error: null }),
       then: (resolve, reject) => {
         if (ctrl.failTable && tbl === ctrl.failTable) {
           if (ctrl.mode === "hang") return new Promise(() => {});           // never resolves

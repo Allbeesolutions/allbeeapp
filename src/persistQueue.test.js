@@ -21,4 +21,25 @@ describe("persist queue race safety", () => {
     expect(persist).toHaveBeenCalledTimes(2);
     expect(persist.mock.invocationCallOrder[0]).toBeLessThan(persist.mock.invocationCallOrder[1]);
   });
+  it("rebases a partial multi-table save before an explicit retry", async () => {
+    const server = { transactions: [], students: [{ id: "s1", paymentStatus: "Unpaid" }] };
+    let failStudentOnce = true;
+    const persist = vi.fn(async (base, next) => {
+      // The transaction succeeds, then the related student update fails.
+      server.transactions = next.transactions.map((row) => ({ ...row }));
+      if (failStudentOnce) { failStudentOnce = false; throw new Error("Saving students: denied"); }
+      server.students = next.students.map((row) => ({ ...row }));
+    });
+    const rebase = vi.fn(async () => structuredClone(server));
+    const queue = createPersistQueue({ persist, rebase });
+    const desired = { transactions: [{ id: "income-1", amount: 100 }], students: [{ id: "s1", paymentStatus: "Paid" }] };
+    await expect(queue(structuredClone(server), desired)).rejects.toThrow("Saving students: denied");
+    expect(server.transactions).toHaveLength(1);
+    expect(server.students[0].paymentStatus).toBe("Unpaid");
+    await queue({ transactions: [], students: [] }, desired);
+    expect(rebase).toHaveBeenCalledTimes(1);
+    expect(persist.mock.calls[1][0].transactions).toEqual(server.transactions);
+    expect(server.transactions).toHaveLength(1);
+    expect(server.students[0].paymentStatus).toBe("Paid");
+  });
 });

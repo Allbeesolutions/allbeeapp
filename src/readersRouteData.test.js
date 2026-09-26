@@ -4,7 +4,7 @@ import { NAV } from "./app/navigation.js";
 
 describe("route data reader contract", () => {
   it("returns scoped table names for every known route", () => {
-    const { routeDataTables, knownRoutes } = createDataReaders({
+    const { routeDataTables, knownRoutes, apnTabs } = createDataReaders({
       supabase: {},
       emptyDB: () => ({}),
       loadTableRows: async () => [],
@@ -30,5 +30,17 @@ describe("route data reader contract", () => {
     expect(routeDataTables("dashboard", "partner")).toContain("apn_commission_projects");
     expect(routeDataTables("dashboard", "partner")).not.toContain("transactions");
     expect(routeDataTables("dashboard", "staff")).not.toContain("apn_users");
+    expect(apnTabs.partner).toHaveLength(18);
+    expect(apnTabs.admin).toHaveLength(14);
+    expect(routeDataTables("dashboard", "partner", "learn")).toContain("apn_training");
+    expect(routeDataTables("dashboard", "partner", "learn")).not.toContain("apn_commission_projects");
+    expect(routeDataTables("dashboard", "partner", "network")).toContain("apn_referral_relationships");
+    expect(routeDataTables("apn", "admin", "partners")).toContain("apn_users");
+    expect(routeDataTables("apn", "admin", "docs")).toContain("apn_documents");
+    expect(routeDataTables("apn", "admin", "docs")).not.toContain("crm_leads");
+    expect(routeDataTables("apn", "admin", "withdrawals")).toContain("apn_withdrawal_requests");
+    expect(routeDataTables("apn", "admin", "withdrawals")).not.toContain("crm_leads");
+    expect(routeDataTables("apn", "admin", "referrals")).toContain("apn_referral_relationships");
+    expect(routeDataTables("apn", "admin", "referrals")).not.toContain("crm_leads");
   });
 });

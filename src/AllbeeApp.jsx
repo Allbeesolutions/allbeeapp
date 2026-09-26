@@ -5116,10 +5116,14 @@ const referralLinkFor = (code) => {
 };
 const referralQrFor = (link) => link ? `https://quickchart.io/qr?size=220&text=${encodeURIComponent(link)}` : "";
 /* ── portal shell ────────────────────────────────────────────────────── */
-export function APNPortal({ db, profile, session, signOut, isDark, mutate, patchDb = () => {}, reload }) {
+export function APNPortal({ db, profile, session, signOut, isDark, mutate, patchDb = () => {}, reload, onTabChange, tabDataLoading = false }) {
   const pid = profile.id;
   const meRow = apnMe(db, pid);
-  const [tab, setTab] = useState("home");
+  const [tab, setTab] = useState(() => {
+    const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/");
+    const initial = parts[0] === "apn" ? parts[1] : "";
+    return ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(initial) ? initial : "home";
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -5155,13 +5159,14 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const refreshPortal = useCallback(async () => {
     await reload();
     setSnapTick((t) => t + 1);
-  }, []);
+  }, [reload]);
 
   // WP7 — authoritative financial facts for the portal: refetch on mount, on
   // tab switch, and after a refresh so wallet values stay current, while
   // staying a read-only projection (no client-side recomputation). Never
   // blocks the portal: on failure legacy figures remain.
   useEffect(() => {
+    if (!["home", "wallet", "withdrawals", "profile", "district"].includes(tab)) return undefined;
     let cancelled = false;
     fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
     return () => { cancelled = true; };
@@ -5178,7 +5183,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     const applyHash = () => {
       const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
       const route = parts[0] === "apn" ? parts[1] : parts[0];
-      if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) setTab(route);
+      if (route && ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(route)) { setTab(route); onTabChange?.(route); }
     };
     applyHash();
     window.addEventListener("hashchange", applyHash);
@@ -5191,6 +5196,8 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     if (error) { console.warn("[ALLBEE] notification read state could not be saved:", error.message); return; }
     patchDb((d) => ({ ...d, apn_action_badge_reads: [...(d.apn_action_badge_reads || []).filter((r) => !(r.user_id === pid && r.action_type === "notification_unread")), { user_id: pid, action_type: "notification_unread", seen_at: seenAt, updated_at: seenAt }] }));
   }, [pid, patchDb]);
+
+  const stats = useMemo(() => ["home", "wallet", "profile", "district"].includes(tab) ? apnPartnerStats(db, pid) : null, [db, pid, tab]);
 
   if (!meRow) return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
@@ -5213,12 +5220,12 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   if (agrLoading || agrError) return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} icon={agrError ? <ShieldAlert size={26} /> : <Hourglass size={26} />} tone={agrError ? "neg" : undefined} title={agrError ? "Agreement verification unavailable" : "Verifying agreements…"} body={agrError ? `We couldn't verify your APN agreement status. ${agrError}` : "Checking the current legal agreement status before opening your portal."} onSignOut={signOut} onRefresh={refreshAgreements} />;
   if (agr?.required) return <APNAgreementGate isDark={isDark} onSignOut={signOut} required={agr.requiredList || []} onAccepted={refreshAgreements} />;
 
-  const stats = apnPartnerStats(db, pid);
   const isHead = meRow.role === "district_head";
   const isStateHead = meRow.role === "state_head";
   const go = (t) => {
     if (t === "notifications") markNotificationsSeen().catch(() => {});
     setTab(t);
+    onTabChange?.(t);
     setSidebarOpen(false);
     const hash = `#/apn/${t}`;
     if (window.location.hash !== hash) window.location.hash = hash;
@@ -5305,7 +5312,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{section()}</APNTabErrorBoundary></div></div>
+      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <div className="card" aria-busy="true">Loading APN tab…</div> : section()}</APNTabErrorBoundary></div></div>
 
       {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
@@ -6057,6 +6064,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine !== false);
   const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
   const [route, setRoute] = useState("dashboard");
+  const [apnTab, setApnTab] = useState(() => { const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/"); return parts[0] === "apn" && parts[1] ? parts[1] : ""; });
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);   // universal search (Ctrl/⌘+K)
   const [topBusy, setTopBusy] = useState(false);
@@ -6179,7 +6187,7 @@ export default function App() {
     const generation = ++reloadGenerationRef.current;
     // Coalesce only identical snapshot requests. A full refresh must never
     // accidentally reuse a partial dirty-table request (or vice versa).
-    const normalizedTables = normalizeRealtimeTableSet(tables) || routeDataTables(route, role);
+    const normalizedTables = normalizeRealtimeTableSet(tables) || routeDataTables(route, role, apnTab);
     const requestKey = normalizedTables ? normalizedTables.join("|") : "*";
     const request = reloadInFlightRef.current && reloadInFlightKeyRef.current === requestKey
       ? reloadInFlightRef.current
@@ -6209,7 +6217,7 @@ export default function App() {
       };
       if (generation === reloadGenerationRef.current) setLoading(false);
     }
-  }, [route]);
+  }, [route, role, apnTab]);
 
   // Recover after network restoration / laptop wake without forcing a full
   // remount. The existing reload generation + queue provide the race safety.
@@ -6233,24 +6241,29 @@ export default function App() {
   const bootstrap = useCallback(async () => {
     const started = performance.now();
     try {
-      const initial = await fetchBootstrapData();
+      const initial = await fetchBootstrapData({ role, route, tab: apnTab });
       // Mark this route as hydrated before publishing `db` so the route effect
       // cannot start a second identical fetch between setDb() and the scoped pass.
-      loadedRouteRef.current = `${route}|${profile?.role || ""}`;
+      loadedRouteRef.current = `${route}|${profile?.role || ""}|${apnTab}`;
       setDb(initial);
       setLoading(false);
       setSyncError(null);
+      if (role === "partner" || role === "client" || route === "apn" || route === "apnadmin") {
+        if (role === "partner") setPartnerDataReady(true);
+        if (import.meta.env.DEV) console.info(`[ALLBEE] role-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
+        return;
+      }
       // Do not hydrate the whole company database in the background. The initial
       // bootstrap already contains the common dashboard tables, so fetch only
       // the active route's additional datasets after the shell is interactive.
       const bootstrapSet = new Set(["transactions","tasks","attendance","leave","updates","announcements","notifications","chat","projects","clients","invoices","payroll"]);
-      const scope = routeDataTables(route, role).filter((table) => !bootstrapSet.has(table));
+      const scope = routeDataTables(route, role, apnTab).filter((table) => !bootstrapSet.has(table));
       if (!scope.length) {
         if (import.meta.env.DEV) console.info(`[ALLBEE] bootstrap reused for route=${route}`, snapshotQueryMetrics());
         return;
       }
       const scoped = await fetchAll({ includeTables: scope });
-      if (reloadGenerationRef.current === 0) setDb((current) => ({ ...current, ...scoped }));
+      if (reloadGenerationRef.current === 0 && loadedRouteRef.current === `${route}|${profile?.role || ""}|${apnTab}`) setDb((current) => mergeScopedRealtimeState(current, scoped, scope));
       if (role === "partner") setPartnerDataReady(true);
       if (import.meta.env.DEV) console.info(`[ALLBEE] screen-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
     } catch (e) {
@@ -6259,21 +6272,29 @@ export default function App() {
       if (role === "partner") setPartnerDataReady(true);
       setSyncError(e.message || String(e));
     }
-  }, [route]);
+  }, [route, role, apnTab]);
 
   const [routeDataLoading, setRouteDataLoading] = useState(false);
+  const apnTabRef = useRef(apnTab);
+  apnTabRef.current = apnTab;
+  const changeApnTab = useCallback((tab) => {
+    if (tab === (apnTabRef.current || (role === "partner" ? "home" : "partners"))) return;
+    apnTabRef.current = tab;
+    setRouteDataLoading(true);
+    setApnTab(tab);
+  }, [role]);
   const loadedRouteRef = useRef("");
   const dbAvailable = !!db;
   useEffect(() => {
     if (!session || !dbAvailable || !route) return;
-    const key = `${route}|${profile?.role || ""}`;
+    const key = `${route}|${profile?.role || ""}|${apnTab}`;
     if (loadedRouteRef.current === key) return;
     loadedRouteRef.current = key;
     let alive = true;
     setRouteDataLoading(true);
-    fetchAll({ includeTables: routeDataTables(route, profile?.role) }).then((fresh) => {
+    fetchAll({ includeTables: routeDataTables(route, profile?.role, apnTab) }).then((fresh) => {
       if (!alive) return;
-      setDb((current) => ({ ...current, ...fresh }));
+      setDb((current) => mergeScopedRealtimeState(current, fresh, routeDataTables(route, profile?.role, apnTab)));
       if (profile?.role === "partner") setPartnerDataReady(true);
       setSyncError(null);
     }).catch((e) => {
@@ -6281,8 +6302,8 @@ export default function App() {
     }).finally(() => {
       if (alive) setRouteDataLoading(false);
     });
-    return () => { alive = false; };
-  }, [route, session?.user?.id, profile?.role, dbAvailable]);
+    return () => { alive = false; if (loadedRouteRef.current === key) loadedRouteRef.current = ""; };
+  }, [route, session?.user?.id, profile?.role, dbAvailable, apnTab]);
 
   const markApnActionBadgeSeen = useCallback(async (actionType) => {
     if (!profile?.id || !APN_ACTION_BADGE_MAP.some((item) => item.actionType === actionType)) return;
@@ -6319,10 +6340,16 @@ export default function App() {
 
 
 // ── load data + live sync while signed in ─────────────────────────────
+  const bootstrappedSessionRef = useRef(null);
   useEffect(() => {
-    if (!session) { setDb(null); setLoading(false); return; }
-    setLoading(true);
-    bootstrap();
+    if (!session) { bootstrappedSessionRef.current = null; setDb(null); setLoading(false); return; }
+    if (profile === undefined) return;
+    if (profile === null) { setLoading(false); return; }
+    if (bootstrappedSessionRef.current !== session.user.id) {
+      bootstrappedSessionRef.current = session.user.id;
+      setLoading(true);
+      bootstrap();
+    }
     // Realtime can emit several row events for one logical action (and chat/
     // notification activity can arrive in bursts). Never start a full database
     // reload for every event. Coalesce the burst into one reload on the next
@@ -6378,7 +6405,7 @@ export default function App() {
     };
     const configureChannel = (name, statusHandler) => {
       const channel = supabase.channel(name);
-      const scoped = new Set(routeDataTables(route));
+      const scoped = new Set(routeDataTables(route, role, apnTab));
       scoped.forEach((t) => {
         if (t === "audit") channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "audit" }, scheduleAuditReload);
         else ["INSERT", "UPDATE", "DELETE"].forEach((event) => channel.on("postgres_changes", { event, schema: "public", table: t }, scheduleReload));
@@ -6409,7 +6436,7 @@ export default function App() {
       if (reloadTimer) clearTimeout(reloadTimer);
       if (auditTimer) clearTimeout(auditTimer);
     };
-  }, [session, reload, bootstrap, route]);
+  }, [session, profile?.id, reload, bootstrap, route, role, apnTab]);
 
   // If an admin changes my role or the modules I'm granted while I'm signed in,
   // my row-level access changes — so refetch everything under the new permissions
@@ -6913,6 +6940,7 @@ export default function App() {
   if (!session) return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyLock isDark={isDark} setDark={setIsDark} runtime={{ supabase, useUsernameAvailability, useEmailAvailability, emitToast, FounderTap, ToastHost, SearchableSelect, PasswordField, LoginAccessAssistant, LOGO_FULL, TN_DISTRICTS, USERS, avatarColor, Users, Building2, GaugeCircle, ArrowLeft, AlertTriangle, Check, RefreshCw, LogIn, Mail, Sun, Moon }} /></React.Suspense>);
   if (passwordRecovery) return gateChild(<PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />);
   if (profile === undefined) return <LoadingScreen isDark={isDark} note="Signing you in…" />;
+  if (profile === null) return gateChild(<div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20 }}><div className="card" role="alert"><h2>ALLBEE account profile unavailable</h2><p>We could not load your account. Sign out and sign in again.</p><button className="btn" onClick={signOut}>Sign out</button></div></div>);
   if (profile && profile.active === false && role !== "partner")
     return gateChild(<Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />);
   // new staff & client sign-ups wait for a partner to approve them
@@ -6927,7 +6955,7 @@ export default function App() {
   // internal app, so they never reach accounts, balances, the vault or the team.
   if (role === "partner") {
     if (loading || !db || !partnerDataReady) return <LoadingScreen isDark={isDark} note="Loading APN…" />;
-    return gateChild(<APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} patchDb={patchDb} reload={reload} />);
+    return gateChild(<APNPortal onTabChange={changeApnTab} tabDataLoading={routeDataLoading} db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} patchDb={patchDb} reload={reload} />);
   }
   // first login: require the core profile details before anything else
   if (profile && (!profile.mobile || !profile.dob))
@@ -7003,7 +7031,7 @@ export default function App() {
       case "team-leads": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading team leads…</div></div>}><LazyTeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} runtime={{ Empty, Avatar, Users, Plus, ShieldCheck, Pencil, Trash2, ROLE_LABEL, teamRosterIds }} /></React.Suspense>;
       case "apn": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
-          <LazyAPNAdmin db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
+          <LazyAPNAdmin onTabChange={changeApnTab} tabDataLoading={routeDataLoading} db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
             runtime={{ ...Icons, supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, APN_ACTION_PENDING_STATUSES, APN_SERVICE_LABEL, APN_ACTION_BADGE_MAP, APN_COMM_REVERSED, SearchableSelect, apnConsoleRow, apnCampaignOf, apnLivePartners, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, apnLeaderboard: (db, scope, district, metric) => apnLeaderboard(db, scope, district, metric, apnLivePartners, apnPartnerStats, apnAttendanceScore, apnHealthScore), apnLeadTone, ActionBadge, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminSupport,
               apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify: (n) => apnNotify(n, uid), apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry,
               APN_COMM_STATUS, apnCommTone, apnCommissionDashboardSummary, apnProjectSummary,

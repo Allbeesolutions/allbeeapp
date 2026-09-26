@@ -289,16 +289,53 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     ai: [...Object.keys(AI_READS),"clients","leads","quotations","projects"],
     automation: ["business_automation_queue", ...Object.keys(AI_READS)],
   });
-  const routeDataTables = (route, role = "") => {
-    const partnerHome = ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_zone_requests","apn_notifications","apn_achievements","apn_referral_earnings","apn_withdrawal_requests","apn_action_badge_reads"];
-    const base = role === "partner" && route === "dashboard" ? partnerHome : (ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard);
-    // Partner home needs its operational facts on first login; other roles
-    // keep the smaller internal dashboard scope. Partner tabs retain their
-    // existing APN route scope until their own datasets can be verified live.
-    const apnIdentity = role === "partner" || route === "apn" || route === "apnadmin" || route === "apnwallet" ? ["apn_users"] : [];
+  // Tab scopes include shared shell facts plus the records each visible view uses.
+  // Page-owned RPC loaders (support, chat, network) remain in their components.
+  const PARTNER_TAB_DATASETS = Object.freeze({
+    home: ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_zone_requests","apn_notifications","apn_achievements","apn_referral_earnings","apn_withdrawal_requests","apn_action_badge_reads"],
+    leads: ["apn_leads","apn_users"], quotations: ["apn_quotations","apn_users"],
+    wallet: ["apn_commissions","apn_commission_projects","apn_revenue_collections","apn_referral_earnings","apn_withdrawal_requests","apn_users"],
+    withdrawals: ["apn_withdrawal_requests","apn_withdrawal_wallets","apn_withdrawal_status_history","apn_referral_codes","apn_referral_wallets","apn_commission_projects","apn_revenue_collections","apn_commissions","apn_users"],
+    network: ["apn_users","apn_referral_earnings","apn_referral_relationships","apn_referral_timeline"],
+    chat: ["apn_users"], learn: ["apn_training","apn_quizzes","apn_users"],
+    targets: ["apn_targets","apn_users"], documents: ["apn_documents","apn_users"],
+    agreements: ["apn_agreements","apn_agreement_acceptances","apn_users"],
+    notifications: ["apn_notifications","apn_action_badge_reads","apn_users"],
+    achievements: ["apn_achievements","apn_users"],
+    leaderboard: ["apn_users","apn_leads","apn_commissions","apn_attendance","apn_targets"],
+    district: ["apn_users","apn_attendance","apn_targets","apn_leads","apn_zone_requests","apn_commissions"],
+    profile: ["apn_users","apn_attendance","apn_commissions"],
+    ai: ["apn_users"], support: ["apn_users"],
+  });
+  const ADMIN_TAB_DATASETS = Object.freeze({
+    partners: ["apn_users","apn_attendance","apn_targets","apn_leads","apn_commissions","apn_timeline","apn_warnings","apn_notes","apn_transfer_history","apn_communications","apn_documents","apn_zone_requests","apn_action_badge_reads"],
+    hub: ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_admin_consoles","apn_admin_notes"],
+    leads: ["apn_users","apn_leads","apn_quotations"],
+    commissions: ["apn_users","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_action_badge_reads"],
+    withdrawals: ["apn_users",...Object.keys(WITHDRAWAL_READS),"apn_action_badge_reads"],
+    referrals: ["apn_users",...Object.keys(REFERRAL_READS),"apn_action_badge_reads"],
+    support: ["apn_users"], targets: ["apn_users","apn_targets","apn_action_badge_reads"],
+    content: ["apn_users","apn_training","apn_quizzes","apn_action_badge_reads"],
+    docs: ["apn_users","apn_documents","apn_action_badge_reads"],
+    agreements: ["apn_users",...Object.keys(AGREEMENT_READS)],
+    notify: ["apn_users","apn_notifications","apn_action_badge_reads"],
+    board: ["apn_users","apn_leads","apn_commissions","apn_attendance","apn_targets"],
+    activity: ["apn_users","apn_activity","apn_timeline","audit"],
+  });
+  const routeDataTables = (route, role = "", tab = "") => {
+    const partner = role === "partner";
+    const apnAdmin = route === "apn" || route === "apnadmin";
+    const base = partner ? (PARTNER_TAB_DATASETS[tab || "home"] || PARTNER_TAB_DATASETS.home)
+      : apnAdmin ? (ADMIN_TAB_DATASETS[tab || "partners"] || ADMIN_TAB_DATASETS.partners)
+      : (ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard);
+    const apnIdentity = partner || apnAdmin || route === "apnwallet" ? ["apn_users"] : [];
+    // Nav badges remain correct on a direct link to any tab, including before
+    // the user has visited the corresponding detail screen.
+    const partnerShell = partner ? ["apn_targets","apn_notifications","apn_withdrawal_requests","apn_action_badge_reads"] : [];
+    const adminBadges = apnAdmin ? ["apn_revenue_collections","apn_commissions","apn_withdrawal_requests","apn_withdrawal_batches","apn_referral_earnings","apn_targets","apn_training","apn_quizzes","apn_documents","apn_notifications","apn_action_badge_reads"] : [];
     // The initial shell bootstrap is loaded separately. Route refreshes must stay truly scoped
     // so a navigation event does not silently re-fetch the global bootstrap payload.
-    return [...new Set(["notifications", ...base, ...apnIdentity])];
+    return [...new Set(["notifications", ...base, ...apnIdentity, ...partnerShell, ...adminBadges])];
   };
 
   async function mapWithConcurrency(items, limit, fn) {
@@ -314,7 +351,13 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     return out;
   }
 
-  async function fetchBootstrapData() {
+  async function fetchBootstrapData({ role = "", route = "dashboard", tab = "" } = {}) {
+    if (role === "partner" || route === "apn" || route === "apnadmin") {
+      return fetchAll({ includeTables: routeDataTables(route, role, tab) });
+    }
+    if (role === "client") {
+      return fetchAll({ includeTables: ["portal_posts","support_tickets","support_ticket_messages","support_ticket_audit","documents","invoices","quotations","notifications"] });
+    }
     const db = emptyDB();
     const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
       t, await loadTableRows(supabase, t, "id,data", "created_at", BOOTSTRAP_TIMEOUT_MS, 0, true, 500, 500)
@@ -395,5 +438,5 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
       .sort((a, b) => (a?.ts || 0) - (b?.ts || 0));
   }
 
-  return { fetchReferralData, fetchApnActionBadgeReads, fetchWithdrawalData, fetchCRMData, fetchAIData, fetchPartnerFinancialSnapshot, fetchClientData, fetchHelpdeskData, fetchAgreementData, fetchBootstrapData, fetchAll, buildBackupSnapshot, fetchAuditRows, routeDataTables, knownRoutes: Object.keys(ROUTE_DATASETS) };
+  return { fetchReferralData, fetchApnActionBadgeReads, fetchWithdrawalData, fetchCRMData, fetchAIData, fetchPartnerFinancialSnapshot, fetchClientData, fetchHelpdeskData, fetchAgreementData, fetchBootstrapData, fetchAll, buildBackupSnapshot, fetchAuditRows, routeDataTables, knownRoutes: Object.keys(ROUTE_DATASETS), apnTabs: { partner: Object.keys(PARTNER_TAB_DATASETS), admin: Object.keys(ADMIN_TAB_DATASETS) } };
 }

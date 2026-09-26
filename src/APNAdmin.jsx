@@ -11,7 +11,7 @@ const LazyAPNAdminLeaderboard = React.lazy(() => import("./APNAdminLeaderboard.j
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
 
 export default function APNAdmin(props) {
-  const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen } = props;
+  const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen, onTabChange, tabDataLoading = false } = props;
   const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, ...rest } = props.runtime || {};
   const { APNAdminActivityLog, APNAdminCommissions, APNAdminWithdrawals, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, APNAdminLeaderboard, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, AlertTriangle, Target, Bell, ActionBadge,
     APN_ACTION_BADGE_MAP, APN_ACTION_PENDING_STATUSES, APN_COMM_REVERSED, apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnCommissionProjectsOf, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry, apnDerivedTimeline, APN_TARGET_METRICS, apnIdFor, apnPartnerStats, apnRevenueCollectionsOf, exportRowsToExcel, round2, APNWarningForm, APNCreatePartnerForm, APNQuizForm, APNWithdrawalApprovalModal, APNBanForm, APNBulkForm, APNDeleteForm, APNDocForm, APNLeadManage, APNNoteForm, APNNotifForm, APNPermanentDeleteForm, APNReactivateForm, APNRejectForm, APNResetPasswordForm, APNSuspendForm, APNTargetForm, APNTrainingForm } = rest;
@@ -43,7 +43,7 @@ export default function APNAdmin(props) {
   useEffect(() => {
     if (!focusPartnerId) return;
     const partner = partners.find((p) => p.id === focusPartnerId) || (db.apn_users || []).find((p) => p.id === focusPartnerId);
-    if (partner) { setTab("partners"); openProfile(partner); }
+    if (partner) { setTab("partners"); onTabChange?.("partners"); openProfile(partner); }
     onFocusConsumed?.();
   }, [focusPartnerId]);
   const withActionError = async (fn) => {
@@ -407,6 +407,7 @@ export default function APNAdmin(props) {
   const tabs = [["hub", "Hub", 0], ["partners", "Partners", actionBadges.partners], ["leads", "Leads", 0], ["commissions", "Commissions", actionBadges.commissions], ["withdrawals", "Withdrawals", actionBadges.withdrawals], ["referrals", "Referrals", actionBadges.referrals], ["support", "Support", 0], ["targets", "Targets", actionBadges.targets], ["content", "Training", actionBadges.content], ["docs", "Materials", actionBadges.docs], ["agreements", "Agreements", 0], ["notify", "Notify", actionBadges.notify], ["board", "Leaderboard", 0]];
   const selectTab = (nextTab) => {
     setTab(nextTab);
+    onTabChange?.(nextTab);
     const action = APN_ACTION_BADGE_MAP.find((item) => item.tab === nextTab);
     if (action) onActionBadgeSeen?.(action.actionType);
   };
@@ -414,38 +415,39 @@ export default function APNAdmin(props) {
   return (
     <div className="content">
       <div className="page-head"><h3>APN — Partner Network</h3><span className="spacer" />
-        <button className="btn sm" onClick={() => setTab("activity")}><Activity size={14} />Activity Log</button>
-        {tab === "partners" && isAdmin && <button className="btn primary" onClick={() => setShowCreate((v) => !v)}>{showCreate ? <X size={16} /> : <Plus size={16} />}{showCreate ? "Close form" : "Add partner"}</button>}
-        {tab === "commissions" && isAdmin && <button className="btn primary" onClick={() => setModal({ type: "apnCommissionEntry" })}><Plus size={16} />Add entry</button>}
-        {tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
-        {tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
+        <button className="btn sm" onClick={() => selectTab("activity")}><Activity size={14} />Activity Log</button>
+        {!tabDataLoading && tab === "partners" && isAdmin && <button className="btn primary" onClick={() => setShowCreate((v) => !v)}>{showCreate ? <X size={16} /> : <Plus size={16} />}{showCreate ? "Close form" : "Add partner"}</button>}
+        {!tabDataLoading && tab === "commissions" && isAdmin && <button className="btn primary" onClick={() => setModal({ type: "apnCommissionEntry" })}><Plus size={16} />Add entry</button>}
+        {!tabDataLoading && tab === "targets" && <button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>}
+        {!tabDataLoading && tab === "notify" && <button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>}
       </div>
       <div className="apn-seg-scroll" style={{ marginBottom: 16 }}>{tabs.map(([k, l, badge]) => <button key={k} className={tab === k ? "on" : ""} onClick={() => selectTab(k)}>{l}{badge > 0 && <ActionBadge count={badge} label={`${l.toLowerCase()} action`} />}</button>)}</div>
 
       {actionError && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{actionError}</div>}
-      {showCreate && tab === "partners" && <div style={{ marginBottom: 14 }}><APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} inline onClose={() => setShowCreate(false)} /></div>}
-      {tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
-      {tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} runtime={props.runtime} />}
-      {tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} runtime={props.runtime} />}
-      {tab === "leads" && <APNAdminLeads db={db} openModal={setModal} runtime={props.runtime} />}
-      {tab === "commissions" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading commissions…</div>}><LazyAPNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} runtime={props.runtime} /></React.Suspense>}
-      {tab === "withdrawals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading withdrawals…</div>}><LazyAPNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
-      {tab === "referrals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading referrals…</div>}><LazyAPNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
-      {tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
-      {tab === "targets" && (() => { const list = (db.apn_targets || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
+      {tabDataLoading && <div className="card" aria-busy="true">Loading APN tab…</div>}
+      {!tabDataLoading && showCreate && tab === "partners" && <div style={{ marginBottom: 14 }}><APNCreatePartnerForm db={db} mutate={mutate} currentUser={currentUser} canManage={isAdmin} inline onClose={() => setShowCreate(false)} /></div>}
+      {!tabDataLoading && tab === "activity" && <APNAdminActivityLog db={db} isSuper={isSuper} onOpenRelated={onOpenRelated} />}
+      {!tabDataLoading && tab === "hub" && <APNAdminHub db={db} mutate={mutate} currentUser={currentUser} isAdmin={isAdmin} runtime={props.runtime} />}
+      {!tabDataLoading && tab === "partners" && <APNAdminPartners db={db} people={people} isSuper={isSuper} canManage={isAdmin} act={act} openModal={setModal} onOpenProfile={openProfile} runtime={props.runtime} />}
+      {!tabDataLoading && tab === "leads" && <APNAdminLeads db={db} openModal={setModal} runtime={props.runtime} />}
+      {!tabDataLoading && tab === "commissions" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading commissions…</div>}><LazyAPNAdminCommissions db={db} setCommStatus={setCommStatus} openProject={(project) => setModal({ type: "apnCommissionEntry", initial: project, onDelete: isSuper ? requestCommissionDelete : undefined })} onDelete={isSuper ? requestCommissionDelete : undefined} onReverse={requestCommissionReverse} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "withdrawals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading withdrawals…</div>}><LazyAPNAdminWithdrawals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "referrals" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading referrals…</div>}><LazyAPNAdminReferrals db={db} isSuper={isSuper} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "support" && <APNAdminSupport isSuper={isSuper} people={(id) => (people || []).find((p) => p.id === id)?.name || (db.apn_users || []).find((p) => p.id === id)?.name} />}
+      {!tabDataLoading && tab === "targets" && (() => { const list = (db.apn_targets || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Target size={22} color="var(--muted)" />} title="No targets yet" text="Assign targets to partners; they must acknowledge them." action={<button className="btn primary" onClick={() => setModal({ type: "apnTarget" })}><Plus size={16} />Assign target</button>} />
           : <div style={{ overflowX: "auto" }}><table className="tbl apn-mobile-cards"><thead><tr><th>Partner</th><th>Target</th><th>Progress</th><th>Acknowledged</th></tr></thead>
             <tbody>{list.map((t) => { const p = apnTargetProgress(db, t); return <tr key={t.id}><td data-label="Partner">{t.partnerName}</td><td data-label="Target">{t.title}<div className="hint-line" style={{ fontSize: 11 }}>{t.goal} {apnMetricLabel(t.metric)}</div></td><td data-label="Progress" className="mono">{p.raw}/{p.goal} ({p.pct}%)</td><td data-label="Acknowledged">{t.acknowledged ? <span className="badge pos">Yes</span> : <span className="badge">No</span>}</td></tr>; })}</tbody>
           </table></div>}</div>
       ); })()}
-      {tab === "content" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading content…</div>}><LazyAPNAdminContent db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
-      {tab === "docs" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading documents…</div>}><LazyAPNAdminDocs db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
-      {tab === "agreements" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading agreements…</div>}><LazyAPNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
-      {tab === "notify" && (() => { const list = (db.apn_notifications || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
+      {!tabDataLoading && tab === "content" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading content…</div>}><LazyAPNAdminContent db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "docs" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading documents…</div>}><LazyAPNAdminDocs db={db} openModal={setModal} removeRow={removeRow} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "agreements" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading agreements…</div>}><LazyAPNAdminAgreements db={db} isAdmin={isAdmin} onRefresh={onRefresh} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "notify" && (() => { const list = (db.apn_notifications || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); return (
         <div className="card">{list.length === 0 ? <Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications sent" text="Send updates to all partners, a district, or one partner." action={<button className="btn primary" onClick={() => setModal({ type: "apnNotif" })}><Plus size={16} />New notification</button>} />
           : list.map((n) => { const sender = apnNotificationSender(n); return <div key={n.id} className="card stat" style={{ margin: "0 0 8px", display: "flex", alignItems: "center", gap: 10 }}><Avatar name={sender.name} url={sender.avatar} size={28} fontSize={11} /><div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation} · {n.audience === "all" ? "All partners" : n.audience.startsWith("district:") ? n.audience.slice(9) : "One partner"} · {fmtDateTime(n.createdAt)}</div></div><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_notifications", n.id, `deleted APN notification "${n.title}"`)}><Trash2 size={14} /></button></div>; })}</div>
       ); })()}
-      {tab === "board" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading leaderboard…</div>}><LazyAPNAdminLeaderboard db={db} runtime={props.runtime} /></React.Suspense>}
+      {!tabDataLoading && tab === "board" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading leaderboard…</div>}><LazyAPNAdminLeaderboard db={db} runtime={props.runtime} /></React.Suspense>}
 
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={modal.stateHead ? async (reason) => { setModal(null); try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); mutateApn((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason, rejectedBy: currentUser, rejectedAt: at } : u) }), M(`rejected APN application "${modal.partner.name}"${reason ? ` · ${reason}` : ""}`, modal.partner.id), timeline(modal.partner, "rejected", "Application Rejected", reason || "The application was rejected.", at)); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } } : (reason) => act.reject(modal.partner, reason)} onClose={() => setModal(null)} /> }
       {modal?.type === "apnPartnerProfile" && <APNPartnerProfile fullPage={!!modal.fullPage} partner={modal.partner} db={db} people={people} isSuper={isSuper} initialSection={modal.section} onSave={(next) => { setModal(null); setPendingAction({ kind: "saveProfile", partner: modal.partner, next }); }} onAction={runAction} onWarning={(p) => setModal({ type: "apnWarning", partner: p })} onResolveWarning={(warning) => resolveWarning(modal.partner, warning)} onDeleteWarning={(warning) => setPendingAction({ kind: "deleteWarning", partner: modal.partner, warning })} onNote={(p) => setModal({ type: "apnNote", partner: p })} onEditNote={(note) => setModal({ type: "apnNote", partner: modal.partner, initial: note })} onTags={(p) => setModal({ type: "apnTags", partner: p })} onDocuments={(p) => setModal({ type: "apnDocument", partner: p })} onDocumentDownload={downloadPartnerDocument} onCommunication={(p) => setModal({ type: "apnCommunication", partner: p })} onExport={(p) => exportApnPartnerReport(p)} onOpenFullPage={() => setModal((current) => ({ ...current, fullPage: true }))} onClose={() => setModal(null)} runtime={props.runtime} />}

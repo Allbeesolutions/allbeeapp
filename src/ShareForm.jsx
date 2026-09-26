@@ -25,6 +25,7 @@ export default function ShareForm({ kind, initial, onSave, onClose, currentUser,
   const [apnAttribution, setApnAttribution] = useState(() => isIncome && !!initial?.apnProjectId);
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setSplit = (h) => setF((s) => ({ ...s, hajiPct: h, alimPct: 100 - h }));
   const isAPNIncome = isIncome && apnAttribution;
@@ -104,15 +105,22 @@ export default function ShareForm({ kind, initial, onSave, onClose, currentUser,
     };
     if (isAPNIncome) Object.assign(payload, { apnPartnerId: f.apnPartnerId, apnProjectName: f.apnProjectName.trim(), apnClientName: f.apnClientName.trim(), apnProjectValue, apnCommissionRate: apnRate, apnCollections: apnCollections.map((row) => ({ ...row, receivedAmount: Number(row.receivedAmount), incentive: Number(row.incentive || 0), remarks: String(row.remarks || "").trim() })) });
     if (!isIncome) { payload.scope = f.scope; payload.shareSource = isCompany ? (plan.fallback ? null : plan.sourcePeriod) : null; }
+    setSaveError("");
     setSaving(true);
-    try { const result = await onSave(payload); if (result !== false) onClose(); }
-    finally { setSaving(false); }
+    try {
+      const result = await onSave(payload);
+      if (result === false) setSaveError("Save failed. Check the error notification, review the entry, and retry.");
+      else onClose();
+    } catch (error) {
+      setSaveError(error?.message || "Save failed. Review the entry and retry.");
+    } finally { setSaving(false); }
   };
 
   return (
     <Modal title={(initial?.id ? "Edit " : "Add ") + (isIncome ? "income" : "expense")} onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn primary" onClick={save} disabled={!valid || saving}><Check size={16} />{saving ? "Saving…" : isIncome ? "Add income" : "Add expense"}</button></>}>
+      {saveError && <div className="auth-msg err" role="alert">{saveError}</div>}
       {isIncome && <div className="apn-section-head" style={{ margin: "14px 0 10px" }}><h4 style={{ margin: 0 }}>APN attribution <span className="hint-line" style={{ fontWeight: 400 }}>(optional)</span></h4><button className="btn sm" type="button" onClick={() => setAttribution(!apnAttribution)}>{isAPNIncome ? <><X size={13} />Remove attribution</> : <><Link2 size={13} />Add APN attribution</>}</button></div>}
       {isAPNIncome && <>
         <div className="grid2"><Field label="Partner" required><SearchableSelect value={f.apnPartnerId} onChange={(value) => up("apnPartnerId", value)} disabled={!!editingApn} ariaLabel="APN income partner" options={apnPartners.map((partner) => ({ value: partner.id, label: partner.name, meta: apnIdFor(partner) }))} /></Field><Field label="Referral"><SearchableSelect value={apnRelationship?.referrer_id || ""} disabled ariaLabel="Direct referral partner" options={[{ value: "", label: apnReferrer ? apnReferrer.name : "No direct referral" }, ...(apnReferrer ? [{ value: apnReferrer.id, label: apnReferrer.name, meta: "Direct referral" }] : [])]} /></Field></div>
