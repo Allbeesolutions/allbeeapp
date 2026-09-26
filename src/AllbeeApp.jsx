@@ -6448,7 +6448,9 @@ export default function App() {
     }
     dbRef.current = next;
     setDb(next);
-    enqueuePersist(prev, next).catch((e) => setSyncError(e.message || String(e)));
+    const persistence = enqueuePersist(prev, next);
+    persistence.catch((e) => setSyncError(e.message || String(e)));
+    return persistence;
   }, [currentUser, me.id, profile?.photo_url, enqueuePersist]);
 
   const patchDb = useCallback((updater) => { setDb((prev) => (prev ? updater(prev) : prev)); }, []);
@@ -6785,7 +6787,7 @@ export default function App() {
         emitToast("Income recorded and APN commission updated with matching commission expense.", "success");
         return true;
       }
-      mutate((d) => {
+      await mutate((d) => {
         let next = { ...d };
         if (savedEntry.id && next.transactions.some((t) => t.id === savedEntry.id)) next.transactions = next.transactions.map((t) => t.id === savedEntry.id ? savedEntry : t);
         else next.transactions = [...next.transactions, savedEntry];
@@ -6793,9 +6795,10 @@ export default function App() {
         if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: savedEntry.date } : m);
         return next;
       }, { action: `${savedEntry.id ? "updated" : "added"} ${savedEntry.kind} ${money(savedEntry.amount)}${savedEntry.client ? " · " + savedEntry.client : ""}${shareNote}${companyNote}`, module: "Accounts" });
-      emitToast("Income saved.", "success");
+      emitToast(`${savedEntry.kind === "expense" ? "Expense" : "Income"} saved.`, "success");
       return true;
     } catch (error) {
+      await reload(["transactions", "students", "marketing"]).catch(() => {});
       emitToast(error?.message || "Couldn't save this entry.", "error");
       return false;
     }

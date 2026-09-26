@@ -13,6 +13,13 @@ describe("route data reader contract", () => {
     expect(routeDataTables("dashboard")).toContain("tasks");
     expect(routeDataTables("accounts")).toContain("notifications");
     expect(routeDataTables("accounts")).toContain("transactions");
+    expect(routeDataTables("withdrawals")).toContain("withdrawals");
+    expect(routeDataTables("planned")).toContain("planned");
+    expect(routeDataTables("staff-salary")).toContain("payroll");
+    expect(routeDataTables("recently-deleted")).toContain("recycle");
+    expect(routeDataTables("audit")).toContain("audit");
+    expect(routeDataTables("myteam")).toContain("teams");
+    expect(routeDataTables("prompts")).toContain("prompts");
     expect(routeDataTables("finance")).toContain("apn_withdrawal_requests");
     expect(routeDataTables("apnadmin")).toContain("apn_action_badge_reads");
     expect(routeDataTables("unknown-route")).toEqual(routeDataTables("dashboard"));
