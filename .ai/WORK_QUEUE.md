@@ -8,7 +8,7 @@
 - [x] Local bundle/request profile and measured first-load improvement; see `APN_SCOPE_PROFILE.md`.
 - [x] AB-008 Project guidance and handoff refreshed; release checklist prepared.
 - [ ] AB-002 Live Supabase migration/RLS/grant verification (AllBee access blocker).
-- [ ] AB-003 Custom-domain ownership and divergent bundle resolution (release blocker).
+- [ ] AB-003 Custom-domain ownership identification; divergent bundle resolved after GitHub push (current live bundle matches local build).
 - [ ] AB-006 Real signed-in role/mobile verification (authorized sessions needed; local mocks completed).
 - [ ] AB-004/007 Real APN network/egress profile and live realtime validation (authorized sessions needed; local scope profile completed).
 - [ ] Deploy/test transactional ordinary finance RPC after DB access, migration/security review and disposable-DB tests.
