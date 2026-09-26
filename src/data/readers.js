@@ -290,11 +290,11 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     automation: ["business_automation_queue", ...Object.keys(AI_READS)],
   });
   const routeDataTables = (route, role = "") => {
-    const base = ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard;
-    // APN partners need their identity row before the portal can render. Keep
-    // this single identity table in the dashboard fallback so a post-login
-    // reload can discover a newly-created APN profile without hydrating the
-    // entire APN dataset for every internal user.
+    const partnerHome = ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_zone_requests","apn_notifications","apn_achievements","apn_referral_earnings","apn_withdrawal_requests","apn_action_badge_reads"];
+    const base = role === "partner" && route === "dashboard" ? partnerHome : (ROUTE_DATASETS[route] || ROUTE_DATASETS.dashboard);
+    // Partner home needs its operational facts on first login; other roles
+    // keep the smaller internal dashboard scope. Partner tabs retain their
+    // existing APN route scope until their own datasets can be verified live.
     const apnIdentity = role === "partner" || route === "apn" || route === "apnadmin" || route === "apnwallet" ? ["apn_users"] : [];
     // The initial shell bootstrap is loaded separately. Route refreshes must stay truly scoped
     // so a navigation event does not silently re-fetch the global bootstrap payload.
@@ -395,5 +395,5 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
       .sort((a, b) => (a?.ts || 0) - (b?.ts || 0));
   }
 
-  return { fetchReferralData, fetchApnActionBadgeReads, fetchWithdrawalData, fetchCRMData, fetchAIData, fetchPartnerFinancialSnapshot, fetchClientData, fetchHelpdeskData, fetchAgreementData, fetchBootstrapData, fetchAll, buildBackupSnapshot, fetchAuditRows, routeDataTables };
+  return { fetchReferralData, fetchApnActionBadgeReads, fetchWithdrawalData, fetchCRMData, fetchAIData, fetchPartnerFinancialSnapshot, fetchClientData, fetchHelpdeskData, fetchAgreementData, fetchBootstrapData, fetchAll, buildBackupSnapshot, fetchAuditRows, routeDataTables, knownRoutes: Object.keys(ROUTE_DATASETS) };
 }

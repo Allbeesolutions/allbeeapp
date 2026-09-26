@@ -6052,6 +6052,7 @@ export default function App() {
   const [profile, setProfile] = useState(undefined);  // undefined = loading, null = none
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [partnerDataReady, setPartnerDataReady] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine !== false);
   const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
@@ -6166,6 +6167,7 @@ export default function App() {
 
   // ── auth session (extracted to auth/useAuthSession.js) ────────────────
   useAuthSession({ supabase, setSession, setPasswordRecovery, setSyncError, appendAuditEvent, authRecoveryRef });
+  useEffect(() => { setPartnerDataReady(false); }, [session?.user?.id]);
 
   // ── profile/team/config sync (extracted) ───────────────────────────────
   const loadPeople = usePeopleSync({ session, supabase, ensureProfile, fetchTeam, fetchConfig, fetchLocks, setTeam, setConfig, setLocks, setProfile, setSyncError });
@@ -6249,18 +6251,21 @@ export default function App() {
       }
       const scoped = await fetchAll({ includeTables: scope });
       if (reloadGenerationRef.current === 0) setDb((current) => ({ ...current, ...scoped }));
+      if (role === "partner") setPartnerDataReady(true);
       if (import.meta.env.DEV) console.info(`[ALLBEE] screen-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
     } catch (e) {
       setDb((current) => current || emptyDB());
       setLoading(false);
+      if (role === "partner") setPartnerDataReady(true);
       setSyncError(e.message || String(e));
     }
   }, [route]);
 
   const [routeDataLoading, setRouteDataLoading] = useState(false);
   const loadedRouteRef = useRef("");
+  const dbAvailable = !!db;
   useEffect(() => {
-    if (!session || !db || !route) return;
+    if (!session || !dbAvailable || !route) return;
     const key = `${route}|${profile?.role || ""}`;
     if (loadedRouteRef.current === key) return;
     loadedRouteRef.current = key;
@@ -6269,14 +6274,15 @@ export default function App() {
     fetchAll({ includeTables: routeDataTables(route, profile?.role) }).then((fresh) => {
       if (!alive) return;
       setDb((current) => ({ ...current, ...fresh }));
+      if (profile?.role === "partner") setPartnerDataReady(true);
       setSyncError(null);
     }).catch((e) => {
-      if (alive) setSyncError(e.message || String(e));
+      if (alive) { setSyncError(e.message || String(e)); if (profile?.role === "partner") setPartnerDataReady(true); }
     }).finally(() => {
       if (alive) setRouteDataLoading(false);
     });
     return () => { alive = false; };
-  }, [route, session?.user?.id, profile?.role, db]);
+  }, [route, session?.user?.id, profile?.role, dbAvailable]);
 
   const markApnActionBadgeSeen = useCallback(async (actionType) => {
     if (!profile?.id || !APN_ACTION_BADGE_MAP.some((item) => item.actionType === actionType)) return;
@@ -6920,7 +6926,7 @@ export default function App() {
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
   if (role === "partner") {
-    if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading APN…" />;
+    if (loading || !db || !partnerDataReady) return <LoadingScreen isDark={isDark} note="Loading APN…" />;
     return gateChild(<APNPortal db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} patchDb={patchDb} reload={reload} />);
   }
   // first login: require the core profile details before anything else
