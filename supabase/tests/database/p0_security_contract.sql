@@ -33,3 +33,37 @@ begin
     end if;
   end loop;
 end $$;
+
+-- Server-only tables intentionally have RLS with no browser policies/grants.
+do $$
+declare t text;
+begin
+  foreach t in array array['ai_memory_documents','ai_memory_sync_queue','apn_ai_usage','apn_rule_audit','emergency_lockdown','emergency_lockdown_attempts','emergency_lockdown_audit','finance_save_requests','notification_push_queue','notification_user_state'] loop
+    if has_table_privilege('anon','public.'||t,'SELECT,INSERT,UPDATE,DELETE') or has_table_privilege('authenticated','public.'||t,'SELECT,INSERT,UPDATE,DELETE') then
+      raise exception 'P0: server-only table % has browser grants',t;
+    end if;
+  end loop;
+end $$;
+
+-- Every table streamed through Realtime must remain protected by RLS.
+do $$
+declare v int;
+begin
+  select count(*) into v from pg_publication_tables pt
+  join pg_class c on c.relname=pt.tablename
+  join pg_namespace n on n.oid=c.relnamespace and n.nspname=pt.schemaname
+  where pt.pubname='supabase_realtime' and not c.relrowsecurity;
+  if v <> 0 then raise exception 'P0: % realtime tables lack RLS',v; end if;
+end $$;
+
+-- Anonymous SECURITY DEFINER surface is intentionally tiny and reviewed.
+do $$
+declare v text[];
+begin
+  select array_agg(p.proname order by p.proname) into v
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.prosecdef and has_function_privilege('anon',p.oid,'EXECUTE');
+  if v is distinct from array['proposal_public_action','proposal_public_get','public_owner_profiles']::text[] then
+    raise exception 'P0: unexpected anonymous SECURITY DEFINER functions: %',v;
+  end if;
+end $$;
