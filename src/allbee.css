@@ -1032,6 +1032,9 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .apn-rowcard { min-width:0; }
 .web-ai-fab { position:fixed; right:20px; bottom:20px; z-index:80; display:inline-flex; align-items:center; gap:9px; min-height:48px; padding:0 16px; border:0; border-radius:999px; background:var(--primary); color:#fff; font-weight:750; cursor:pointer; box-shadow:0 10px 30px rgba(46,59,143,.32); }
 .web-ai-fab:hover { transform:translateY(-1px); box-shadow:0 12px 34px rgba(46,59,143,.4); }
+.web-ai-fab-logo { width:30px; height:30px; display:grid; place-items:center; flex:0 0 30px; border-radius:50%; background:#fff; box-shadow:0 3px 12px rgba(0,0,0,.16); animation:web-ai-logo-float 2.8s ease-in-out infinite; }
+.web-ai-fab-logo img { width:24px; height:24px; object-fit:contain; display:block; }
+@keyframes web-ai-logo-float { 0%,100% { transform:translateY(0) rotate(0deg); } 50% { transform:translateY(-4px) rotate(1.5deg); } }
 .web-ai-panel { position:fixed; right:20px; bottom:78px; z-index:81; width:min(430px,calc(100vw - 24px)); height:min(680px,calc(100vh - 100px)); display:flex; flex-direction:column; overflow:hidden; background:var(--surface); border:1px solid var(--border); border-radius:20px; box-shadow:0 18px 60px rgba(12,18,32,.24); }
 .web-ai-head { display:flex; align-items:center; gap:10px; padding:15px 16px; color:#fff; background:linear-gradient(135deg,var(--primary),#4756c8); }
 .web-ai-close { position:absolute; top:10px; right:10px; z-index:3; width:44px; height:44px; min-width:44px; min-height:44px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.55); border-radius:12px; background:rgba(0,0,0,.18); color:#fff; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.18); }
@@ -1075,7 +1078,7 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .web-ai-typing i:nth-child(2) { animation-delay:.12s; } .web-ai-typing i:nth-child(3) { animation-delay:.24s; }
 @keyframes web-ai-dot { 0%,60%,100% { opacity:.3; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
 @media (max-width:600px) { .web-ai-fab { right:14px; bottom:14px; width:52px; height:52px; padding:0; justify-content:center; border-radius:50%; } .web-ai-fab span { display:none; } .web-ai-panel { right:12px; bottom:74px; width:calc(100vw - 24px); height:min(690px,calc(100vh - 88px)); border-radius:18px; } }
-@media (prefers-reduced-motion:reduce) { .web-ai-fab:hover { transform:none; } .web-ai-progress > i, .web-ai-typing i { animation:none; transition:none; } }
+@media (prefers-reduced-motion:reduce) { .web-ai-fab:hover { transform:none; } .web-ai-fab-logo { animation:none; } .web-ai-progress > i, .web-ai-typing i { animation:none; transition:none; } }
 
 /* APN Head command-center UI */
 .apn-head-cockpit{max-width:1180px;margin:0 auto;padding-bottom:24px}

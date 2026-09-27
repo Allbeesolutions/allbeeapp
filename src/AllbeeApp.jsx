@@ -3499,7 +3499,7 @@ function LoginAccessAssistant({ onPick }) {
     if (chip.go) goNode(chip.go);
   };
 
-  if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><LifeBuoy size={18} /><span>Need help signing in?</span></button>;
+  if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><span className="web-ai-fab-logo" aria-hidden="true"><img src={LOGO_FULL} alt="" /></span><span>Need help signing in?</span></button>;
   return (
     <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI — access and login assistant">
       <header className="web-ai-head" style={{ position: "relative", paddingRight: 68 }}>
