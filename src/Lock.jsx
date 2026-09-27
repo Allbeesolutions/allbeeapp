@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import "./allbee.css";
+import "./ui/apn-experience.css";
 
 export default function Lock({ isDark, setDark, runtime }) {
   const { supabase, useUsernameAvailability, useEmailAvailability, emitToast, FounderTap, ToastHost, SearchableSelect, PasswordField, LoginAccessAssistant, LOGO_FULL, TN_DISTRICTS, USERS, avatarColor, Users, Building2, GaugeCircle, ArrowLeft, AlertTriangle, Check, RefreshCw, LogIn, Mail, Sun, Moon } = runtime;
@@ -11,6 +12,7 @@ export default function Lock({ isDark, setDark, runtime }) {
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");   // staff display name
   const [who, setWho] = useState("Haji"); // owner partner identity
+  const [ownerPhotos, setOwnerPhotos] = useState({});
   const [code, setCode] = useState("");   // admin access code
   const [busy, setBusy] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
@@ -31,7 +33,20 @@ export default function Lock({ isDark, setDark, runtime }) {
   const emailCheck = useEmailAvailability(email);
   const upApn = (k, v) => setApn((s) => ({ ...s, [k]: v }));
 
+  useEffect(() => {
+    let active = true;
+    if (mode !== "signup" || acctType !== "owner") return () => { active = false; };
+    supabase.rpc("public_owner_profiles").then(({ data, error }) => {
+      if (!active || error) return;
+      const next = {};
+      (data || []).forEach((p) => { if (p?.name && p?.photo_url) next[String(p.name).trim().toLowerCase()] = p.photo_url; });
+      setOwnerPhotos(next);
+    });
+    return () => { active = false; };
+  }, [mode, acctType, supabase]);
+
   const submit = async () => {
+    if (busy) return;
     setErr(""); setNotice("");
     if (!email.trim() || !pw) { setErr("Enter your username or email and your password to continue."); return; }
     if (mode === "signup") {
@@ -116,15 +131,16 @@ export default function Lock({ isDark, setDark, runtime }) {
     if (/timeout|abort|network|failed to fetch|fetch/i.test(raw)) return "We couldn't reach the authentication service. Check your connection and try again.";
     return fallback;
   };
-  const onKey = (e) => { if (e.key === "Enter") submit(); };
+  const onKey = (e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) submit(); };
 
   return (
-    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+    <div className={"allbee lock" + ((mode === "signin" ? loginAs === "partner" && entry === "form" : acctType === "partner") ? " apn-auth" : "")} data-theme={isDark ? "dark" : "light"}>
       <ToastHost />
       <div className="lock-card">
         <FounderTap className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
         <p>{mode === "signin" ? (entry === "choose" ? "How would you like to sign in?" : (loginAs === "client" ? "Client sign in" : loginAs === "partner" ? "APN partner sign in" : "Employee sign in")) : "Create your account"}</p>
 
+        {((mode === "signin" && loginAs === "partner" && entry === "form") || (mode === "signup" && acctType === "partner")) && <div className="apn-auth-intro"><div className="apn-eyebrow">ALLBEE PARTNER NETWORK</div><h1>{mode === "signin" ? "Welcome back, partner." : "Your next chapter starts here."}</h1><p>{mode === "signin" ? "Your leads, earnings and team are ready when you are." : "Build relationships, develop your skills and grow with AllBee."}</p></div>}
         {mode === "signin" && entry === "choose" ? (
           <>
             <div className="choose-stack" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6, width: "100%" }}>
@@ -150,7 +166,7 @@ export default function Lock({ isDark, setDark, runtime }) {
               <div style={{ textAlign: "left" }}>
                 <div className="field"><label htmlFor="apn-full-name">Full name</label><input id="apn-full-name" className="input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={onKey} placeholder="Your full name" /></div>
                 <div className="grid2">
-                  <div className="field"><label htmlFor="apn-mobile">Mobile number</label><input id="apn-mobile" className="input" value={apn.mobile} onChange={(e) => upApn("mobile", e.target.value)} placeholder="10-digit mobile" /></div>
+                  <div className="field"><label htmlFor="apn-mobile">Mobile number</label><input id="apn-mobile" type="tel" inputMode="tel" autoComplete="tel" className="input" value={apn.mobile} onChange={(e) => upApn("mobile", e.target.value)} placeholder="10-digit mobile" /></div>
                   <div className="field"><label htmlFor="apn-dob">Date of birth</label><input id="apn-dob" className="input" type="date" value={apn.dob} onChange={(e) => upApn("dob", e.target.value)} /></div>
                 </div>
                 <div className="grid2">
@@ -182,7 +198,7 @@ export default function Lock({ isDark, setDark, runtime }) {
                   {USERS.map((u) => (
                     <button key={u} type="button" className="who-btn" onClick={() => setWho(u)}
                       style={who === u ? { borderColor: avatarColor(u), boxShadow: "var(--shadow)" } : undefined}>
-                      <div className="av" style={{ background: avatarColor(u), width: 36, height: 36, fontSize: 15 }}>{u[0]}</div>
+                      <div className="av" style={{ background: avatarColor(u), width: 36, height: 36, fontSize: 15, overflow: "hidden", padding: 0 }}>{ownerPhotos[String(u).trim().toLowerCase()] ? <img src={ownerPhotos[String(u).trim().toLowerCase()]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : u[0]}</div>
                       <div className="nm" style={{ fontSize: 14 }}>{u}{who === u ? " ✓" : ""}</div>
                     </button>
                   ))}
@@ -205,12 +221,12 @@ export default function Lock({ isDark, setDark, runtime }) {
           <PasswordField label="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={onKey} autoComplete={mode === "signin" ? "current-password" : "new-password"} placeholder="••••••••" />
         </div>
 
-        {(err || recoveryMessage) && <div className="auth-msg err"><AlertTriangle size={14} /> {err || recoveryMessage}</div>}
-        {notice && <div className="auth-msg ok"><Check size={14} /> {notice}</div>}
+        {(err || recoveryMessage) && <div className="auth-msg err" role="alert"><AlertTriangle size={14} /> {err || recoveryMessage}</div>}
+        {notice && <div className="auth-msg ok" role="status"><Check size={14} /> {notice}</div>}
 
         <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 6 }} onClick={submit} disabled={busy}>
           {busy ? <RefreshCw size={16} className="spin" /> : mode === "signin" ? <LogIn size={16} /> : <Mail size={16} />}
-          {mode === "signin" ? "Sign in" : "Create account"}
+          {busy ? (mode === "signin" ? "Signing in…" : "Creating account…") : mode === "signin" ? "Sign in" : "Create account"}
         </button>
 
         {mode === "signin" && <button className="linkbtn" onClick={requestReset} disabled={resetBusy}>{resetBusy ? "Sending reset email…" : "Forgot password?"}</button>}
