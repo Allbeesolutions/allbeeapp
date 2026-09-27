@@ -1,3 +1,3 @@
 # Next action
 
-Local UI package verified and committed with coverage/handoff. Review UI_COVERAGE.md; new UI deployment requires authorization. Then verify authenticated internal/client/APN flows. Live AllBee Supabase migration/RLS checks require authorized project access. Prior fcd2f89 remains the last verified frontend release. No background task is claimed.
+UI commit 8b796f9 is deployed and public smoke verified on both URLs. See LIVE_UI_RELEASE.json. Remaining: authenticated internal/client/APN production flows and live AllBee Supabase migration/RLS verification require appropriate real sessions/project access. No background worker is running.

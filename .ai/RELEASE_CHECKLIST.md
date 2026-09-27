@@ -29,3 +29,6 @@
 - [ ] Authorize and deploy new UI commit.
 - [ ] Verify real client support, partner payout details, finance navigation and AI retry on release.
 - [ ] Resolve existing live DB/migration/RLS access gates; mocks do not certify them.
+
+
+2026-09-27 release: user authorized deployment. UI commit 8b796f9 pushed. Vercel production dpl_25DXKeMKauehhBcdm5gGygzt86Kn is Ready, alias allbeeapp-six.vercel.app. Custom app.allbeesolutions.com also serves the new UI (index-BDXavdIi.js). Public sign-in checks passed on both URLs at 320/390/768/1440: HTTP200, no overflow/page errors/crashes. No new authentication required; HHC completed deployment. No database migration or live authenticated/RLS certification. Evidence: LIVE_UI_RELEASE.json; rerun node scripts/ui/live-smoke.mjs.

@@ -20,4 +20,5 @@
 - [x] UI-01 Shared responsive controls, navigation and AI design; evidence in UI_COVERAGE.md.
 - [x] UI-02 Repair discovered finance/APN/client runtime defects and add regressions.
 - [x] UI-03 Reproducible browser coverage and release handoff.
-- [ ] UI-04 Authorized new UI deployment and authenticated production checks.
+- [x] UI-04 Deploy authorized UI commit 8b796f9; both public URLs verified.
+- [ ] UI-05 Authenticated production checks and existing live DB/RLS access gates.

@@ -1,0 +1,101 @@
+{
+  "checkedAt": "2026-09-27T08:42:40.066Z",
+  "results": [
+    {
+      "host": "https://allbeeapp-six.vercel.app",
+      "width": 320,
+      "status": 200,
+      "asset": "/assets/index-B8RjuXd4.js",
+      "currentUI": true,
+      "checksum": "ccad2b885575d297ef93991117a48693e159f7cf6892db1b37476ca0b96c2850",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://allbeeapp-six.vercel.app",
+      "width": 390,
+      "status": 200,
+      "asset": "/assets/index-B8RjuXd4.js",
+      "currentUI": true,
+      "checksum": "ccad2b885575d297ef93991117a48693e159f7cf6892db1b37476ca0b96c2850",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://allbeeapp-six.vercel.app",
+      "width": 768,
+      "status": 200,
+      "asset": "/assets/index-B8RjuXd4.js",
+      "currentUI": true,
+      "checksum": "ccad2b885575d297ef93991117a48693e159f7cf6892db1b37476ca0b96c2850",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://allbeeapp-six.vercel.app",
+      "width": 1440,
+      "status": 200,
+      "asset": "/assets/index-B8RjuXd4.js",
+      "currentUI": true,
+      "checksum": "ccad2b885575d297ef93991117a48693e159f7cf6892db1b37476ca0b96c2850",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://app.allbeesolutions.com",
+      "width": 320,
+      "status": 200,
+      "asset": "/assets/index-BDXavdIi.js",
+      "currentUI": true,
+      "checksum": "91e3ff909f14f0bb4661ba2786bb4e9bb8c864bf82dc6c415746c284c09497f3",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://app.allbeesolutions.com",
+      "width": 390,
+      "status": 200,
+      "asset": "/assets/index-BDXavdIi.js",
+      "currentUI": true,
+      "checksum": "91e3ff909f14f0bb4661ba2786bb4e9bb8c864bf82dc6c415746c284c09497f3",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://app.allbeesolutions.com",
+      "width": 768,
+      "status": 200,
+      "asset": "/assets/index-BDXavdIi.js",
+      "currentUI": true,
+      "checksum": "91e3ff909f14f0bb4661ba2786bb4e9bb8c864bf82dc6c415746c284c09497f3",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    },
+    {
+      "host": "https://app.allbeesolutions.com",
+      "width": 1440,
+      "status": 200,
+      "asset": "/assets/index-BDXavdIi.js",
+      "currentUI": true,
+      "checksum": "91e3ff909f14f0bb4661ba2786bb4e9bb8c864bf82dc6c415746c284c09497f3",
+      "errors": [],
+      "overflow": false,
+      "crash": false,
+      "signIn": true
+    }
+  ]
+}

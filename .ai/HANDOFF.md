@@ -9,3 +9,6 @@ Fixed finance lazy-navigation crash, planned-expense missing bindings, APN bank-
 No UI deployment or DB migration. Previous fcd2f89 frontend remains the last verified deployment. Live Supabase project/RLS, authenticated production flows and custom-domain ownership remain external gates. Pre-existing AGENTS.md and .ai/state.json edits are outside this commit.
 
 Next: review committed UI package; deploy only with authorization for this new package, then perform live signed-in checks. No active background worker is claimed.
+
+
+2026-09-27 release: user authorized deployment. UI commit 8b796f9 pushed. Vercel production dpl_25DXKeMKauehhBcdm5gGygzt86Kn is Ready, alias allbeeapp-six.vercel.app. Custom app.allbeesolutions.com also serves the new UI (index-BDXavdIi.js). Public sign-in checks passed on both URLs at 320/390/768/1440: HTTP200, no overflow/page errors/crashes. No new authentication required; HHC completed deployment. No database migration or live authenticated/RLS certification. Evidence: LIVE_UI_RELEASE.json; rerun node scripts/ui/live-smoke.mjs.
