@@ -19,8 +19,16 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
   const sendingRef = useRef(false);
   const [failedInput, setFailedInput] = useState(null);
   const [copyError, setCopyError] = useState("");
+  const [thinkingLabel, setThinkingLabel] = useState("Understanding your request…");
 
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, busy]);
+  useEffect(() => {
+    if (!busy) { setThinkingLabel("Understanding your request…"); return undefined; }
+    const labels = ["Understanding your request…", "Checking your workspace…", "Preparing a useful answer…"];
+    let i = 0;
+    const timer = setInterval(() => { i = Math.min(i + 1, labels.length - 1); setThinkingLabel(labels[i]); }, 2200);
+    return () => clearInterval(timer);
+  }, [busy]);
   useEffect(() => {
     if (!configured) return;
     let alive = true;
@@ -87,7 +95,9 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
     } catch (e) {
       setFailedInput(content);
       setInput(content);
-      setError("Couldn’t get a reply. Your message is saved below. Try again, or edit it before sending.");
+      const raw = String(e?.message || e || "");
+      const retry = raw.match(/try again in\s+([0-9.]+)s/i);
+      setError(retry ? `ALLBEE AI is busy right now. Please try again in ${retry[1]}s — your message is saved.` : /too many requests|rate limit|429/i.test(raw) ? "ALLBEE AI is busy due to high usage. Your message is saved — please try again shortly." : /network|fetch|timeout|503|502|504/i.test(raw) ? "ALLBEE AI couldn't reach the service. Your message is saved — check your connection and try again." : "Couldn’t get a reply. Your message is saved below. Try again, or edit it before sending.");
     } finally {
       sendingRef.current = false;
       setBusy(false);
@@ -131,16 +141,16 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
             </div>}
           </article>)}
         </div>}
-        {busy && <div className="assistant-thinking" role="status"><AllbeeAIMark size={20} /><RefreshCw size={14} className="spin" aria-hidden="true" />Preparing your answer…</div>}
+        {busy && <div className="assistant-thinking" role="status"><span className="assistant-thinking-mark"><AllbeeAIMark size={22} /></span><span>{thinkingLabel}</span><span className="assistant-thinking-dots" aria-hidden="true"><i/><i/><i/></span></div>}
       </div>
       {error && <div className="assistant-error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><span>{error}</span><button className="btn sm" disabled={busy} onClick={()=>send(failedInput)}>Try again</button></div>}
       {copyError && <div className="assistant-copy-status" role="status">{copyError}</div>}
       <div className="assistant-composer">
         <label className="sr-only" htmlFor="allbee-ai-message">Message ALLBEE AI</label>
-        <textarea id="allbee-ai-message" ref={boxRef} className="textarea" placeholder="Ask a question or describe what you need…" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={onKey} disabled={busy} rows={2} />
+        <textarea id="allbee-ai-message" ref={boxRef} className="textarea" placeholder="Ask ALLBEE AI anything about your workspace…" value={input} onChange={e=>setInput(e.target.value.slice(0,8000))} onKeyDown={onKey} disabled={busy} rows={2} maxLength={8000} />
         <button className="btn primary" onClick={()=>send()} disabled={busy||!input.trim()} aria-label={busy?"Sending message":"Send message"}><Send size={17} aria-hidden="true"/><span>{busy?"Sending…":"Send"}</span></button>
       </div>
-      <div className="assistant-composer-hint">Enter to send · Shift + Enter for a new line</div>
+      <div className="assistant-composer-hint"><span>Enter to send · Shift + Enter for a new line</span><span>{input.length.toLocaleString("en-IN")} / 8,000</span></div>
     </section>
     <p className="assistant-disclaimer">Uses the workspace information available to your account. Review figures and client details before sharing. This conversation does not change your records.</p>
   </div>;

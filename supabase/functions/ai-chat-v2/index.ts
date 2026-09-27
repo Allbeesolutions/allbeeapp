@@ -128,6 +128,23 @@ function sanitizePayload(body: unknown) {
   return { system, chat, maxTokens };
 }
 
+async function fetchProvider(url: string, init: RequestInit, attempts = 2): Promise<Response> {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        if (![429, 500, 502, 503, 504].includes(response.status) || attempt === attempts - 1) return response;
+        last = new Error(`Provider returned ${response.status}`);
+      } finally { clearTimeout(timeout); }
+    } catch (error) { last = error; if (attempt === attempts - 1) throw error; }
+    await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+  }
+  throw last instanceof Error ? last : new Error("AI provider unavailable.");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
@@ -136,7 +153,7 @@ Deno.serve(async (req) => {
     const user = await verifyUser(req.headers.get("Authorization"));
     if (!user) return json({ error: "Not signed in." }, 401);
     if (rateLimited(user.id!)) {
-      return json({ error: "Too many requests. Please wait and try again later." }, 429);
+      return json({ error: "ALLBEE AI is busy due to high usage. Please try again in 60s.", retry_after_seconds: 60 }, 429);
     }
 
     const length = Number(req.headers.get("content-length") || 0);
@@ -155,7 +172,7 @@ Deno.serve(async (req) => {
       ...chat,
     ];
 
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const r = await fetchProvider("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -168,8 +185,9 @@ Deno.serve(async (req) => {
 
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = (data as { error?: { message?: string } })?.error?.message || `Groq error ${r.status}`;
-      return json({ error: msg }, 200);
+      const msg = (data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`;
+      const retry = String(msg).match(/try\s+again\s+in\s+([0-9.]+)s/i);
+      return json({ error: retry ? `ALLBEE AI is busy due to high usage. Please try again in ${retry[1]}s.` : r.status === 429 ? "ALLBEE AI is busy due to high usage. Please try again shortly." : "ALLBEE AI is temporarily unavailable. Please try again shortly." }, 200);
     }
 
     const text = ((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim();

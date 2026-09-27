@@ -14,7 +14,13 @@ export function aiConfigured(cfg) {
 
 export async function callAI(cfg, system, messages, client = supabase) {
   if (!aiConfigured(cfg)) throw new Error("ALLBEE AI is not configured.");
-  const { data, error } = await client.functions.invoke(cfg.functionName, { body: { system, model: cfg.model || AI_DEFAULT_MODEL, max_tokens: 1400, messages } });
+  const invoke = () => client.functions.invoke(cfg.functionName, { body: { system, model: cfg.model || AI_DEFAULT_MODEL, max_tokens: 1400, messages } });
+  let result = await invoke();
+  if (result.error && /fetch|network|timeout|502|503|504/i.test(String(result.error.message || result.error))) {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    result = await invoke();
+  }
+  const { data, error } = result;
   if (error) throw new Error(error.message || `Couldn't reach the "${cfg.functionName}" function.`);
   if (data?.error) throw new Error(typeof data.error === "string" ? data.error : "The AI gateway returned an error.");
   if (typeof data === "string") return data.trim();

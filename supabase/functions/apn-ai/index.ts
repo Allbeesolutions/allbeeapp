@@ -179,6 +179,23 @@ function buildSystem(ctx: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
+async function fetchProvider(url: string, init: RequestInit, attempts = 2): Promise<Response> {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        if (![429, 500, 502, 503, 504].includes(response.status) || attempt === attempts - 1) return response;
+        last = new Error(`Provider returned ${response.status}`);
+      } finally { clearTimeout(timeout); }
+    } catch (error) { last = error; if (attempt === attempts - 1) throw error; }
+    await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+  }
+  throw last instanceof Error ? last : new Error("AI provider unavailable.");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
@@ -237,7 +254,7 @@ Deno.serve(async (req) => {
     ];
 
     const model = "openai/gpt-oss-120b";
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const r = await fetchProvider("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({ model, messages, max_tokens: sanitized.maxTokens, temperature: 0.2 }),
