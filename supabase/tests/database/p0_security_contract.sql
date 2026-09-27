@@ -67,3 +67,9 @@ begin
     raise exception 'P0: unexpected anonymous SECURITY DEFINER functions: %',v;
   end if;
 end $$;
+
+-- Pre-auth throttle state and mutator are server-only.
+do $$ begin
+ if has_table_privilege('authenticated','public.auth_preflight_rate_limits','SELECT,INSERT,UPDATE,DELETE') or has_table_privilege('anon','public.auth_preflight_rate_limits','SELECT,INSERT,UPDATE,DELETE') then raise exception 'P0: auth throttle table exposed'; end if;
+ if has_function_privilege('authenticated','public.auth_preflight_rate_limit(text,integer,integer)','EXECUTE') or has_function_privilege('anon','public.auth_preflight_rate_limit(text,integer,integer)','EXECUTE') then raise exception 'P0: auth throttle RPC exposed'; end if;
+end $$;

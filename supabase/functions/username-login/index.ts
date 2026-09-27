@@ -15,6 +15,18 @@ const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const genericAuthError = () => json({ error: "Invalid login credentials." }, 401);
 const normalize = (value: unknown) => String(value ?? "").trim().toLowerCase();
 const isEmail = (value: string) => value.includes("@");
+const sha256 = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))).map((b) => b.toString(16).padStart(2, "0")).join("");
+async function throttle(admin: ReturnType<typeof createClient>, req: Request, identifier: string, action: string) {
+  const ip = (req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown").split(",")[0].trim();
+  const spec = action === "request_reset" ? { limit: 5, window: 3600 } : action === "check" ? { limit: 60, window: 900 } : { limit: 15, window: 900 };
+  for (const raw of [`${action}:ip:${ip}`, `${action}:id:${identifier}`]) {
+    const key = await sha256(`allbee-auth-v1:${raw}`);
+    const { data, error } = await admin.rpc("auth_preflight_rate_limit", { p_key: key, p_limit: spec.limit, p_window_seconds: spec.window });
+    if (error) throw new Error("Authentication protection is temporarily unavailable.");
+    if (data?.allowed === false) return Number(data.retry_after || 60);
+  }
+  return 0;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -24,6 +36,9 @@ Deno.serve(async (req) => {
     const identifier = normalize(body?.identifier ?? body?.username).replace(/\s+/g, "");
     if (!identifier) return body?.action === "request_reset" ? json({ ok: true }) : genericAuthError();
     const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const actionKind = body?.check === true ? "check" : body?.action === "request_reset" ? "request_reset" : "sign_in";
+    const retryAfter = await throttle(admin, req, identifier, actionKind);
+    if (retryAfter > 0) return json({ error: `Too many authentication attempts. Please try again in ${retryAfter}s.`, retry_after: retryAfter }, 429);
     if (body?.check === true) {
       const rpc = body?.kind === "email" ? "email_available" : "username_available";
       const params = body?.kind === "email" ? { p_email: identifier, p_exclude: body?.exclude || null } : { p_username: identifier, p_exclude: body?.exclude || null };
