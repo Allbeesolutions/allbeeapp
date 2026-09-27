@@ -577,7 +577,16 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 
               <div className="apn-tc-card">
                 <div className="apn-tc-card-title">AllBee Support</div>
-                {contacts.filter((c) => (c.contact_type === "admin" || c.contact_type === "superadmin") && matchesContact(c.name)).map((a) => {
+                {contacts.filter((c) => (c.contact_type === "admin" || c.contact_type === "superadmin") && matchesContact(c.name)).sort((a, b) => {
+                  const supportRank = (name = "") => {
+                    const n = String(name).trim().toLowerCase();
+                    if (n === "saranya") return 1;
+                    if (n === "haji") return 2;
+                    if (/mohamed\s+backer\s+alim/i.test(n)) return 3;
+                    return 100;
+                  };
+                  return supportRank(a.name) - supportRank(b.name) || String(a.name || "").localeCompare(String(b.name || ""));
+                }).map((a) => {
                   const supportLabel = /mohamed\s+backer\s+alim/i.test(a.name || "")
                     ? "Chat with AllBee Founder and CEO"
                     : /^haji$/i.test((a.name || "").trim())
