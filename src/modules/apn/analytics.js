@@ -33,14 +33,33 @@ export function apnFinancePostedFor(db, projectId) {
   return { posted, expense };
 }
 export function apnCommissionDashboardSummary(db) {
-  const projects = apnCommissionProjectsOf(db).map((project) => apnProjectSummary(db, project));
-  const collections = db.apn_revenue_collections || [];
+  const projects = apnCommissionProjectsOf(db)
+    .map((project) => apnProjectSummary(db, project))
+    .filter((project) => project.status !== "Cancelled");
+  const collections = projects.flatMap((project) => project.collections || []);
+  const wallets = db.apn_consolidated_wallets || [];
+  const projectEarned = round2(projects.reduce((sum, project) => sum + project.commissionEarned, 0));
+  const projectPaid = round2(projects.reduce((sum, project) => sum + project.totalCommissionPaid, 0));
+  // Consolidated wallets are the commission engine's authority for payout state.
+  // Project.remainingCommission means commission not yet *earned* on uncollected revenue,
+  // so it must not be shown as the amount still owed after a completed project.
+  const commissionEarned = wallets.length
+    ? round2(wallets.reduce((sum, wallet) => sum + Math.max(0, Number(wallet.earned) || 0), 0))
+    : projectEarned;
+  const commissionPaid = wallets.length
+    ? round2(wallets.reduce((sum, wallet) => sum + Math.max(0, Number(wallet.withdrawn) || 0), 0))
+    : projectPaid;
+  const pendingCommission = wallets.length
+    ? round2(wallets.reduce((sum, wallet) => sum + Math.max(0, Number(wallet.total_balance) || 0), 0))
+    : round2(Math.max(0, projectEarned - projectPaid));
   return {
     totalValue: round2(projects.reduce((sum, project) => sum + project.projectValue, 0)),
     totalReceived: round2(projects.reduce((sum, project) => sum + project.totalReceived, 0)),
     outstanding: round2(projects.reduce((sum, project) => sum + project.remainingAmount, 0)),
-    commissionPaid: round2(projects.reduce((sum, project) => sum + project.totalCommissionPaid, 0)),
-    pendingCommission: round2(projects.reduce((sum, project) => sum + project.remainingCommission, 0)),
+    commissionEarned,
+    commissionPaid,
+    pendingCommission,
+    remainingCommissionPotential: round2(projects.reduce((sum, project) => sum + project.remainingCommission, 0)),
     processingProjects: projects.filter((project) => project.status === "Processing").length,
     completedProjects: projects.filter((project) => project.status === "Completed").length,
     projects: projects.length,

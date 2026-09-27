@@ -1613,7 +1613,7 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
         </div>
       )}
 
-      {showOps && widgets.apn && apnSummary && <div className="card" style={{ marginBottom: 18 }}><div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Coins size={15} /> APN commission collection</div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", padding: 12 }}><div className="card stat"><div className="lbl">Total project value</div><div className="num mono">{money(apnSummary.totalValue)}</div></div><div className="card stat"><div className="lbl">Revenue received</div><div className="num mono pos-txt">{money(apnSummary.totalReceived)}</div></div><div className="card stat"><div className="lbl">Outstanding revenue</div><div className="num mono">{money(apnSummary.outstanding)}</div></div><div className="card stat"><div className="lbl">Commission paid</div><div className="num mono">{money(apnSummary.commissionPaid)}</div></div><div className="card stat"><div className="lbl">Pending commission</div><div className="num mono">{money(apnSummary.pendingCommission)}</div></div><div className="card stat"><div className="lbl">Processing projects</div><div className="num">{apnSummary.processingProjects}</div></div><div className="card stat"><div className="lbl">Completed projects</div><div className="num">{apnSummary.completedProjects}</div></div></div></div>}
+      {showOps && widgets.apn && apnSummary && <div className="card" style={{ marginBottom: 18 }}><div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Coins size={15} /> APN commission collection</div><div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", padding: 12 }}><div className="card stat"><div className="lbl">Total project value</div><div className="num mono">{money(apnSummary.totalValue)}</div></div><div className="card stat"><div className="lbl">Revenue received</div><div className="num mono pos-txt">{money(apnSummary.totalReceived)}</div></div><div className="card stat"><div className="lbl">Outstanding revenue</div><div className="num mono">{money(apnSummary.outstanding)}</div></div><div className="card stat"><div className="lbl">Commission earned</div><div className="num mono pos-txt">{money(apnSummary.commissionEarned)}</div></div><div className="card stat"><div className="lbl">Commission paid</div><div className="num mono">{money(apnSummary.commissionPaid)}</div></div><div className="card stat"><div className="lbl">Pending / unpaid commission</div><div className="num mono">{money(apnSummary.pendingCommission)}</div></div><div className="card stat"><div className="lbl">Processing projects</div><div className="num">{apnSummary.processingProjects}</div></div><div className="card stat"><div className="lbl">Completed projects</div><div className="num">{apnSummary.completedProjects}</div></div></div></div>}
 
       {widgets.activity && <div className="card activity-feed-card" role="button" tabIndex={0} aria-label="Open Admin audit log" title="Open Admin audit log"
         onClick={openAudit} onKeyDown={openAudit}>
@@ -4193,6 +4193,15 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
       emitToast("Couldn't build the JSON backup — check your connection and try again.", "error");
     }
   };
+  const exportExcel = async () => {
+    try {
+      const snapshot = await buildBackupSnapshot(db);
+      exportFullBackupXLSX(snapshot);
+    } catch (err) {
+      console.error(err);
+      emitToast("Couldn't build the Excel backup — check your connection and try again.", "error");
+    }
+  };
   const importJSON = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const r = new FileReader();
@@ -4223,7 +4232,7 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
           Export a full copy of your ALLBEE workspace data. <b>Excel backup</b> writes one sheet per module — open it in Excel or import it into Google Sheets (File → Import) for a spreadsheet backup. <b>JSON backup</b> is for re-importing here later. JSON restore is performed atomically on the server, so a failed restore leaves the existing data unchanged.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="btn primary" onClick={() => exportFullBackupXLSX(db)}><Sheet size={16} />Excel backup (workspace)</button>
+          <button className="btn primary" onClick={exportExcel}><Sheet size={16} />Excel backup (workspace)</button>
           <button className="btn" onClick={exportJSON}><Download size={16} />JSON backup</button>
           <button className="btn" onClick={() => fileRef.current?.click()}><Upload size={16} />Import JSON</button>
           <input ref={fileRef} type="file" accept="application/json" onChange={importJSON} style={{ display: "none" }} />
