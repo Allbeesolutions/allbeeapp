@@ -173,11 +173,23 @@ export function apnPartnerStats(db, pid) {
   const sumBy = (st) => round2(own.filter((c) => c.status === st).reduce((s, c) => s + (Number(c.amount) || 0), 0));
   const projectEarned = round2(activeProjectSummaries.reduce((s, project) => s + project.commissionEarned, 0));
   const projectPaid = round2(activeProjectSummaries.reduce((s, project) => s + project.totalCommissionPaid, 0));
-  const earned = round2(own.reduce((s, c) => s + (Number(c.amount) || 0), 0) + projectEarned);
+  const legacyEarned = round2(own.reduce((s, c) => s + (Number(c.amount) || 0), 0) + projectEarned);
+  const wallet = (db.apn_consolidated_wallets || []).find((row) => row.partner_id === pid) || null;
+  // When present, the consolidated wallet is the payout authority. Project rows
+  // intentionally do not mirror every settlement, so using totalCommissionPaid
+  // alone can show ₹0 paid after a real withdrawal has already settled.
+  const earned = wallet ? round2(Number(wallet.earned) || 0) : legacyEarned;
+  // Without the normalized wallet, fall back only to commission that has
+  // actually been earned/recorded. Project.remainingCommission is future earning
+  // potential on revenue not collected yet; treating it as "pending payout" is false.
+  const pending = wallet ? round2(Number(wallet.pending) || 0) : round2(sumBy("Pending") + Math.max(0, projectEarned - projectPaid));
+  const payable = wallet ? round2(Number(wallet.eligible) || 0) : sumBy("Payable");
+  const paid = wallet ? round2(Number(wallet.withdrawn) || 0) : round2(sumBy("Paid") + projectPaid);
+  const approved = wallet ? round2(Math.max(0, (Number(wallet.total_balance) || 0) - pending - payable)) : sumBy("Approved");
   return {
     submitted, converted, completed: completed + activeProjectSummaries.filter((project) => project.status === "Completed").length, revenue, conv, level: apnLevelForCompleted(completed + activeProjectSummaries.filter((project) => project.status === "Completed").length),
     projects: activeProjectSummaries.length, completedProjects: activeProjectSummaries.filter((project) => project.status === "Completed").length, processingProjects: activeProjectSummaries.filter((project) => project.status === "Processing").length, collectionsReceived: activeProjectSummaries.reduce((s, project) => s + project.collections.length, 0), totalIncentives: round2(activeProjectSummaries.reduce((s, project) => s + project.totalIncentives, 0)),
-    commission: { earned, pending: round2(sumBy("Pending") + activeProjectSummaries.reduce((s, project) => s + project.remainingCommission, 0)), approved: sumBy("Approved"), payable: sumBy("Payable"), paid: round2(sumBy("Paid") + projectPaid) },
+    commission: { earned, pending, approved, payable, paid, authoritative: !!wallet },
     districtEarned: round2(apnCommsOf(db, pid).filter((c) => c.kind === "district" && c.status !== APN_COMM_REVERSED).reduce((s, c) => s + (Number(c.amount) || 0), 0)),
   };
 }

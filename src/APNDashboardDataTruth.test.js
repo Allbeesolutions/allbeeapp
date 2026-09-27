@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apnCommissionDashboardSummary } from "./modules/apn/analytics.js";
+import { apnCommissionDashboardSummary, apnPartnerStats } from "./modules/apn/analytics.js";
 
 describe("APN dashboard data truth", () => {
   const base = {
@@ -36,6 +36,23 @@ describe("APN dashboard data truth", () => {
     expect(summary.commissionPaid).toBe(200);
     expect(summary.pendingCommission).toBe(800);
     expect(summary.remainingCommissionPotential).toBe(1000);
+  });
+
+  it("uses the consolidated wallet for partner earned, payable and paid values", () => {
+    const db = { ...base, apn_leads: [], apn_commissions: [] };
+    expect(apnPartnerStats(db, "partner-1").commission).toMatchObject({
+      earned: 600, pending: 0, payable: 0, paid: 600,
+    });
+  });
+
+  it("does not call unearned future commission a pending payout in fallback mode", () => {
+    const db = {
+      apn_leads: [], apn_commissions: [], apn_consolidated_wallets: [],
+      apn_commission_projects: [{ id: "p3", partnerId: "partner-3", projectValue: 10000, commissionRate: 20, maximumCommission: 2000, totalCommissionPaid: 200, status: "Processing" }],
+      apn_revenue_collections: [{ id: "c3", projectId: "p3", partnerId: "partner-3", receivedAmount: 5000, commissionGenerated: 1000, commissionStatus: "Pending" }],
+    };
+    const stats = apnPartnerStats(db, "partner-3");
+    expect(stats.commission).toMatchObject({ earned: 1000, paid: 200, pending: 800, authoritative: false });
   });
 
   it("excludes cancelled projects from operational totals", () => {

@@ -198,7 +198,7 @@ export default function APNAdmin(props) {
     const partner = partners.find((p) => p.id === project.partnerId);
     const eventAt = Date.now();
     const collectionEvents = collectionRows.map((row) => timeline(partner || { id: project.partnerId }, "revenue-collected", "Revenue Collection Added", `Received ${money(row.receivedAmount)} · commission credited ${money(row.commissionGenerated)}${Number(row.incentive) ? ` · incentive ${money(row.incentive)}` : ""}.`, row.createdAt || eventAt));
-    const statusEvent = timeline(partner || { id: project.partnerId }, project.status === "Completed" ? "project-completed" : "project-updated", project.status === "Completed" ? "Project Completed" : "Commission Project Updated", `${project.projectName} · received ${money(project.totalReceived)} · pending commission ${money(project.remainingCommission)}.`, eventAt);
+    const statusEvent = timeline(partner || { id: project.partnerId }, project.status === "Completed" ? "project-completed" : "project-updated", project.status === "Completed" ? "Project Completed" : "Commission Project Updated", `${project.projectName} · received ${money(project.totalReceived)} · remaining commission potential ${money(project.remainingCommission)}.`, eventAt);
     const notification = collectionRows.length
       ? { title: "Revenue collection recorded", body: `${money(project.totalReceived)} received for ${project.projectName}. Commission credited: ${money(project.commissionEarned)}.` }
       : { title: "Commission project created", body: `${project.projectName} was added with a maximum commission of ${money(project.maximumCommission)}.` };

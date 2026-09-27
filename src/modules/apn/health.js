@@ -22,7 +22,7 @@ export function apnRecommendations(db, partner, profile) {
   const s = apnPartnerStats(db, partner.id); const health = apnHealthScore(db, partner, profile); const out = [];
   if (s.completed >= 1 && partner.role !== "district_head") out.push("This partner qualifies for promotion.");
   if (health.parts.attendance < 50) out.push("Attendance has dropped significantly.");
-  if (s.commission.pending > 0 || s.commission.payable > 0) out.push("Commission payout pending.");
+  if (s.commission.authoritative && (s.commission.pending > 0 || s.commission.payable > 0)) out.push("Commission payout pending.");
   if (s.conv >= 50) out.push("High conversion rate.");
   if (apnLastActivity(db, partner.id, partner) && Date.now() - apnLastActivity(db, partner.id, partner) > APN_INACTIVE_DAYS * 86400000) out.push(`No activity in ${APN_INACTIVE_DAYS} days; requires follow-up.`);
   if (partner.role !== "district_head" && s.converted >= 10) out.push("Eligible for District Head review.");
@@ -35,6 +35,6 @@ export function apnRiskIndicators(db, partner, profile) {
   if (!s.submitted || (apnLastActivity(db, partner.id, partner) && Date.now() - apnLastActivity(db, partner.id, partner) > APN_INACTIVE_DAYS * 86400000)) out.push(["Zero or low activity", "accent"]);
   if (apnAttendanceScore(db, partner.id, partner.attendanceScore) < 50) out.push(["Low attendance", "accent"]);
   if (warnings >= 2) out.push(["Warning accumulation", "neg"]);
-  if (s.commission.pending > s.commission.earned * .75 && s.commission.pending > 0) out.push(["Commission anomaly: high pending balance", "accent"]);
+  if (s.commission.authoritative && s.commission.pending > s.commission.earned * .75 && s.commission.pending > 0) out.push(["Commission anomaly: high pending balance", "accent"]);
   return out;
 }

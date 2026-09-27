@@ -814,6 +814,8 @@ const emptyDB = () => ({
 
 const dataReaders = createDataReaders({ supabase, emptyDB, loadTableRows });
 const { fetchReferralData, fetchApnActionBadgeReads, fetchWithdrawalData, fetchCRMData, fetchAIData, fetchPartnerFinancialSnapshot, fetchClientData, fetchHelpdeskData, fetchAgreementData, fetchBootstrapData, fetchAll, buildBackupSnapshot, fetchAuditRows, routeDataTables } = dataReaders;
+const FINANCE_INCOME_FORM_TABLES = Object.freeze(["transactions", "apn_users", "apn_leads", "apn_commissions", "apn_commission_projects", "apn_revenue_collections", "apn_referral_relationships"]);
+
 
 /* ── derived calculations ─────────────────────────────────────────────── */
 function balances(db) {
@@ -6148,6 +6150,7 @@ export default function App() {
   const [topBusy, setTopBusy] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
   const [modal, setModal] = useState(null); // {type, ...}
+  const [financeFormLoading, setFinanceFormLoading] = useState(false);
   const [activityDetail, setActivityDetail] = useState(null);
   const [apnFocusPartnerId, setApnFocusPartnerId] = useState(null);
   const [balanceUser, setBalanceUser] = useState(null);
@@ -6350,28 +6353,40 @@ export default function App() {
       // Mark this route as hydrated before publishing `db` so the route effect
       // cannot start a second identical fetch between setDb() and the scoped pass.
       loadedRouteRef.current = `${route}|${profile?.role || ""}|${apnTab}`;
+      const roleScoped = role === "partner" || role === "client" || route === "apn" || route === "apnadmin";
+      // Internal screens bootstrap the common shell first. If the active screen
+      // needs additional collections, mark it loading BEFORE exposing the shell so
+      // unloaded arrays can never masquerade as legitimate 0 / empty business data.
+      const bootstrapSet = new Set(["transactions","tasks","attendance","leave","updates","announcements","notifications","chat","projects","clients","invoices","payroll"]);
+      const scope = roleScoped ? [] : routeDataTables(route, role, apnTab).filter((table) => !bootstrapSet.has(table));
+      setRouteDataLoading(scope.length > 0);
       setDb(initial);
       setLoading(false);
       setSyncError(null);
-      if (role === "partner" || role === "client" || route === "apn" || route === "apnadmin") {
+      if (roleScoped) {
+        setRouteDataLoading(false);
         if (role === "partner") setPartnerDataReady(true);
         if (import.meta.env.DEV) console.info(`[ALLBEE] role-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
         return;
       }
       // Do not hydrate the whole company database in the background. The initial
       // bootstrap already contains the common dashboard tables, so fetch only
-      // the active route's additional datasets after the shell is interactive.
-      const bootstrapSet = new Set(["transactions","tasks","attendance","leave","updates","announcements","notifications","chat","projects","clients","invoices","payroll"]);
-      const scope = routeDataTables(route, role, apnTab).filter((table) => !bootstrapSet.has(table));
+      // the active route's additional datasets while the route shows a truth-safe loader.
       if (!scope.length) {
+        setRouteDataLoading(false);
         if (import.meta.env.DEV) console.info(`[ALLBEE] bootstrap reused for route=${route}`, snapshotQueryMetrics());
         return;
       }
-      const scoped = await fetchAll({ includeTables: scope });
-      if (reloadGenerationRef.current === 0 && loadedRouteRef.current === `${route}|${profile?.role || ""}|${apnTab}`) setDb((current) => mergeScopedRealtimeState(current, scoped, scope));
-      if (role === "partner") setPartnerDataReady(true);
-      if (import.meta.env.DEV) console.info(`[ALLBEE] screen-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
+      try {
+        const scoped = await fetchAll({ includeTables: scope });
+        if (reloadGenerationRef.current === 0 && loadedRouteRef.current === `${route}|${profile?.role || ""}|${apnTab}`) setDb((current) => mergeScopedRealtimeState(current, scoped, scope));
+        if (role === "partner") setPartnerDataReady(true);
+        if (import.meta.env.DEV) console.info(`[ALLBEE] screen-scoped bootstrap ready in ${Math.round(performance.now() - started)}ms route=${route}`, snapshotQueryMetrics());
+      } finally {
+        setRouteDataLoading(false);
+      }
     } catch (e) {
+      setRouteDataLoading(false);
       setDb((current) => current || emptyDB());
       setLoading(false);
       if (role === "partner") setPartnerDataReady(true);
@@ -6409,6 +6424,26 @@ export default function App() {
     });
     return () => { alive = false; if (loadedRouteRef.current === key) loadedRouteRef.current = ""; };
   }, [route, session?.user?.id, profile?.role, dbAvailable, apnTab]);
+
+  // Finance forms can be opened from Accounts, Projects, Marketing, Courses and Planned.
+  // Their APN attribution UI must not inherit whichever partial route snapshot happened
+  // to be loaded before the modal opened. Hydrate the form's exact truth sources first.
+  useEffect(() => {
+    if (!session?.user?.id || !modal || !["income", "expense"].includes(modal.type)) return undefined;
+    let alive = true;
+    const tables = modal.type === "income" ? FINANCE_INCOME_FORM_TABLES : ["transactions"];
+    setFinanceFormLoading(true);
+    fetchAll({ includeTables: tables }).then((fresh) => {
+      if (!alive) return;
+      setDb((current) => mergeScopedRealtimeState(current, fresh, tables));
+      setSyncError(null);
+    }).catch((e) => {
+      if (alive) setSyncError(e?.message || String(e));
+    }).finally(() => {
+      if (alive) setFinanceFormLoading(false);
+    });
+    return () => { alive = false; };
+  }, [session?.user?.id, modal?.type, modal?.initial?.id]);
 
   const markApnActionBadgeSeen = useCallback(async (actionType) => {
     if (!profile?.id || !APN_ACTION_BADGE_MAP.some((item) => item.actionType === actionType)) return;
@@ -6805,10 +6840,11 @@ export default function App() {
     };
   }, [db, financeBalances]);
 
-  const openModal = (m) => setModal(m);
+  const openModal = (m) => { if (["income", "expense"].includes(m?.type)) setFinanceFormLoading(true); setModal(m); };
   const openBalance = (u) => setBalanceUser(u);
   const setHash = (h) => { if (window.location.hash !== h) window.location.hash = h; };
   const go = (r) => {
+    if (r !== route) setRouteDataLoading(true);
     setRoute(r); setAccountUser(null); setTaskDetailId(null); setMenuOpen(false);
     setHash(hashForRoute(r));
   };
@@ -6833,7 +6869,7 @@ export default function App() {
       const normalized = normalizeLegacyAdminPath(window.location);
       const p = parseHash(window.location.hash);
       setAccountUser(p.account); setTaskDetailId(p.task);
-      if (p.route) setRoute(p.route);
+      if (p.route) setRoute((current) => { if (current !== p.route) setRouteDataLoading(true); return p.route; });
       if (normalized && p.route !== "apn") setRoute("apn");
     };
     apply();
@@ -6851,7 +6887,7 @@ export default function App() {
   }, [session, me.id]);
 
   // open income form prefilled (used by projects / courses / marketing)
-  const openIncome = (prefill) => setModal({ type: prefill?.kind === "expense" ? "expense" : "income", initial: prefill, source: prefill?.source });
+  const openIncome = (prefill) => openModal({ type: prefill?.kind === "expense" ? "expense" : "income", initial: prefill, source: prefill?.source });
 
   const saveShare = async (entry, source) => {
     const prev = entry.id ? db.transactions.find((t) => t.id === entry.id) : null;
@@ -7125,6 +7161,12 @@ export default function App() {
   })();
 
   const renderPage = () => {
+    // Route-scoped reads are intentionally lazy. Never render a data-bearing page
+    // against the previous route's partial DB snapshot: that turns "not loaded"
+    // into convincing ₹0 / 0-count / empty-state bugs. APN has its own tab loader.
+    if (routeDataLoading && safeRoute !== "apn" && !taskDetailId && !accountUser) {
+      return <div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "32%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>;
+    }
     // full-page detail views take precedence over the tab routes
     if (taskDetailId) return <TaskDetail db={db} taskId={taskDetailId} me={me} isAdmin={isAdmin} currentUser={currentUser} mutate={mutate} openModal={openModal} removeItem={removeItem} goBack={goBackDetail} />;
     if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} currentBalanceOverride={bal[accountUser]} goBack={goBackDetail} />;
@@ -7345,8 +7387,8 @@ export default function App() {
           onRefresh={async () => { await reload(); if (session) try { await loadPeople(session.user); } catch { /* ignore */ } }} />
 
         {/* MODALS */}
-        {modal?.type === "income" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>}
-        {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>}
+        {modal?.type === "income" && (financeFormLoading ? <Modal title="Loading income" onClose={() => setModal(null)}><div aria-busy="true">Loading authoritative finance & APN data…</div></Modal> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>)}
+        {modal?.type === "expense" && (financeFormLoading ? <Modal title="Loading expense" onClose={() => setModal(null)}><div aria-busy="true">Loading authoritative finance data…</div></Modal> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>)}
         {modal?.type === "withdraw" && <React.Suspense fallback={<LoadingScreen />}><LazyWithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...(d.withdrawals || []), { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, USERS, todayISO, round2, uid, money }} /></React.Suspense>}
         {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
         {modal?.type === "leave" && <React.Suspense fallback={<LoadingScreen />}><LazyLeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, SelectOther, Check, uid, todayISO, daysBetween, LEAVE_TYPES }} /></React.Suspense>}

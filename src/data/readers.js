@@ -230,24 +230,24 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
   // datasets are fetched only when the user opens the corresponding module.
   const ROUTE_DATASETS = Object.freeze({
     dashboard: ["transactions","tasks","attendance","leave","updates","announcements","notifications","projects","clients","invoices","payroll","teams"],
-    assistant: ["tasks","projects","clients","leads","transactions","apn_users"],
-    "ai-center": [...Object.keys(AI_READS),"clients","leads","quotations","projects"],
+    assistant: ["clients","leads","quotations","invoices","projects","tasks","class_students","students","marketing","concepts","inhouse","planned","apn_users","transactions","withdrawals","audit","attendance","leave","updates","team_chat","notifications","rewards"],
+    "ai-center": [...Object.keys(AI_READS), ...Object.keys(CRM_READS), "clients","leads","quotations","projects"],
     "knowledge-engine": [],
     "requirement-builder": [],
     "proposal-center": [],
     "portal-posts": ["portal_posts","clients"],
     "class-students": ["class_students","students"],
-    concepts: ["concepts"],
+    concepts: ["concepts","tasks"],
     accounts: ["transactions","withdrawals","invoices","payroll","apn_commission_projects","apn_revenue_collections"],
     withdrawals: ["withdrawals","transactions"],
     planned: ["planned","announcements","transactions"],
     prompts: ["prompts"],
     terms: [],
-    earnings: ["payroll","projects","clients","transactions","attendance","tasks"],
+    earnings: ["payroll","projects","clients","students","transactions","attendance","tasks"],
     team: ["teams","resignations","tasks","attendance","apn_users"],
     "team-leads": ["teams"],
-    myteam: ["teams","tasks","attendance","team_chat"],
-    "staff-salary": ["payroll","projects","clients","transactions","attendance","tasks"],
+    myteam: ["teams","tasks","attendance","leave","team_chat"],
+    "staff-salary": ["payroll","projects","clients","students","transactions","attendance","tasks"],
     progress: ["tasks","updates","attendance"],
     "recently-deleted": ["recycle"],
     audit: ["audit"],
@@ -255,25 +255,25 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     profile: [],
     settings: ["teams","audit","transactions","withdrawals","tasks","projects","students","marketing","leave","updates"],
     tasks: ["tasks","projects","team_chat"],
-    attendance: ["attendance"],
+    attendance: ["attendance","leave"],
     leave: ["leave"],
     updates: ["updates","teams"],
     announcements: ["announcements","audit"],
     notifications: ["notifications"],
     chat: ["chat","team_chat"],
     teamchat: ["team_chat"],
-    clients: ["clients","crm_clients","crm_activities","crm_files"],
+    clients: ["clients","quotations","crm_clients","crm_activities","crm_files"],
     leads: [...Object.keys(CRM_READS),"clients","leads","quotations","projects","apn_users"],
-    quotations: ["quotations","projects","crm_quotations","crm_quotation_versions","crm_activities"],
+    quotations: ["quotations","projects","clients","crm_quotations","crm_quotation_versions","crm_activities"],
     projects: ["projects","crm_projects","crm_project_milestones","crm_activities","crm_files","crm_revenue_collections"],
-    invoices: ["invoices","transactions"],
+    invoices: ["invoices","transactions","clients"],
     finance: ["transactions","invoices","payroll","crm_revenue_collections", ...Object.keys(WITHDRAWAL_READS), ...Object.keys(CRM_READS)],
     payroll: ["payroll","teams"],
     documents: ["documents","vault","apn_documents","crm_files"],
-    knowledge: ["knowledge","documents"],
+    knowledge: ["knowledge","documents","tasks","notifications"],
     vault: ["vault","documents"],
     rewards: ["rewards","attendance","leads","projects"],
-    testing: ["testing"],
+    testing: ["testing","projects"],
     marketing: ["marketing"],
     inhouse: ["inhouse"],
     sheets: ["sheets"],
@@ -292,26 +292,26 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
   // Tab scopes include shared shell facts plus the records each visible view uses.
   // Page-owned RPC loaders (support, chat, network) remain in their components.
   const PARTNER_TAB_DATASETS = Object.freeze({
-    home: ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_zone_requests","apn_notifications","apn_achievements","apn_referral_earnings","apn_withdrawal_requests","apn_action_badge_reads"],
+    home: ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets","apn_attendance","apn_targets","apn_zone_requests","apn_notifications","apn_achievements","apn_referral_earnings","apn_withdrawal_requests","apn_action_badge_reads"],
     leads: ["apn_leads","apn_users"], quotations: ["apn_quotations","apn_users"],
-    wallet: ["apn_commissions","apn_commission_projects","apn_revenue_collections","apn_referral_earnings","apn_withdrawal_requests","apn_leads","apn_users"],
+    wallet: ["apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets","apn_referral_earnings","apn_withdrawal_requests","apn_leads","apn_users"],
     withdrawals: ["apn_withdrawal_requests","apn_withdrawal_wallets","apn_withdrawal_status_history","apn_referral_codes","apn_referral_wallets","apn_commission_projects","apn_revenue_collections","apn_commissions","apn_users"],
     network: ["apn_users","apn_referral_earnings","apn_referral_relationships","apn_referral_timeline"],
     chat: ["apn_users"], learn: ["apn_training","apn_quizzes","apn_users"],
     targets: ["apn_targets","apn_users"], documents: ["apn_documents","apn_users"],
-    agreements: ["apn_agreements","apn_agreement_acceptances","apn_users"],
+    agreements: ["apn_agreements","apn_agreement_acceptances","apn_agreement_company","apn_users"],
     notifications: ["apn_notifications","apn_action_badge_reads","apn_users"],
-    achievements: ["apn_achievements","apn_users"],
-    leaderboard: ["apn_users","apn_leads","apn_commissions","apn_attendance","apn_targets"],
-    district: ["apn_users","apn_attendance","apn_targets","apn_leads","apn_zone_requests","apn_commissions"],
-    profile: ["apn_users","apn_attendance","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections"],
+    achievements: ["apn_achievements","apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections"],
+    leaderboard: ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets"],
+    district: ["apn_users","apn_attendance","apn_targets","apn_leads","apn_zone_requests","apn_commissions","apn_commission_projects","apn_revenue_collections"],
+    profile: ["apn_users","apn_attendance","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets"],
     ai: ["apn_users"], support: ["apn_users"],
   });
   const ADMIN_TAB_DATASETS = Object.freeze({
-    partners: ["apn_users","apn_attendance","apn_targets","apn_leads","apn_quotations","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_notifications","apn_timeline","apn_warnings","apn_notes","apn_transfer_history","apn_communications","apn_documents","apn_zone_requests","audit","apn_action_badge_reads"],
+    partners: ["apn_users","apn_attendance","apn_targets","apn_leads","apn_quotations","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets","apn_notifications","apn_timeline","apn_warnings","apn_notes","apn_transfer_history","apn_communications","apn_documents","apn_zone_requests","audit","apn_action_badge_reads"],
     hub: ["apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_zone_requests","apn_admin_consoles","apn_admin_notes"],
     leads: ["apn_users","apn_leads","apn_quotations","apn_commissions"],
-    commissions: ["apn_users","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets","apn_action_badge_reads"],
+    commissions: ["transactions","apn_users","apn_leads","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets","apn_action_badge_reads"],
     withdrawals: ["apn_users",...Object.keys(WITHDRAWAL_READS),"apn_action_badge_reads"],
     referrals: ["apn_users",...Object.keys(REFERRAL_READS),"apn_action_badge_reads"],
     support: ["apn_users"], targets: ["apn_users","apn_targets","apn_action_badge_reads"],
@@ -319,7 +319,7 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     docs: ["apn_users","apn_documents","apn_action_badge_reads"],
     agreements: ["apn_users",...Object.keys(AGREEMENT_READS)],
     notify: ["apn_users","apn_notifications","apn_action_badge_reads"],
-    board: ["apn_users","apn_leads","apn_commissions","apn_attendance","apn_targets"],
+    board: ["apn_users","apn_leads","apn_quotations","apn_commissions","apn_commission_projects","apn_revenue_collections","apn_attendance","apn_targets","apn_warnings"],
     activity: ["apn_users","apn_activity","apn_timeline","audit"],
   });
   const routeDataTables = (route, role = "", tab = "") => {
@@ -336,16 +336,22 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     // Finance users always carry the lightweight APN balance authority fallback in
     // their shell. Other roles must not pay for, or gain visibility into, finance-only
     // partner holdings just because they opened Dashboard.
-    const financeShell = ["superadmin", "accountant"].includes(role) ? ["apn_users", "apn_consolidated_wallets"] : [];
+    const financeShell = ["superadmin", "accountant"].includes(role) ? ["withdrawals", "apn_users", "apn_consolidated_wallets"] : [];
     // Admin Dashboard visibly renders APN collection KPIs and Recent activity. Those
     // cards must never be calculated from unloaded arrays (which looks like real ₹0 / empty data).
     // Keep these reads dashboard+admin scoped so staff/accountant shells stay least-privilege.
     const adminDashboardShell = route === "dashboard" && ["superadmin", "admin"].includes(role)
       ? ["audit", "apn_commission_projects", "apn_revenue_collections", "apn_consolidated_wallets"]
       : [];
+    // Staff dashboard earnings include commissions on students they registered.
+    // Keep the student read role-scoped so the metric cannot silently omit that source.
+    const staffDashboardShell = route === "dashboard" && ["staff", "intern"].includes(role) ? ["students"] : [];
+    // The account menu can open a resignation request from any internal route.
+    // Load existing requests so duplicate/pending state is never computed from an empty array.
+    const personalActionShell = ["admin", "accountant", "staff", "intern"].includes(role) ? ["resignations"] : [];
     // The initial shell bootstrap is loaded separately. Route refreshes must stay truly scoped
     // so a navigation event does not silently re-fetch the global bootstrap payload.
-    return [...new Set(["notifications", ...base, ...apnIdentity, ...partnerShell, ...adminBadges, ...financeShell, ...adminDashboardShell])];
+    return [...new Set(["notifications", ...base, ...apnIdentity, ...partnerShell, ...adminBadges, ...financeShell, ...adminDashboardShell, ...staffDashboardShell, ...personalActionShell])];
   };
 
   async function mapWithConcurrency(items, limit, fn) {

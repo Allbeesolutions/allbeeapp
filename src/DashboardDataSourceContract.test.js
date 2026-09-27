@@ -20,4 +20,27 @@ describe("dashboard source-of-truth contracts", () => {
     const readers = fs.readFileSync("src/data/readers.js", "utf8");
     expect(readers).toMatch(/async function buildBackupSnapshot\(_db\)[\s\S]*?return fetchAll\(\);/);
   });
+  it("never renders a route against an unloaded scoped snapshot", () => {
+    const app = fs.readFileSync("src/AllbeeApp.jsx", "utf8");
+    expect(app).toContain("unloaded arrays can never masquerade as legitimate 0 / empty business data");
+    expect(app).toContain('if (routeDataLoading && safeRoute !== "apn" && !taskDetailId && !accountUser)');
+    expect(app).toContain("setRouteDataLoading(scope.length > 0)");
+  });
+
+  it("hydrates authoritative APN sources before rendering income/expense forms", () => {
+    const app = fs.readFileSync("src/AllbeeApp.jsx", "utf8");
+    expect(app).toContain('FINANCE_INCOME_FORM_TABLES = Object.freeze(["transactions", "apn_users", "apn_leads", "apn_commissions", "apn_commission_projects", "apn_revenue_collections", "apn_referral_relationships"]');
+    expect(app).toContain('fetchAll({ includeTables: tables })');
+    expect(app).toContain('financeFormLoading ? <Modal title="Loading income"');
+  });
+
+  it("keeps APN payout wording distinct from future commission potential", () => {
+    const admin = fs.readFileSync("src/APNAdminCommissions.jsx", "utf8");
+    const entry = fs.readFileSync("src/APNCommissionEntry.jsx", "utf8");
+    const health = fs.readFileSync("src/modules/apn/health.js", "utf8");
+    expect(admin).toContain("remaining potential");
+    expect(entry).toContain("Remaining commission potential");
+    expect(health).toContain("s.commission.authoritative &&");
+  });
+
 });
