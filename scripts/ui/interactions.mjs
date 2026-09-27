@@ -42,7 +42,7 @@ export async function verifyInteractions(page, out, writeFileSync, resolve, uiBa
   await page.evaluate(()=>window.__uiMock.failAI=true);
   await input.fill("Review my tasks");
   await page.getByRole("button",{name:"Send message"}).click();
-  await page.getByRole("alert").filter({hasText:"Couldn’t get a reply"}).waitFor();
+  await page.getByRole("alert").filter({hasText:/message is saved/i}).waitFor();
   assert.equal(await input.inputValue(),"Review my tasks");
   await page.evaluate(()=>window.__uiMock.failAI=false);
   await page.getByRole("button",{name:"Try again",exact:true}).click();
