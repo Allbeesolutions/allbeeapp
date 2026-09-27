@@ -214,6 +214,12 @@ Deno.serve(async (req) => {
 
     const lastUser = [...sanitized.chat].reverse().find((m) => m.role === "user");
 
+    // Financial eligibility is date-derived, so refresh the authoritative wallet
+    // projection before building AI context. This prevents ALLBEE AI from quoting
+    // yesterday's pending/eligible balances when no row changed overnight.
+    const { error: financialRefreshError } = await supabase.rpc("apn_partner_financial_snapshot");
+    if (financialRefreshError) return json({ error: "Financial data is refreshing. Please try again shortly." }, 200);
+
     // 2) APN-scoped context built server-side from the verified JWT identity.
     const { data: ctx, error: ctxError } = await supabase.rpc("apn_ai_build_context", { p_question: lastUser?.content || null });
     if (ctxError) {

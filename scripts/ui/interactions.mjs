@@ -23,6 +23,18 @@ export async function verifyInteractions(page, out, writeFileSync, resolve) {
   await nav.getByRole("button",{name:"Accounts",exact:true}).click();
   await page.waitForURL("**#/accounts");
  });
+ await check("Finance account balance includes APN liabilities and partner detail",async()=>{
+  await open("superadmin","dashboard",1440);
+  await page.getByText("₹36,781",{exact:true}).first().waitFor();
+  await page.locator('[role="button"][title="View APN partner balance details"]').click();
+  const dialog=page.getByRole("dialog");
+  await dialog.getByText("Account balance — APN holdings",{exact:true}).waitFor();
+  await dialog.getByText("₹60",{exact:true}).first().waitFor();
+  await dialog.getByText("hajiAPN",{exact:true}).waitFor();
+  await dialog.getByText("APN-TN-0001",{exact:true}).waitFor();
+  await dialog.getByText("₹36,781",{exact:true}).waitFor();
+  await dialog.getByRole("button",{name:"Close",exact:true}).click();
+ });
  await check("Internal AI failure, draft preservation, retry and new chat",async()=>{
   await open("admin","assistant");
   const input=page.getByLabel("Message ALLBEE AI");

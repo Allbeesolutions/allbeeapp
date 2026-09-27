@@ -30,6 +30,9 @@ describe("route data reader contract", () => {
     expect(routeDataTables("dashboard", "partner")).toContain("apn_commission_projects");
     expect(routeDataTables("dashboard", "partner")).not.toContain("transactions");
     expect(routeDataTables("dashboard", "staff")).not.toContain("apn_users");
+    expect(routeDataTables("dashboard", "staff")).not.toContain("apn_consolidated_wallets");
+    expect(routeDataTables("dashboard", "superadmin")).toContain("apn_consolidated_wallets");
+    expect(routeDataTables("accounts", "accountant")).toContain("apn_consolidated_wallets");
     expect(apnTabs.partner).toHaveLength(18);
     expect(apnTabs.admin).toHaveLength(14);
     expect(routeDataTables("dashboard", "partner", "learn")).toContain("apn_training");

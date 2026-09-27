@@ -10,6 +10,12 @@ const accounts = read("src/modules/finance/Accounts.jsx");
 const planned = read("src/modules/finance/Planned.jsx");
 const withdrawals = read("src/modules/finance/Withdrawals.jsx");
 const reconFinalSql = read("supabase/migrations/20260906030000_finance_reconciliation_final_scope.sql");
+const balanceAuthoritySql = read("supabase/migrations/20260927155000_finance_account_balances_authority.sql");
+const walletTimeSql = read("supabase/migrations/20260927161500_finance_wallet_time_consistency.sql");
+const paidRepairSql = read("supabase/migrations/20260927163000_paid_withdrawal_finance_reconciliation.sql");
+const payoutGuardSql = read("supabase/migrations/20260927164000_apn_payout_double_count_guard.sql");
+const liabilityStatusSql = read("supabase/migrations/20260927165000_finance_liability_status_integrity.sql");
+const apnAiEdge = read("supabase/functions/apn-ai/index.ts");
 
 describe("Finance v5 contracts", () => {
   it("provides authoritative transaction and APN reconciliation totals", () => {
@@ -62,6 +68,42 @@ describe("Finance v5 contracts", () => {
     expect(app).toContain("AccountBalanceDetail");
     expect(app).toContain("APN partner balances");
     expect(app).toContain("unwithdrawn");
+  });
+  it("provides one server-side account balance authority for finance users", () => {
+    expect(balanceAuthoritySql).toContain("finance_account_balances");
+    expect(balanceAuthoritySql).toContain("public.can_finance()");
+    expect(balanceAuthoritySql).toContain("greatest(0,coalesce(w.earned,0)-coalesce(w.withdrawn,0))");
+    expect(balanceAuthoritySql).toContain("'account',round(v_company+v_apn_unwithdrawn,2)");
+    expect(balanceAuthoritySql).toContain("'partner_balances',v_partners");
+    expect(app).toContain("fetchFinanceAccountBalances");
+    expect(app).toContain("financeBalances.apn_unwithdrawn");
+    expect(app).toContain("authoritative={financeBalances}");
+  });
+  it("refreshes date-derived APN wallet balances before finance, portal, and AI reads", () => {
+    expect(walletTimeSql).toContain("v_current_eligible := greatest(0, v_gross_eligible - v_withdrawn)");
+    expect(walletTimeSql).toContain("v_total_balance := greatest(0, v_earned - v_withdrawn)");
+    expect(walletTimeSql).toContain("perform public.apn_consolidated_wallet_refresh(v_pid)");
+    expect(walletTimeSql).toContain("perform public.apn_withdrawal_refresh_wallet(v_pid)");
+    expect(walletTimeSql).toContain("language plpgsql volatile security definer");
+    expect(app).toContain("window.setInterval(loadSnapshot, 5 * 60 * 1000)");
+    expect(apnAiEdge).toContain('supabase.rpc("apn_partner_financial_snapshot")');
+    expect(apnAiEdge).toContain("Financial data is refreshing. Please try again shortly.");
+  });
+  it("keeps paid APN settlements in the finance journal without double-expensing accrued commission", () => {
+    expect(paidRepairSql).toContain("historicalReconciliation");
+    expect(paidRepairSql).toContain("apn_withdrawal_finance_transactions");
+    expect(payoutGuardSql).toContain("Paying that already-accrued liability is a cash/liability settlement, not a second expense");
+    expect(payoutGuardSql).toContain("return new;");
+    expect(payoutGuardSql).toContain("delete from public.transactions");
+    expect(app).toContain('String(t.source || "").toLowerCase() === "apn-withdrawal"');
+  });
+  it("keeps unpaid APN liabilities in Account balance regardless of login status", () => {
+    expect(liabilityStatusSql).toContain("Financial liabilities survive account-status changes");
+    expect(liabilityStatusSql).toContain("for r in select u.id from public.apn_users u loop");
+    expect(liabilityStatusSql).toContain("from public.apn_consolidated_wallets w");
+    expect(liabilityStatusSql).not.toContain("not in ('inactive','suspended','deleted')");
+    expect(app).toContain("Access status must");
+    expect(app).toContain("unpaid APN partner balances");
   });
   it("ignores historical orphan APN ledger rows while checking live reconciliation", () => {
     expect(reconFinalSql).toContain("posted APN income");

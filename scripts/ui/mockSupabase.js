@@ -36,6 +36,7 @@ export const supabase={
   if(name==="business_automation_history")return {data:[],error:null};
   if(name==="business_automation_simulate")return {data:{matched:true,simulation:true},error:null};
   if(["business_automation_upsert_rule","business_automation_delete_rule","business_automation_dlq_recover","business_automation_approve","business_automation_reject"].includes(name))return {data:{ok:true},error:null};
+  if(name==="finance_account_balances")return {data:{haji:11016.3,alim:25704.7,company:36721,apn_unwithdrawn:60,account:36781,partner_balances:[{partner_id:"apn-haji",name:"hajiAPN",apn_id:"APN-TN-0001",status:"active",role:"state_head",earned:60,pending:0,eligible:60,total_balance:60,reserved:0,withdrawable:0,withdrawn:0,reversed:7500,unwithdrawn:60}]},error:null};
   if(["finance_v5_dashboard","crm_v5_dashboard","apn_partner_financial_snapshot"].includes(name))return {data:null,error:null};
   if(name.includes("available"))return {data:true,error:null};
   return {data:[],error:null};

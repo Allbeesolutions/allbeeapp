@@ -35,6 +35,13 @@ describe("APN runtime contract regressions", () => {
     expect(adminSource).toContain("runtime={props.runtime}");
   });
 
+  it("uses the settlement wallet as the requestable-withdrawal authority", () => {
+    expect(walletSource).toContain("const settlementWallets = Array.isArray(snap?.withdrawalWallets)");
+    expect(walletSource).toContain("const requestableNow = settlementWallets.reduce");
+    expect(walletSource).toContain('title: "Withdrawable — settlement wallet"');
+    expect(walletSource).toContain("The Withdrawal Center is the authority for what can be requested right now");
+  });
+
   it("keeps fmtDate available to the wallet detail modal and guards missing formatters", () => {
     expect(walletSource).toContain("runtime={{ ...Icons, Empty, fmtDate, fmtDateTime, money }}");
     expect(modalSource).toContain("const { Empty, Coins, fmtDate, fmtDateTime, money } = runtime;");

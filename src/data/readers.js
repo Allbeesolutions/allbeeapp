@@ -333,9 +333,13 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     // the user has visited the corresponding detail screen.
     const partnerShell = partner ? ["apn_targets","apn_notifications","apn_withdrawal_requests","apn_action_badge_reads"] : [];
     const adminBadges = apnAdmin ? ["apn_revenue_collections","apn_commissions","apn_withdrawal_requests","apn_withdrawal_batches","apn_referral_earnings","apn_targets","apn_training","apn_quizzes","apn_documents","apn_notifications","apn_action_badge_reads"] : [];
+    // Finance users always carry the lightweight APN balance authority fallback in
+    // their shell. Other roles must not pay for, or gain visibility into, finance-only
+    // partner holdings just because they opened Dashboard.
+    const financeShell = ["superadmin", "accountant"].includes(role) ? ["apn_users", "apn_consolidated_wallets"] : [];
     // The initial shell bootstrap is loaded separately. Route refreshes must stay truly scoped
     // so a navigation event does not silently re-fetch the global bootstrap payload.
-    return [...new Set(["notifications", ...base, ...apnIdentity, ...partnerShell, ...adminBadges])];
+    return [...new Set(["notifications", ...base, ...apnIdentity, ...partnerShell, ...adminBadges, ...financeShell])];
   };
 
   async function mapWithConcurrency(items, limit, fn) {

@@ -39,7 +39,7 @@ import { normalizeRealtimeTableSet, mergeScopedRealtimeState } from "./realtimeR
 import { snapshotQueryMetrics } from "./data/queryMetrics.js";
 import { coalesceRequest } from "./data/requestCoalescer.js";
 import { fetchTeamRows, fetchConfigRows, saveConfigRows, fetchFinancialLocks, lockFinancialPeriod, unlockFinancialPeriod } from "./data/system.js";
-import { fetchDashboardSnapshot } from "./data/dashboard.js";
+import { fetchDashboardSnapshot, fetchFinanceAccountBalances } from "./data/dashboard.js";
 import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, WITHDRAWAL_READS, CRM_READS, AI_READS, CLIENT_READS, HELPDESK_READS, AGREEMENT_READS, createDataReaders } from "./data/readers.js";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
@@ -803,7 +803,7 @@ const emptyDB = () => ({
   inhouse: [], payroll: [], teams: [], team_chat: [], testing: [], class_students: [],
   apn_users: [], apn_hierarchy_assignments: [], apn_attendance: [], apn_targets: [], apn_training: [], apn_quizzes: [],
   apn_leads: [], apn_quotations: [], apn_commissions: [], apn_commission_projects: [], apn_revenue_collections: [], apn_achievements: [], apn_notifications: [], apn_documents: [], apn_timeline: [], apn_warnings: [], apn_notes: [], apn_activity: [], apn_transfer_history: [], apn_communications: [], apn_action_badge_reads: [],
-  apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [],
+  apn_referral_codes: [], apn_referral_relationships: [], apn_referral_earnings: [], apn_referral_wallets: [], apn_referral_withdrawals: [], apn_referral_timeline: [], apn_referral_activities: [], apn_referral_monthly_summary: [], apn_referral_analytics_monthly: [], apn_consolidated_wallets: [],
   apn_withdrawal_bank_accounts: [], apn_withdrawal_wallets: [], apn_withdrawal_requests: [], apn_withdrawal_status_history: [], apn_withdrawal_settlements: [], apn_withdrawal_batches: [], apn_wallet_transactions: [], apn_withdrawal_finance_transactions: [], apn_withdrawal_audit: [], apn_withdrawal_exports: [],
   crm_clients: [], crm_leads: [], crm_lead_assignments: [], crm_follow_ups: [], crm_quotations: [], crm_quotation_versions: [], crm_projects: [], crm_revenue_collections: [], crm_activities: [], crm_files: [], crm_reminders: [], crm_audit: [],
   ai_settings: [], ai_insights: [], ai_predictions: [], ai_cache: [], ai_history: [], ai_recommendations: [], ai_reports: [],
@@ -818,27 +818,27 @@ const { fetchReferralData, fetchApnActionBadgeReads, fetchWithdrawalData, fetchC
 /* ── derived calculations ─────────────────────────────────────────────── */
 function balances(db) {
   let Haji = 0, Alim = 0;
-  for (const t of db.transactions) {
+  for (const t of (db.transactions || [])) {
+    // APN commission is expensed when earned. Paying that accrued liability is
+    // a cash settlement, not a second owner expense; ignore any historical
+    // payout-expense projection if one is ever encountered in a stale client.
+    if (t.apnWithdrawalExpense === true || String(t.source || "").toLowerCase() === "apn-withdrawal") continue;
     const a = Number(t.amount) || 0;
     const h = (a * (Number(t.hajiPct) || 0)) / 100;
     const m = (a * (Number(t.alimPct) || 0)) / 100;
     if (t.kind === "income") { Haji += h; Alim += m; }
-    else { Haji -= h; Alim -= m; }
+    else if (t.kind === "expense") { Haji -= h; Alim -= m; }
   }
   for (const w of (db.withdrawals || [])) {
-    if (w.status === "pending" || w.status === "rejected") continue; // only approved withdrawals move money
+    if (w.status === "pending" || w.status === "rejected") continue; // only approved owner withdrawals move money
     if (w.user === "Haji") Haji -= Number(w.amount) || 0;
-    else Alim -= Number(w.amount) || 0;
+    else if (w.user === "Alim") Alim -= Number(w.amount) || 0;
   }
   const company = round2(Haji + Alim);
-  // APN commission remains a partner-level balance until it is withdrawn.
-  // The company balance is deliberately unchanged; Account balance is the
-  // broader cash view requested by Finance: company + unwithdrawn APN commission.
-  const activeApnPartnerIds = new Set((db.apn_users || [])
-    .filter((u) => !["inactive", "suspended", "deleted"].includes(String(u.status || "").toLowerCase()))
-    .map((u) => u.id));
+  // APN money remains a company-held liability until paid. Access status must
+  // never erase money already earned: suspended/deleted partners with a real
+  // unpaid ledger balance still belong in the physical Account balance.
   const apnCommission = round2((db.apn_consolidated_wallets || [])
-    .filter((w) => activeApnPartnerIds.has(w.partner_id))
     .reduce((sum, w) => sum + Math.max(0, (Number(w.earned) || 0) - (Number(w.withdrawn) || 0)), 0));
   return { Haji: round2(Haji), Alim: round2(Alim), company, apnCommission, account: round2(company + apnCommission) };
 }
@@ -1632,14 +1632,26 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
   );
 }
 
-function AccountBalanceDetail({ db, onClose }) {
+function AccountBalanceDetail({ db, authoritative, onClose }) {
   const partners = useMemo(() => {
-    const active = new Set((db.apn_users || [])
-      .filter((u) => !["inactive", "suspended", "deleted"].includes(String(u.status || "").toLowerCase()))
-      .map((u) => u.id));
+    if (Array.isArray(authoritative?.partner_balances)) {
+      return authoritative.partner_balances
+        .map((w) => ({
+          id: w.partner_id,
+          name: w.name || "APN Partner",
+          apnId: w.apn_id || "",
+          earned: Number(w.earned) || 0,
+          withdrawn: Number(w.withdrawn) || 0,
+          pending: Number(w.pending) || 0,
+          eligible: Number(w.eligible) || 0,
+          withdrawable: Number(w.withdrawable) || 0,
+          unwithdrawn: Number(w.unwithdrawn) || 0,
+        }))
+        .filter((w) => w.earned > 0 || w.withdrawn > 0 || w.pending > 0)
+        .sort((a, b) => b.unwithdrawn - a.unwithdrawn || a.name.localeCompare(b.name));
+    }
     const names = new Map((db.apn_users || []).map((u) => [u.id, u]));
     return (db.apn_consolidated_wallets || [])
-      .filter((w) => active.has(w.partner_id))
       .map((w) => {
         const partner = names.get(w.partner_id) || {};
         const earned = Number(w.earned) || 0;
@@ -1652,40 +1664,40 @@ function AccountBalanceDetail({ db, onClose }) {
           earned,
           withdrawn,
           pending: Number(w.pending) || 0,
+          eligible: Number(w.eligible) || 0,
           withdrawable: Number(w.withdrawable) || 0,
           unwithdrawn,
         };
       })
       .filter((w) => w.earned > 0 || w.withdrawn > 0 || w.pending > 0)
       .sort((a, b) => b.unwithdrawn - a.unwithdrawn || a.name.localeCompare(b.name));
-  }, [db]);
-  const held = round2(partners.reduce((sum, p) => sum + p.unwithdrawn, 0));
-  // Reuse the authoritative employee/company balance calculation so the modal
-  // cannot drift from the balance shown on the Finance page.
-  const company = balances(db).company;
-  const account = round2(company + held);
+  }, [db, authoritative]);
+  const held = authoritative ? Number(authoritative.apn_unwithdrawn) || 0 : round2(partners.reduce((sum, p) => sum + p.unwithdrawn, 0));
+  const company = authoritative ? Number(authoritative.company) || 0 : balances(db).company;
+  const account = authoritative ? Number(authoritative.account) || 0 : round2(company + held);
   return (
     <Modal title="Account balance — APN holdings" onClose={onClose}
       footer={<button className="btn primary" onClick={onClose}>Close</button>}>
       <div className="cards-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))", marginBottom: 14 }}>
         <div className="calc-box"><div className="lbl">Company balance</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(company)}</div><div className="sub">Haji + Alim</div></div>
-        <div className="calc-box"><div className="lbl">Unwithdrawn APN</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(held)}</div><div className="sub">Still held in partner accounts</div></div>
+        <div className="calc-box"><div className="lbl">Unwithdrawn APN</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(held)}</div><div className="sub">Pending + eligible APN commission not yet withdrawn</div></div>
         <div className="calc-box"><div className="lbl">Account balance</div><div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>{money(account)}</div><div className="sub">Company + APN holdings</div></div>
       </div>
       <div style={{ fontWeight: 750, marginBottom: 8 }}>APN partner balances</div>
       {partners.length === 0 ? (
-        <Empty icon={<Wallet size={22} color="var(--muted)" />} title="No APN balances" text="There are no active APN partner balances to include in Account balance." />
+        <Empty icon={<Wallet size={22} color="var(--muted)" />} title="No APN balances" text="There are no unpaid APN partner balances to include in Account balance." />
       ) : (
         <div style={{ overflowX: "auto", margin: "0 -20px -20px" }}>
           <table className="tbl">
-            <thead><tr><th>Partner</th><th className="num-cell">Earned</th><th className="num-cell">Withdrawn</th><th className="num-cell">Unwithdrawn</th><th className="num-cell">Pending</th></tr></thead>
+            <thead><tr><th>Partner</th><th className="num-cell">Earned</th><th className="num-cell">Pending</th><th className="num-cell">Eligible</th><th className="num-cell">Withdrawn</th><th className="num-cell">Unwithdrawn</th></tr></thead>
             <tbody>{partners.map((p) => (
               <tr key={p.id}>
                 <td><div style={{ fontWeight: 650 }}>{p.name}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{p.apnId}</div></td>
                 <td className="num-cell mono">{money(p.earned)}</td>
+                <td className="num-cell mono">{money(p.pending)}</td>
+                <td className="num-cell mono">{money(p.eligible)}</td>
                 <td className="num-cell mono">{money(p.withdrawn)}</td>
                 <td className="num-cell mono" style={{ fontWeight: 800, color: p.unwithdrawn > 0 ? "var(--ink)" : "var(--muted)" }}>{money(p.unwithdrawn)}</td>
-                <td className="num-cell mono">{money(p.pending)}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -1695,9 +1707,10 @@ function AccountBalanceDetail({ db, onClose }) {
   );
 }
 
-function BalanceDetail({ db, user, onClose, onFull }) {
+function BalanceDetail({ db, user, currentBalance, onClose, onFull }) {
   const rows = useMemo(() => ledgerFor(db, user), [db, user]);
-  const final = rows.length ? rows[rows.length - 1].running : 0;
+  const projected = rows.length ? rows[rows.length - 1].running : 0;
+  const final = Number.isFinite(Number(currentBalance)) ? Number(currentBalance) : projected;
   return (
     <Modal title={`${user} — balance breakdown`} onClose={onClose}
       footer={<>
@@ -1984,7 +1997,7 @@ function ImportData({ mutate, currentUser, onClose, defaultTarget = "income", lo
   );
 }
 
-function AccountFull({ db, user, goBack }) {
+function AccountFull({ db, user, currentBalanceOverride, goBack }) {
   const all = useMemo(() => ledgerFor(db, user), [db, user]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -2006,7 +2019,8 @@ function AccountFull({ db, user, goBack }) {
   }), [all, from, to, client, project, category]);
 
   const filtered = from || to || client !== "all" || project !== "all" || category !== "all";
-  const currentBalance = all.length ? all[all.length - 1].running : 0;
+  const projectedBalance = all.length ? all[all.length - 1].running : 0;
+  const currentBalance = Number.isFinite(Number(currentBalanceOverride)) ? Number(currentBalanceOverride) : projectedBalance;
   const totIncome = round2(rows.filter((r) => r.type === "Income").reduce((s, r) => s + r.credited, 0));
   const totExpense = round2(rows.filter((r) => r.type === "Expense").reduce((s, r) => s + r.debited, 0));
   const totWithdraw = round2(rows.filter((r) => r.type === "Withdrawal").reduce((s, r) => s + r.debited, 0));
@@ -5219,8 +5233,12 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   useEffect(() => {
     if (!["home", "wallet", "withdrawals", "profile", "district"].includes(tab)) return undefined;
     let cancelled = false;
-    fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
-    return () => { cancelled = true; };
+    const loadSnapshot = () => fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
+    loadSnapshot();
+    // Eligibility is date-derived (e.g. the 5th of the month), so a portal left
+    // open across midnight must refresh even when no database row changes.
+    const timer = window.setInterval(loadSnapshot, 5 * 60 * 1000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [pid, tab, snapTick]);
 
   useEffect(() => {
@@ -6130,6 +6148,7 @@ export default function App() {
   const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
   const [serverUnreadNotifs, setServerUnreadNotifs] = useState(null);
   const [dashboardSnapshot, setDashboardSnapshot] = useState(null);
+  const [financeBalances, setFinanceBalances] = useState(null);
   const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
   const [favorites, setFavorites] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_favs") || "null") || []; } catch { return []; } });
   const [navSort, setNavSort] = useState(() => { try { return localStorage.getItem("allbee_navsort") || "category"; } catch { return "category"; } });
@@ -6152,6 +6171,39 @@ export default function App() {
   const inactiveCount = useMemo(() => (isSuper ? inactiveMembers(team).length : 0), [isSuper, team]);
   const canFinance = canFinanceRole(role);  // the money (superadmin OR accountant)
   const me = { id: session?.user?.id, name: currentUser, role };
+
+  const refreshFinanceBalances = useCallback(async () => {
+    if (!session?.user?.id || !canFinance) { setFinanceBalances(null); return null; }
+    try {
+      const data = await fetchFinanceAccountBalances(supabase);
+      setFinanceBalances(data);
+      return data;
+    } catch (e) {
+      console.warn("[ALLBEE] authoritative finance balances unavailable:", e?.message || e);
+      return null;
+    }
+  }, [session?.user?.id, canFinance]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !canFinance) { setFinanceBalances(null); return undefined; }
+    let alive = true;
+    const load = async () => {
+      try {
+        const data = await fetchFinanceAccountBalances(supabase);
+        if (alive) setFinanceBalances(data);
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn("[ALLBEE] finance balance refresh:", e?.message || e);
+      }
+    };
+    load();
+    const timer = window.setInterval(load, 30000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [session?.user?.id, canFinance, route]);
+
+  useEffect(() => {
+    if (!canFinance || !db) return;
+    refreshFinanceBalances();
+  }, [db?.transactions, db?.withdrawals, db?.apn_consolidated_wallets, canFinance, refreshFinanceBalances]);
 
   useEffect(() => {
     let alive = true;
@@ -6731,7 +6783,18 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
-  const bal = useMemo(() => (db ? balances(db) : { Haji: 0, Alim: 0, company: 0 }), [db]);
+  const bal = useMemo(() => {
+    const local = db ? balances(db) : { Haji: 0, Alim: 0, company: 0, apnCommission: 0, account: 0 };
+    if (!financeBalances) return local;
+    return {
+      ...local,
+      Haji: Number(financeBalances.haji) || 0,
+      Alim: Number(financeBalances.alim) || 0,
+      company: Number(financeBalances.company) || 0,
+      apnCommission: Number(financeBalances.apn_unwithdrawn) || 0,
+      account: Number(financeBalances.account) || 0,
+    };
+  }, [db, financeBalances]);
 
   const openModal = (m) => setModal(m);
   const openBalance = (u) => setBalanceUser(u);
@@ -7055,7 +7118,7 @@ export default function App() {
   const renderPage = () => {
     // full-page detail views take precedence over the tab routes
     if (taskDetailId) return <TaskDetail db={db} taskId={taskDetailId} me={me} isAdmin={isAdmin} currentUser={currentUser} mutate={mutate} openModal={openModal} removeItem={removeItem} goBack={goBackDetail} />;
-    if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} goBack={goBackDetail} />;
+    if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} currentBalanceOverride={bal[accountUser]} goBack={goBackDetail} />;
 
     switch (safeRoute) {
       case "dashboard":
@@ -7230,7 +7293,7 @@ export default function App() {
                   <Search size={21} /><span className="st-lbl" style={{ flex: 1, textAlign: "left" }}>Search…</span><span className="st-kbd">Ctrl K</span>
                 </button>
                 <button className="iconbtn topbar-refresh" title="Refresh" disabled={topBusy}
-                  onClick={async () => { setTopBusy(true); try { await reload(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
+                  onClick={async () => { setTopBusy(true); try { await reload(); if (canFinance) await refreshFinanceBalances(); if (session) await loadPeople(session.user); } finally { setTimeout(() => setTopBusy(false), 400); } }}>
                   <RefreshCw size={20} className={topBusy ? "spin" : ""} />
                 </button>
                 <button className="iconbtn" title="Notifications" style={{ position: "relative" }} onClick={() => go("notifications")} aria-label={`Notifications${unreadNotifs ? `, ${unreadNotifs} unread` : ""}`}>
@@ -7306,8 +7369,8 @@ export default function App() {
         {modal?.type === "restoreConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} actionLabel={modal.actionLabel || "Restore"} icon={<RotateCcw size={15} />} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
         {modal?.type === "okConfirm" && <TypedConfirm title={modal.title} body={modal.body} note={modal.note} word="OK" actionLabel={modal.actionLabel || "Confirm"} icon={modal.icon} danger={false} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
 
-        {balanceUser === "__account__" && <AccountBalanceDetail db={db} onClose={() => setBalanceUser(null)} />}
-        {balanceUser && balanceUser !== "__account__" && <BalanceDetail db={db} user={balanceUser} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
+        {balanceUser === "__account__" && <AccountBalanceDetail db={db} authoritative={financeBalances} onClose={() => setBalanceUser(null)} />}
+        {balanceUser && balanceUser !== "__account__" && <BalanceDetail db={db} user={balanceUser} currentBalance={bal[balanceUser]} onClose={() => setBalanceUser(null)} onFull={canFinance ? openAccount : undefined} />}
 
         {activityDetail && <ActivityDetailsDrawer activity={activityDetail} db={db} isSuper={isSuper} onClose={() => setActivityDetail(null)} onRelated={openActivityRelated} />}
 

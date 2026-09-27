@@ -6,3 +6,9 @@ export async function fetchDashboardSnapshot(supabase) {
   ]);
   return { finance: finance.data || null, crm: crm.data || null, ai: ai.data || null, generatedAt: new Date().toISOString() };
 }
+
+export async function fetchFinanceAccountBalances(supabase) {
+  const { data, error } = await supabase.rpc("finance_account_balances");
+  if (error) throw new Error(error.message || "Could not load authoritative account balances.");
+  return data || null;
+}

@@ -7,6 +7,8 @@ export default function APNWallet(props) {
   const { ArrowDownToLine, BadgeCheck, Banknote, CalendarDays, CheckCircle2, Coins, FolderKanban, Gift, Handshake, Hexagon, Hourglass, RefreshCw, RotateCcw, ShieldAlert, TrendingUp, Wallet } = Icons;
 
   const snapWallet = apnSnapshotWallet(snap);
+  const settlementWallets = Array.isArray(snap?.withdrawalWallets) ? snap.withdrawalWallets : [];
+  const requestableNow = settlementWallets.reduce((sum, row) => sum + (Number(row.withdrawable) || 0), 0);
   const ledger = snap?.ledger || [];
   const reversals = snap?.reversals || [];
   const frozen = snap?.freeze?.frozen === true;
@@ -92,7 +94,7 @@ export default function APNWallet(props) {
       earned: { title: "Commission earned — where it came from", value: money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned), rows: ledgerRows(positiveLedger), note: "Credits are automatically recorded by the commission engine. Referral, district and state entries show their source person and scope." },
       pending: { title: "Pending commissions — awaiting eligibility", value: money(snapWallet ? Number(snapWallet.pending) : stats.commission.pending), rows: ledgerRows(positiveLedger.filter(l => l.eligibleFrom && String(l.eligibleFrom).slice(0,10) > todayKey)), note: "Pending means credited to the ledger but not yet eligible for withdrawal." },
       eligible: { title: "Eligible (payable) — full details", value: money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable), rows: ledgerRows(positiveLedger.filter(l => !l.eligibleFrom || String(l.eligibleFrom).slice(0,10) <= todayKey)), note: "Eligible credits require no separate commission approval; they are engine credits." },
-      withdrawable: { title: "Withdrawable — balance calculation", value: money(snapWallet ? Number(snapWallet.withdrawable) : stats.commission.payable), rows: [...ledgerRows(positiveLedger.filter(l => !l.eligibleFrom || String(l.eligibleFrom).slice(0,10) <= todayKey)), ...withdrawalRows], note: "This view shows eligible credits together with withdrawal movements that reduce the available balance." },
+      withdrawable: { title: "Withdrawable — settlement wallet", value: money(hasSnap ? requestableNow : stats.commission.payable), rows: [...ledgerRows(positiveLedger.filter(l => !l.eligibleFrom || String(l.eligibleFrom).slice(0,10) <= todayKey)), ...withdrawalRows], note: "The Withdrawal Center is the authority for what can be requested right now. Eligible ledger credits can still be awaiting source approval or settlement processing." },
       withdrawn: { title: "Withdrawn — payout history", value: money(snapWallet ? Number(snapWallet.withdrawn) : stats.commission.paid), rows: withdrawalRows.filter(r => r.status.toLowerCase() === "paid"), note: "Paid withdrawal requests are shown as outgoing wallet movements." },
       reversed: { title: "Reversed — deductions and recoveries", value: money(snapWallet ? Number(snapWallet.reversed) : 0), rows: ledgerRows(negativeLedger), note: "Reversals and recovery deductions remain visible so the wallet always reconciles to its ledger." },
       balance: { title: "Total balance — reconciliation", value: money(snapWallet ? Number(snapWallet.total_balance) : 0), rows: [...ledgerRows(positiveLedger), ...ledgerRows(negativeLedger), ...withdrawalRows], note: "The total is derived from engine credits, deductions and paid/locked withdrawal movements." },
@@ -130,7 +132,7 @@ export default function APNWallet(props) {
         {role === "state_head" && <APNMetric k="State 1%" v={money(streamAmount("state"))} icon={<Hexagon size={13} />} tone="accent" onClick={() => openDetail("state1")} />}
         <APNMetric k="Pending" v={money(snapWallet ? Number(snapWallet.pending) : stats.commission.pending)} icon={<Hourglass size={13} />} onClick={() => openDetail("pending")} />
         <APNMetric k="Eligible (payable)" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" onClick={() => openDetail("eligible")} />
-        <APNMetric k="Withdrawable" v={money(snapWallet ? Number(snapWallet.withdrawable) : Number(stats.commission.payable) || 0)} icon={<ArrowDownToLine size={13} />} onClick={() => openDetail("withdrawable")} />
+        <APNMetric k="Withdrawable" v={money(hasSnap ? requestableNow : Number(stats.commission.payable) || 0)} icon={<ArrowDownToLine size={13} />} onClick={() => openDetail("withdrawable")} />
         <APNMetric k="Withdrawn" v={money(snapWallet ? Number(snapWallet.withdrawn) : stats.commission.paid)} icon={<BadgeCheck size={13} />} tone="pos" onClick={() => openDetail("withdrawn")} />
         <APNMetric k="Reversed" v={money(snapWallet ? Number(snapWallet.reversed) : 0)} icon={<RotateCcw size={13} />} tone="neg" onClick={() => openDetail("reversed")} />
         <APNMetric k="Total balance" v={money(snapWallet ? Number(snapWallet.total_balance) : Number(stats.commission.earned) + Number(stats.totalIncentives) || 0)} icon={<Banknote size={13} />} onClick={() => openDetail("balance")} />
