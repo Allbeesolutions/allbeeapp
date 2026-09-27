@@ -24,21 +24,25 @@ for(const role of roleList){
 const onlyRole=process.argv.find(a=>a.startsWith("--role="))?.slice(7);
 const onlyRoute=process.argv.find(a=>a.startsWith("--route="))?.slice(8);
 const selected=(interactions?[]:full?cases:cases.filter(c=>c.width===390||c.width===1440)).filter(c=>(!onlyRole||c.role===onlyRole)&&(!onlyRoute||c.route===onlyRoute));
-const server=await createServer({root,server:{host:"127.0.0.1",port:5188,strictPort:true},define:{"import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET":JSON.stringify("true"),"import.meta.env.VITE_PAUSE_TEST":JSON.stringify("0")},plugins:[{name:"isolated-ui-mock",enforce:"pre",resolveId(id){if(/(?:^|\/)supabaseClient(?:\.js)?$/.test(id))return "\0allbee-ui-mock"},load(id){if(id==="\0allbee-ui-mock")return readFileSync(resolve(root,"scripts/ui/mockSupabase.js"),"utf8")}}]});
+const server=await createServer({root,server:{host:"127.0.0.1",port:0,strictPort:false},define:{"import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET":JSON.stringify("true"),"import.meta.env.VITE_PAUSE_TEST":JSON.stringify("0")},plugins:[{name:"isolated-ui-mock",enforce:"pre",resolveId(id){if(/(?:^|\/)supabaseClient(?:\.js)?$/.test(id))return "\0allbee-ui-mock"},load(id){if(id==="\0allbee-ui-mock")return readFileSync(resolve(root,"scripts/ui/mockSupabase.js"),"utf8")}}]});
 await server.listen();
+const address=server.httpServer?.address();
+const uiPort=typeof address==="object"&&address?address.port:null;
+if(!uiPort)throw new Error("UI verification server did not expose a port");
+const uiBase=`http://127.0.0.1:${uiPort}`;
 const browser=await chromium.launch();
 const page=await browser.newPage();
 const results=[];let errors=[];
 page.on("pageerror",e=>errors.push(e.message));
 await page.route("**/*",route=>{const url=new URL(route.request().url());return ["127.0.0.1","localhost"].includes(url.hostname)||["data:","blob:"].includes(url.protocol)?route.continue():route.abort()});
 try{
- if(interactions){ const {verifyInteractions}=await import("./interactions.mjs"); await verifyInteractions(page,out,writeFileSync,resolve); }
+ if(interactions){ const {verifyInteractions}=await import("./interactions.mjs"); await verifyInteractions(page,out,writeFileSync,resolve,uiBase); }
  for(const c of selected){
   errors=[];
   await page.setViewportSize({width:c.width,height:c.width<768?844:1000});
   let failure="";
   try{
-   await page.goto("http://127.0.0.1:5188/?role="+c.role+"#/"+c.route,{waitUntil:"domcontentloaded",timeout:15000});
+   await page.goto(uiBase+"/?role="+c.role+"#/"+c.route,{waitUntil:"domcontentloaded",timeout:15000});
    await page.waitForFunction(()=>document.querySelector(".apn-nav-shell,.layout,.lock-card,.topbar")||/could not render|Something went wrong/.test(document.body.innerText),{timeout:12000});
    await page.waitForFunction(()=>!document.querySelector(".prism-wrap,.loading-screen")&&(document.body.innerText.length>100||/could not render|Something went wrong/.test(document.body.innerText)),{timeout:10000});
    await page.waitForTimeout(200);

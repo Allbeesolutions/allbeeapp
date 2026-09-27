@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-export async function verifyInteractions(page, out, writeFileSync, resolve) {
+export async function verifyInteractions(page, out, writeFileSync, resolve, uiBase="http://127.0.0.1:5188") {
  const results=[]; page.setDefaultTimeout(10000);
  async function check(name,fn){try{await fn();results.push({name,pass:true})}catch(e){results.push({name,pass:false,error:e.message,body:(await page.locator("body").innerText()).slice(-1000)})}}
  async function open(role,route="dashboard",width=390){
   await page.setViewportSize({width,height:844});
-  await page.goto("http://127.0.0.1:5188/?role="+role+"#/"+route);
+  await page.goto(uiBase+"/?role="+role+"#/"+route);
   await page.waitForFunction(()=>!document.querySelector(".prism-wrap,.loading-screen"));
  }
  await check("Mobile menu keyboard access and role-aware accountant navigation",async()=>{
