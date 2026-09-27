@@ -14,7 +14,7 @@ export function APNInactive({ meRow, db, mutate, onSignOut, isDark, pid, Field }
     setSaved(true);
   };
   return (
-    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+    <div className="allbee lock apn-auth" data-theme={isDark ? "dark" : "light"}>
 
       <div className="lock-card gate-card" style={{ width: "min(92vw, 480px)" }}>
         <div className="lock-badge" style={{ background: "linear-gradient(135deg,var(--accent),#d98c00)" }}><Hourglass size={26} /></div>

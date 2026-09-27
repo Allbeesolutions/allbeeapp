@@ -1,3 +1,4 @@
+import { APNSkeleton } from "./Experience.jsx";
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, MessageCircle } from "lucide-react";
 
@@ -5,13 +6,19 @@ export function APNSupportTickets({ pid, refreshTick = 0, supabase, APNStatusBad
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
 
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
+    let active = true;
+    setErr(""); setRows(null);
     (async () => {
-      const { data, error } = await supabase.rpc("apn_support_tickets_list", { p_limit: 100 });
-      if (error) { setErr(error.message); return; }
-      setRows(Array.isArray(data) ? data : []);
+      try {
+        const { data, error } = await supabase.rpc("apn_support_tickets_list", { p_limit: 100 });
+        if (error) throw error;
+        if (active) setRows(Array.isArray(data) ? data : []);
+      } catch (e) { if (active) setErr(e?.message || "Could not load tickets. Please try again."); }
     })();
-  }, [pid, refreshTick, supabase]);
+    return () => { active = false; };
+  }, [pid, refreshTick, supabase, retry]);
 
   return (
     <div className="apn-ai">
@@ -19,8 +26,8 @@ export function APNSupportTickets({ pid, refreshTick = 0, supabase, APNStatusBad
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}><MessageCircle size={16} color="var(--primary)" /><div style={{ fontWeight: 800, flex: 1 }}>My support tickets</div></div>
         <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Official responses here are final — ALLBEE AI explains them, never overrides them.</div>
       </div>
-      {err && <div className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{err}</div>}
-      {!rows ? <div className="hint-line" style={{ padding: "16px 4px" }}>Loading tickets…</div>
+      {err && <div role="alert" className="banner" style={{ marginBottom: 12, borderColor: "var(--neg)" }}><AlertTriangle size={15} />{err}<button className="btn sm" onClick={() => setRetry(n => n + 1)}>Try again</button></div>}
+      {err ? null : !rows ? <APNSkeleton label="Loading your support tickets…" />
         : rows.length === 0 ? <div className="apn-rowcard"><div className="hint-line" style={{ padding: "12px 4px", fontSize: 13 }}>You don't have any support tickets yet. Ask ALLBEE AI anything — if it can't find the answer, it will offer to create one for you.</div></div>
           : rows.map((t) => (
             <div key={t.id} className="apn-rowcard" style={{ marginBottom: 10 }}>

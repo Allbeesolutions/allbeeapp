@@ -33,11 +33,11 @@ export function APNLeaderboard({ db, meRow, pid, Empty, Trophy, Avatar, apnAvata
     <div>
       <div className="apn-section-h">Leaderboard</div>
       <div className="apn-seg-scroll">
-        <button className={scope === "company" ? "on" : ""} onClick={() => setScope("company")}>Company</button>
-        <button className={scope === "district" ? "on" : ""} onClick={() => setScope("district")}>My district</button>
+        <button aria-pressed={scope === "company"} className={scope === "company" ? "on" : ""} onClick={() => setScope("company")}>Company</button>
+        <button aria-pressed={scope === "district"} className={scope === "district" ? "on" : ""} onClick={() => setScope("district")}>My district</button>
       </div>
       <div className="apn-seg-scroll">
-        {[["revenue", "Top revenue"], ["commission", "Top commission"], ["projects", "Top projects"]].map(([k, l]) => <button key={k} className={metric === k ? "on" : ""} onClick={() => setMetric(k)}>{l}</button>)}
+        {[["revenue", "Top revenue"], ["commission", "Top commission"], ["projects", "Top projects"]].map(([k, l]) => <button key={k} aria-pressed={metric === k} className={metric === k ? "on" : ""} onClick={() => setMetric(k)}>{l}</button>)}
       </div>
       <div className="apn-rowcard">
         {rows.length === 0 ? <Empty icon={<TrophyIcon size={22} color="var(--muted)" />} title="No ranking yet" text="Close deals to climb the leaderboard." />

@@ -21,6 +21,8 @@
 .assistant-thinking-dots { display:inline-flex; gap:3px; margin-left:1px; }
 .assistant-thinking-dots i { width:4px; height:4px; border-radius:50%; background:currentColor; opacity:.35; animation:assistant-dot 1.15s ease-in-out infinite; }
 .assistant-thinking-dots i:nth-child(2){animation-delay:.14s}.assistant-thinking-dots i:nth-child(3){animation-delay:.28s}
+.assistant-stop { margin-left:auto; }
+.assistant-stopped { max-width:840px; margin:4px auto 0; color:var(--muted); font-size:12px; }
 @keyframes assistant-float { 50% { transform:translateY(-3px); } }
 @keyframes assistant-dot { 0%,70%,100%{transform:translateY(0);opacity:.3}35%{transform:translateY(-3px);opacity:1} }
 .assistant-error { margin:0 16px 12px; padding:12px; display:flex; align-items:center; gap:10px; border-radius:10px; background:var(--neg-soft); color:var(--ink); font-size:13px; line-height:1.5; flex-wrap:wrap; }

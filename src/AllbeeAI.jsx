@@ -20,6 +20,8 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
   const [failedInput, setFailedInput] = useState(null);
   const [copyError, setCopyError] = useState("");
   const [thinkingLabel, setThinkingLabel] = useState("Understanding your request…");
+  const [stopped, setStopped] = useState(false);
+  const requestRef = useRef(0);
 
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, busy]);
   useEffect(() => {
@@ -62,12 +64,15 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
     ].join("\n");
   }, [db, company, me, role, knowledgeContext]);
 
-  const send = async (text) => {
+  const send = async (text, historyOverride = null) => {
     const content = (text != null ? text : input).trim();
     if (!content || sendingRef.current) return;
     sendingRef.current = true;
+    const requestId = ++requestRef.current;
+    setStopped(false);
     setError("");
-    const history = failedInput !== null && messages.at(-1)?.role === "user" ? messages.slice(0, -1) : messages;
+    const baseMessages = Array.isArray(historyOverride) ? historyOverride : messages;
+    const history = failedInput !== null && baseMessages.at(-1)?.role === "user" ? baseMessages.slice(0, -1) : baseMessages;
     const next = [...history, { role: "user", content }];
     setFailedInput(null);
     setMessages(next);
@@ -91,18 +96,27 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
       let window = next.slice(-12);
       while (window.length && window[0].role !== "user") window = window.slice(1);
       const reply = await callAI(cfg, `${system}${memoryContext}`, window);
+      if (requestRef.current !== requestId) return;
       setMessages((m) => [...m, { role: "assistant", content: reply || "(no reply)" }]);
     } catch (e) {
+      if (requestRef.current !== requestId) return;
       setFailedInput(content);
       setInput(content);
       const raw = String(e?.message || e || "");
       const retry = raw.match(/try again in\s+([0-9.]+)s/i);
       setError(retry ? `ALLBEE AI is busy right now. Please try again in ${retry[1]}s — your message is saved.` : /too many requests|rate limit|429/i.test(raw) ? "ALLBEE AI is busy due to high usage. Your message is saved — please try again shortly." : /network|fetch|timeout|503|502|504/i.test(raw) ? "ALLBEE AI couldn't reach the service. Your message is saved — check your connection and try again." : "Couldn’t get a reply. Your message is saved below. Try again, or edit it before sending.");
     } finally {
-      sendingRef.current = false;
-      setBusy(false);
+      if (requestRef.current === requestId) { sendingRef.current = false; setBusy(false); }
       setTimeout(() => boxRef.current?.focus(), 30);
     }
+  };
+  const stop = () => {
+    requestRef.current += 1;
+    sendingRef.current = false;
+    setBusy(false);
+    setStopped(true);
+    setError("");
+    setTimeout(() => boxRef.current?.focus(), 30);
   };
   const copy = async (txt, i) => { try { await navigator.clipboard.writeText(txt || ""); setCopyError(""); setCopied(i); setTimeout(() => setCopied(-1), 1500); } catch { setCopyError("Copy is unavailable here. Select the response text to copy it."); } };
   const onKey = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent?.isComposing) { e.preventDefault(); send(); } };
@@ -136,12 +150,13 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
             <div className="assistant-author">{m.role === "assistant" && <AllbeeAIMark size={20} />}{m.role === "user" ? "You" : "ALLBEE AI"}</div>
             <div className="assistant-message-body">{m.role === "assistant" ? renderAIText(m.content) : m.content}</div>
             {m.role === "assistant" && <div className="assistant-response-actions">
-              <button className="btn sm" onClick={() => copy(m.content,i)}>{copied===i ? <><Check size={14}/>Copied</> : <><Copy size={14}/>Copy</>}</button>
+              <button className="btn sm" onClick={() => copy(m.content,i)}>{copied===i ? <><Check size={14}/>Copied</> : <><Copy size={14}/>Copy</>}</button>{i === messages.length - 1 && <button className="btn sm" disabled={busy} onClick={() => { const lastUser = [...messages].slice(0,i).reverse().find(x => x.role === "user"); if (lastUser) { const prior = messages.slice(0,i).filter((_,idx) => idx !== messages.slice(0,i).lastIndexOf(lastUser)); setMessages(prior); send(lastUser.content, prior); } }}><RefreshCw size={14}/>Regenerate</button>}
               {["Explain this","Make it a checklist","Draft the reply"].map(q=><button key={q} className="btn sm" disabled={busy} onClick={()=>send(q+": "+m.content.slice(0,700))}>{q}</button>)}
             </div>}
           </article>)}
         </div>}
-        {busy && <div className="assistant-thinking" role="status"><span className="assistant-thinking-mark"><AllbeeAIMark size={22} /></span><span>{thinkingLabel}</span><span className="assistant-thinking-dots" aria-hidden="true"><i/><i/><i/></span></div>}
+        {busy && <div className="assistant-thinking" role="status"><span className="assistant-thinking-mark"><AllbeeAIMark size={22} /></span><span>{thinkingLabel}</span><span className="assistant-thinking-dots" aria-hidden="true"><i/><i/><i/></span><button type="button" className="btn sm assistant-stop" onClick={stop}>Stop</button></div>}
+        {stopped && !busy && <div className="assistant-stopped" role="status">Response stopped. Your conversation is unchanged.</div>}
       </div>
       {error && <div className="assistant-error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><span>{error}</span><button className="btn sm" disabled={busy} onClick={()=>send(failedInput)}>Try again</button></div>}
       {copyError && <div className="assistant-copy-status" role="status">{copyError}</div>}

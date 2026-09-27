@@ -15,7 +15,7 @@ export function APNGate({ isDark, icon, title, body, name, tone, onSignOut, onRe
     }
   };
   return (
-    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+    <div className="allbee lock apn-auth" data-theme={isDark ? "dark" : "light"}>
       <ToastHost />
       <div className="lock-card gate-card">
         <div className="lock-badge" style={tone === "neg" ? { background: "linear-gradient(135deg,var(--neg),#a92a2a)" } : undefined}>{icon}</div>

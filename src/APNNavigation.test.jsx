@@ -185,7 +185,7 @@ describe("APN Head Cockpits", () => {
     window.location.hash = "#/apn/district";
     render(<APNPortal db={baseDb} profile={{ id: "sh", role: "state_head", active: true, approved: true, status: "active" }} session={{ user: { id: "sh" } }} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
     await waitFor(() => expect(screen.getAllByText("State Command")[1]).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /Partners \(3\)/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Partners \(3\)/i }));
     expect(screen.getByText("Assigned Partner")).toBeTruthy();
     expect(screen.getByText("Foreign Partner")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
@@ -196,7 +196,7 @@ describe("APN Head Cockpits", () => {
     window.location.hash = "#/apn/district";
     render(<APNPortal db={baseDb} profile={{ id: "sh", role: "state_head", active: true, approved: true, status: "active" }} session={{ user: { id: "sh" } }} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
     await waitFor(() => expect(screen.getAllByText("State Command")[1]).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /Partners \(3\)/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Partners \(3\)/i }));
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_state_head_approve_partner", { p_partner_id: "p3" }));

@@ -2,6 +2,10 @@ import React from "react";
 
 export default function APNQuoteForm({ meRow, initial, onSave, onClose, runtime }) {
   const { useState, supabase, uid, round2, money, Modal, Field, APN_SERVICES, APN_TIEUPS, Send, X } = runtime;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const savingRef = React.useRef(false);
+  const idRef = React.useRef(initial?.id || null);
   const [service, setService] = useState(initial?.service || "website");
   const [price, setPrice] = useState(null);
   const [priceBusy, setPriceBusy] = useState(true);
@@ -28,14 +32,20 @@ export default function APNQuoteForm({ meRow, initial, onSave, onClose, runtime 
   const addOpt = (label, amount) => setItems((prev) => [...(prev || base), { id: uid(), label, amount }]);
   const upItem = (id, k, v) => setItems((prev) => (prev || base).map((it) => it.id === id ? { ...it, [k]: k === "amount" ? Number(v) || 0 : v } : it));
   const rmItem = (id) => setItems((prev) => (prev || base).filter((it) => it.id !== id));
-  const save = (status) => {
-    if (!clientName.trim()) return;
-    onSave({ id: initial?.id || uid(), partnerId: meRow.id, partnerName: meRow.name, clientName: clientName.trim(), service, requirements: requirements.trim(), tieUp, items: list, total: round2(total), status, createdAt: initial?.createdAt || Date.now() });
+  const save = async (status) => {
+    if (!clientName.trim() || priceBusy || savingRef.current) return;
+    savingRef.current = true; setBusy(true); setError("");
+    if (!idRef.current) idRef.current = uid();
+    try {
+    await onSave({ id: idRef.current, partnerId: meRow.id, partnerName: meRow.name, clientName: clientName.trim(), service, requirements: requirements.trim(), tieUp, items: list, total: round2(total), status, createdAt: initial?.createdAt || Date.now() });
     onClose();
+    } catch (e) { setError(e?.message || "Could not save your quotation. Your draft is still here; please retry."); }
+    finally { savingRef.current = false; setBusy(false); }
   };
   return (
-    <Modal title={initial?.id ? "Edit quotation" : "Generate quotation"} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn" onClick={() => save("Draft")} disabled={!clientName.trim()}>Save draft</button><button className="btn primary" onClick={() => save("Sent for approval")} disabled={!clientName.trim()}><Send size={15} />Send for approval</button></>}>
+    <Modal title={initial?.id ? "Edit quotation" : "Generate quotation"} onClose={() => { if (!savingRef.current) onClose(); }}
+      footer={<><button className="btn" disabled={busy} onClick={onClose}>Cancel</button><button className="btn" onClick={() => save("Draft")} disabled={busy || priceBusy || !clientName.trim()}>Save draft</button><button className="btn primary" onClick={() => save("Sent for approval")} disabled={busy || priceBusy || !clientName.trim()}><Send size={15} />{busy ? "Saving…" : "Send for approval"}</button></>}>
+      {error && <div className="auth-msg err" role="alert">{error}</div>}
       <div className="grid2">
         <Field label="Client name" required><input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client / business" /></Field>
         <Field label="Service"><select className="select" value={service} onChange={(e) => setService(e.target.value)} disabled={!!initial?.id}>{APN_SERVICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
@@ -52,10 +62,10 @@ export default function APNQuoteForm({ meRow, initial, onSave, onClose, runtime 
       </Field>
       <Field label="Quotation lines">
         <div className="apn-list">{list.map((it) => (
-          <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input className="input" value={it.label} onChange={(e) => upItem(it.id, "label", e.target.value)} style={{ flex: 1 }} />
-            <input className="input mono" type="number" value={it.amount} onChange={(e) => upItem(it.id, "amount", e.target.value)} style={{ width: 110 }} />
-            <button aria-label="Close" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmItem(it.id)}><X size={14} /></button>
+          <div key={it.id} className="apn-quote-line" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input aria-label="Line description" className="input" value={it.label} onChange={(e) => upItem(it.id, "label", e.target.value)} style={{ flex: 1 }} />
+            <input aria-label="Line amount in rupees" inputMode="decimal" className="input mono" type="number" value={it.amount} onChange={(e) => upItem(it.id, "amount", e.target.value)} style={{ width: 110 }} />
+            <button aria-label="Remove quotation line" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmItem(it.id)}><X size={14} /></button>
           </div>
         ))}</div>
         <div className="calc-box" style={{ marginTop: 10 }}><div className="calc-row"><b>Total</b><b className="mono">{money(total)}</b></div></div>

@@ -30,7 +30,7 @@ export function APNCheckIn({ db, pid, mutate, haptic: hapticFn }) {
         : step === "idle" ? <button className="btn primary" onClick={() => setStep("typing")}><UserCheck size={15} />Check in</button>
           : (
             <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
-              <input className="input" autoFocus value={word} onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") check(); }} placeholder='Type "OK" to confirm' style={{ flex: 1 }} />
+              <input aria-label="Type OK to confirm attendance" autoComplete="off" className="input" autoFocus value={word} onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") check(); }} placeholder='Type "OK" to confirm' style={{ flex: 1 }} />
               <button className="btn primary" onClick={check} disabled={word.trim().toUpperCase() !== "OK"}><Check size={15} />Confirm</button>
             </div>
           )}

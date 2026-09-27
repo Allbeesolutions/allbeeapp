@@ -97,7 +97,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
         {field("Mobile number", "mobile")}{field("Email", "email", "email")}{field("Date of birth", "dob", "date")}
         {field("Full address", "address")}{field("District", "district")}{field("Taluk", "taluk")}{field("City", "city")}{field("Occupation", "occupation")}{field("College", "college")}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}><button className="btn primary" type="button" onClick={save} disabled={busy || uploading || usernameState === "taken" || usernameState === "checking"}>{busy ? "Saving…" : "Save changes"}</button></div>
-        {err && <div className="auth-msg err" style={{ marginTop: 10 }}>{err}</div>}{saved && <div className="auth-msg ok" style={{ marginTop: 10 }}><Check size={14} />Profile saved.</div>}
+        {err && <div role="alert" className="auth-msg err" style={{ marginTop: 10 }}>{err}</div>}{saved && <div role="status" className="auth-msg ok" style={{ marginTop: 10 }}><Check size={14} />Profile saved.</div>}
       </div>
       <div className="apn-rowcard" style={{ marginTop: 14 }}>
         {[

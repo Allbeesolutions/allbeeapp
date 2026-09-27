@@ -35,7 +35,7 @@ export function APNDistrict({
         <APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} />
       </div>
       <div className="apn-head-tabs">
-        <button className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button>
+        <button aria-pressed={focus === "overview"} className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button>
         <button className={focus === "partners" ? "on" : ""} onClick={() => setFocus("partners")}>Partners ({members.length})</button>
       </div>
       {focus === "overview" ? (
@@ -58,8 +58,8 @@ export function APNDistrict({
       ) : (
         <div>
           <div className="apn-head-toolbar">
-            <div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, APN ID, phone…" /></div>
-            <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <div className="searchbox"><Search size={15} /><input aria-label="Search partners" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, APN ID, phone…" /></div>
+            <select aria-label="Partner status" className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option>
             </select>
           </div>

@@ -16,24 +16,33 @@ export default function APNLeadForm({ meRow, db, initial, onSave, onClose, runti
   const [f, setF] = useState(() => ({ clientName: "", mobile: "", business: "", service: enabled[0]?.[0] || "", budget: "", college: "", tieUp: "", notes: "", ...initial }));
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const savingRef = React.useRef(false);
+  const idRef = React.useRef(null);
   const rules = f.service === "course" ? { showBusiness: false, showBudget: false, showCollege: true, showTieUps: true } : { showBusiness: true, showBudget: true, showCollege: false, showTieUps: true };
-  const save = () => {
+  const save = async () => {
+    if (savingRef.current) return;
     if (!enabled.length) { setErr("Pass a sales quiz first to unlock lead submission."); return; }
     if (!f.clientName.trim()) { setErr("Client name is required."); return; }
     if (!f.mobile.trim()) { setErr("Client mobile number is required."); return; }
     if (!f.service) { setErr("Choose the service required."); return; }
     const nums = (db.apn_leads || []).map((l) => Number(String(l.leadId || "").replace(/\D/g, "")) || 0);
     const n = (nums.length ? Math.max(...nums) : 0) + 1;
-    onSave({ id: uid(), leadId: apnLeadId(n), partnerId: meRow.id, partnerName: meRow.name, clientName: f.clientName.trim(), mobile: f.mobile.trim(), business: String(f.business || "").trim(), service: f.service, budget: String(f.budget || "").trim(), college: String(f.college || "").trim(), tieUp: f.tieUp || "", tieUpReciprocal: false, notes: f.notes.trim(), status: "Submitted", createdAt: Date.now() });
+    savingRef.current = true; setBusy(true); setErr("");
+    if (!idRef.current) idRef.current = uid();
+    try {
+    await onSave({ id: idRef.current, leadId: apnLeadId(n), partnerId: meRow.id, partnerName: meRow.name, clientName: f.clientName.trim(), mobile: f.mobile.trim(), business: String(f.business || "").trim(), service: f.service, budget: String(f.budget || "").trim(), college: String(f.college || "").trim(), tieUp: f.tieUp || "", tieUpReciprocal: false, notes: f.notes.trim(), status: "Submitted", createdAt: Date.now() });
     onClose();
+    } catch (e) { setErr(e?.message || "Could not save your lead. Your details are still here; please retry."); }
+    finally { savingRef.current = false; setBusy(false); }
   };
   return (
-    <Modal title="Submit a lead" onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={!enabled.length}><Send size={15} />Submit lead</button></>}>
+    <Modal title="Submit a lead" onClose={() => { if (!savingRef.current) onClose(); }}
+      footer={<><button className="btn" disabled={busy} onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy || !enabled.length}><Send size={15} />{busy ? "Submitting…" : "Submit lead"}</button></>}>
       {!enabled.length && <div className="banner" style={{ margin: "0 0 12px" }}><AlertTriangle size={15} />Complete a training quiz to unlock lead submission.</div>}
       <Field label="Client name" required error={err}><input className="input" value={f.clientName} onChange={(e) => set("clientName", e.target.value)} placeholder="Client's name" /></Field>
       <div className="grid2">
-        <Field label="Mobile number" required><input className="input" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
+        <Field label="Mobile number" required><input className="input" type="tel" inputMode="tel" autoComplete="tel" value={f.mobile} onChange={(e) => set("mobile", e.target.value)} placeholder="10-digit mobile" /></Field>
         <Field label={rules.showBusiness ? "Business name" : "College / campus"}><input className="input" value={rules.showBusiness ? f.business : f.college} onChange={(e) => set(rules.showBusiness ? "business" : "college", e.target.value)} placeholder={rules.showBusiness ? "Business / shop" : "College / campus"} /></Field>
       </div>
       <Field label="Service required" required>
@@ -41,7 +50,7 @@ export default function APNLeadForm({ meRow, db, initial, onSave, onClose, runti
           {enabled.length ? enabled.map(([k, l]) => <option key={k} value={k}>{l}</option>) : <option value="">No services unlocked yet</option>}
         </select>
       </Field>
-      {rules.showBudget && <Field label="Expected budget"><input className="input mono" value={f.budget} onChange={(e) => set("budget", e.target.value)} placeholder="Approximate budget (₹)" /></Field>}
+      {rules.showBudget && <Field label="Expected budget"><input className="input mono" inputMode="decimal" value={f.budget} onChange={(e) => set("budget", e.target.value)} placeholder="Approximate budget (₹)" /></Field>}
       {rules.showTieUps && (
         <Field label="Tie-up with the client" hint="Mark an express tie-up — when the client works with ALLBEE on the other side of the deal both sides govern the relationship.">
           <select className="select" value={f.tieUp} onChange={(e) => set("tieUp", e.target.value)}>

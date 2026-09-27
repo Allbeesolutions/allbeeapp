@@ -98,7 +98,7 @@ export function APNStateHead({
         <APNMetric k="Conversions" v={converted.length} icon={<BadgeCheck size={13} />} />
       </div>
       <div className="apn-head-tabs">
-        <button className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button>
+        <button aria-pressed={focus === "overview"} className={focus === "overview" ? "on" : ""} onClick={() => setFocus("overview")}>Overview</button>
         <button className={focus === "districts" ? "on" : ""} onClick={() => setFocus("districts")}>Districts ({districts.length})</button>
         <button className={focus === "partners" ? "on" : ""} onClick={() => setFocus("partners")}>Partners ({members.length})</button>
       </div>
@@ -126,8 +126,8 @@ export function APNStateHead({
       {focus === "partners" && (
         <div>
           <div className="apn-head-toolbar">
-            <div className="searchbox"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, district, APN ID…" /></div>
-            <select className="select" value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}><option value="all">All districts</option>{districts.map((d) => <option key={d} value={d}>{d}</option>)}</select>
+            <div className="searchbox"><Search size={15} /><input aria-label="Search partners" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search partner, district, APN ID…" /></div>
+            <select aria-label="Filter district" className="select" value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}><option value="all">All districts</option>{districts.map((d) => <option key={d} value={d}>{d}</option>)}</select>
           </div>
           <div className="apn-list">{filtered.length ? filtered.map((p) => <APNHeadPartnerCard key={p.id} db={db} partner={p} mutate={mutate} viewer={meRow} allowActions={true} onApprove={approvePartner} onReject={rejectPartner} onLogCall={logCall} onRecommend={recommend} Avatar={Avatar} money={money} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} />) : <div className="apn-rowcard"><Empty icon={<Users size={22} />} title="No partners found" text="No partner matches this state and filter." /></div>}</div>
         </div>

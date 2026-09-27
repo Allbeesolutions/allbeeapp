@@ -5,6 +5,8 @@ export default function APNNetwork(props) {
   const { db = {}, meRow, pid, reload, onOpenWithdrawals, refreshTick = 0 } = props;
   const { APNReferralMetric, Avatar, Dashboard, Empty, Modal, fmtDate, fmtDateTime, money, referralCodeFor, referralLinkFor, referralQrFor, referralWalletFor, todayISO, Users, Copy, Pencil, Send, Download, Coins, CalendarDays, Hourglass, Wallet, BadgeCheck, UserCheck, UserPlus, Link2, Clock, Trophy, ChevronRight, TrendingUp, supabase, exportRowsToExcel } = props.runtime || {};
 
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState("dashboard");
   const [network, setNetwork] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -32,12 +34,17 @@ export default function APNNetwork(props) {
   // RPC storm that could make the Network page appear to crash/freeze.
   const refresh = useCallback(async () => {
     if (!supabase?.rpc || !pid) return;
+    setLoading(true); setLoadError("");
+    try {
     const [networkResult, boardResult] = await Promise.all([
       supabase.rpc("apn_referral_network", { p_partner_id: pid }),
       supabase.rpc("apn_referral_leaderboard", { p_period: leaderPeriod }),
     ]);
+    if (networkResult.error || boardResult.error) setLoadError("Some network information could not be updated. Try again to load the latest records.");
     if (!networkResult.error) setNetwork(Array.isArray(networkResult.data) ? networkResult.data.filter((row) => row && typeof row === "object") : []);
     if (!boardResult.error) setLeaderboard(Array.isArray(boardResult.data) ? boardResult.data.filter((row) => row && typeof row === "object") : []);
+    } catch (e) { setLoadError("Your network could not be updated. Check your connection and try again."); }
+    finally { setLoading(false); }
   }, [pid, leaderPeriod, supabase]);
   useEffect(() => {
     if (!codeRow && pid && supabase?.rpc) supabase.rpc("apn_referral_ensure_code", { p_partner_id: pid }).then(() => reload?.()).catch(() => {});
@@ -89,7 +96,7 @@ export default function APNNetwork(props) {
   };
   const copy = async (value, label) => {
     if (!value) return;
-    try { await navigator.clipboard?.writeText(value); setMessage({ type: "ok", text: `${label} copied.` }); } catch { setMessage({ type: "err", text: `Could not copy ${label.toLowerCase()}.` }); }
+    try { if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable"); await navigator.clipboard.writeText(value); setMessage({ type: "ok", text: `${label} copied.` }); } catch { setMessage({ type: "err", text: `Could not copy ${label.toLowerCase()}.` }); }
   };
   const share = async () => {
     if (!link) return;
@@ -103,8 +110,10 @@ export default function APNNetwork(props) {
   return <div>
     <div className="apn-section-h" style={{ display: "flex", alignItems: "center", gap: 8 }}><Users size={18} /> My Network</div>
     <div className="apn-seg-scroll" aria-label="Referral network sections">
-      {[['dashboard', 'Dashboard'], ['referrals', 'Referrals'], ['timeline', 'Timeline'], ['leaderboard', 'Leaderboard']].map(([key, label]) => <button key={key} className={view === key ? "on" : ""} onClick={() => setView(key)}>{label}</button>)}
+      {[['dashboard', 'Dashboard'], ['referrals', 'Referrals'], ['timeline', 'Timeline'], ['leaderboard', 'Leaderboard']].map(([key, label]) => <button key={key} aria-pressed={view === key} className={view === key ? "on" : ""} onClick={() => setView(key)}>{label}</button>)}
     </div>
+    {loading && <div role="status" className="hint-line" style={{ marginBottom: 12 }}>Updating network records…</div>}
+    {loadError && <div role="alert" className="banner">{loadError}<button className="btn sm" disabled={loading} onClick={refresh}>Try again</button></div>}
     {message && <div className={`auth-msg ${message.type === "ok" ? "ok" : "err"}`} style={{ marginBottom: 12 }}>{message.text}</div>}
 
     {view === "dashboard" && <>
@@ -144,11 +153,11 @@ export default function APNNetwork(props) {
       <div className="apn-rowcard"><div style={{ fontWeight: 700, marginBottom: 8 }}>Referral withdrawals</div><div className="hint-line" style={{ marginBottom: 9 }}>Withdrawable balance: {money(wallet.withdrawable)}. New requests use the secure Withdrawal Center, which locks the balance and keeps one settlement history for every wallet.</div><button className="btn sm primary" onClick={onOpenWithdrawals}><Wallet size={13} />Open Withdrawal Center</button></div>
     </>}
 
-    {view === "referrals" && <div className="apn-rowcard" style={{ padding: 0 }}><div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Direct referrals <span className="badge" style={{ marginLeft: 5 }}>{referralRows.length}</span></div>{referralRows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Users size={22} color="var(--muted)" />} title="No direct referrals yet" text="Share your code or link to invite your first partner." action={<button className="btn primary" onClick={() => setView("dashboard")}><Send size={14} />Share invitation</button>} /></div> : referralRows.map((row) => <button aria-label="Next" key={row.relationship_id} type="button" className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, borderBottom: "1px solid var(--border)", borderRadius: 0, textAlign: "left", boxShadow: "none" }} onClick={() => setDetail(row)}><Avatar name={row.referred_name} size={36} fontSize={14} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{row.referred_name || "APN Partner"}</div><div className="hint-line" style={{ fontSize: 12 }}>{row.referred_apn_id || "APN partner"} · Joined {fmtDate(row.linked_at)}</div></div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><span className={`badge ${statusTone(row.status)}`}>{row.status}</span></div><ChevronRight size={16} color="var(--muted)" /></button>)}</div>}
+    {view === "referrals" && <div className="apn-rowcard" style={{ padding: 0 }}><div style={{ padding: "13px 15px", borderBottom: "1px solid var(--border)", fontWeight: 700 }}>Direct referrals <span className="badge" style={{ marginLeft: 5 }}>{referralRows.length}</span></div>{referralRows.length === 0 ? <div style={{ padding: 8 }}><Empty icon={<Users size={22} color="var(--muted)" />} title="No direct referrals yet" text="Share your code or link to invite your first partner." action={<button className="btn primary" onClick={() => setView("dashboard")}><Send size={14} />Share invitation</button>} /></div> : referralRows.map((row) => <button aria-label={`View ${row.referred_name || "partner"} referral details`} key={row.relationship_id} type="button" className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, borderBottom: "1px solid var(--border)", borderRadius: 0, textAlign: "left", boxShadow: "none" }} onClick={() => setDetail(row)}><Avatar name={row.referred_name} size={36} fontSize={14} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{row.referred_name || "APN Partner"}</div><div className="hint-line" style={{ fontSize: 12 }}>{row.referred_apn_id || "APN partner"} · Joined {fmtDate(row.linked_at)}</div></div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><span className={`badge ${statusTone(row.status)}`}>{row.status}</span></div><ChevronRight size={16} color="var(--muted)" /></button>)}</div>}
 
     {view === "timeline" && <div className="apn-rowcard">{timelineRows.length === 0 ? <Empty icon={<Clock size={22} color="var(--muted)" />} title="No referral activity yet" text="Linking a code, a new referral, earnings, and withdrawals will appear here." /> : <div className="apn-list">{timelineRows.map((row) => <div key={row.id} className="apn-rowcard" style={{ boxShadow: "none", background: "var(--surface-2)" }}><div style={{ display: "flex", gap: 9 }}><div style={{ display: "flex", gap: 9 }}><span className="pos"><Clock size={13} /></span><div><div style={{ fontWeight: 700 }}>{row.title}</div><div className="hint-line" style={{ fontSize: 12, marginTop: 3 }}>{row.description}</div><div className="hint-line" style={{ fontSize: 11, marginTop: 5 }}>{fmtDateTime(row.created_at)}</div></div></div></div></div>)}</div>}</div>}
 
-    {view === "leaderboard" && <div className="apn-rowcard"><div className="apn-seg-scroll">{[["monthly", "Monthly"], ["yearly", "Yearly"], ["lifetime", "Lifetime"]].map(([key, label]) => <button key={key} className={leaderPeriod === key ? "on" : ""} onClick={() => setLeaderPeriod(key)}>{label}</button>)}</div>{leaderboard.length === 0 ? <Empty icon={<Trophy size={22} color="var(--muted)" />} title="Leaderboard is waiting" text="Referral earnings will appear here after a referred partner's collection is recorded." /> : leaderboard.map((row, index) => <div key={row.partner_id} className="apn-rank"><span className={`pos ${index < 3 ? `g${index + 1}` : ""}`}>{index + 1}</span><Avatar name={row.partner_name} size={28} fontSize={11} /><div style={{ flex: 1, fontWeight: 700 }}>{row.partner_name}{row.partner_id === pid && <span className="badge pri" style={{ marginLeft: 6 }}>You</span>}</div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><div className="hint-line" style={{ fontSize: 11 }}>{row.referral_count} referrals</div></div></div>)}</div>}
+    {view === "leaderboard" && <div className="apn-rowcard"><div className="apn-seg-scroll">{[["monthly", "Monthly"], ["yearly", "Yearly"], ["lifetime", "Lifetime"]].map(([key, label]) => <button key={key} aria-pressed={leaderPeriod === key} className={leaderPeriod === key ? "on" : ""} onClick={() => setLeaderPeriod(key)}>{label}</button>)}</div>{leaderboard.length === 0 ? <Empty icon={<Trophy size={22} color="var(--muted)" />} title="Leaderboard is waiting" text="Referral earnings will appear here after a referred partner's collection is recorded." /> : leaderboard.map((row, index) => <div key={row.partner_id} className="apn-rank"><span className={`pos ${index < 3 ? `g${index + 1}` : ""}`}>{index + 1}</span><Avatar name={row.partner_name} size={28} fontSize={11} /><div style={{ flex: 1, fontWeight: 700 }}>{row.partner_name}{row.partner_id === pid && <span className="badge pri" style={{ marginLeft: 6 }}>You</span>}</div><div style={{ textAlign: "right" }}><div className="mono" style={{ fontWeight: 700 }}>{money(row.earnings)}</div><div className="hint-line" style={{ fontSize: 11 }}>{row.referral_count} referrals</div></div></div>)}</div>}
 
     {detail && <Modal title={detail.referred_name || "Referral details"} onClose={() => setDetail(null)} footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}><div className="hint-line" style={{ marginBottom: 10 }}>{detail.referred_apn_id} · Linked {fmtDate(detail.linked_at)}</div><div className="apn-metrics"><APNReferralMetric label="Revenue" value={money(detail.revenue)} icon={<TrendingUp size={13} />} /><APNReferralMetric label="Referral earnings" value={money(detail.earnings)} icon={<Coins size={13} />} tone="pos" /></div><div style={{ marginTop: 14, fontWeight: 700 }}>Referral earnings</div>{earningRows.filter((row) => row.relationship_id === detail.relationship_id).map((row) => <div key={row.id} className="item-meta" style={{ justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid var(--border)" }}><span>{money(row.revenue_amount)} · {row.referral_percent}% snapshot · {fmtDate(row.collection_at)}</span><span className="badge">{row.status}</span></div>)}</Modal>}
   </div>;

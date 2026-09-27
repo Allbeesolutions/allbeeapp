@@ -9,3 +9,6 @@ npm-debug.log*
 supabase/.temp/
 .vercel
 .env*
+
+# Local generated UI evidence
+.ai/apn-ux-evidence/

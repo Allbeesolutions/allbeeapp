@@ -8,8 +8,8 @@ export default function APNLeads({ db, meRow, pid, openModal, mutate, runtime = 
   return (
     <div>
       <div className="apn-section-h">My leads</div>
-      <div className="apn-seg-scroll">{[["all", "All"], ["open", "Active"], ["converted", "Converted"]].map(([k, l]) => <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
-      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<UserPlus size={22} color="var(--muted)" />} title="No leads yet" text="Submit your first lead to start earning commission." action={<button className="btn primary" onClick={() => openModal({ type: "apnLead" })}><Plus size={16} />Submit a lead</button>} /></div>
+      <div className="apn-seg-scroll">{[["all", "All"], ["open", "Active"], ["converted", "Converted"]].map(([k, l]) => <button key={k} aria-pressed={view === k} className={view === k ? "on" : ""} onClick={() => setView(k)}>{l}</button>)}</div>
+      {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<UserPlus size={22} color="var(--muted)" />} title={view === "all" ? "No leads yet" : "No " + view + " leads"} text={view === "all" ? "Submit your first lead to start earning commission." : "Try another filter or add your next opportunity."} action={<button className="btn primary" onClick={() => openModal({ type: "apnLead" })}><Plus size={16} />Submit a lead</button>} /></div>
         : <div className="apn-list">{list.map((l) => (
           <div key={l.id} className="apn-rowcard">
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
