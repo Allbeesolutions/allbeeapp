@@ -4031,6 +4031,12 @@ export function AdminAPNChat({ me, onUnreadChange }) {
     .filter((c) => `${c.subject || ""} ${c.last_message || ""}`.toLowerCase().includes(search.toLowerCase().trim()));
   const partners = contacts.filter((c) => c.contact_type === "partner").filter((c) => `${c.name} ${c.apn_id} ${c.district || ""}`.toLowerCase().includes(search.toLowerCase().trim()));
   const unread = conversations.reduce((n, c) => n + Number(c.unread_count || 0), 0);
+  const conversationContact = (c) => {
+    if (!c || c.conv_type !== "person") return null;
+    const subject = String(c.subject || "").trim().toLowerCase();
+    return contacts.find((x) => x.contact_type === "partner" && (String(x.name || "").trim().toLowerCase() === subject || String(x.apn_id || "").trim().toLowerCase() === subject)) || null;
+  };
+  const profilePhotoFor = (id) => contacts.find((c) => String(c.contact_id) === String(id))?.photo_url || null;
 
   return (
     <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
@@ -4044,7 +4050,7 @@ export function AdminAPNChat({ me, onUnreadChange }) {
           <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search APN chats or partners…" />
           {loading && <div className="hint-line" style={{ padding: 10 }}>Loading APN chats…</div>}
           {filtered.map(c => <button key={c.conversation_id} className="apn-tc-recent-row" style={{ width: "100%", marginTop: 6 }} onClick={() => open(c)}>
-            <div className="apn-tc-recent-avatar"><MessageCircle size={15} /></div><div className="apn-tc-recent-copy"><b>{c.subject || "APN chat"}</b><span>{c.last_message || "No messages yet"}</span></div>{Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{c.unread_count}</span>}
+            <div className="apn-tc-recent-avatar">{conversationContact(c)?.photo_url ? <Avatar name={conversationContact(c)?.name || c.subject || "APN"} url={conversationContact(c)?.photo_url} size={32} fontSize={11} /> : <MessageCircle size={15} />}</div><div className="apn-tc-recent-copy"><b>{c.subject || "APN chat"}</b><span>{c.last_message || "No messages yet"}</span></div>{Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{c.unread_count}</span>}
           </button>)}
           {!loading && filtered.length === 0 && <div className="hint-line" style={{ padding: 10 }}>No APN conversations found.</div>}
           <div className="apn-tc-card" style={{ marginTop: 12 }}><div className="apn-tc-card-title">Start partner chat</div>
@@ -4052,9 +4058,9 @@ export function AdminAPNChat({ me, onUnreadChange }) {
           </div>
         </aside>
         {selected ? <main className="apn-tc-chat" ref={scrollRef}>
-          <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }}><ArrowLeft size={17}/></button><div style={{fontWeight:700,flex:1}}>{selected.subject || "APN chat"}<div className="apn-tc-presence">{selected.conv_type === "person" ? "Partner conversation" : `${selected.conv_type || "APN"} conversation`}</div></div></div>
+          <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }}><ArrowLeft size={17}/></button>{conversationContact(selected) && <Avatar name={conversationContact(selected)?.name || selected.subject || "APN"} url={conversationContact(selected)?.photo_url} size={34} fontSize={12} />}<div style={{fontWeight:700,flex:1}}>{selected.subject || "APN chat"}<div className="apn-tc-presence">{selected.conv_type === "person" ? "Partner conversation" : `${selected.conv_type || "APN"} conversation`}</div></div></div>
           <div className="apn-tc-messages">
-            {messages.map(m => { const mine = String(m.sender_id) === String(me.id); return <div key={m.id} className={`apn-tc-msg ${mine ? "mine" : "theirs"}`}><div className="apn-tc-bubble-wrap"><div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{m.created_at ? fmtDateTime(new Date(m.created_at)) : ""}</div></div></div></div>; })}
+            {messages.map(m => { const mine = String(m.sender_id) === String(me.id); return <div key={m.id} className={`apn-tc-msg ${mine ? "mine" : "theirs"}`}>{!mine && <Avatar name={m.sender_name || "APN"} url={profilePhotoFor(m.sender_id)} size={24} fontSize={9} style={{ flexShrink: 0 }} />}<div className="apn-tc-bubble-wrap"><div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{m.created_at ? fmtDateTime(new Date(m.created_at)) : ""}</div></div></div></div>; })}
             {messages.length === 0 && <Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
           </div>
           <div className="apn-tc-compose"><textarea className="textarea" value={text} onChange={e => setText(e.target.value)} placeholder="Message the APN partner…" rows={2} maxLength={2000} onKeyDown={e => { if(e.key === "Enter" && !e.shiftKey){e.preventDefault();send();} }}/><button className="btn primary" onClick={send} disabled={!text.trim()}>Send</button></div>
