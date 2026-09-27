@@ -91,7 +91,7 @@ export async function verifyInteractions(page, out, writeFileSync, resolve) {
   await page.evaluate(()=>{window.__uiMock.apnAIError="Rate limit reached for model `openai/gpt-oss-120b` in organization `org_secret` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 4916, Requested 5165. Please try again in 15.6075s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing";});
   await input.fill("Why was my commission reversed?");
   await page.getByRole("button",{name:"Send",exact:true}).click();
-  await page.getByText("Please try again in 15.6075s.",{exact:true}).waitFor();
+  await page.getByText("ALLBEE AI is currently busy due to high usage. Please try again in 15.6075s.",{exact:true}).waitFor();
   const afterError=await page.locator(".apn-ai-chat").innerText();
   assert.equal(afterError.includes("gpt-oss-120b"),false);
   assert.equal(afterError.includes("console.groq.com"),false);

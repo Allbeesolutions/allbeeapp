@@ -21,7 +21,7 @@ export function scrubText(v) {
 export function friendlyAIErrorText(error) {
   const raw = String(error?.message || error || "ALLBEE AI returned an error.");
   const retry = raw.match(/please\s+try\s+again\s+in\s+([0-9.]+)s/i) || raw.match(/try\s+again\s+in\s+([0-9.]+)\s*s/i);
-  if (retry) return `Please try again in ${retry[1]}s.`;
+  if (retry) return `ALLBEE AI is currently busy due to high usage. Please try again in ${retry[1]}s.`;
   return raw;
 }
 
