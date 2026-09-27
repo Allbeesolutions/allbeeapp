@@ -3969,6 +3969,14 @@ export function AdminAPNChat({ me, onUnreadChange }) {
   useEffect(() => { load(); }, [load]);
   const selectedRef = useRef(null);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => {
+    if (!selected || loading) return;
+    const id = selected.conversation_id || selected.id;
+    if (!conversations.some((c) => (c.conversation_id || c.id) === id)) {
+      setSelected(null);
+      setMessages([]);
+    }
+  }, [conversations, selected, loading]);
 
   useEffect(() => {
     const ch = supabase.channel(`admin-apn-team-chat:${me.id}`);
