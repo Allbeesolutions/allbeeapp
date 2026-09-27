@@ -590,7 +590,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                   const supportLabel = /mohamed\s+backer\s+alim/i.test(a.name || "")
                     ? "Chat with AllBee Founder and CEO"
                     : /^haji$/i.test((a.name || "").trim())
-                      ? "Chat with AllBee Cofounder and CFO"
+                      ? "Chat with AllBee Co-founder and CFO"
                       : "Chat with AllBee Admins";
                   return (
                     <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
