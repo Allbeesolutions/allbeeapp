@@ -4,14 +4,16 @@
   "packageManager": "npm@10",
   "version": "1.0.1",
   "type": "module",
-  "description": "ALLBEE \u2014 internal business management app for ALLBEE SOLUTIONS (Haji & Alim)",
+  "description": "ALLBEE — internal business management app for ALLBEE SOLUTIONS (Haji & Alim)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "node scripts/test-lockdown-e2e.mjs",
-    "test:ui": "node scripts/ui/verify.mjs --full && node scripts/ui/verify.mjs --interactions"
+    "test:ui": "node scripts/ui/verify.mjs --full && node scripts/ui/verify.mjs --interactions",
+    "test:bundle": "node scripts/release/check-bundle-budget.mjs",
+    "certify": "npm test -- --run && npm run build && npm run test:bundle"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
