@@ -32,6 +32,9 @@ export const supabase={
   window.__uiMock.rpcs.push({name,args});
   if(name==="apn_agreement_status")return {data:{required:false,requiredList:[],requiredCount:0},error:null};
   if(name==="ai_get_dashboard")return {data:{health:{},lead_scores:[],partner_scores:[],employee_scores:[],forecasts:[],insights:[],recommendations:[],settings:{}},error:null};
+  if(name==="business_automation_history")return {data:[],error:null};
+  if(name==="business_automation_simulate")return {data:{matched:true,simulation:true},error:null};
+  if(["business_automation_upsert_rule","business_automation_delete_rule","business_automation_dlq_recover","business_automation_approve","business_automation_reject"].includes(name))return {data:{ok:true},error:null};
   if(["finance_v5_dashboard","crm_v5_dashboard","apn_partner_financial_snapshot"].includes(name))return {data:null,error:null};
   if(name.includes("available"))return {data:true,error:null};
   return {data:[],error:null};

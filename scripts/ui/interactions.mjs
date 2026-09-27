@@ -66,6 +66,24 @@ export async function verifyInteractions(page, out, writeFileSync, resolve) {
   await page.getByText("Payout details saved. Verification is pending.").waitFor();
   assert.equal(await page.evaluate(()=>window.__uiMock.rpcs.filter(r=>r.name==="apn_upsert_withdrawal_bank_account").length),1);
  });
+ await check("Superadmin attendance Edit opens without runtime crash",async()=>{
+  await open("superadmin","attendance",1440);
+  const edit=page.getByRole("button",{name:"Edit",exact:true}).first();
+  await edit.waitFor();
+  await edit.click();
+  await page.getByRole("dialog").waitFor();
+  assert.equal((await page.locator("body").innerText()).includes("AttendanceEditModal is not defined"),false);
+  await page.keyboard.press("Escape");
+ });
+ await check("AI automation workflow create, simulate and delete actions",async()=>{
+  await open("admin","ai-center",1440);
+  await page.getByRole("button",{name:"Automation",exact:true}).click();
+  await page.getByRole("button",{name:"New workflow",exact:true}).click();
+  await page.getByLabel("Title",{exact:true}).fill("UI action audit workflow");
+  await page.getByRole("button",{name:/Save & version/}).click();
+  await page.waitForFunction(()=>window.__uiMock.rpcs.some(r=>r.name==="business_automation_upsert_rule"));
+  assert.equal(await page.evaluate(()=>window.__uiMock.rpcs.filter(r=>r.name==="business_automation_upsert_rule").length),1);
+ });
  for(const width of [320,768,1440])await check("Client support dialog at "+width+"px",async()=>{
   await open("client","dashboard",width);
   await page.getByRole("button",{name:"Support",exact:true}).click();
