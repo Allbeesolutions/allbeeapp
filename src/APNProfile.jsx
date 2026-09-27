@@ -104,7 +104,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
           ["APN ID", apnIdFor(meRow)], ["Current level", `${stats.level.name} (Level ${stats.level.key})`], ["Commission rate", effRate + "%"],
         ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border)" }}><span className="hint-line">{label}</span><span style={{ fontWeight: 600, textAlign: "right" }}>{value || "—"}</span></div>)}
       </div>
-      <APNBankDetails db={db} pid={meRow.id} reload={reload} />
+      <APNBankDetails db={db} pid={meRow.id} reload={reload} supabase={supabase} Field={Field} />
       <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
     </div>
   );

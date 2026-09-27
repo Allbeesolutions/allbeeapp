@@ -62,3 +62,27 @@ describe("AI Intelligence Center", () => {
     expect(rpc).toHaveBeenCalledWith("ai_save_settings", expect.any(Object));
   });
 });
+
+describe("Assistant failure and retry", () => {
+ it("preserves the draft, prevents duplicate sends, and retries without duplicate history", async () => {
+  let rejectRequest;
+  const callAI = vi.fn().mockImplementationOnce(() => new Promise((_, reject) => { rejectRequest=reject; })).mockResolvedValue("Recovered");
+  const runtime = { ...baseRuntime, callAI };
+  render(<AllbeeAI db={{}} config={{}} me={{name:"Alex"}} role="admin" isAdmin go={vi.fn()} runtime={runtime} />);
+  const input = screen.getByLabelText("Message ALLBEE AI");
+  fireEvent.change(input,{target:{value:"Review my tasks"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send message"}));
+  await waitFor(() => expect(callAI).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("button",{name:"New chat"}).disabled).toBe(true);
+  fireEvent.keyDown(input,{key:"Enter"});
+  expect(callAI).toHaveBeenCalledTimes(1);
+  rejectRequest(new Error("private gateway failure"));
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  expect(input.value).toBe("Review my tasks");
+  expect(screen.queryByText("private gateway failure")).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"Try again"}));
+  await waitFor(() => expect(screen.getByText("Recovered")).toBeTruthy());
+  expect(callAI).toHaveBeenCalledTimes(2);
+  expect(screen.getAllByText("Review my tasks")).toHaveLength(1);
+ });
+});

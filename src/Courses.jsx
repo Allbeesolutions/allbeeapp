@@ -23,8 +23,8 @@ export default function Courses(props) {
                 <td><span className={"badge " + (s.paymentStatus === "Paid" ? "pos" : s.paymentStatus === "Partial" ? "accent" : "neg")}>{s.paymentStatus}</span></td>
                 <td><div className="row-actions">
                   {canFinance && <button className="btn sm primary" onClick={() => openIncome({ client: s.name, project: s.course || "Course fee", amount: s.fee, category: "Course", source: { kind: "student", id: s.id } })}>Record fee</button>}
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "student", initial: s })}><Pencil size={14} /></button>
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove student?", body: `Remove ${s.name}?`, note: "They move to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>
+                  <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "student", initial: s })}><Pencil size={14} /></button>
+                  <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove student?", body: `Remove ${s.name}?`, note: "They move to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>
                 </div></td>
               </tr>
             ))}</tbody>

@@ -39,7 +39,7 @@ export default function Knowledge(props) {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}><BookOpen size={16} color="var(--primary)" /><span className="tag">{k.category}</span></div>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{k.title}</div>
               <div className="sub" style={{ lineHeight: 1.5 }}>{(k.body || "").slice(0, 110)}{(k.body || "").length > 110 ? "…" : ""}</div>
-              {isAdmin && <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={(e) => e.stopPropagation()}><button className="btn sm" title="Share with the team as a notification" onClick={() => shareKb(k, "notify")}><Bell size={13} />Share</button><button className="btn sm" onClick={() => openModal({ type: "knowledge", initial: k })}><Pencil size={13} /></button><button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete article?", body: `Delete "${k.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(k) })}><Trash2 size={13} /></button></div>}
+              {isAdmin && <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={(e) => e.stopPropagation()}><button className="btn sm" title="Share with the team as a notification" onClick={() => shareKb(k, "notify")}><Bell size={13} />Share</button><button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "knowledge", initial: k })}><Pencil size={13} /></button><button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete article?", body: `Delete "${k.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(k) })}><Trash2 size={13} /></button></div>}
             </div>
           ))}
       </div>

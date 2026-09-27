@@ -49,7 +49,7 @@ export default function Leave(props) {
                 </>
               )}
               {!isAdmin && l.status === "Pending" && (
-                <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => openModal({ type: "confirm", title: "Cancel request?", body: "Withdraw this pending leave request?", confirmLabel: "Cancel request", onConfirm: () => cancel(l) })}><Trash2 size={14} /></button>
+                <button aria-label="Delete record" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => openModal({ type: "confirm", title: "Cancel request?", body: "Withdraw this pending leave request?", confirmLabel: "Cancel request", onConfirm: () => cancel(l) })}><Trash2 size={14} /></button>
               )}
             </div>
           </div>

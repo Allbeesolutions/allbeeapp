@@ -24,8 +24,8 @@ export default function Marketing(props) {
                 <div><span className={"badge " + due.tone}>{due.label}</span></div>
                 <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
                   {canFinance && <button className="btn sm primary" onClick={() => openIncome({ client: m.client, project: (m.plan || "Marketing") + " — monthly", amount: m.monthlyFee, category: "Marketing", source: { kind: "marketing", id: m.id } })}>Record payment</button>}
-                  <button className="btn sm" onClick={() => openModal({ type: "marketing", initial: m })}><Pencil size={13} /></button>
-                  <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Remove client?", body: `Remove ${m.client}?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(m) })}><Trash2 size={13} /></button>
+                  <button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "marketing", initial: m })}><Pencil size={13} /></button>
+                  <button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Remove client?", body: `Remove ${m.client}?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(m) })}><Trash2 size={13} /></button>
                 </div>
               </div>
             );

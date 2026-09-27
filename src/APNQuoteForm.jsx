@@ -55,7 +55,7 @@ export default function APNQuoteForm({ meRow, initial, onSave, onClose, runtime 
           <div key={it.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input className="input" value={it.label} onChange={(e) => upItem(it.id, "label", e.target.value)} style={{ flex: 1 }} />
             <input className="input mono" type="number" value={it.amount} onChange={(e) => upItem(it.id, "amount", e.target.value)} style={{ width: 110 }} />
-            <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmItem(it.id)}><X size={14} /></button>
+            <button aria-label="Close" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmItem(it.id)}><X size={14} /></button>
           </div>
         ))}</div>
         <div className="calc-box" style={{ marginTop: 10 }}><div className="calc-row"><b>Total</b><b className="mono">{money(total)}</b></div></div>

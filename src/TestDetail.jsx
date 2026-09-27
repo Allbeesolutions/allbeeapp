@@ -125,7 +125,7 @@ export default function TestDetail({ sessionId, db, mutate, isAdmin, me, current
                     : (i.note ? <div className="hint-line" style={{ marginTop: 4 }}>{i.note}</div> : null)}
                   {i.done && i.by && <div className="hint-line" style={{ marginTop: 4, fontSize: 11 }}>Tested by {i.by} · {fmtTime(i.at)}</div>}
                 </div>
-                {isAdmin && <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => removeItemRow(i.id)} title="Remove item"><X size={13} /></button>}
+                {isAdmin && <button aria-label="Close" className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => removeItemRow(i.id)} title="Remove item"><X size={13} /></button>}
               </div>
             ))}
           {isAdmin && (
@@ -149,7 +149,7 @@ export default function TestDetail({ sessionId, db, mutate, isAdmin, me, current
                   {b.text && <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{b.text}</div>}
                   <div className="hint-line" style={{ marginTop: 4, fontSize: 11 }}>{b.by || "—"} · {fmtTime(b.at)}</div>
                 </div>
-                {(isAdmin || b.byId === me.id) && <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => removeBug(b)} title="Delete report"><Trash2 size={13} /></button>}
+                {(isAdmin || b.byId === me.id) && <button aria-label="Delete record" className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => removeBug(b)} title="Delete report"><Trash2 size={13} /></button>}
               </div>
               {(b.images || []).length > 0 && (
                 <div className="thumb-row">
@@ -166,7 +166,7 @@ export default function TestDetail({ sessionId, db, mutate, isAdmin, me, current
                 {bugImgs.map((im, idx) => (
                   <div key={idx} style={{ position: "relative" }}>
                     <img className="thumb" src={im.url} alt={im.name} />
-                    <button className="iconbtn" style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%" }} onClick={() => setBugImgs((p) => p.filter((_, i) => i !== idx))}><X size={12} /></button>
+                    <button aria-label="Close" className="iconbtn" style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%" }} onClick={() => setBugImgs((p) => p.filter((_, i) => i !== idx))}><X size={12} /></button>
                   </div>
                 ))}
                 {bugImgs.length < TEST_MAX_IMAGES && (

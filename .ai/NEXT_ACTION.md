@@ -1,3 +1,3 @@
-# Next Action
+# Next action
 
-Local six-task package is implemented and verified. The new finance migration is prepared but must be reviewed against the authorized AllBee Supabase project and applied before changing the ordinary client save to call the RPC. The accessible Vercel team owns the parent domain, yet none of its 19 project-domain assignments lists app.allbeesolutions.com; obtain the owning project/account context before remapping. Authenticated production roles, real APN egress/realtime and live RLS/grants still require project access or sessions. Frontend package fcd2f89 is pushed and deployed to the linked Vercel production alias; the finance migration remains unapplied. Future deployments still follow `allow_auto_deploy=false`.
+Local UI package verified and committed with coverage/handoff. Review UI_COVERAGE.md; new UI deployment requires authorization. Then verify authenticated internal/client/APN flows. Live AllBee Supabase migration/RLS checks require authorized project access. Prior fcd2f89 remains the last verified frontend release. No background task is claimed.

@@ -35,7 +35,7 @@ export default function Documents(props) {
               </div>
               <div className="row-actions" style={{ alignItems: "center" }}>
                 <a className="btn sm" href={d.url} target="_blank" rel="noreferrer"><ExternalLink size={13} />Open</a>
-                {canManage(d) && <><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "document", initial: d })}><Pencil size={14} /></button><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete document?", body: `Delete "${d.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(d) })}><Trash2 size={14} /></button></>}
+                {canManage(d) && <><button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "document", initial: d })}><Pencil size={14} /></button><button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete document?", body: `Delete "${d.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(d) })}><Trash2 size={14} /></button></>}
               </div>
             </div>
           ))}

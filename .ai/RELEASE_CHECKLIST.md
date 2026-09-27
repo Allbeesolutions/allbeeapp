@@ -22,3 +22,10 @@
 - [x] Custom domain read-only trace across 19 accessible projects; owning assignment remains unidentified.
 - [ ] Review/apply RPC migration on authorized AllBee Supabase, verify live permission/triggers, then wire ordinary finance save and test production rollback/retry.
 - [x] fcd2f89 pushed and linked allbeeapp Vercel production deployment Ready; custom domain serves exact local JS build checksum.
+
+## UI package — local 2026-09-27
+- [x] 232 tests, build, 504 route/viewport cases, 2 populated planned cases, 7 interactions.
+- [x] Preserve pre-existing HAO edits and business/RPC/role paths.
+- [ ] Authorize and deploy new UI commit.
+- [ ] Verify real client support, partner payout details, finance navigation and AI retry on release.
+- [ ] Resolve existing live DB/migration/RLS access gates; mocks do not certify them.

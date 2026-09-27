@@ -65,3 +65,17 @@ describe("lazy partner tab navigation", () => {
     expect(screen.queryByText("Something went wrong")).toBeNull();
   });
 });
+
+describe("APN profile bank details integration", () => {
+ it("hydrates the profile and saves payout details through the supplied client", async () => {
+  const { fireEvent } = await import("@testing-library/react");
+  const { supabase } = await import("./supabaseClient.js");
+  window.location.hash = "#/apn/profile";
+  render(<APNPortal db={baseDb} profile={profile} session={session} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
+  const upi = await screen.findByLabelText("UPI ID", {}, {timeout:5000});
+  fireEvent.change(upi,{target:{value:"partner@bank"}});
+  fireEvent.click(screen.getByRole("button",{name:"Save payout details"}));
+  await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_upsert_withdrawal_bank_account",expect.objectContaining({p_partner_id:"partner",p_upi_id:"partner@bank"})));
+  expect(await screen.findByText("Payout details saved. Verification is pending.")).toBeTruthy();
+ });
+});

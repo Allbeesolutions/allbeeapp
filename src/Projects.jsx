@@ -33,8 +33,8 @@ export default function Projects(props) {
                 {isAdmin && appr(p) !== "approved" && <button className="btn sm primary" onClick={() => setApproval(p, "approved")}><Check size={13} />Approve</button>}
                 {isAdmin && appr(p) === "pending" && <button className="btn sm danger" onClick={() => setApproval(p, "rejected")}><X size={13} />Reject</button>}
                 {canFinance && <button className="btn sm primary" onClick={() => openIncome({ client: p.client, project: p.name, amount: p.cost, category: "Project" })}>Record income</button>}
-                {canEditP(p) && <button className="btn sm" onClick={() => openModal({ type: "project", initial: p })}><Pencil size={13} /></button>}
-                {canEditP(p) && <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
+                {canEditP(p) && <button aria-label="Edit project" className="btn sm" onClick={() => openModal({ type: "project", initial: p })}><Pencil size={13} /></button>}
+                {canEditP(p) && <button aria-label="Delete project" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
                 {!canEditP(p) && <span className="hint-line" style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}><LockIcon size={11} />Admin-only after 7 days</span>}
               </div>
             </div>

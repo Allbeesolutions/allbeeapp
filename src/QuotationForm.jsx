@@ -49,7 +49,7 @@ export default function QuotationForm({ initial, onSave, onClose, clients, porta
               <input className="input" value={it.desc} onChange={(e) => setItem(i, "desc", e.target.value)} placeholder="Description" />
               <input className="input" type="number" value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} placeholder="Qty" />
               <input className="input" type="number" value={it.rate} onChange={(e) => setItem(i, "rate", e.target.value)} placeholder="Rate" />
-              <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => delItem(i)} disabled={f.items.length === 1}><X size={14} /></button>
+              <button aria-label="Close" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => delItem(i)} disabled={f.items.length === 1}><X size={14} /></button>
             </div>
           ))}
         </div>

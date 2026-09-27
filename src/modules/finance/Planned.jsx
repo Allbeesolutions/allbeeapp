@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BadgeCheck, CalendarClock, Pencil, Plus, Trash2 } from "lucide-react";
+import { Banknote, BadgeCheck, CalendarClock, Pencil, Plus, Trash2 } from "lucide-react";
 
 export default function Planned({ db, mutate, openModal, removeItem, openIncome, canFinance, helpers }) {
-  const { money, fmtDate, todayISO, Empty } = helpers;
+  const { money, fmtDate, todayISO, Empty, PLANNED_STATUS } = helpers;
   const list = [...db.planned].sort((a, b) => (a.nextDue || "").localeCompare(b.nextDue || ""));
   const del = (p) => removeItem("planned", p, { name: p.title, audit: `deleted planned expense "${p.title}"` });
   const monthlyTotal = list.filter((p) => p.recurrence === "Monthly").reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -28,10 +28,10 @@ export default function Planned({ db, mutate, openModal, removeItem, openIncome,
                 <td><span className={"badge " + dueTone(p)}>{p.nextDue ? fmtDate(p.nextDue) : "—"}</span></td>
                 <td className="num-cell mono">{money(p.amount)}</td>
                 <td><div className="row-actions">
-                  <select className="select" style={{ width: "auto", padding: "4px 6px" }} value={p.status || "Planned"} onChange={(e) => mutate((d) => ({ ...d, planned: d.planned.map((x) => x.id === p.id ? { ...x, status: e.target.value } : x) }), { action: `set planned "${p.title}" to ${e.target.value}`, module: "Planned expenses" })}>{PLANNED_STATUS.map((x) => <option key={x}>{x}</option>)}</select>
+                  <select aria-label="Planned expense status" className="select" style={{ width: "auto", padding: "4px 6px" }} value={p.status || "Planned"} onChange={(e) => mutate((d) => ({ ...d, planned: d.planned.map((x) => x.id === p.id ? { ...x, status: e.target.value } : x) }), { action: `set planned "${p.title}" to ${e.target.value}`, module: "Planned expenses" })}>{PLANNED_STATUS.map((x) => <option key={x}>{x}</option>)}</select>
                   {canFinance && <button className="btn sm primary" onClick={() => recordPaid(p)}>Log expense</button>}
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "planned", initial: p })}><Pencil size={14} /></button>
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={14} /></button>
+                  <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "planned", initial: p })}><Pencil size={14} /></button>
+                  <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={14} /></button>
                 </div></td>
               </tr>
             ))}</tbody>
@@ -61,7 +61,7 @@ function Announcements({ db, mutate, openModal, removeItem, isAdmin, me }) {
                   ? <div className="hint-line" style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, color: "var(--pos)" }}><BadgeCheck size={13} />You acknowledged this</div>
                   : <div style={{ marginTop: 10 }}><button className="btn sm primary" onClick={() => ack(a)}><Check size={13} />Acknowledge</button></div>)}
               </div>
-              {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "announcement", initial: a })}><Pencil size={14} /></button><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete announcement?", body: `Delete "${a.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(a) })}><Trash2 size={14} /></button></div>}
+              {isAdmin && <div className="row-actions"><button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "announcement", initial: a })}><Pencil size={14} /></button><button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete announcement?", body: `Delete "${a.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(a) })}><Trash2 size={14} /></button></div>}
             </div>
           </div>
         ))}</div>}

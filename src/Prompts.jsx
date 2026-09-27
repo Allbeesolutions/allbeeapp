@@ -28,8 +28,8 @@ function Prompts({ db, openModal, removeItem, runtime }) {
             <div className="hint-line" style={{ whiteSpace: "pre-wrap", maxHeight: 120, overflow: "hidden", fontSize: 13, lineHeight: 1.5 }}>{p.body}</div>
             <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
               <button className="btn sm primary" onClick={() => copy(p)}>{copiedId === p.id ? <><Check size={13} />Copied</> : <><Copy size={13} />Copy</>}</button>
-              <button className="btn sm" onClick={() => openModal({ type: "prompt", initial: p })}><Pencil size={13} /></button>
-              <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete prompt?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>
+              <button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "prompt", initial: p })}><Pencil size={13} /></button>
+              <button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete prompt?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>
             </div>
           </div>
         ))}</div>}

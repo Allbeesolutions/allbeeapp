@@ -39,7 +39,7 @@ export default function InHouse({ db, mutate, openModal, removeItem, isAdmin, me
                 {p.notes && <div className="hint-line" style={{ lineHeight: 1.5 }}>{p.notes.length > 120 ? p.notes.slice(0, 120) + "…" : p.notes}</div>}
                 <div style={{ display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
                   {canEdit(p) && <button className="btn sm" onClick={() => openModal({ type: "inhouse", initial: p })}><Pencil size={13} />Edit</button>}
-                  {canEdit(p) && <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
+                  {canEdit(p) && <button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete project?", body: `Delete "${p.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>}
                   {!canEdit(p) && <span className="hint-line" style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 4 }}><LockIcon size={11} />{p.owner ? `Added by ${p.owner}` : "Admin-only"}</span>}
                 </div>
               </div>

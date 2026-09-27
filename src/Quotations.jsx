@@ -41,8 +41,8 @@ export default function Quotations(props) {
               <div style={{ display: "flex", gap: 6, marginTop: 2, alignItems: "center" }}>
                 <select className="select" style={{ width: "auto", padding: "5px 8px" }} value={qt.status} onChange={(e) => setQuoteStatus(qt, e.target.value)}>{QUOTE_STATUS.map((s) => <option key={s}>{s}</option>)}</select>
                 {qt.pdfUrl && <a className="btn sm" href={qt.pdfUrl} target="_blank" rel="noreferrer"><FileText size={13} />PDF</a>}
-                <button className="btn sm" onClick={() => openModal({ type: "quotation", initial: qt })}><Pencil size={13} /></button>
-                <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete quotation?", body: `Delete the quote for ${qt.client}?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(qt) })}><Trash2 size={13} /></button>
+                <button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "quotation", initial: qt })}><Pencil size={13} /></button>
+                <button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete quotation?", body: `Delete the quote for ${qt.client}?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(qt) })}><Trash2 size={13} /></button>
               </div>
             </div>
           ))}

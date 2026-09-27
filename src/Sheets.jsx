@@ -35,8 +35,8 @@ export default function Sheets(props) {
             <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
               <button className="btn sm primary" onClick={() => window.open(p.url, "_blank", "noopener")}><ExternalLink size={13} />Open</button>
               <button className="btn sm" onClick={() => copy(p)}>{copiedId === p.id ? <><Check size={13} />Copied</> : <><Copy size={13} />Copy</>}</button>
-              <button className="btn sm" onClick={() => openModal({ type: "sheet", initial: p })}><Pencil size={13} /></button>
-              <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete sheet link?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>
+              <button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "sheet", initial: p })}><Pencil size={13} /></button>
+              <button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete sheet link?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={13} /></button>
             </div>
           </div>
         ))}</div>}

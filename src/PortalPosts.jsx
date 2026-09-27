@@ -20,8 +20,8 @@ function PortalPosts({ db, mutate, openModal, removeItem, portalClients, runtime
                 {p.meetingLink && <div style={{ marginTop: 6 }}><a className="btn sm primary" href={p.meetingLink} target="_blank" rel="noreferrer"><Link2 size={13} />Join meeting</a></div>}
               </div>
               <div className="row-actions">
-                <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "portalPost", initial: p })}><Pencil size={14} /></button>
-                <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete update?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={14} /></button>
+                <button aria-label="Edit update" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "portalPost", initial: p })}><Pencil size={14} /></button>
+                <button aria-label="Delete update" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete update?", body: `Delete "${p.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(p) })}><Trash2 size={14} /></button>
               </div>
             </div>
           ))}

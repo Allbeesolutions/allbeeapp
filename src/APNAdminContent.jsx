@@ -13,8 +13,8 @@ export default function APNAdminContent({ db, openModal, removeRow, runtime = {}
             <div key={t.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span className="tag">{APN_SERVICE_LABEL[t.category]}</span>
               <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{t.title}</div>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnTraining", initial: t })}><Pencil size={14} /></button>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_training", t.id, `deleted APN lesson "${t.title}"`)}><Trash2 size={14} /></button>
+              <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnTraining", initial: t })}><Pencil size={14} /></button>
+              <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_training", t.id, `deleted APN lesson "${t.title}"`)}><Trash2 size={14} /></button>
             </div>
           ))}
       </div>
@@ -25,8 +25,8 @@ export default function APNAdminContent({ db, openModal, removeRow, runtime = {}
             <div key={qz.id} className="card stat" style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span className="tag">{APN_SERVICE_LABEL[qz.category]}</span>
               <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{qz.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{(qz.questions || []).length} questions · pass {qz.passPct || 60}%</div></div>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnQuiz", initial: qz })}><Pencil size={14} /></button>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_quizzes", qz.id, `deleted APN quiz "${qz.title}"`)}><Trash2 size={14} /></button>
+              <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnQuiz", initial: qz })}><Pencil size={14} /></button>
+              <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_quizzes", qz.id, `deleted APN quiz "${qz.title}"`)}><Trash2 size={14} /></button>
             </div>
           ))}
       </div>

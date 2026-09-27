@@ -53,7 +53,7 @@ function Rewards({ db, mutate, openModal, removeItem, me, isAdmin, team, runtime
                 {r.note && <div className="item-meta" style={{ marginTop: 4 }}>{r.note}</div>}
                 <div className="item-meta"><span>{fmtDate(r.date || new Date(r.createdAt).toISOString().slice(0, 10))}</span></div>
               </div>
-              {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove recognition?", body: `Remove this for ${r.userName}?`, note: "Moves to Recently deleted.", onConfirm: () => del(r) })}><Trash2 size={14} /></button></div>}
+              {isAdmin && <div className="row-actions"><button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove recognition?", body: `Remove this for ${r.userName}?`, note: "Moves to Recently deleted.", onConfirm: () => del(r) })}><Trash2 size={14} /></button></div>}
             </div>
           ))}
       </div>

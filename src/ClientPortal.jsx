@@ -45,7 +45,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         <div><h2 style={{ fontSize: 16 }}>{co.name || "ALLBEE Solutions"}</h2><div className="topbar-sub">Client portal</div></div>
         <span className="spacer" style={{ flex: 1 }} />
         <PortalRefreshButton onRefresh={reload} />
-        <div className="userchip" onClick={signOut} style={{ cursor: "pointer" }}><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={26} /><span className="userchip-name">{profile?.name}</span><LogOut size={15} /></div>
+        <button type="button" className="userchip" onClick={signOut} aria-label="Sign out of client portal"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={26} /><span className="userchip-name">{profile?.name}</span><LogOut size={15} /></button>
       </header>
       <div className="content page-enter" style={{ maxWidth: 820, margin: "0 auto" }}>
         <div className="page-head"><h3>Welcome, {profile?.name?.split(" ")[0] || "there"}</h3></div>
@@ -128,7 +128,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         )}
         </>)}
 
-        {portalView === "support" && <LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} />}
+        {portalView === "support" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading support…</div>}><LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} runtime={runtime} /></React.Suspense>}
       </div>
     </div>
   );

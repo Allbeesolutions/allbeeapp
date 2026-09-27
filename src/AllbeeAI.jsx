@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
+import "./ui/assistant.css";
 import { AlertTriangle, Check, Copy, RefreshCw, RotateCcw, Send, Settings as SettingsIcon, Sparkles } from "lucide-react";
 
 export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime }) {
@@ -14,6 +16,9 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
   const [knowledgeContext, setKnowledgeContext] = useState("");
   const scroller = useRef(null);
   const boxRef = useRef(null);
+  const sendingRef = useRef(false);
+  const [failedInput, setFailedInput] = useState(null);
+  const [copyError, setCopyError] = useState("");
 
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, busy]);
   useEffect(() => {
@@ -51,9 +56,12 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
 
   const send = async (text) => {
     const content = (text != null ? text : input).trim();
-    if (!content || busy) return;
+    if (!content || sendingRef.current) return;
+    sendingRef.current = true;
     setError("");
-    const next = [...messages, { role: "user", content }];
+    const history = failedInput !== null && messages.at(-1)?.role === "user" ? messages.slice(0, -1) : messages;
+    const next = [...history, { role: "user", content }];
+    setFailedInput(null);
     setMessages(next);
     setInput("");
     setBusy(true);
@@ -77,135 +85,63 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
       const reply = await callAI(cfg, `${system}${memoryContext}`, window);
       setMessages((m) => [...m, { role: "assistant", content: reply || "(no reply)" }]);
     } catch (e) {
-      setError((e && e.message) || "Something went wrong talking to the AI.");
+      setFailedInput(content);
+      setInput(content);
+      setError("Couldn’t get a reply. Your message is saved below. Try again, or edit it before sending.");
     } finally {
+      sendingRef.current = false;
       setBusy(false);
       setTimeout(() => boxRef.current?.focus(), 30);
     }
   };
-  const copy = async (txt, i) => { try { await navigator.clipboard.writeText(txt || ""); setCopied(i); setTimeout(() => setCopied(-1), 1500); } catch { /* blocked */ } };
-  const onKey = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+  const copy = async (txt, i) => { try { await navigator.clipboard.writeText(txt || ""); setCopyError(""); setCopied(i); setTimeout(() => setCopied(-1), 1500); } catch { setCopyError("Copy is unavailable here. Select the response text to copy it."); } };
+  const onKey = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent?.isComposing) { e.preventDefault(); send(); } };
 
-  if (!configured) {
-    return (
-      <div className="content">
-        <div className="page-head"><h3><Sparkles size={18} style={{ verticalAlign: -3, marginRight: 6, color: "var(--primary)" }} />ALLBEE AI</h3></div>
-        <div className="card stat" style={{ textAlign: "center", padding: "34px 22px" }}>
-          <div style={{ width: 54, height: 54, borderRadius: 14, background: "var(--primary-soft)", display: "grid", placeItems: "center", margin: "0 auto 14px" }}><Sparkles size={26} color="var(--primary)" /></div>
-          <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 6 }}>The assistant isn't switched on yet</div>
-          {isAdmin ? (
-            <>
-              <p className="hint-line" style={{ lineHeight: 1.6, maxWidth: 460, margin: "0 auto 16px" }}>
-                Turn on ALLBEE AI in Settings. The secure production path uses the ALLBEE AI gateway; provider credentials remain server-side.
-              </p>
-              <button className="btn primary" onClick={() => go("settings")}><SettingsIcon size={16} />Set up AI in Settings</button>
-            </>
-          ) : (
-            <p className="hint-line" style={{ lineHeight: 1.6, maxWidth: 440, margin: "0 auto" }}>
-              Ask a partner or admin (Haji or Alim) to switch on ALLBEE AI from Settings. Once it's on, you can ask it to draft quotations, reply to clients, and more — right here.
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const bubbleWrap = { display: "flex", flexDirection: "column", gap: 12, padding: "4px 2px 12px" };
-  return (
-    <div className="content">
-      <div className="page-head">
-        <h3><Sparkles size={18} style={{ verticalAlign: -3, marginRight: 6, color: "var(--primary)" }} />ALLBEE AI</h3>
-        <span className="tag" style={{ marginLeft: 8 }}>GPT-OSS 120B · Groq</span>
-        <span className="spacer" />
-        {messages.length > 0 && <button className="btn sm" onClick={() => { setMessages([]); setError(""); }}><RotateCcw size={13} />New chat</button>}
-      </div>
-
-      <div className="card" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 210px)", minHeight: 420, overflow: "hidden" }}>
-        <div ref={scroller} style={{ flex: 1, overflowY: "auto", padding: "16px 16px 4px" }}>
-          {messages.length === 0 ? (
-            <div style={{ maxWidth: 620, margin: "6px auto" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: "var(--primary-soft)", display: "grid", placeItems: "center" }}><Sparkles size={17} color="var(--primary)" /></div>
-                <div style={{ fontWeight: 700 }}>Hi {me?.name || "there"} — how can I help?</div>
-              </div>
-              <p className="hint-line" style={{ lineHeight: 1.6, marginBottom: 14 }}>
-                I can see your clients, leads, quotations, projects and open tasks. Ask me to draft a quotation for a client, write a reply, or summarise what's pending. Try one:
-              </p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {AI_QUICK_PROMPTS.map(([label, prompt]) => (
-                  <button key={label} className="btn sm" onClick={() => send(prompt)} style={{ borderRadius: 999 }}>
-                    <Sparkles size={13} />{label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div style={bubbleWrap}>
-              {messages.map((m, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                  <div style={{
-                    maxWidth: "82%", padding: "10px 13px", borderRadius: 14, lineHeight: 1.55, fontSize: 14, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    background: m.role === "user" ? "var(--primary-soft)" : "var(--surface-2)",
-                    border: "1px solid var(--border)",
-                    borderBottomRightRadius: m.role === "user" ? 4 : 14,
-                    borderBottomLeftRadius: m.role === "user" ? 14 : 4,
-                  }}>
-                    {m.role === "assistant" ? renderAIText(m.content) : m.content}
-                    {m.role === "assistant" && (
-                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        <span className="hint-line" style={{ fontSize: 11 }}>Quick follow-up</span>
-                        {["Explain this", "Make it a checklist", "Draft the reply"].map((q) => <button key={q} className="btn sm" onClick={() => send(`${q}: ${m.content.slice(0, 700)}`)} style={{ borderRadius: 999, padding: "3px 8px" }}>{q}</button>)}
-                      </div>
-                    )}
-                    {m.role === "assistant" && (
-                      <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end" }}>
-                        <button className="btn sm" onClick={() => copy(m.content, i)} style={{ padding: "3px 8px" }}>
-                          {copied === i ? <><Check size={12} />Copied</> : <><Copy size={12} />Copy</>}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {busy && (
-                <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                  <div style={{ padding: "10px 13px", borderRadius: 14, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--muted)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <RefreshCw size={14} className="spin" /> Thinking…
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <div className="banner" style={{ margin: "0 12px 8px", background: "var(--neg-soft)" }}>
-            <AlertTriangle size={15} /> {error}
-          </div>
-        )}
-
-        <div style={{ borderTop: "1px solid var(--border)", padding: 12, display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <textarea
-            ref={boxRef}
-            className="textarea"
-            style={{ flex: 1, minHeight: 44, maxHeight: 140, resize: "none" }}
-            placeholder="Ask ALLBEE AI to draft a quotation, reply to a client, summarise tasks…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKey}
-            disabled={busy}
-          />
-          <button className="btn primary" onClick={() => send()} disabled={busy || !input.trim()} style={{ height: 44 }}>
-            <Send size={16} />Send
-          </button>
-        </div>
-      </div>
-      <div className="hint-line" style={{ marginTop: 10, lineHeight: 1.5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <span><b style={{ color: "var(--ink)" }}>Model:</b> OpenAI GPT-OSS 120B, served through Groq for fast responses. It uses a read-only live workspace snapshot plus the central pricing/knowledge catalog.</span>
-      </div>
-      <p className="hint-line" style={{ marginTop: 7, lineHeight: 1.5 }}>
-        ALLBEE AI can make mistakes — double-check figures and client details before sending anything out. It reads a read-only snapshot of your workspace and doesn't change any records.
-      </p>
+  if (!configured) return <div className="content assistant-page">
+    <div className="page-head"><AllbeeAIMark size={30} /><h3>ALLBEE AI</h3></div>
+    <div className="card assistant-unavailable">
+      <AllbeeAIMark size={48} /><h4>Your workspace assistant</h4>
+      <p>Draft client replies, plan your day and understand your workspace in one place.</p>
+      {isAdmin ? <><p>Enable the assistant in Settings to get started.</p><button className="btn primary" onClick={() => go("settings")}><SettingsIcon size={16} />Set up AI in Settings</button></>
+        : <p>Ask an admin to enable the assistant for your workspace.</p>}
     </div>
-  );
+  </div>;
+
+  return <div className="content assistant-page">
+    <div className="page-head assistant-heading">
+      <AllbeeAIMark size={34} />
+      <div><h3>ALLBEE AI</h3><div className="hint-line">Your workspace assistant</div></div>
+      <span className="spacer" />
+      {messages.length > 0 && <button className="btn sm" disabled={busy} onClick={() => { setMessages([]); setError(""); setFailedInput(null); setInput(""); boxRef.current?.focus(); }}><RotateCcw size={14} />New chat</button>}
+    </div>
+    <section className="card assistant-workspace" aria-label="ALLBEE AI conversation">
+      <div ref={scroller} className="assistant-transcript" role="log" aria-live="polite" aria-relevant="additions text">
+        {messages.length === 0 ? <div className="assistant-welcome">
+          <span className="assistant-eyebrow">WORK SMARTER WITH ALLBEE</span>
+          <h4>What can we move forward, {me?.name?.split(" ")[0] || "today"}?</h4>
+          <p>Turn your workspace information into a clear next step. Draft a reply, prepare a quotation or organise what’s pending.</p>
+          <div className="assistant-prompts">{AI_QUICK_PROMPTS.map(([label,prompt]) => <button key={label} className="assistant-prompt" onClick={() => send(prompt)} disabled={busy}><span>{label}</span><span aria-hidden="true">↗</span></button>)}</div>
+        </div> : <div className="assistant-messages">
+          {messages.map((m,i) => <article key={i} className={"assistant-message " + m.role}>
+            <div className="assistant-author">{m.role === "assistant" && <AllbeeAIMark size={20} />}{m.role === "user" ? "You" : "ALLBEE AI"}</div>
+            <div className="assistant-message-body">{m.role === "assistant" ? renderAIText(m.content) : m.content}</div>
+            {m.role === "assistant" && <div className="assistant-response-actions">
+              <button className="btn sm" onClick={() => copy(m.content,i)}>{copied===i ? <><Check size={14}/>Copied</> : <><Copy size={14}/>Copy</>}</button>
+              {["Explain this","Make it a checklist","Draft the reply"].map(q=><button key={q} className="btn sm" disabled={busy} onClick={()=>send(q+": "+m.content.slice(0,700))}>{q}</button>)}
+            </div>}
+          </article>)}
+        </div>}
+        {busy && <div className="assistant-thinking" role="status"><AllbeeAIMark size={20} /><RefreshCw size={14} className="spin" aria-hidden="true" />Preparing your answer…</div>}
+      </div>
+      {error && <div className="assistant-error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><span>{error}</span><button className="btn sm" disabled={busy} onClick={()=>send(failedInput)}>Try again</button></div>}
+      {copyError && <div className="assistant-copy-status" role="status">{copyError}</div>}
+      <div className="assistant-composer">
+        <label className="sr-only" htmlFor="allbee-ai-message">Message ALLBEE AI</label>
+        <textarea id="allbee-ai-message" ref={boxRef} className="textarea" placeholder="Ask a question or describe what you need…" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={onKey} disabled={busy} rows={2} />
+        <button className="btn primary" onClick={()=>send()} disabled={busy||!input.trim()} aria-label={busy?"Sending message":"Send message"}><Send size={17} aria-hidden="true"/><span>{busy?"Sending…":"Send"}</span></button>
+      </div>
+      <div className="assistant-composer-hint">Enter to send · Shift + Enter for a new line</div>
+    </section>
+    <p className="assistant-disclaimer">Uses the workspace information available to your account. Review figures and client details before sharing. This conversation does not change your records.</p>
+  </div>;
 }

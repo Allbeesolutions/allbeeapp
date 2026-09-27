@@ -10,6 +10,7 @@ import { APNInactive } from "./modules/apn/Inactive.jsx";
 import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./modules/apn/helpers.js";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
+import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
 const LazyPrivacyPolicy = React.lazy(() => import("./PrivacyPolicy.jsx"));
 const {
   LayoutDashboard, Wallet, ArrowDownToLine, ListTodo, TrendingUp, Lightbulb,
@@ -242,7 +243,7 @@ function Concepts({ db, mutate, openModal, removeItem }) {
           <div style={{ fontWeight: 700, fontSize: 15 }}>{c.title}</div>{c.notes && <div className="sub" style={{ lineHeight: 1.5 }}>{c.notes.length > 160 ? c.notes.slice(0, 160) + "…" : c.notes}</div>}
           {c.tags?.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{c.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
           <div className="item-meta"><span>{fmtDate(c.date)}</span></div><div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-            <button className="btn sm primary" onClick={() => convert(c)}><ArrowRight size={13} />Convert to task</button><button className="btn sm" onClick={() => openModal({ type: "concept", initial: c })}><Pencil size={13} /></button><button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete idea?", body: `Delete "${c.title}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(c) })}><Trash2 size={13} /></button>
+            <button className="btn sm primary" onClick={() => convert(c)}><ArrowRight size={13} />Convert to task</button><button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "concept", initial: c })}><Pencil size={13} /></button><button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete idea?", body: `Delete "${c.title}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(c) })}><Trash2 size={13} /></button>
           </div></div>)}
     </div>
   </div>;
@@ -464,7 +465,7 @@ const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice
 // Subtle haptic feedback — only for meaningful actions (task accept/complete,
 // leave & withdrawal decisions, notifications). No-op where unsupported.
 function haptic(pattern = 12) {
-  try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch { /* ignore */ }
+  try { if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return; if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch { /* ignore */ }
 }
 const minsSince = (ts) => (Date.now() - (ts || 0)) / 60000;
 const withinMinutes = (ts, m) => minsSince(ts) <= m;
@@ -1125,9 +1126,11 @@ function ActionBadge({ count, label = "action" }) {
   return <span className="badge action-badge" aria-label={`${count} ${label}${count === 1 ? "" : "s"} required`}>{display}</span>;
 }
 
-function SearchableSelect({ options = [], value, onChange, placeholder = "Choose…", disabled = false, ariaLabel, id }) {
+export function SearchableSelect({ options = [], value, onChange, placeholder = "Choose…", disabled = false, ariaLabel, id, ...controlProps }) {
   const rootRef = useRef(null);
   const searchRef = useRef(null);
+  const triggerRef = useRef(null);
+  const listId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
@@ -1144,7 +1147,7 @@ function SearchableSelect({ options = [], value, onChange, placeholder = "Choose
   }, []);
   useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
   useEffect(() => { setHighlight(0); }, [query]);
-  const choose = (option) => { if (option?.disabled) return; onChange?.(option.value); setQuery(""); setOpen(false); };
+  const choose = (option) => { if (option?.disabled) return; onChange?.(option.value); setQuery(""); setOpen(false); triggerRef.current?.focus(); };
   const onTriggerKey = (event) => {
     if (disabled) return;
     if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") { event.preventDefault(); setOpen(true); }
@@ -1154,15 +1157,15 @@ function SearchableSelect({ options = [], value, onChange, placeholder = "Choose
     if (event.key === "ArrowDown") { event.preventDefault(); setHighlight((current) => Math.min(current + 1, Math.max(0, filtered.length - 1))); }
     else if (event.key === "ArrowUp") { event.preventDefault(); setHighlight((current) => Math.max(0, current - 1)); }
     else if (event.key === "Enter") { event.preventDefault(); choose(filtered[highlight]); }
-    else if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+    else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
   };
-  return <div ref={rootRef} className="combo" id={id}>
-    <button type="button" className="input combo-trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onTriggerKey}>
+  return <div ref={rootRef} className="combo">
+    <button {...controlProps} ref={triggerRef} id={id} type="button" className="input combo-trigger" aria-controls={open ? listId : undefined} aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onTriggerKey}>
       <span className="combo-value">{selected?.label || placeholder}</span><ChevronDown size={16} aria-hidden="true" />
     </button>
     {open && <div className="combo-menu">
       <input ref={searchRef} className="input combo-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={onSearchKey} placeholder="Type to filter…" aria-label={`Filter ${ariaLabel || "options"}`} autoComplete="off" />
-      <div className="combo-options" role="listbox" aria-label={ariaLabel || "Options"}>
+      <div id={listId} className="combo-options" role="listbox" aria-label={ariaLabel || "Options"}>
         {filtered.length ? filtered.map((option, index) => <button type="button" key={String(option.value)} role="option" aria-selected={String(option.value) === String(value)} disabled={option.disabled} className={`combo-option${index === highlight ? " on" : ""}`} onMouseEnter={() => setHighlight(index)} onClick={() => choose(option)}>
           <span className="combo-option-main">{option.label}</span>{option.meta && <span className="combo-option-meta">{option.meta}</span>}
         </button>) : <div className="combo-empty">No matches found.</div>}
@@ -1236,7 +1239,7 @@ function PasswordField({ label, value, onChange, error, hint, required, ...input
   </Field>;
 }
 
-function Modal({ title, onClose, children, footer, onMaximize }) {
+export function Modal({ title, onClose, children, footer, onMaximize }) {
   const modalRef = useRef(null);
   const titleId = useId();
   const [maximized, setMaximized] = useState(false);
@@ -1246,18 +1249,18 @@ function Modal({ title, onClose, children, footer, onMaximize }) {
     document.body.style.overflow = "hidden";
     const root = modalRef.current;
     const focusable = () => Array.from(root?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
-    const first = root?.querySelector("[autofocus]") || focusable()[0];
+    const first = root?.querySelector("[autofocus]") || focusable()[0] || root;
     first?.focus();
     return () => {
       document.body.style.overflow = previousOverflow;
       if (previous && typeof previous.focus === "function") previous.focus();
     };
-  }, [onClose]);
+  }, []);
   const trapFocus = (e) => {
-    if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); return; }
     if (e.key !== "Tab") return;
     const nodes = Array.from(modalRef.current?.querySelectorAll("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])" ) || []);
-    if (!nodes.length) return;
+    if (!nodes.length) { e.preventDefault(); modalRef.current?.focus(); return; }
     const first = nodes[0]; const last = nodes[nodes.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
@@ -1276,23 +1279,35 @@ function Modal({ title, onClose, children, footer, onMaximize }) {
   );
 }
 
-function Field({ label, required, children, error, hint }) {
-  const id = useId();
-  const hintId = hint ? `${id}-hint` : undefined;
-  const errorId = error ? `${id}-error` : undefined;
-  const control = React.isValidElement(children) ? React.cloneElement(children, {
-    id: children.props.id || id,
-    "aria-invalid": error ? "true" : children.props["aria-invalid"],
-    "aria-describedby": [children.props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined,
-  }) : children;
-  return (
-    <div className="field">
-      {label && <label htmlFor={React.isValidElement(control) ? control.props.id : id}>{label}{required && <span className="req" aria-hidden="true"> *</span>}</label>}
-      {control}
-      {hint && !error && <div id={hintId} className="hint-line" style={{ marginTop: 5 }}>{hint}</div>}
-      {error && <div id={errorId} className="field-err" role="alert"><AlertTriangle size={13} />{error}</div>}
-    </div>
-  );
+export function Field({ label, required, children, error, hint }) {
+  const generatedId = useId();
+  const hintId = hint && !error ? `${generatedId}-hint` : undefined;
+  const errorId = error ? `${generatedId}-error` : undefined;
+  let controlId = generatedId;
+  let linked = false;
+  const connect = (nodes) => React.Children.map(nodes, (child) => {
+    if (!React.isValidElement(child)) return child;
+    const nativeControl = ["input", "select", "textarea", "button"].includes(child.type);
+    const customControl = typeof child.type !== "string" && child.type !== React.Fragment;
+    if (!linked && (nativeControl || customControl)) {
+      linked = true;
+      controlId = child.props.id || generatedId;
+      return React.cloneElement(child, {
+        id: controlId,
+        "aria-required": required || child.props["aria-required"] || undefined,
+        "aria-invalid": error ? "true" : child.props["aria-invalid"],
+        "aria-describedby": [child.props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined,
+      });
+    }
+    return child.props.children ? React.cloneElement(child, {}, connect(child.props.children)) : child;
+  });
+  const control = connect(children);
+  return <div className="field">
+    {label && <label htmlFor={controlId}>{label}{required && <span className="req" aria-hidden="true"> *</span>}</label>}
+    {control}
+    {hint && !error && <div id={hintId} className="hint-line" style={{ marginTop: 5 }}>{hint}</div>}
+    {error && <div id={errorId} className="field-err" role="alert"><AlertTriangle size={13} />{error}</div>}
+  </div>;
 }
 
 function Empty({ icon, title, text, action }) {
@@ -2365,8 +2380,8 @@ function ClassStudents({ db, openModal, removeItem, mutate, currentUser, config,
                   <td className="num-cell mono">{s.fee ? money(s.fee) : "—"}{s.paid ? <div style={{ fontSize: 11, color: "var(--muted)" }}>paid {money(s.paid)}</div> : null}</td>
                   <td><span className={"badge " + payTone(s.paymentStatus)}>{s.paymentStatus || "Unpaid"}</span></td>
                   <td><div className="row-actions">
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "classStudent", initial: s })}><Pencil size={14} /></button>
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove student?", body: `Remove ${s.name}?`, note: "They move to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>
+                    <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "classStudent", initial: s })}><Pencil size={14} /></button>
+                    <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove student?", body: `Remove ${s.name}?`, note: "They move to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>
                   </div></td>
                 </tr>
               ))}</tbody>
@@ -2578,7 +2593,7 @@ function Updates({ db, mutate, me, isAdmin, removeItem, openModal }) {
               <div className="row-actions">
                 {!isAdmin && u.userId === me.id && withinMinutes(u.createdAt, 30) && <button className="iconbtn" style={{ width: 32, height: 32 }} title="Edit (within 30 min)" onClick={() => startEdit(u)}><Pencil size={14} /></button>}
                 {isAdmin && !u.ackAt && <button className="btn sm" onClick={() => acknowledge(u)}><Check size={13} />Acknowledge</button>}
-                {(isAdmin || u.userId === me.id) && <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => askDelete(u)}><Trash2 size={14} /></button>}
+                {(isAdmin || u.userId === me.id) && <button aria-label="Delete record" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => askDelete(u)}><Trash2 size={14} /></button>}
               </div>
             )}
           </div>
@@ -3427,7 +3442,7 @@ function LoginAccessAssistant({ onPick }) {
   return (
     <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI — access and login assistant">
       <header className="web-ai-head" style={{ position: "relative", paddingRight: 68 }}>
-        <div className="web-ai-avatar"><LifeBuoy size={18} /></div>
+        <div className="web-ai-avatar"><AllbeeAIMark size={26} /></div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800 }}>AllBee AI</div>
           <div style={{ fontSize: 11, opacity: .82 }}>Access &amp; login assistant</div>
@@ -3696,7 +3711,7 @@ function NamePicker({ isDark, onChoose }) {
 ══════════════════════════════════════════════════════════════════════ */
 // Shared prompt library — a place to keep the prompts the team reuses and copy
 // them in one tap. Backed by the `prompts` table (run allbee-prompts.sql once).
-function SelectOther({ value, onChange, options, placeholder = "Type here…" }) {
+function SelectOther({ value, onChange, options, placeholder = "Type here…", id, ...controlProps }) {
   const [custom, setCustom] = useState(() => !!value && !options.includes(value));
   const onSel = (e) => {
     if (e.target.value === "__other__") { setCustom(true); onChange(""); }
@@ -3704,11 +3719,11 @@ function SelectOther({ value, onChange, options, placeholder = "Type here…" })
   };
   return (
     <>
-      <select className="select" value={custom ? "__other__" : value} onChange={onSel}>
+      <select {...controlProps} id={id} className="select" value={custom ? "__other__" : value} onChange={onSel}>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
         <option value="__other__">Other… (type manually)</option>
       </select>
-      {custom && <input className="input" style={{ marginTop: 8 }} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoFocus />}
+      {custom && <input aria-label="Custom value" className="input" style={{ marginTop: 8 }} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} autoFocus />}
     </>
   );
 }
@@ -3742,7 +3757,7 @@ function RequirementBuilder({ isAdmin }) {
   useEffect(() => { const channel = supabase.channel("web-requirement-builder"); const on = (table, event) => channel.on("postgres_changes", { event, schema: "public", table }, load); ["web_requirement_questions", "web_requirement_question_rules"].forEach((table) => ["INSERT", "UPDATE", "DELETE"].forEach((event) => on(table, event))); channel.subscribe(); return () => { supabase.removeChannel(channel); }; }, [load]);
   const save = async () => { let payload; try { payload = JSON.parse(text); } catch { setError("Enter valid JSON."); return; } setBusy(true); try { const { error: saveError } = await supabase.rpc("web_requirement_admin_save", { p_entity: tab === "questions" ? "questions" : "rules", p_payload: payload }); if (saveError) throw new Error(saveError.message); setEditor(null); await load(); emitToast("Requirement builder record saved.", "success"); } catch (e) { setError(e.message || "Could not save the requirement builder record."); } finally { setBusy(false); } };
   if (!isAdmin) return <div className="content"><div className="card"><Empty icon={<ShieldAlert size={22} />} title="Admin access required" text="Requirement Builder is restricted to administrators." /></div></div>;
-  return <div className="content"><div className="page-head"><div><h3><MessageCircle size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Requirement Builder</h3><div className="hint-line">Configure adaptive questions and rules without changing the conversation engine.</div></div><span className="spacer" /><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button>{tab !== "analytics" && <button className="btn primary" onClick={() => { setEditor({}); setText(JSON.stringify(tab === "questions" ? { prompt: "", question_key: "", question_type: "text", choices: [], active: true, sort_order: 0 } : { question_id: "", condition_key: "service", operator: "equals", condition_value: "", action: "show", active: true }, null, 2)); }}><Plus size={15} />Add</button>}</div>{error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}</div>}<div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Sessions",summary?.sessions],["Active",summary?.active],["Completed",summary?.completed],["Abandoned",summary?.abandoned],["Average completion",`${summary?.average_completion || 0}%`]].map(([label,value]) => <div className="card stat" key={label}><div className="lbl"><Activity size={14} />{label}</div><div className="num mono">{value ?? "—"}</div></div>)}</div><div className="seg" style={{ marginBottom: 12 }}>{tabs.map(([key,label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</div><div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search questions, rules, or events…" aria-label="Search requirement builder" /></div></div><div className="card">{data.items?.length ? <div className="table-wrap"><table className="tbl"><thead><tr><th>Record</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id}><td><b>{row.prompt || row.question_slug || row.event || "Record"}</b><div className="hint-line mono">{row.slug || row.id}</div></td><td>{row.condition_key ? `${row.condition_key} ${row.operator} ${row.condition_value}` : row.completion_percent != null ? `${row.completion_percent}% · ${row.service_slug || "—"}` : row.question_type || "—"}</td><td><span className={`badge ${row.active === false ? "neg" : "pos"}`}>{row.active === false ? "Disabled" : "Active"}</span></td><td>{tab !== "analytics" && <button className="btn sm" onClick={() => { setEditor(row); setText(JSON.stringify(row, null, 2)); }}><Pencil size={13} />Edit</button>}</td></tr>)}</tbody></table></div> : <Empty icon={<MessageCircle size={22} />} title="No records" text="Add a configurable question or rule, or wait for conversations to generate analytics." />}</div>{editor && <Modal title={`Edit ${tab === "questions" ? "question" : "rule"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save</button></>}><p className="hint-line">Changes are applied transactionally, audited, and picked up by active conversations on their next response.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Requirement builder JSON" /></Modal>}</div>;
+  return <div className="content"><div className="page-head"><div><h3><MessageCircle size={18} style={{ verticalAlign: -3, marginRight: 7, color: "var(--primary)" }} />Requirement Builder</h3><div className="hint-line">Configure adaptive questions and rules without changing the conversation engine.</div></div><span className="spacer" /><button className="btn" onClick={load} disabled={busy}><RefreshCw size={14} className={busy ? "spin" : ""} />Refresh</button>{tab !== "analytics" && <button className="btn primary" onClick={() => { setEditor({}); setText(JSON.stringify(tab === "questions" ? { prompt: "", question_key: "", question_type: "text", choices: [], active: true, sort_order: 0 } : { question_id: "", condition_key: "service", operator: "equals", condition_value: "", action: "show", active: true }, null, 2)); }}><Plus size={15} />Add</button>}</div>{error && <div className="auth-msg err" role="alert"><AlertTriangle size={15} />{error}</div>}<div className="ai-health-grid" style={{ marginBottom: 14 }}>{[["Sessions",summary?.sessions],["Active",summary?.active],["Completed",summary?.completed],["Abandoned",summary?.abandoned],["Average completion",`${summary?.average_completion || 0}%`]].map(([label,value]) => <div className="card stat" key={label}><div className="lbl"><Activity size={14} />{label}</div><div className="num mono">{value ?? "—"}</div></div>)}</div><div className="seg" style={{ marginBottom: 12 }}>{tabs.map(([key,label]) => <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>{label}</button>)}</div><div className="toolbar"><div className="search"><Search size={16} color="var(--muted)" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search questions, rules, or events…" aria-label="Search requirement builder" /></div></div><div className="card">{data.items?.length ? <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable data table"><table className="tbl"><thead><tr><th>Record</th><th>Details</th><th>Status</th><th></th></tr></thead><tbody>{data.items.map((row) => <tr key={row.id}><td><b>{row.prompt || row.question_slug || row.event || "Record"}</b><div className="hint-line mono">{row.slug || row.id}</div></td><td>{row.condition_key ? `${row.condition_key} ${row.operator} ${row.condition_value}` : row.completion_percent != null ? `${row.completion_percent}% · ${row.service_slug || "—"}` : row.question_type || "—"}</td><td><span className={`badge ${row.active === false ? "neg" : "pos"}`}>{row.active === false ? "Disabled" : "Active"}</span></td><td>{tab !== "analytics" && <button className="btn sm" onClick={() => { setEditor(row); setText(JSON.stringify(row, null, 2)); }}><Pencil size={13} />Edit</button>}</td></tr>)}</tbody></table></div> : <Empty icon={<MessageCircle size={22} />} title="No records" text="Add a configurable question or rule, or wait for conversations to generate analytics." />}</div>{editor && <Modal title={`Edit ${tab === "questions" ? "question" : "rule"}`} onClose={() => setEditor(null)} footer={<><button className="btn" onClick={() => setEditor(null)}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}><Check size={15} />Save</button></>}><p className="hint-line">Changes are applied transactionally, audited, and picked up by active conversations on their next response.</p><textarea className="textarea mono" style={{ minHeight: 300, fontSize: 12 }} value={text} onChange={(e) => setText(e.target.value)} aria-label="Requirement builder JSON" /></Modal>}</div>;
 }
 function ProposalPortal({ token, isDark }) {
   const [detail, setDetail] = useState(null); const [comment, setComment] = useState(""); const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [signature, setSignature] = useState(""); const [busy, setBusy] = useState(true); const [error, setError] = useState("");
@@ -3782,8 +3797,8 @@ function Leads({ db, mutate, openModal, removeItem, isAdmin }) {
               <div className="row-actions" style={{ alignItems: "center" }}>
                 <select className="select" style={{ width: "auto", padding: "5px 8px" }} value={l.stage} onChange={(e) => setLeadStage(l, e.target.value)}>{LEAD_STAGES.map((s) => <option key={s}>{s}</option>)}</select>
                 {l.stage === "Converted" && <button className="btn sm primary" onClick={() => convert(l)}><ArrowRight size={13} />Client</button>}
-                <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "lead", initial: l })}><Pencil size={14} /></button>
-                <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete lead?", body: `Delete "${l.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(l) })}><Trash2 size={14} /></button>
+                <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "lead", initial: l })}><Pencil size={14} /></button>
+                <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete lead?", body: `Delete "${l.name}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(l) })}><Trash2 size={14} /></button>
               </div>
             </div>
           ))}
@@ -3813,7 +3828,7 @@ function Announcements({ db, mutate, openModal, removeItem, isAdmin, me }) {
                   ? <div className="hint-line" style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, color: "var(--pos)" }}><BadgeCheck size={13} />You acknowledged this</div>
                   : <div style={{ marginTop: 10 }}><button className="btn sm primary" onClick={() => ack(a)}><Check size={13} />Acknowledge</button></div>)}
               </div>
-              {isAdmin && <div className="row-actions"><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "announcement", initial: a })}><Pencil size={14} /></button><button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete announcement?", body: `Delete "${a.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(a) })}><Trash2 size={14} /></button></div>}
+              {isAdmin && <div className="row-actions"><button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "announcement", initial: a })}><Pencil size={14} /></button><button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete announcement?", body: `Delete "${a.title}"?`, note: "Moves to Recently deleted.", onConfirm: () => del(a) })}><Trash2 size={14} /></button></div>}
             </div>
           </div>
         ))}</div>}
@@ -4317,7 +4332,7 @@ function SalaryRow({ person, db, payroll, onSave }) {
             {incentives.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).map((x) => (
               <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface-2)", borderRadius: 8, padding: "6px 10px" }}>
                 <div style={{ flex: 1, minWidth: 0 }}><div className="mono" style={{ fontWeight: 700, fontSize: 12.5 }}>{money(x.amount)}</div><div className="hint-line" style={{ fontSize: 11 }}>{x.note || "Incentive"}{x.date ? ` · ${fmtDate(x.date)}` : ""}</div></div>
-                <button className="iconbtn" style={{ width: 26, height: 26 }} onClick={() => removeIncentive(x.id)} title="Remove"><X size={12} /></button>
+                <button aria-label="Close" className="iconbtn" style={{ width: 26, height: 26 }} onClick={() => removeIncentive(x.id)} title="Remove"><X size={12} /></button>
               </div>
             ))}
           </div>
@@ -4615,11 +4630,11 @@ function APNAI({ meRow, go, mutate, pid }) {
     <div className="apn-ai">
       <div className="apn-rowcard" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Sparkles size={16} color="var(--primary)" />
+          <AllbeeAIMark size={24} />
           <div style={{ fontWeight: 800, flex: 1 }}>ALLBEE AI</div>
           <button className="btn sm" onClick={() => go("support")}><MessageCircle size={13} />My tickets</button>
         </div>
-        <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Your personal APN assistant — answers are built from your live ALLBEE records, not guesses.</div>
+        <div className="hint-line" style={{ marginTop: 6, fontSize: 12 }}>Ask about your APN records, commissions and next steps. Check important details before acting.</div>
       </div>
 
       <div className="apn-rowcard" style={{ marginBottom: 14 }}>
@@ -4635,7 +4650,7 @@ function APNAI({ meRow, go, mutate, pid }) {
       </div>
 
       <div className="apn-rowcard">
-        <div className="apn-ai-chat" ref={chatContainerRef}>
+        <div className="apn-ai-chat" ref={chatContainerRef} role="log" aria-label="Assistant conversation" aria-live="polite">
           {msgs.map((m, i) => (
             <div key={i}>
               <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")} style={{ lineHeight: 1.55 }}>
@@ -4659,11 +4674,12 @@ function APNAI({ meRow, go, mutate, pid }) {
         <div className="apn-ai-input" style={{ marginTop: 10 }}>
           <textarea
             ref={inputRef}
+            aria-label="Message ALLBEE AI"
             rows={1}
             value={input}
             placeholder={`Ask about your wallet, commissions, withdrawals${meRow?.role === "district_head" ? ", district" : ""} or rules…`}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); ask(); } }}
           />
           <button className="btn primary" disabled={busy || !input.trim()} onClick={() => ask()} aria-label="Send" title="Send" style={{ minWidth: 46, height: 46 }}><Send size={17} /></button>
         </div>
@@ -4815,7 +4831,7 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
       <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} haptic={haptic} /></div>
 
       <button className="apn-ai-banner" type="button" onClick={() => go("ai")} aria-label="Open ALLBEE AI">
-        <span className="apn-ai-banner-ic"><Sparkles size={17} /></span>
+        <span className="apn-ai-banner-ic"><AllbeeAIMark size={24} /></span>
         <span className="apn-ai-banner-main"><b>ALLBEE AI</b><span>Ask anything about your wallet, commissions & rules — or escalate to support.</span></span>
         <span className="apn-ai-banner-go"><ChevronRight size={16} /></span>
       </button>
@@ -5311,13 +5327,13 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
          <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={refreshPortal} />
         <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
-        <button className="iconbtn" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
+        <button className="iconbtn" aria-label="Open notifications" title="Notifications" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
       <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <div className="card" aria-busy="true">Loading APN tab…</div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading APN tab…</div>}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></div>
 
-      {showFab && <button className="apn-fab" onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
+      {showFab && <button className="apn-fab" aria-label={tab === "leads" ? "Submit a lead" : "Create quotation"} onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
       <GlobalPullToRefresh enabled={!modal && !searchOpen && !sidebarOpen} onRefresh={refreshPortal} />
@@ -5463,7 +5479,7 @@ function APNQuizForm({ initial, onSave, onClose }) {
         <div key={q.id} className="bug-card">
           <div style={{ display: "flex", gap: 8 }}>
             <input className="input" value={q.q} onChange={(e) => setQ(qi, { q: e.target.value })} placeholder={`Question ${qi + 1}`} style={{ flex: 1 }} />
-            {f.questions.length > 1 && <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmQ(qi)}><X size={14} /></button>}
+            {f.questions.length > 1 && <button aria-label="Close" className="iconbtn" style={{ width: 32, height: 32 }} onClick={() => rmQ(qi)}><X size={14} /></button>}
           </div>
           {q.options.map((o, oi) => (
             <div key={oi} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -6926,7 +6942,7 @@ export default function App() {
     ? <RemoteLockGate isDark={isDark} signOut={signOut} pause={LOCKDOWN_PAUSE_TEST}>{node}</RemoteLockGate>
     : node);
 
-  const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty, USERS, avatarColor, haptic }), [supabase, emitToast]);
+  const financeComponentHelpers = useMemo(() => ({ todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty, USERS, avatarColor, haptic, PLANNED_STATUS }), [supabase, emitToast]);
 
   const publicPath = String(window.location.pathname || "").replace(/\/+$/, "") || "/";
   if (publicPath === "/privacy-policy") return <React.Suspense fallback={<LoadingScreen isDark={isDark} />}><LazyPrivacyPolicy mode="privacy" /></React.Suspense>;
@@ -6945,7 +6961,7 @@ export default function App() {
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading your portal…" />;
-    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} runtime={{ companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, fmtDate, fmtDateTime, money, LOGO_ICON }} /></React.Suspense>);
+    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, fmtDate, fmtDateTime, money, LOGO_ICON }} /></React.Suspense>);
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
@@ -7123,17 +7139,17 @@ export default function App() {
       onDragStart={drag ? (e) => { dragNavRef.current = key; try { e.dataTransfer.effectAllowed = "move"; } catch { /* ignore */ } } : undefined}
       onDragOver={drag ? (e) => e.preventDefault() : undefined}
       onDrop={drag ? (e) => { e.preventDefault(); if (dragNavRef.current) moveNav(dragNavRef.current, key); dragNavRef.current = null; } : undefined}
-      className={"navitem" + (safeRoute === key ? " active" : "")} onClick={() => go(key)} title={drag ? "Drag to reorder" : undefined}>
-      <Icon size={18} />
+      className={"navitem" + (safeRoute === key ? " active" : "")} title={drag ? "Drag to reorder" : undefined}>
+      <button type="button" className="nav-route" onClick={() => go(key)} aria-current={safeRoute === key ? "page" : undefined}><Icon size={18} />
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-      {navBadge(key)}
+      {navBadge(key)}</button>
       <button onClick={(e) => { e.stopPropagation(); toggleFav(key); }} title={favSet.has(key) ? "Unpin from favorites" : "Pin to favorites"} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 2, opacity: favSet.has(key) ? 0.95 : 0.3, flex: "none", display: "flex" }}><Star size={13} fill={favSet.has(key) ? "currentColor" : "none"} /></button>
     </div>
   );
 
   return gateChild(
   <ErrorBoundary>
-      <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"}>
+      <div className={"allbee" + (menuOpen ? " menu-open" : "")} data-theme={isDark ? "dark" : "light"} onKeyDown={(e) => { if (e.key === "Escape" && menuOpen) { e.preventDefault(); setMenuOpen(false); document.querySelector(".hamburger")?.focus(); } }}>
         <ToastHost />
 
         {!isOnline && <div className="banner offline-banner"><CloudOff size={15} /><b>Offline mode</b><span>Changes will retry when the connection returns.</span><button className="btn sm" onClick={() => reload().catch(() => {})}>Retry</button></div>}
@@ -7141,7 +7157,7 @@ export default function App() {
 
         <div className="layout">
           {menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />}
-          <aside className="sidebar">
+          <aside id="allbee-sidebar" className="sidebar" aria-label="Workspace navigation" onKeyDown={(e) => { if (e.key === "Escape") { setMenuOpen(false); document.querySelector(".hamburger")?.focus(); } }}>
             <div className="brand" role="button" tabIndex={0} aria-label="Go to Home Dashboard" title="Go to Home Dashboard" onClick={() => go("dashboard")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("dashboard"); } }}>
               <FounderTap className="brand-logo" src={LOGO_ICON} alt="ALLBEE" style={{ height: 34 }} />
               <div><h1>ALLBEE</h1><p>Solutions</p></div>
@@ -7160,13 +7176,13 @@ export default function App() {
               })
               : (navSort === "az" ? restNav.slice().sort((a, b) => a[1].localeCompare(b[1])) : restNav).map((n) => renderNav(n, navSort === "custom"))}
             <div className="sidebar-foot">
-              <div className="navitem" onClick={() => { const nd = !isDark; setIsDark(nd); try { localStorage.setItem("allbee_theme", nd ? "dark" : "light"); } catch { /* ignore */ } }}>{isDark ? <Sun size={18} /> : <Moon size={18} />} {isDark ? "Light mode" : "Dark mode"}</div>
+              <button type="button" className="navitem theme-toggle" onClick={() => { const nd = !isDark; setIsDark(nd); try { localStorage.setItem("allbee_theme", nd ? "dark" : "light"); } catch { /* ignore */ } }}>{isDark ? <Sun size={18} /> : <Moon size={18} />} {isDark ? "Light mode" : "Dark mode"}</button>
             </div>
           </aside>
 
           <div className="main">
             <header className="topbar">
-              <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu"><Menu size={21} /></button>
+              <button className="iconbtn hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Menu" aria-expanded={menuOpen} aria-controls="allbee-sidebar"><Menu size={21} /></button>
               <div className="topbar-title"><h2>{routeTitle}</h2><div className="topbar-sub">ALLBEE Solutions · internal</div></div>
               {canFinance && (
                 <div className="company-pill" role="button" tabIndex={0} aria-label="Open Share & accounts" title="Open Share & accounts"
@@ -7189,11 +7205,11 @@ export default function App() {
                   <Bell size={20} />
                   {unreadNotifs > 0 && <span className="badge pri" style={{ position: "absolute", top: -5, right: -5, minWidth: 16, height: 16, padding: "0 4px", fontSize: 10, lineHeight: "16px" }}>{unreadNotifs > 99 ? "99+" : unreadNotifs}</span>}
                 </button>
-                <div className="userchip" onClick={() => setUserMenu((v) => !v)}>
+                <button type="button" className="userchip" aria-label="Account menu" aria-expanded={userMenu} onClick={() => setUserMenu((v) => !v)}>
                   <Avatar name={currentUser} url={profile?.photo_url} size={26} />
                   <span className="userchip-name">{currentUser}</span>
                   <span className={"role-badge " + (role || "staff")}>{ROLE_LABEL[role] || "Staff"}</span>
-                </div>
+                </button>
                 {userMenu && (
                   <div className="dropdown" onMouseLeave={() => setUserMenu(false)}>
                     <div className="drop-id">
@@ -7207,13 +7223,13 @@ export default function App() {
               </div>
             </header>
             <main className="page-enter" key={safeRoute + "|" + (taskDetailId || "") + "|" + (accountUser || "")}>
-              {renderPage()}
+              <React.Suspense fallback={<div className="content" aria-busy="true">Loading page…</div>}>{renderPage()}</React.Suspense>
             </main>
           </div>
         </div>
 
         <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
-          {[["dashboard", "Home", Home], ["tasks", "Tasks", ListTodo], ["notifications", "Alerts", Bell], ["assistant", "AI", Sparkles], ["search", "Search", Search]].map(([key, label, Icon]) => <button key={key} className={key === safeRoute ? "active" : ""} onClick={() => key === "search" ? setSearchOpen(true) : go(key)} aria-label={label}>
+          {[["dashboard", "Home", Home], (role === "accountant" ? ["accounts", "Accounts", Wallet] : ["tasks", "Tasks", ListTodo]), ["notifications", "Alerts", Bell], ["assistant", "AI", AllbeeAIMark], ["search", "Search", Search]].map(([key, label, Icon]) => <button key={key} className={key === safeRoute ? "active" : ""} onClick={() => key === "search" ? setSearchOpen(true) : go(key)} aria-label={label} aria-current={key === safeRoute ? "page" : undefined}>
             <span style={{ position: "relative" }}><Icon size={18} />{key === "notifications" && unreadNotifs > 0 && <i>{unreadNotifs > 9 ? "9+" : unreadNotifs}</i>}</span><small>{label}</small>
           </button>)}
         </nav>

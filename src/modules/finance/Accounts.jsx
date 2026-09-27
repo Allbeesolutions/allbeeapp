@@ -73,7 +73,7 @@ export default function Accounts({ db, bal, mutate, openModal, openBalance, remo
             </button>
           </div>
           {locks.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            {locks.map((p) => <span key={p} className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><LockIcon size={11} />{fmtPeriod(p)}<button className="iconbtn" style={{ width: 20, height: 20 }} onClick={() => doLock(p, false)} title="Unlock"><X size={11} /></button></span>)}
+            {locks.map((p) => <span key={p} className="tag" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><LockIcon size={11} />{fmtPeriod(p)}<button aria-label="Close" className="iconbtn" style={{ width: 20, height: 20 }} onClick={() => doLock(p, false)} title="Unlock"><X size={11} /></button></span>)}
           </div>}
         </div>
       )}
@@ -119,8 +119,8 @@ export default function Accounts({ db, bal, mutate, openModal, openBalance, remo
                     <td className={"num-cell mono " + (t.kind === "income" ? "pos-txt" : "neg-txt")} style={{ fontWeight: 700 }}>{money(t.kind === "income" ? t.amount : -t.amount, { sign: t.kind === "income" })}</td>
                     <td style={{ minWidth: 130 }}><SplitBar h={t.hajiPct} a={t.alimPct} legend={false} /><div className="split-legend"><span>H {t.hajiPct}%</span><span>A {t.alimPct}%</span></div></td>
                     <td><div className="row-actions">
-                      <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: t.kind, initial: t })}><Pencil size={14} /></button>
-                      <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete entry?", body: `Remove this ${t.kind} of ${money(t.amount)}? Balances will recalculate.`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(t) })}><Trash2 size={14} /></button>
+                      <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: t.kind, initial: t })}><Pencil size={14} /></button>
+                      <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete entry?", body: `Remove this ${t.kind} of ${money(t.amount)}? Balances will recalculate.`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(t) })}><Trash2 size={14} /></button>
                     </div></td>
                   </tr>
                 ))}

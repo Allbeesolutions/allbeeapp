@@ -41,8 +41,8 @@ export default function Testing({ db, mutate, openModal, removeItem, isAdmin, me
                       <td className="mono">{p.done}/{p.total}</td>
                       <td><span className={"badge " + testResultTone(s.result)}>{s.result || "Pending"}</span></td>
                       <td onClick={(e) => e.stopPropagation()}><div className="row-actions">
-                        <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => setOpenId(s.id)} title="Open"><ChevronRight size={15} /></button>
-                        {isAdmin && <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete test session?", body: `Delete "${s.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>}
+                        <button aria-label="Next" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => setOpenId(s.id)} title="Open"><ChevronRight size={15} /></button>
+                        {isAdmin && <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete test session?", body: `Delete "${s.title}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(s) })}><Trash2 size={14} /></button>}
                       </div></td>
                     </tr>
                   );

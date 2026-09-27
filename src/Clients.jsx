@@ -37,8 +37,8 @@ export default function Clients(props) {
                 <td className="mono" style={{ whiteSpace: "nowrap", color: "var(--muted)", fontSize: 13 }}>{c.createdAt ? fmtDate(new Date(c.createdAt).toISOString().slice(0, 10)) : "—"}</td>
                 <td><div className="row-actions">
                   <button className="btn sm" onClick={() => quote(c)}><FileText size={13} />Quote</button>
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "client", initial: c })}><Pencil size={14} /></button>
-                  <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove client?", body: `Remove ${c.name}?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(c) })}><Trash2 size={14} /></button>
+                  <button aria-label="Edit client" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "client", initial: c })}><Pencil size={14} /></button>
+                  <button aria-label="Delete client" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Remove client?", body: `Remove ${c.name}?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(c) })}><Trash2 size={14} /></button>
                 </div></td>
               </tr>
             ))}</tbody>

@@ -43,8 +43,8 @@ export default function Withdrawals({ db, bal, mutate, openModal, removeItem, is
                   <td style={{ color: "var(--muted)", fontSize: 13 }}>{w.notes || "—"}</td>
                   <td><div className="row-actions">
                     {isSuper && st !== "approved" && <button className="btn sm primary" onClick={() => setStatus(w, "approved")} title="Approve"><Check size={13} /></button>}
-                    {isSuper && st !== "rejected" && <button className="btn sm danger" onClick={() => setStatus(w, "rejected")} title="Reject"><X size={13} /></button>}
-                    <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete withdrawal?", body: `Remove this ${money(w.amount)} withdrawal for ${w.user}?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(w) })}><Trash2 size={14} /></button>
+                    {isSuper && st !== "rejected" && <button aria-label="Close" className="btn sm danger" onClick={() => setStatus(w, "rejected")} title="Reject"><X size={13} /></button>}
+                    <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "deleteConfirm", title: "Delete withdrawal?", body: `Remove this ${money(w.amount)} withdrawal for ${w.user}?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(w) })}><Trash2 size={14} /></button>
                   </div></td>
                 </tr>
               ); })}</tbody>

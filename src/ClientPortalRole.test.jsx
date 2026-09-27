@@ -1,8 +1,11 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import ClientPortal from "./ClientPortal.jsx";
 
+import PortalHelpdesk from "./PortalHelpdesk.jsx";
+import { Field, Modal } from "./AllbeeApp.jsx";
+afterEach(cleanup);
 const Icon = () => null;
 const runtime = {
   companyOf: () => ({ name: "ALLBEE Solutions" }),
@@ -27,4 +30,18 @@ describe("mocked client portal navigation", () => {
     expect(screen.getByText("Client helpdesk screen")).toBeTruthy();
     expect(screen.queryByText("My update")).toBeNull();
   });
+});
+
+
+it("wires the real helpdesk runtime and submits a client support ticket", async () => {
+ const rpc=vi.fn().mockResolvedValue({data:"ticket-1",error:null});
+ const reload=vi.fn();
+ const clientRuntime={...runtime,LazyPortalHelpdesk:PortalHelpdesk,Field,Modal,Empty:({title})=><p>{title}</p>,Plus:Icon,ChevronDown:Icon,Send:Icon,supabase:{rpc,from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:{ticket_no:"SUP-1"}})})})})}};
+ render(<ClientPortal db={{portal_posts:[],documents:[],quotations:[],invoices:[],support_tickets:[]}} profile={{id:"client-1",name:"Client One"}} signOut={vi.fn()} config={{}} reload={reload} runtime={clientRuntime} />);
+ fireEvent.click(screen.getByRole("button",{name:"Support",exact:true}));
+ fireEvent.click(await screen.findByRole("button",{name:"Create Ticket",exact:true}));
+ fireEvent.change(screen.getByLabelText(/Subject/),{target:{value:"Review handoff"}});
+ fireEvent.click(screen.getByRole("button",{name:"Submit ticket",exact:true}));
+ await waitFor(()=>expect(rpc).toHaveBeenCalledWith("apn_create_support_ticket",expect.objectContaining({p_subject:"Review handoff"})));
+ await waitFor(()=>expect(reload).toHaveBeenCalled());
 });

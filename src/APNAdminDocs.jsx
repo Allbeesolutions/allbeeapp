@@ -13,8 +13,8 @@ export default function APNAdminDocs({ db, openModal, removeRow, runtime = {} })
               <span className="tag">{d.category}</span>
               <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{d.title}</div>
               <a className="iconbtn" style={{ width: 30, height: 30 }} href={d.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnDoc", initial: d })}><Pencil size={14} /></button>
-              <button className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_documents", d.id, `deleted APN material "${d.title}"`)}><Trash2 size={14} /></button>
+              <button aria-label="Edit record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => openModal({ type: "apnDoc", initial: d })}><Pencil size={14} /></button>
+              <button aria-label="Delete record" className="iconbtn" style={{ width: 30, height: 30 }} onClick={() => removeRow("apn_documents", d.id, `deleted APN material "${d.title}"`)}><Trash2 size={14} /></button>
             </div>
           ))}
       </div>

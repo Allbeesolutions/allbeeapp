@@ -66,15 +66,15 @@ export default function Vault(props) {
                 <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{v.service}</div><div className="sub">{v.category}</div></div>
                 <span className="tag">{v.category}</span>
               </div>
-              {v.username && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}><span className="hint-line" style={{ minWidth: 64 }}>User</span><span className="mono" style={{ flex: 1, wordBreak: "break-all" }}>{v.username}</span><button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => copy(v.username, v, "username")}><Copy size={13} /></button></div>}
+              {v.username && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}><span className="hint-line" style={{ minWidth: 64 }}>User</span><span className="mono" style={{ flex: 1, wordBreak: "break-all" }}>{v.username}</span><button aria-label="Copy" className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => copy(v.username, v, "username")}><Copy size={13} /></button></div>}
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}><span className="hint-line" style={{ minWidth: 64 }}>Pass</span><span className="mono" style={{ flex: 1 }}>{reveal[v.id] ? v.password : "••••••••"}</span>
                 <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => toggleReveal(v)}>{reveal[v.id] ? <EyeOff size={13} /> : <Eye size={13} />}</button>
-                <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => copy(v.password, v, "password")}><Copy size={13} /></button>
+                <button aria-label="Copy" className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => copy(v.password, v, "password")}><Copy size={13} /></button>
               </div>
               {v.url && <a className="hint-line" href={v.url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)", fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 5 }}><ExternalLink size={12} />Open login</a>}
               <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
                 <button className="btn sm" onClick={() => openModal({ type: "vault", initial: v })}><Pencil size={13} />Edit</button>
-                <button className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete credential?", body: `Delete "${v.service}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(v) })}><Trash2 size={13} /></button>
+                <button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete credential?", body: `Delete "${v.service}"?`, note: "Moves to Recently deleted — restore within 60 days.", onConfirm: () => del(v) })}><Trash2 size={13} /></button>
               </div>
             </div>
           ))}

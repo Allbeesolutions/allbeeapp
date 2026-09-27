@@ -16,3 +16,8 @@
 - [x] Reduce main chunk to 480.93 kB and coalesce simultaneous same-scope reads, with measured build and request tests.
 - [x] Read-only custom domain trace: registered under current team but absent from all 19 accessible project-domain lists; owning project still unknown.
 - [ ] Apply and certify transactional finance RPC after authorized AllBee DB access and live schema review, then switch ordinary save client path atomically.
+
+- [x] UI-01 Shared responsive controls, navigation and AI design; evidence in UI_COVERAGE.md.
+- [x] UI-02 Repair discovered finance/APN/client runtime defects and add regressions.
+- [x] UI-03 Reproducible browser coverage and release handoff.
+- [ ] UI-04 Authorized new UI deployment and authenticated production checks.
