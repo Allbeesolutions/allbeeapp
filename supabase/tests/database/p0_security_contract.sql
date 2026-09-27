@@ -73,3 +73,9 @@ do $$ begin
  if has_table_privilege('authenticated','public.auth_preflight_rate_limits','SELECT,INSERT,UPDATE,DELETE') or has_table_privilege('anon','public.auth_preflight_rate_limits','SELECT,INSERT,UPDATE,DELETE') then raise exception 'P0: auth throttle table exposed'; end if;
  if has_function_privilege('authenticated','public.auth_preflight_rate_limit(text,integer,integer)','EXECUTE') or has_function_privilege('anon','public.auth_preflight_rate_limit(text,integer,integer)','EXECUTE') then raise exception 'P0: auth throttle RPC exposed'; end if;
 end $$;
+
+-- APN attachment visibility must correlate membership to the attachment conversation.
+do $$ declare q text; begin
+ select qual into q from pg_policies where schemaname='public' and tablename='apn_chat_attachments' and policyname='apn_chat_attachments_select';
+ if q is null or q not like '%apn_chat_attachments.conversation_id%' then raise exception 'P0: APN attachment select policy lost conversation correlation'; end if;
+end $$;
