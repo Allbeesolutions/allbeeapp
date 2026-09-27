@@ -1077,7 +1077,7 @@ mark.hl { background:rgba(234,164,23,.32); color:inherit; border-radius:3px; pad
 .web-ai-typing i { width:5px; height:5px; border-radius:50%; background:var(--muted); animation:web-ai-dot 1s infinite ease-in-out; }
 .web-ai-typing i:nth-child(2) { animation-delay:.12s; } .web-ai-typing i:nth-child(3) { animation-delay:.24s; }
 @keyframes web-ai-dot { 0%,60%,100% { opacity:.3; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
-@media (max-width:600px) { .web-ai-fab { right:14px; bottom:14px; width:52px; height:52px; padding:0; justify-content:center; border-radius:50%; } .web-ai-fab span { display:none; } .web-ai-panel { right:12px; bottom:74px; width:calc(100vw - 24px); height:min(690px,calc(100vh - 88px)); border-radius:18px; } }
+@media (max-width:600px) { .web-ai-fab { right:14px; bottom:14px; width:52px; height:52px; padding:0; justify-content:center; border-radius:50%; } .web-ai-fab > span:not(.web-ai-fab-logo) { display:none; } .web-ai-fab-logo { display:grid; width:36px; height:36px; flex-basis:36px; background:#fff; animation:web-ai-logo-float 2.8s ease-in-out infinite; } .web-ai-fab-logo img { width:29px; height:29px; } .web-ai-panel { right:12px; bottom:74px; width:calc(100vw - 24px); height:min(690px,calc(100vh - 88px)); border-radius:18px; } }
 @media (prefers-reduced-motion:reduce) { .web-ai-fab:hover { transform:none; } .web-ai-fab-logo { animation:none; } .web-ai-progress > i, .web-ai-typing i { animation:none; transition:none; } }
 
 /* APN Head command-center UI */
