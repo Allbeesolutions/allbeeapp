@@ -4,7 +4,16 @@ export default function APNWithdrawalCenter({ db, pid, goProfile, reload, runtim
   const { Empty, money, fmtDate, fmtDateTime, apnRequestAmount, apnWithdrawalLabel, apnWalletLabel, apnWithdrawalTone, apnWithdrawalWalletFor, apnPayoutDate, apnSnapshotWallet, apnCommsOf, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnProjectSummary, APN_WITHDRAWAL_TYPES, APN_COMM_REVERSED, APNMetric, supabase, emitToast, APNWithdrawalRequestModal, Wallet, Building2, ArrowDownToLine, LockIcon, BadgeCheck, Hourglass, Banknote, RefreshCw, X, CheckCircle2, Modal } = runtime;
   const [modal, setModal] = useState(null);
   const [detail, setDetail] = useState(null);
-  const wallets = APN_WITHDRAWAL_TYPES.map(([type]) => apnWithdrawalWalletFor(db, pid, type));
+  const [liveWallets, setLiveWallets] = useState(null);
+  const wallets = APN_WITHDRAWAL_TYPES.map(([type]) => (liveWallets || []).find((row) => row.wallet_type === type) || apnWithdrawalWalletFor(db, pid, type));
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase.rpc("apn_withdrawal_dashboard", { p_partner_id: pid });
+      if (active && !error && Array.isArray(data?.wallets)) setLiveWallets(data.wallets);
+    })();
+    return () => { active = false; };
+  }, [pid, reload, supabase]);
   const requests = (db.apn_withdrawal_requests || []).filter((row) => row.partner_id === pid).slice().sort((a, b) => new Date(b.requested_at) - new Date(a.requested_at));
   const open = requests.filter((row) => ["pending", "under_review", "approved", "processing"].includes(row.status));
   const history = (db.apn_withdrawal_status_history || []).filter((row) => row.request_id === detail?.id).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));

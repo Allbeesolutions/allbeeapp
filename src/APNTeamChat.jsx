@@ -309,6 +309,26 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     return () => { cancelled = true; clearTimeout(timer); };
   }, [messageSearch, selected]);
 
+  const revokeRequest = async (requestId) => {
+    setBusyRequests((prev) => new Set(prev).add(requestId)); setErr("");
+    try {
+      const { error } = await supabase.rpc("apn_revoke_friend_request", { p_request_id: requestId });
+      if (error) throw new Error(error.message);
+      await loadConversations(); emitToast("Friend request revoked.", "success");
+    } catch (e) { setErr(e.message || String(e)); emitToast(e.message || "Could not revoke request.", "error"); }
+    finally { setBusyRequests((prev) => { const n=new Set(prev); n.delete(requestId); return n; }); }
+  };
+
+  const unfriend = async (otherId) => {
+    setErr("");
+    try {
+      const { error } = await supabase.rpc("apn_unfriend", { p_other_id: String(otherId) });
+      if (error) throw new Error(error.message);
+      setSelected(null); setMessages([]);
+      await loadConversations(); emitToast("Friend removed.", "success");
+    } catch (e) { setErr(e.message || String(e)); emitToast(e.message || "Could not remove friend.", "error"); }
+  };
+
   const filteredMessages = searchedMessages ?? messages;
 
   const sendMessage = async () => {
@@ -586,7 +606,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                       <Avatar name={c.name} url={c.photo_url} size={34} fontSize={12} />
                       <div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{c.name}</div><div className="apn-tc-partner-location">{c.apn_id || "APN partner"}{c.district ? ` · ${c.district}` : ""}</div></div>
                       <span className={`apn-tc-status ${c.availability === "online" ? "online" : "offline"}`}>{c.contact_type !== "partner" ? "Always available" : c.availability === "online" ? "Online" : `Last seen ${c.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}`}</span>
-                      {c.relationship === "friend" ? <button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : <button className="btn sm primary" disabled={c.relationship === "outgoing"} onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
+                      {c.relationship === "friend" ? <div style={{display:"flex",gap:5}}><button className="btn sm" onClick={() => openPersonChat(c)}>Chat</button><button className="btn sm" onClick={() => unfriend(c.contact_id)}>Unfriend</button></div> : c.relationship === "incoming" ? <button className="btn sm primary" onClick={() => { const r = requests.find((x) => x.other_id === c.contact_id && x.direction === "incoming" && x.status === "pending"); if (r) acceptRequest(r.request_id); }}>Accept</button> : c.relationship === "outgoing" ? <button className="btn sm" onClick={() => { const r=requests.find((x)=>String(x.other_id)===String(c.contact_id)&&x.direction==="outgoing"&&x.status==="pending"); if(r) revokeRequest(r.request_id); }}>Revoke</button> : <button className="btn sm primary" onClick={() => sendFriendRequest(c.apn_id)}>{action}</button>}
                     </div>;
                   })}
                   {!loading && !contacts.some((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())) && <div className="hint-line" style={{ padding: 10 }}>No partners found.</div>}
@@ -597,7 +617,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                 <div className="apn-tc-card-title">Friend Requests</div>
                 {requests.filter((r) => r.status === "pending").map((r) => <div key={r.request_id} className="apn-tc-partner-row">
                   <Avatar name={r.other_name} url={contacts.find((c) => String(c.contact_id) === String(r.other_id))?.photo_url} size={32} fontSize={11} /><div className="apn-tc-partner-meta"><div className="apn-tc-partner-name">{r.other_name}</div><div className="apn-tc-partner-location">{r.other_apn_id}</div></div>
-                  {r.direction === "incoming" ? <div style={{ display: "flex", gap: 5 }}><button className="btn sm primary" onClick={() => acceptRequest(r.request_id)}>Accept</button><button className="btn sm" onClick={() => rejectRequest(r.request_id)}>Reject</button></div> : <span className="hint-line">Pending</span>}
+                  {r.direction === "incoming" ? <div style={{ display: "flex", gap: 5 }}><button className="btn sm primary" disabled={busyRequests.has(r.request_id)} onClick={() => acceptRequest(r.request_id)}>Accept</button><button className="btn sm" disabled={busyRequests.has(r.request_id)} onClick={() => rejectRequest(r.request_id)}>Reject</button></div> : <button className="btn sm" disabled={busyRequests.has(r.request_id)} onClick={() => revokeRequest(r.request_id)}>Revoke</button>}
                 </div>)}
               </div>}
             </aside>
