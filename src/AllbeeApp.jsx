@@ -3295,6 +3295,18 @@ function TermsPage({ config, profile, role, isAdmin, go }) {
 class ErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    console.error("[ALLBEE] app render error", err, info);
+    try {
+      supabase.rpc("app_record_error", {
+        p_message: String(err?.message || err || "Unknown render error"),
+        p_stack: String(err?.stack || ""),
+        p_component_stack: String(info?.componentStack || ""),
+        p_path: `${window.location.pathname}${window.location.hash}`,
+        p_metadata: { source: "AppErrorBoundary", userAgent: String(navigator.userAgent || "") },
+      }).catch(() => {});
+    } catch {}
+  }
   render() {
     if (this.state.err) return (
       <div style={{ padding: 40, fontFamily: "system-ui", color: "#444" }}>
