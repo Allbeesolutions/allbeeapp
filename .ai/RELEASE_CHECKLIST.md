@@ -21,4 +21,4 @@
 - [x] Main JS reduced to 480.93 kB / 138.40 kB gzip; keyed in-flight reads tested for A/B/A bursts and failed request retries.
 - [x] Custom domain read-only trace across 19 accessible projects; owning assignment remains unidentified.
 - [ ] Review/apply RPC migration on authorized AllBee Supabase, verify live permission/triggers, then wire ordinary finance save and test production rollback/retry.
-- [ ] Deploy this new code package only with fresh release authorization under HAO policy.
+- [x] fcd2f89 pushed and linked allbeeapp Vercel production deployment Ready; custom domain serves exact local JS build checksum.
