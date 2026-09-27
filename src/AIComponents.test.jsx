@@ -86,3 +86,32 @@ describe("Assistant failure and retry", () => {
   expect(screen.getAllByText("Review my tasks")).toHaveLength(1);
  });
 });
+
+describe("Assistant response controls", () => {
+ it("stops a pending response without appending stale output", async () => {
+  let resolveRequest;
+  const callAI = vi.fn(() => new Promise((resolve) => { resolveRequest = resolve; }));
+  render(<AllbeeAI db={{}} config={{}} me={{name:"Alex"}} role="admin" isAdmin go={vi.fn()} runtime={{...baseRuntime, callAI}} />);
+  fireEvent.change(screen.getByLabelText("Message ALLBEE AI"), {target:{value:"Analyse this"}});
+  fireEvent.click(screen.getByRole("button", {name:"Send message"}));
+  await waitFor(() => expect(screen.getByRole("button", {name:"Stop"})).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", {name:"Stop"}));
+  expect(screen.getByText("Response stopped. Your conversation is unchanged.")).toBeTruthy();
+  resolveRequest("Stale reply");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByText("Stale reply")).toBeNull();
+ });
+
+ it("regenerates the latest answer without duplicating the user message", async () => {
+  const callAI = vi.fn().mockResolvedValueOnce("First answer").mockResolvedValueOnce("Second answer");
+  render(<AllbeeAI db={{}} config={{}} me={{name:"Alex"}} role="admin" isAdmin go={vi.fn()} runtime={{...baseRuntime, callAI}} />);
+  fireEvent.change(screen.getByLabelText("Message ALLBEE AI"), {target:{value:"Summarise today"}});
+  fireEvent.click(screen.getByRole("button", {name:"Send message"}));
+  await waitFor(() => expect(screen.getByText("First answer")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", {name:"Regenerate"}));
+  await waitFor(() => expect(screen.getByText("Second answer")).toBeTruthy());
+  expect(screen.queryByText("First answer")).toBeNull();
+  expect(screen.getAllByText("Summarise today")).toHaveLength(1);
+  expect(callAI).toHaveBeenCalledTimes(2);
+ });
+});
