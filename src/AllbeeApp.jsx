@@ -4,6 +4,7 @@ import { loadTableRows } from "./loadTableRows.js";
 import { printProposalDocument, proposalSectionDisplay } from "./proposalPrint.js";
 const shareQuoteVia = async (...args) => (await import("./APNLeadForm.jsx")).shareQuoteVia(...args);
 const downloadQuotePdf = async (...args) => (await import("./APNLeadForm.jsx")).downloadQuotePdf(...args);
+import { APNPageIntro, APNSkeleton, useAPNDrawer } from "./modules/apn/Experience.jsx";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import { apnHealthScore, apnRecommendations, apnRiskIndicators } from "./modules/apn/health.js";
 import { APNInactive } from "./modules/apn/Inactive.jsx";
@@ -4512,7 +4513,7 @@ function APNAgreementGate({ isDark, onSignOut, required = [], onAccepted }) {
     } catch (e) { setErr(e.message || "Your acceptance could not be recorded. Please try again."); setBusy(false); }
   };
   return (
-    <div className="allbee lock" data-theme={isDark ? "dark" : "light"}>
+    <div className="allbee lock apn-auth" data-theme={isDark ? "dark" : "light"}>
       <ToastHost />
       {reading && <LazyAPNAgreementReader formatDate={fmtDate} doc={reading} simple={!!views[reading.id]} onToggleSimple={(s) => setViews((v) => ({ ...v, [reading.id]: s }))} onClose={() => setReading(null)} footer={<button className="btn primary" style={{ marginTop: 16, width: "100%", justifyContent: "center" }} onClick={() => markRead(reading.id)}><Check size={15} />I've read this document</button>} />}
       <div className="lock-card gate-card" style={{ width: "min(94vw, 540px)", maxHeight: "92vh", overflow: "auto" }}>
@@ -4630,7 +4631,7 @@ function APNAI({ meRow, go, mutate, pid }) {
     const el = chatContainerRef.current;
     if (!el) return;
     if (typeof el.scrollTo === "function") {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     } else {
       // jsdom/older embedded WebViews may not implement Element.scrollTo.
       el.scrollTop = el.scrollHeight;
@@ -4652,6 +4653,8 @@ function APNAI({ meRow, go, mutate, pid }) {
       setMsgs((l) => [...l, { role: "bot", text, uncertain: !!data?.uncertain, ids: data?.relevantIds || [], rule: data?.ruleVersion || "", ts: Date.now() }]);
       if (data?.uncertain) setAsked({ question, msgIdx: idx, clientKey: uid() });
     } catch (e) {
+      setInput(question);
+      inputRef.current?.focus();
       setMsgs((l) => [...l, { role: "bot", text: friendlyAIErrorText(e), err: true, ts: Date.now() }]);
     } finally { setBusy(false); }
   };
@@ -4708,6 +4711,7 @@ function APNAI({ meRow, go, mutate, pid }) {
 
       <div className="apn-rowcard">
         <div className="apn-ai-chat" ref={chatContainerRef} role="log" aria-label="Assistant conversation" aria-live="polite">
+          {msgs.length === 0 && <div className="apn-ai-welcome"><AllbeeAIMark size={42} /><h3>What can we work on today?</h3><p>Understand your earnings, plan your next step or get help from the team. Choose a prompt above or ask below.</p></div>}
           {msgs.map((m, i) => (
             <div key={i}>
               <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")} style={{ lineHeight: 1.55 }}>
@@ -4862,7 +4866,7 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
     mutate((d) => ({ ...d, apn_zone_requests: [...(d.apn_zone_requests || []), row] }), { action: `requested the ${zone.label} apex zone`, module: "APN", partnerId: meRow.id });
   };
   return (
-    <div>
+    <div className="apn-home-layout">
       {campaign.active && campaign.under && (
         <div className="banner" style={{ margin: "0 0 14px" }}><Megaphone size={15} />{campaign.message} — <b>Target: {campaign.targetCount}</b></div>
       )}
@@ -4879,13 +4883,30 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
         </div>
         {next ? (
           <>
-            <div className="bar"><i style={{ width: next.pct + "%" }} /></div>
+            <div className="bar" role="progressbar" aria-label="Progress to next partner level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(next.pct)}><i style={{ width: next.pct + "%" }} /></div>
             <div style={{ fontSize: 12, opacity: .9, marginTop: 7 }}>{next.remaining} more completed project{next.remaining === 1 ? "" : "s"} to reach {next.next.name} ({apnSnapshotRate(snap, next.next.minProject) ?? next.next.rate}%)</div>
           </>
         ) : <div style={{ fontSize: 12, opacity: .9, marginTop: 10 }}>Highest commission level achieved ({effRate}%)</div>}
       </div>
 
-      <div style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} haptic={haptic} /></div>
+      <div className="apn-checkin-wrap" style={{ marginBottom: 14 }}><APNCheckIn db={db} pid={pid} mutate={mutate} haptic={haptic} /></div>
+
+      <div className="apn-home-heading"><h3>Performance at a glance</h3><span>Your revenue, commissions and lead activity</span></div>
+      <div className="apn-metrics appear" style={{ marginBottom: 14 }}>
+        <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
+        <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
+        <APNMetric k="Payable" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
+        <APNMetric k="Paid" v={money(snapWallet ? Number(snapWallet.withdrawn) : stats.commission.paid)} icon={<Check size={13} />} />
+        <APNMetric k="Leads submitted" v={stats.submitted} icon={<UserPlus size={13} />} />
+        <APNMetric k="Leads converted" v={stats.converted} icon={<BadgeCheck size={13} />} />
+        <APNMetric k="Conversion rate" v={stats.conv + "%"} icon={<GaugeCircle size={13} />} />
+        <APNMetric k="Completed projects" v={stats.completed} icon={<Trophy size={13} />} />
+      </div>
+
+      <div className="apn-metrics appear" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
+        <div className="apn-metric"><div className="k"><Trophy size={13} />Company rank</div><div className="v">{cRank.rank ? `#${cRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> / {cRank.total}</span></div></div>
+        <div className="apn-metric"><div className="k"><MapPin size={13} />District rank</div><div className="v">{dRank.rank ? `#${dRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> · {meRow.district || "—"}</span></div></div>
+      </div>
 
       <button className="apn-ai-banner" type="button" onClick={() => go("ai")} aria-label="Open ALLBEE AI">
         <span className="apn-ai-banner-ic"><AllbeeAIMark size={24} /></span>
@@ -4904,22 +4925,6 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
           <div><div className="hint-line" style={{ fontSize: 11 }}>Your zone rank</div><div className="mono" style={{ fontWeight: 700 }}>{zRank.rank ? `#${zRank.rank}` : "—"}{zRank.total ? ` / ${zRank.total}` : ""}</div></div>
         </div>
         <div style={{ marginTop: 10 }}>{myZoneRequest ? <span className="badge pri">Zone request pending</span> : <button className="btn sm" onClick={requestZoneChange}>Request zone change</button>}</div>
-      </div>
-
-      <div className="apn-metrics appear" style={{ marginBottom: 14 }}>
-        <APNMetric k="Revenue generated" v={money(stats.revenue)} icon={<TrendingUp size={13} />} />
-        <APNMetric k="Commission earned" v={money(snapWallet ? Number(snapWallet.earned) : stats.commission.earned)} icon={<Coins size={13} />} tone="pos" />
-        <APNMetric k="Payable" v={money(snapWallet ? Number(snapWallet.eligible) : stats.commission.payable)} icon={<Wallet size={13} />} tone="accent" />
-        <APNMetric k="Paid" v={money(snapWallet ? Number(snapWallet.withdrawn) : stats.commission.paid)} icon={<Check size={13} />} />
-        <APNMetric k="Leads submitted" v={stats.submitted} icon={<UserPlus size={13} />} />
-        <APNMetric k="Leads converted" v={stats.converted} icon={<BadgeCheck size={13} />} />
-        <APNMetric k="Conversion rate" v={stats.conv + "%"} icon={<GaugeCircle size={13} />} />
-        <APNMetric k="Completed projects" v={stats.completed} icon={<Trophy size={13} />} />
-      </div>
-
-      <div className="apn-metrics appear" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}>
-        <div className="apn-metric"><div className="k"><Trophy size={13} />Company rank</div><div className="v">{cRank.rank ? `#${cRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> / {cRank.total}</span></div></div>
-        <div className="apn-metric"><div className="k"><MapPin size={13} />District rank</div><div className="v">{dRank.rank ? `#${dRank.rank}` : "—"}<span className="hint-line" style={{ fontSize: 12, fontWeight: 500 }}> · {meRow.district || "—"}</span></div></div>
       </div>
 
       {activeTarget && (() => { const p = apnTargetProgress(db, activeTarget); return (
@@ -4979,18 +4984,20 @@ function APNQuotations({ db, meRow, pid, openModal }) {
 }
 
 /* ── wallet ──────────────────────────────────────────────────────────── */
-function APNWithdrawalRequestModal({ db, pid, onClose, onDone }) {
+function APNWithdrawalRequestModal({ db, pid, liveWallets = null, onClose, onDone }) {
   const account = (db.apn_withdrawal_bank_accounts || []).find((row) => row.partner_id === pid && row.active);
-  const [walletType, setWalletType] = useState("commission");
+  const [walletType, setWalletType] = useState("all");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState(account?.upi_id ? "upi" : "bank_transfer");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const wallet = apnWithdrawalWalletFor(db, pid, walletType);
+  const walletRows = APN_WITHDRAWAL_TYPES.map(([key]) => (liveWallets || []).find((row) => row.wallet_type === key) || apnWithdrawalWalletFor(db, pid, key));
+  const wallet = walletType === "all" ? null : walletRows.find((row) => row.wallet_type === walletType) || apnWithdrawalWalletFor(db, pid, walletType);
+  const totalMax = walletRows.reduce((sum, row) => sum + (Number(row.withdrawable) || 0), 0);
   const value = Number(amount) || 0;
-  const max = Number(wallet.withdrawable) || 0;
+  const max = walletType === "all" ? totalMax : Number(wallet?.withdrawable) || 0;
   const valid = value > 0 && value <= max && !!account;
   const submit = async () => {
     setError("");
@@ -4998,8 +5005,21 @@ function APNWithdrawalRequestModal({ db, pid, onClose, onDone }) {
     if (!valid) return setError(value <= 0 ? "Enter an amount above ₹0." : `The request cannot exceed ${money(max)}.`);
     setBusy(true);
     try {
-      const { error: rpcError } = await supabase.rpc("apn_request_withdrawal", { p_wallet_type: walletType, p_amount: value, p_preferred_method: method, p_reason: reason.trim() || null, p_notes: notes.trim() || null });
-      if (rpcError) throw rpcError;
+      if (walletType === "all") {
+        let remaining = value;
+        for (const row of walletRows) {
+          const available = Number(row.withdrawable) || 0;
+          if (available <= 0 || remaining <= 0) continue;
+          const requestAmount = Math.min(available, remaining);
+          const { error: rpcError } = await supabase.rpc("apn_request_withdrawal", { p_wallet_type: row.wallet_type, p_amount: requestAmount, p_preferred_method: method, p_reason: reason.trim() || null, p_notes: notes.trim() || null });
+          if (rpcError) throw rpcError;
+          remaining = Math.round((remaining - requestAmount) * 100) / 100;
+        }
+        if (remaining > 0) throw new Error("The combined wallet balance changed. Refresh and try again.");
+      } else {
+        const { error: rpcError } = await supabase.rpc("apn_request_withdrawal", { p_wallet_type: walletType, p_amount: value, p_preferred_method: method, p_reason: reason.trim() || null, p_notes: notes.trim() || null });
+        if (rpcError) throw rpcError;
+      }
       emitToast("Withdrawal request submitted.", "success");
       await onDone?.(); onClose();
     } catch (err) { setError(err?.message || "Couldn’t submit the withdrawal."); }
@@ -5009,9 +5029,10 @@ function APNWithdrawalRequestModal({ db, pid, onClose, onDone }) {
     footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={submit} disabled={!valid || busy}><ArrowDownToLine size={15} />{busy ? "Submitting…" : "Request withdrawal"}</button></>}>
     <div className="banner" style={{ margin: "0 0 12px" }}><LockIcon size={15} />Funds are locked immediately when you submit this request, so they cannot be requested twice.</div>
     <Field label="Wallet type" required><select className="select" value={walletType} onChange={(e) => { setWalletType(e.target.value); setAmount(""); }}>
-      {APN_WITHDRAWAL_TYPES.map(([key, label]) => <option key={key} value={key}>{label} · available {money(apnWithdrawalWalletFor(db, pid, key).withdrawable)}</option>)}
+      <option value="all">All wallets · available {money(totalMax)}</option>
+      {APN_WITHDRAWAL_TYPES.map(([key, label]) => { const row = walletRows.find((item) => item.wallet_type === key); return <option key={key} value={key}>{label} · available {money(row?.withdrawable || 0)}</option>; })}
     </select></Field>
-    <div className="calc-box"><div className="calc-row"><span>Withdrawable {apnWalletLabel(walletType)}</span><b className="mono">{money(max)}</b></div><div className="calc-row"><span>Currently locked</span><b className="mono">{money(wallet.locked)}</b></div></div>
+    <div className="calc-box"><div className="calc-row"><span>{walletType === "all" ? "Total withdrawable" : `Withdrawable ${apnWalletLabel(walletType)}`}</span><b className="mono">{money(max)}</b></div><div className="calc-row"><span>Currently locked</span><b className="mono">{money(walletType === "all" ? walletRows.reduce((sum, row) => sum + (Number(row.locked) || 0), 0) : wallet?.locked)}</b></div></div>
     <Field label="Amount" required error={amount && value <= 0 ? "Enter an amount above ₹0." : value > max ? `Maximum available is ${money(max)}.` : ""}>
       <div style={{ display: "flex", gap: 7 }}><input className="input mono" style={{ flex: 1 }} type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /><button type="button" className="btn sm" onClick={() => setAmount(String(max))} disabled={max <= 0}>Max</button></div>
     </Field>
@@ -5038,7 +5059,7 @@ function APNTraining({ db, meRow, pid, mutate }) {
   return (
     <div>
       <div className="apn-section-h">Training</div>
-      <div className="apn-seg-scroll">{APN_SERVICES.map(([k, l]) => <button key={k} className={cat === k ? "on" : ""} onClick={() => setCat(k)}>{l}{unlocked[k] ? " ✓" : ""}</button>)}</div>
+      <div className="apn-seg-scroll">{APN_SERVICES.map(([k, l]) => <button key={k} aria-pressed={cat === k} className={cat === k ? "on" : ""} onClick={() => setCat(k)}>{l}{unlocked[k] ? " ✓" : ""}</button>)}</div>
       <div className="apn-list">
         {articles.length === 0 && <div className="apn-rowcard"><Empty icon={<GraduationCap size={22} color="var(--muted)" />} title="No lessons yet" text="Training material for this category will appear here." /></div>}
         {articles.map((a) => (
@@ -5201,6 +5222,9 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     return ["home", "leads", "quotations", "wallet", "withdrawals", "network", "chat", "learn", "targets", "documents", "agreements", "notifications", "achievements", "leaderboard", "district", "profile", "ai", "support"].includes(initial) ? initial : "home";
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef(null);
+  const menuRef = useRef(null);
+  useAPNDrawer(sidebarOpen, () => setSidebarOpen(false), sidebarRef, menuRef);
   const [searchOpen, setSearchOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [finSnap, setFinSnap] = useState(null);
@@ -5363,18 +5387,21 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const showFab = tab === "leads" || tab === "quotations";
   return (
     <div className={`allbee apn apn-nav-shell${sidebarOpen ? " menu-open" : ""}`} data-theme={isDark ? "dark" : "light"}>
-      <aside className="apn-desktop-sidebar" aria-label="APN navigation">
+      <a className="apn-skip" href="#apn-content" onClick={(e) => { e.preventDefault(); document.getElementById("apn-content")?.focus(); }}>Skip to content</a>
+      {sidebarOpen && <button className="apn-drawer-backdrop" aria-label="Close navigation" tabIndex={-1} onClick={() => setSidebarOpen(false)} />}
+      <aside ref={sidebarRef} id="apn-navigation" className="apn-desktop-sidebar" aria-label="APN navigation">
+        <button className="btn apn-drawer-close" onClick={() => setSidebarOpen(false)}><X size={16} />Close menu</button>
         <div className="apn-side-brand" role="button" tabIndex={0} onClick={() => go("home")} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("home"); } }}>
           <FounderTap className="brand-logo" src={LOGO_ICON} alt="ALLBEE" />
           <div><div className="apn-side-title">ALLBEE</div><div className="apn-side-sub">Partner Network</div></div>
         </div>
         <div className="apn-side-section">MAIN</div>
         <div className="apn-side-links">
-          {primary.map(([k, l, Icon]) => <button key={k} className={"apn-side-link" + (tab === k ? " active" : "")} onClick={() => go(k)}><Icon size={17} /><span>{l}</span>{k === "chat" && unreadNotif > 0 ? <span className="badge action-badge">{unreadNotif > 99 ? "99+" : unreadNotif}</span> : null}</button>)}
+          {primary.map(([k, l, Icon]) => <button key={k} aria-current={tab === k ? "page" : undefined} className={"apn-side-link" + (tab === k ? " active" : "")} onClick={() => go(k)}><Icon size={17} /><span>{l}</span></button>)}
         </div>
         <div className="apn-side-section">WORKSPACE</div>
         <div className="apn-side-links">
-          {moreItems.map(([k, l, ic, badge]) => <button key={k} className={"apn-side-link" + (tab === k ? " active" : "")} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge action-badge">{badge > 99 ? "99+" : badge}</span>}</button>)}
+          {moreItems.map(([k, l, ic, badge]) => <button key={k} aria-current={tab === k ? "page" : undefined} className={"apn-side-link" + (tab === k ? " active" : "")} onClick={() => go(k)}>{ic}<span>{l}</span>{badge > 0 && <span className="badge action-badge">{badge > 99 ? "99+" : badge}</span>}</button>)}
         </div>
         <div className="apn-side-foot">
           <button className="apn-side-link" onClick={signOut}><LogOut size={17} color="var(--neg)" /><span style={{ color: "var(--neg)" }}>Sign out</span></button>
@@ -5384,30 +5411,30 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       <ToastHost />
        <header className="apn-top">
          <button type="button" className="brand-logo-button" onClick={() => go("home")} aria-label="Go to APN home" title="Go to APN home"><FounderTap className="brand-logo" src={LOGO_ICON} alt="APN" /></button>
-         <button type="button" className="iconbtn" onClick={() => setSidebarOpen((v) => !v)} aria-label={sidebarOpen ? "Close menu" : "Open menu"} title="Menu" aria-expanded={sidebarOpen}><Menu size={19} /></button>
-         <div style={{ flex: 1, minWidth: 0 }}><h1>APN</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
+         <button ref={menuRef} type="button" aria-controls="apn-navigation" className="iconbtn apn-menu-trigger" onClick={() => setSidebarOpen((v) => !v)} aria-label={sidebarOpen ? "Close menu" : "Open menu"} title="Menu" aria-expanded={sidebarOpen}><Menu size={19} /></button>
+         <div style={{ flex: 1, minWidth: 0 }}><h1>{primary.find(([k]) => k === tab)?.[1] || moreItems.find(([k]) => k === tab)?.[1] || "APN"}</h1><div className="apn-id">{apnIdFor(meRow)} · {meRow.district || "Tamil Nadu"}{meRow.role === "state_head" && " · State Head"}</div></div>
         <PortalRefreshButton onRefresh={refreshPortal} />
         <button className="iconbtn" onClick={() => setSearchOpen(true)} title="Search"><Search size={17} /></button>
         <button className="iconbtn" aria-label="Open notifications" title="Notifications" style={{ position: "relative" }} onClick={() => go("notifications")}><Bell size={17} />{unreadNotif > 0 && <span className="badge action-badge" style={{ position: "absolute", top: -5, right: -5 }}>{unreadNotif > 99 ? "99+" : unreadNotif}</span>}</button>
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <div className="apn-body"><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <div className="card" aria-busy="true">Loading APN tab…</div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading APN tab…</div>}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></div>
+      <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></main>
 
       {showFab && <button className="apn-fab" aria-label={tab === "leads" ? "Submit a lead" : "Create quotation"} onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
       <GlobalPullToRefresh enabled={!modal && !searchOpen && !sidebarOpen} onRefresh={refreshPortal} />
 
-      <nav className="apn-bottomnav">
+      <nav className="apn-bottomnav" aria-label="Quick navigation">
         {primary.map(([k, l, Icon]) => (
-          <button key={k} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={k === "chat" ? 22 : 20} strokeWidth={k === "chat" ? 1.6 : 2} /><span>{l}</span></button>
+          <button key={k} aria-current={tab === k ? "page" : undefined} className={"apn-tab" + (tab === k ? " on" : "") + (k === "network" ? " net" : "")} onClick={() => go(k)}><Icon size={k === "chat" ? 22 : 20} strokeWidth={k === "chat" ? 1.6 : 2} /><span>{l}</span></button>
         ))}
       </nav>
       </div>
 
       {searchOpen && <React.Suspense fallback={<div className="card" aria-busy="true">Loading search…</div>}><LazyAPNSearch db={db} meRow={meRow} pid={pid} go={go} onClose={() => setSearchOpen(false)} APN_SERVICE_LABEL={APN_SERVICE_LABEL} money={money} SearchHighlight={SearchHighlight} /></React.Suspense>}
-      {modal?.type === "apnLead" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading lead form…</div></div>}><LazyAPNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ APN_SERVICES, APN_TIEUPS, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO, uid }} /></React.Suspense>}
+      {modal?.type === "apnLead" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading lead form…</div></div>}><LazyAPNLeadForm meRow={meRow} db={db} onSave={(l) => mutate((d) => ({ ...d, apn_leads: (d.apn_leads || []).some((x) => x.id === l.id) ? d.apn_leads.map((x) => x.id === l.id ? l : x) : [...(d.apn_leads || []), l] }), { action: "submitted APN lead", module: "APN", entity: "APN Lead", entityId: l.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ APN_SERVICES, APN_TIEUPS, Field, SelectOther, Empty, Modal, SearchableSelect, supabase, emitToast, todayISO, uid }} /></React.Suspense>}
       {modal?.type === "apnQuote" && <React.Suspense fallback={<div className="modal-overlay"><div className="modal-card" aria-busy="true">Loading quotation form…</div></div>}><LazyAPNQuoteForm meRow={meRow} initial={modal.initial} onSave={(qq) => mutate((d) => ({ ...d, apn_quotations: (d.apn_quotations || []).some((x) => x.id === qq.id) ? d.apn_quotations.map((x) => x.id === qq.id ? qq : x) : [...(d.apn_quotations || []), qq] }), { action: modal.initial ? "updated APN quotation" : "generated APN quotation", module: "APN", entity: "APN Quotation", entityId: qq.id, partnerId: pid })} onClose={() => setModal(null)} runtime={{ useState, supabase, uid, round2, money, Modal, Field, APN_SERVICES, APN_TIEUPS, Send, X }} /></React.Suspense>}
       {modal?.type === "apnReject" && <APNRejectForm partner={modal.partner} onSave={async (reason) => { try { const { error } = await supabase.rpc("apn_state_head_reject_partner", { p_partner_id: modal.partner.id, p_reason: reason || null }); if (error) throw error; const at = Date.now(); patchDb((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === modal.partner.id ? { ...u, status: "rejected", rejectReason: reason || null, rejectedBy: meRow.name, rejectedAt: at } : u) })); emitToast(`Rejected ${modal.partner.name}.`, "success"); } catch (e) { emitToast(e?.message || "Could not reject partner.", "error"); } finally { setModal(null); } }} onClose={() => setModal(null)} />}
     </div>
