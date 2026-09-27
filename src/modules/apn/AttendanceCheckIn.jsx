@@ -3,6 +3,8 @@ import { Check, UserCheck } from "lucide-react";
 import { todayISO, localISODate } from "../../utils/dateFormat.js";
 import { apnCheckedInToday, apnAttendanceStreak } from "./attendance.js";
 
+const attendanceId = () => Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+
 export function APNCheckIn({ db, pid, mutate, haptic: hapticFn }) {
   const [step, setStep] = useState("idle");
   const [word, setWord] = useState("");
@@ -13,7 +15,7 @@ export function APNCheckIn({ db, pid, mutate, haptic: hapticFn }) {
     hapticFn?.([10, 30, 10]);
     mutate((d) => ({
       ...d,
-      apn_attendance: [...(d.apn_attendance || []), { id: uid(), partnerId: pid, date: todayISO(), at: Date.now() }],
+      apn_attendance: [...(d.apn_attendance || []), { id: attendanceId(), partnerId: pid, date: todayISO(), at: Date.now() }],
       apn_users: (d.apn_users || []).map((u) => u.id === pid ? { ...u, lastCheckIn: Date.now() } : u),
     }), { action: "checked in for APN attendance", module: "APN", entity: "APN Attendance", entityId: todayISO(), partnerId: pid });
     setStep("idle"); setWord("");
