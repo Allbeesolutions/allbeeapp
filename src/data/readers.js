@@ -376,11 +376,11 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     }
     const db = emptyDB();
     const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
-      t, await loadTableRows(supabase, t, "id,data", "created_at", BOOTSTRAP_TIMEOUT_MS, 0, true, 500, 500)
+      t, await loadTableRows(supabase, t, "id,data,updated_at", "created_at", BOOTSTRAP_TIMEOUT_MS, 0, true, 500, 500)
     ]);
     for (const [t, rows] of loaded) {
       db[t] = (rows || [])
-        .map((r) => r.data)
+        .map((r) => r.data && typeof r.data === "object" ? { ...r.data, _updatedAt: r.updated_at || null } : r.data)
         .filter((x) => x && typeof x === "object")
         .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
     }
@@ -398,7 +398,7 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     // pool; previously each feature group created its own pool and sequential group
     // waits made hydration slower while still allowing bursts of 10 requests/group.
     const jobs = [];
-    for (const t of TABLES) if (t !== "audit" && shouldLoad(t)) jobs.push([t, "id,data", undefined, false]);
+    for (const t of TABLES) if (t !== "audit" && shouldLoad(t)) jobs.push([t, "id,data,updated_at", undefined, false]);
     for (const [table, columns] of Object.entries(REFERRAL_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
     for (const [table, columns] of Object.entries(WITHDRAWAL_READS)) if (shouldLoad(table)) jobs.push([table, columns, undefined, true]);
     for (const [table, columns] of Object.entries(CRM_READS)) if (shouldLoad(table)) jobs.push([table, columns, "created_at", true]);
@@ -414,7 +414,7 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     for (const [table, rows] of loaded) {
       if (TABLES.includes(table)) {
         db[table] = (rows || [])
-          .map((r) => r.data)
+          .map((r) => r.data && typeof r.data === "object" ? { ...r.data, _updatedAt: r.updated_at || null } : r.data)
           .filter((x) => x && typeof x === "object")
           .sort((a, b) => (a?.createdAt || a?.ts || 0) - (b?.createdAt || b?.ts || 0));
       } else {

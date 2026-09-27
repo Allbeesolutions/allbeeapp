@@ -7025,14 +7025,23 @@ export default function App() {
         emitToast("Income recorded and APN commission updated with matching commission expense.", "success");
         return true;
       }
-      await mutate((d) => {
-        let next = { ...d };
-        if (savedEntry.id && next.transactions.some((t) => t.id === savedEntry.id)) next.transactions = next.transactions.map((t) => t.id === savedEntry.id ? savedEntry : t);
-        else next.transactions = [...next.transactions, savedEntry];
-        if (source?.kind === "student") next.students = next.students.map((s) => s.id === source.id ? { ...s, paymentStatus: "Paid" } : s);
-        if (source?.kind === "marketing") next.marketing = next.marketing.map((m) => m.id === source.id ? { ...m, lastPaid: savedEntry.date } : m);
-        return next;
-      }, { action: `${savedEntry.id ? "updated" : "added"} ${savedEntry.kind} ${money(savedEntry.amount)}${savedEntry.client ? " · " + savedEntry.client : ""}${shareNote}${companyNote}`, module: "Accounts" });
+      // Ordinary finance writes use the transactional RPC: the finance row, linked
+      // course/marketing source and audit event either commit together or roll back.
+      // The idempotency key makes a network retry safe; `_updatedAt` prevents a stale
+      // browser tab from overwriting a newer finance edit.
+      const requestId = crypto.randomUUID();
+      const sourceKind = source?.kind === "student" || source?.kind === "marketing" ? source.kind : null;
+      const sourceId = sourceKind ? source.id : null;
+      const rpcEntry = Object.fromEntries(Object.entries(savedEntry).filter(([key]) => key !== "_updatedAt"));
+      const { error: saveError } = await supabase.rpc("finance_save_entry_v1", {
+        p_entry: rpcEntry,
+        p_source_kind: sourceKind,
+        p_source_id: sourceId,
+        p_idempotency_key: requestId,
+        p_expected_updated_at: prev?._updatedAt || null,
+      });
+      if (saveError) throw new Error(saveError.message);
+      await reload(["transactions", "students", "marketing"]);
       emitToast(`${savedEntry.kind === "expense" ? "Expense" : "Income"} saved.`, "success");
       return true;
     } catch (error) {
