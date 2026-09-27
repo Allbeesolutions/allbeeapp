@@ -83,6 +83,27 @@ export async function verifyInteractions(page, out, writeFileSync, resolve) {
   await dialog.getByRole("button",{name:"Continue",exact:true}).click();
   await dialog.getByRole("button",{name:/Save draft/}).click();
   await dialog.getByText(/Quotation QT/).waitFor();
+  await dialog.getByRole("button",{name:"Done",exact:true}).click();
+ });
+ await check("APN AI hides provider details, strips IDs and renders Markdown tables",async()=>{
+  await open("partner","apn/ai",1440);
+  const input=page.getByLabel("Message ALLBEE AI");
+  await page.evaluate(()=>{window.__uiMock.apnAIError="Rate limit reached for model `openai/gpt-oss-120b` in organization `org_secret` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 4916, Requested 5165. Please try again in 15.6075s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing";});
+  await input.fill("Why was my commission reversed?");
+  await page.getByRole("button",{name:"Send",exact:true}).click();
+  await page.getByText("Please try again in 15.6075s.",{exact:true}).waitFor();
+  const afterError=await page.locator(".apn-ai-chat").innerText();
+  assert.equal(afterError.includes("gpt-oss-120b"),false);
+  assert.equal(afterError.includes("console.groq.com"),false);
+  await page.evaluate(()=>{window.__uiMock.apnAIError="";window.__uiMock.apnAIText="| Type | Record ID | Amount | Status |\n| --- | --- | ---: | --- |\n| State earnings | d32be198-90e1-40d8-b23d-66aaf903e87e | ₹30 | Pending |\n| Referral earnings | e3fff792-6c3d-44c0-8830-f9c6b42b65d7 | ₹30 | Pending |";});
+  await input.fill("Show my earnings");
+  await page.getByRole("button",{name:"Send",exact:true}).click();
+  const table=page.locator(".apn-ai-chat .ai-markdown-table table").last();
+  await table.waitFor();
+  assert.equal(await table.locator("thead th").allTextContents().then(xs=>xs.some(x=>/record id/i.test(x))),false);
+  const chat=await page.locator(".apn-ai-chat").innerText();
+  assert.equal(chat.includes("d32be198-90e1-40d8-b23d-66aaf903e87e"),false);
+  assert.equal(chat.includes("| --- |"),false);
  });
  await check("Superadmin attendance Edit opens without runtime crash",async()=>{
   await open("superadmin","attendance",1440);

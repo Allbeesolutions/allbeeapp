@@ -14,7 +14,7 @@ const rows={
  projects:populated?[blob("project",{name:"Website launch",client:"Northwind Studio",status:"In progress",budget:3000})]:[],
  portal_posts:populated?[blob("post",{clientId:profile.id,title:"Your website is ready for review",body:"Review the content and share your feedback.",status:"Review"})]:[]
 };
-window.__uiMock={reads:[],writes:[],rpcs:[],failAI:false};
+window.__uiMock={reads:[],writes:[],rpcs:[],failAI:false,apnAIText:"",apnAIError:""};
 const result=data=>Promise.resolve({data,error:null});
 const from=table=>{
  let write=false; const b={};
@@ -43,6 +43,10 @@ export const supabase={
  functions:{invoke:async(name)=>{
   if(name.includes("ai-chat")&&window.__uiMock.failAI)return {data:null,error:{message:"Gateway request failed (503)"}};
   if(name.includes("ai-chat"))return {data:{text:"Here is your checklist:\n1. Review the client requirements.\n2. Confirm pricing before sending the proposal."},error:null};
+  if(name==="apn-ai"){
+   if(window.__uiMock.apnAIError)return {data:{error:window.__uiMock.apnAIError},error:null};
+   return {data:{text:window.__uiMock.apnAIText||"Your APN records look normal.",uncertain:false,relevantIds:[]},error:null};
+  }
   if(name==="founder-lockdown")return {data:{locked:false},error:null};
   return {data:{rows:[]},error:null};
  }},

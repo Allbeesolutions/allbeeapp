@@ -28,7 +28,7 @@ import { usePeopleSync } from "./auth/usePeopleSync.js";
 import { ensureProfile, updateProfile } from "./auth/profile.js";
 import { AI_RUNTIME_MODEL, aiConfigOf, aiConfigured, callAI } from "./ai/gateway.js";
 
-import { maskEmail, maskPhone, scrubText, renderAIInline } from "./utils/aiText.jsx";
+import { maskEmail, maskPhone, scrubText, renderAIInline, friendlyAIErrorText, stripInternalRecordIds } from "./utils/aiText.jsx";
 
 import { ROLE_LABEL, ROLE_OPTIONS, STATUS_LABEL, STATUS_OPTIONS, STATUS_ACTIVE, GRANTABLE_MODULES, TNC_ROLES, isSuperRole, isAdminRole, canFinanceRole, navAllowed, pendingTnc, roleTncOf, acceptedRoleTnc } from "./app/permissions.js";
 import { NAV, NAV_CATEGORIES, NAV_CATEGORY, navCategoryOf, NAV_SORT_LABEL, parseHash, hashForRoute, hashForAccount, hashForTask, normalizeLegacyAdminPath } from "./app/navigation.js";
@@ -559,8 +559,17 @@ function companyOf(config) { try { return JSON.parse((config && config.company) 
 
 async function saveConfig(patch) { return saveConfigRows(supabase, patch); }
 
+function splitAITableRow(line) {
+  return String(line || "").trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function isAITableSeparator(line) {
+  const cells = splitAITableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
 function renderAIText(text) {
-  const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+  const lines = stripInternalRecordIds(String(text ?? "")).replace(/\r\n/g, "\n").split("\n");
   const nodes = [];
   let bullets = [];
   let numbered = [];
@@ -568,17 +577,40 @@ function renderAIText(text) {
     if (bullets.length) { nodes.push(<ul key={`ul-${nodes.length}`} style={{ margin: "6px 0 10px 20px", padding: 0 }}>{bullets.map((x, i) => <li key={i} style={{ margin: "4px 0" }}>{renderAIInline(x, `li-${nodes.length}-${i}`)}</li>)}</ul>); bullets = []; }
     if (numbered.length) { nodes.push(<ol key={`ol-${nodes.length}`} style={{ margin: "6px 0 10px 20px", padding: 0 }}>{numbered.map((x, i) => <li key={i} style={{ margin: "4px 0" }}>{renderAIInline(x, `oli-${nodes.length}-${i}`)}</li>)}</ol>); numbered = []; }
   };
-  lines.forEach((line, i) => {
-    const t = line.trim();
-    if (!t) { flushList(); nodes.push(<div key={`sp-${i}`} style={{ height: 7 }} />); return; }
-    if (/^[-*]\s+/.test(t)) { numbered.length && flushList(); bullets.push(t.replace(/^[-*]\s+/, "")); return; }
-    if (/^\d+[.)]\s+/.test(t)) { bullets.length && flushList(); numbered.push(t.replace(/^\d+[.)]\s+/, "")); return; }
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const t = raw.trim();
+    const next = lines[i + 1] || "";
+    if (/^\s*\|.*\|\s*$/.test(raw) && isAITableSeparator(next)) {
+      flushList();
+      const headers = splitAITableRow(raw);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+        rows.push(splitAITableRow(lines[i]));
+        i += 1;
+      }
+      i -= 1;
+      nodes.push(
+        <div key={`table-${nodes.length}`} className="ai-markdown-table" style={{ overflowX: "auto", margin: "8px 0 12px", maxWidth: "100%" }}>
+          <table className="tbl" style={{ minWidth: Math.max(420, headers.length * 130), width: "100%" }}>
+            <thead><tr>{headers.map((h, idx) => <th key={idx}>{renderAIInline(h, `th-${nodes.length}-${idx}`)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, ri) => <tr key={ri}>{headers.map((_, ci) => <td key={ci}>{renderAIInline(row[ci] || "—", `td-${nodes.length}-${ri}-${ci}`)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+    if (!t) { flushList(); nodes.push(<div key={`sp-${i}`} style={{ height: 7 }} />); continue; }
+    if (/^[-*]\s+/.test(t)) { numbered.length && flushList(); bullets.push(t.replace(/^[-*]\s+/, "")); continue; }
+    if (/^\d+[.)]\s+/.test(t)) { bullets.length && flushList(); numbered.push(t.replace(/^\d+[.)]\s+/, "")); continue; }
     flushList();
     const heading = t.match(/^(#{1,3})\s+(.+)/);
-    if (heading) { nodes.push(<div key={`h-${i}`} style={{ fontWeight: 800, fontSize: heading[1].length === 1 ? 17 : 15, margin: "9px 0 5px", color: "var(--ink)" }}>{renderAIInline(heading[2], `h-${i}`)}</div>); return; }
-    if (/^>\s?/.test(t)) { nodes.push(<div key={`q-${i}`} style={{ borderLeft: "3px solid var(--primary)", padding: "5px 10px", margin: "6px 0", background: "var(--primary-soft)", borderRadius: "0 7px 7px 0" }}>{renderAIInline(t.replace(/^>\s?/, ""), `q-${i}`)}</div>); return; }
+    if (heading) { nodes.push(<div key={`h-${i}`} style={{ fontWeight: 800, fontSize: heading[1].length === 1 ? 17 : 15, margin: "9px 0 5px", color: "var(--ink)" }}>{renderAIInline(heading[2], `h-${i}`)}</div>); continue; }
+    if (/^>\s?/.test(t)) { nodes.push(<div key={`q-${i}`} style={{ borderLeft: "3px solid var(--primary)", padding: "5px 10px", margin: "6px 0", background: "var(--primary-soft)", borderRadius: "0 7px 7px 0" }}>{renderAIInline(t.replace(/^>\s?/, ""), `q-${i}`)}</div>); continue; }
     nodes.push(<div key={`p-${i}`} style={{ margin: "3px 0" }}>{renderAIInline(t, `p-${i}`)}</div>);
-  });
+  }
   flushList();
   return nodes;
 }
@@ -793,7 +825,7 @@ function balances(db) {
     if (t.kind === "income") { Haji += h; Alim += m; }
     else { Haji -= h; Alim -= m; }
   }
-  for (const w of db.withdrawals) {
+  for (const w of (db.withdrawals || [])) {
     if (w.status === "pending" || w.status === "rejected") continue; // only approved withdrawals move money
     if (w.user === "Haji") Haji -= Number(w.amount) || 0;
     else Alim -= Number(w.amount) || 0;
@@ -827,7 +859,7 @@ function ledgerFor(db, user) {
       notes: t.notes || "",
     });
   }
-  for (const w of db.withdrawals.filter((w) => w.user === user && w.status !== "pending" && w.status !== "rejected")) {
+  for (const w of (db.withdrawals || []).filter((w) => w.user === user && w.status !== "pending" && w.status !== "rejected")) {
     events.push({
       ts: w.createdAt || 0, date: w.date, client: "—", project: "Withdrawal", category: "Withdrawal", type: "Withdrawal",
       income: null, expense: null, pct: 100, credited: 0, debited: Number(w.amount) || 0, notes: w.notes || "",
@@ -4166,7 +4198,7 @@ function Settings({ db, mutate, replaceDB, syncError, currentUser, role, teamCou
     r.onerror = () => emitToast("That backup file could not be read.", "error");
     r.readAsText(file); e.target.value = "";
   };
-  const counts = { "Team members": teamCount || 0, Transactions: db.transactions.length, Withdrawals: db.withdrawals.length, Tasks: db.tasks.length, Projects: db.projects.length, Students: db.students.length, "Marketing clients": db.marketing.length, "Leave requests": db.leave.length, "Daily updates": db.updates.length };
+  const counts = { "Team members": teamCount || 0, Transactions: db.transactions.length, Withdrawals: (db.withdrawals || []).length, Tasks: db.tasks.length, Projects: db.projects.length, Students: db.students.length, "Marketing clients": db.marketing.length, "Leave requests": db.leave.length, "Daily updates": db.updates.length };
   return (
     <div className="content" style={{ maxWidth: 760 }}>
       <div className="page-head"><h3>Settings</h3></div>
@@ -4590,12 +4622,12 @@ function APNAI({ meRow, go, mutate, pid }) {
       const { data, error } = await supabase.functions.invoke("apn-ai", { body: { messages: [...history, { role: "user", content: question }] } });
       if (error) throw new Error(error.message || "Couldn't reach ALLBEE AI. Is the apn-ai function deployed?");
       if (data && data.error) throw new Error(typeof data.error === "string" ? data.error : "ALLBEE AI returned an error.");
-      const text = String(data?.text || "").trim();
+      const text = stripInternalRecordIds(String(data?.text || "").trim());
       const idx = msgs.length + 1;
       setMsgs((l) => [...l, { role: "bot", text, uncertain: !!data?.uncertain, ids: data?.relevantIds || [], rule: data?.ruleVersion || "", ts: Date.now() }]);
       if (data?.uncertain) setAsked({ question, msgIdx: idx, clientKey: uid() });
     } catch (e) {
-      setMsgs((l) => [...l, { role: "bot", text: e.message, err: true, ts: Date.now() }]);
+      setMsgs((l) => [...l, { role: "bot", text: friendlyAIErrorText(e), err: true, ts: Date.now() }]);
     } finally { setBusy(false); }
   };
 
@@ -7243,7 +7275,7 @@ export default function App() {
         {/* MODALS */}
         {modal?.type === "income" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading income form…</div>}><LazyShareForm kind="income" initial={modal.initial} currentUser={currentUser} db={db} apnProjects={financeApnProjects} apnPartners={financeApnPartners} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>}
         {modal?.type === "expense" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading expense form…</div>}><LazyShareForm kind="expense" initial={modal.initial} currentUser={currentUser} db={db} onSave={(e) => saveShare(e, modal.source)} onClose={() => setModal(null)} runtime={{ supabase, uid, todayISO, money, round2, fmtPeriod, expenseSharePlan, emptyDB, apnRateForPrior, apnPartnerStats, apnFinancePostedFor, apnIdFor, INCOME_CATEGORIES, PRESETS, COMPANY_EXPENSE_CATEGORIES, PROJECT_EXPENSE_CATEGORIES, Modal, Field, SearchableSelect, SelectOther, SplitBar, Trash2, Plus, X, Link2, Check }} /></React.Suspense>}
-        {modal?.type === "withdraw" && <React.Suspense fallback={<LoadingScreen />}><LazyWithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...d.withdrawals, { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, USERS, todayISO, round2, uid, money }} /></React.Suspense>}
+        {modal?.type === "withdraw" && <React.Suspense fallback={<LoadingScreen />}><LazyWithdrawForm balances={bal} defaultUser={currentUser} onSave={(w) => mutate((d) => ({ ...d, withdrawals: [...(d.withdrawals || []), { ...w, status: isSuper ? "approved" : "pending" }] }), { action: `recorded withdrawal of ${money(w.amount)}${isSuper ? "" : " (awaiting approval)"}`, module: "Withdrawals" })} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, USERS, todayISO, round2, uid, money }} /></React.Suspense>}
         {modal?.type === "task" && <React.Suspense fallback={<LoadingScreen />}><LazyTaskForm initial={modal.initial} currentUser={currentUser} team={teamNames} people={team} isAdmin={isAdmin} onSave={(t) => saveTask(t, modal.fromConcept)} onClose={() => setModal(null)} runtime={{ Modal, Field, Check, uid, USERS, COMBINED, PRIORITIES }} /></React.Suspense>}
         {modal?.type === "leave" && <React.Suspense fallback={<LoadingScreen />}><LazyLeaveForm initial={modal.initial} me={me} onSave={(l) => mutate((d) => ({ ...d, leave: d.leave.some((x) => x.id === l.id) ? d.leave.map((x) => x.id === l.id ? l : x) : [...d.leave, l] }), { action: (db.leave.some((x) => x.id === l.id) ? "updated " : "submitted ") + l.type + " leave request", module: "Leave" })} onClose={() => setModal(null)} runtime={{ useState, Modal, Field, SelectOther, Check, uid, todayISO, daysBetween, LEAVE_TYPES }} /></React.Suspense>}
         {modal?.type === "project" && <React.Suspense fallback={<LoadingScreen />}><LazyProjectForm initial={modal.initial} onSave={(p) => saveGeneric("projects", p, "project")} onClose={() => setModal(null)} runtime={{ Modal, Field, SelectOther, Check, uid, todayISO, PROJECT_STAGES }} /></React.Suspense>}

@@ -18,6 +18,39 @@ export function scrubText(v) {
     return digits.length >= 10 ? "****" + digits.slice(-4) : token;
   });
 }
+export function friendlyAIErrorText(error) {
+  const raw = String(error?.message || error || "ALLBEE AI returned an error.");
+  const retry = raw.match(/please\s+try\s+again\s+in\s+([0-9.]+)s/i) || raw.match(/try\s+again\s+in\s+([0-9.]+)\s*s/i);
+  if (retry) return `Please try again in ${retry[1]}s.`;
+  return raw;
+}
+
+export function stripInternalRecordIds(text) {
+  const uuid = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+  const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  const cells = (row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((x) => x.trim());
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const next = lines[i + 1] || "";
+    const isTableHeader = /^\s*\|.*\|\s*$/.test(line) && /^\s*\|?\s*:?-{3,}/.test(next);
+    if (!isTableHeader) {
+      out.push(line.replace(uuid, "").replace(/\b(?:record|internal)\s+id\s*[:#-]?\s*/gi, ""));
+      continue;
+    }
+    const block = [];
+    while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { block.push(lines[i]); i += 1; }
+    i -= 1;
+    const header = cells(block[0]);
+    const remove = new Set(header.map((h, idx) => (/^(?:record\s*)?id$|^internal\s*id$/i.test(h) ? idx : -1)).filter((idx) => idx >= 0));
+    for (const row of block) {
+      const kept = cells(row).filter((_, idx) => !remove.has(idx)).map((x) => x.replace(uuid, ""));
+      out.push(`| ${kept.join(" | ")} |`);
+    }
+  }
+  return out.join("\n").replace(uuid, "").replace(/[ \t]+\n/g, "\n").trim();
+}
+
 export function renderAIInline(text, keyPrefix = "ai") {
   const parts = String(text ?? "").split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return parts.map((part, i) => {

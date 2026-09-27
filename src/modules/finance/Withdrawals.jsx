@@ -3,11 +3,11 @@ import { AlertTriangle, ArrowDownToLine, Check, ChevronRight, Hourglass, Lock as
 
 export default function Withdrawals({ db, bal, mutate, openModal, removeItem, isSuper, currentUser, helpers }) {
   const { money, fmtDate, Empty, USERS, avatarColor, haptic } = helpers;
-  const list = [...db.withdrawals].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt));
+  const list = [...(db.withdrawals || [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.createdAt - a.createdAt));
   const del = (w) => removeItem("withdrawals", w, { name: `Withdrawal ${money(w.amount)} · ${w.user}`, audit: `deleted a withdrawal of ${money(w.amount)}` });
   const statusOf = (w) => w.status || "approved"; // legacy rows (no status) already moved money
   const tone = (s) => s === "approved" ? "pos" : s === "rejected" ? "neg" : "pri";
-  const setStatus = (w, s) => { haptic(s === "approved" ? 12 : [10, 30, 10]); mutate((d) => ({ ...d, withdrawals: d.withdrawals.map((x) => x.id === w.id ? { ...x, status: s, approvedBy: currentUser, approvedAt: Date.now() } : x) }),
+  const setStatus = (w, s) => { haptic(s === "approved" ? 12 : [10, 30, 10]); mutate((d) => ({ ...d, withdrawals: (d.withdrawals || []).map((x) => x.id === w.id ? { ...x, status: s, approvedBy: currentUser, approvedAt: Date.now() } : x) }),
     { action: `${s === "approved" ? "approved" : "rejected"} withdrawal of ${money(w.amount)} for ${w.user}`, module: "Withdrawals" }); };
   const pending = list.filter((w) => statusOf(w) === "pending").length;
   return (

@@ -115,6 +115,44 @@ function relevantIdsOf(ctx: Record<string, unknown>): string[] {
 
 const SYSTEM_HEAD = `You are ALLBEE AI — the personal APN partner assistant. You explain facts from the DATA below; you are an explanation layer, NOT the financial authority. Never act on the account.`;
 
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+
+function conciseProviderError(message: string): string {
+  const retry = String(message || "").match(/please\s+try\s+again\s+in\s+([0-9.]+)s/i)
+    || String(message || "").match(/try\s+again\s+in\s+([0-9.]+)\s*s/i);
+  if (retry) return `Please try again in ${retry[1]}s.`;
+  return "ALLBEE AI is temporarily busy. Please try again shortly.";
+}
+
+function stripInternalIdsFromAnswer(input: string): string {
+  const lines = String(input || "").replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const next = lines[i + 1] || "";
+    const isHeader = /^\s*\|.*\|\s*$/.test(line) && /^\s*\|?\s*:?-{3,}/.test(next);
+    if (!isHeader) {
+      out.push(line.replace(UUID_RE, "").replace(/\b(?:record|internal)\s+id\s*[:#-]?\s*/gi, ""));
+      continue;
+    }
+    const block: string[] = [];
+    while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { block.push(lines[i]); i += 1; }
+    i -= 1;
+    const cells = (row: string) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((x) => x.trim());
+    const header = cells(block[0]);
+    const remove = new Set(header.map((h, idx) => (/^(?:record\s*)?id$|^internal\s*id$/i.test(h) ? idx : -1)).filter((idx) => idx >= 0));
+    if (!remove.size) {
+      out.push(...block.map((row) => row.replace(UUID_RE, "")));
+      continue;
+    }
+    for (const row of block) {
+      const kept = cells(row).filter((_, idx) => !remove.has(idx));
+      out.push(`| ${kept.join(" | ")} |`);
+    }
+  }
+  return out.join("\n").replace(UUID_RE, "").replace(/[ \t]+\n/g, "\n").trim();
+}
+
 function buildSystem(ctx: Record<string, unknown>): string {
   const scope = (ctx.scope || {}) as Record<string, string>;
   const rules = (ctx.ruleKnowledge || {}) as { ruleSet?: Record<string, string> };
@@ -129,14 +167,14 @@ function buildSystem(ctx: Record<string, unknown>): string {
     "",
     "ANSWER RULES:",
     "1. Base every financial figure on DATA. Never invent, estimate or extrapolate numbers; if a figure is not in DATA, say you cannot see it.",
-    "2. Commission questions (e.g. \"why didn't I get my commission\"): inspect the partner's ledger, revenue collections, projects, eligibility dates (eligibleFrom vs today), percent/rate snapshot, referral status, district/state rows, wallet, withdrawal eligibility, reversals and holds — then explain the facts with the specific record ids.",
+    "2. Commission questions (e.g. \"why didn't I get my commission\"): inspect the partner's ledger, revenue collections, projects, eligibility dates (eligibleFrom vs today), percent/rate snapshot, referral status, district/state rows, wallet, withdrawal eligibility, reversals and holds — then explain the facts without exposing internal database ids or UUIDs.",
     "3. Withdrawal questions (e.g. \"when can I withdraw\"): use withdrawalWallets, withdrawalRequests, nextEligibleDate and the current rule version.",
-    "4. Reversal questions: point to the exact reversal row (amount, reason, status, applied date).",
+    "4. Reversal questions: identify the relevant reversal by human-readable facts such as amount, reason, status and applied date. Never show internal ids or UUIDs.",
     "5. NEVER disclose another partner's financial information. If asked about another partner's money, wallet, commission or withdrawals, answer: \"I can't share another partner's financial information — I only have access to your own APN data.\"",
     "6. Admin responses on support tickets are final: if DATA tickets contain an admin_response, present it as the official authoritative answer. You must NOT override or reinterpret it.",
     "7. Uncertainty rule — STRICT: if ANY fact the partner asked about is NOT present in DATA (missing record, unknown id like a withdrawal/ticket/reversal number, absent section, ambiguous scope), reply with EXACTLY this block and NOTHING ELSE — no explanation, no advice, no markdown:\n<ALLBEE_UNCERTAIN>I'm not confident about this based on the information available to me.\n\nWould you like me to create a support ticket?</ALLBEE_UNCERTAIN>\nOnly when EVERY requested fact is verifiably present in DATA may you answer without the block. Never create a ticket or send a ticket link yourself.",
     "8. You can explain rules, check eligibility, and point to records — but you cannot change commissions, wallets, partner status, withdrawals, reversals, projects, hierarchy, referrals, financial history or rules. State plainly when a change can only be done by an admin.",
-    "9. Format money in ₹ with Indian number grouping; keep answers concise and mobile-friendly; short paragraphs; use the partner's own name naturally.",
+    "9. Format money in ₹ with Indian number grouping; keep answers concise and mobile-friendly; short paragraphs; use the partner's own name naturally. When comparing multiple records or presenting 3+ structured facts, use a proper Markdown table with concise human-readable column headings. Never include an ID/Record ID/Internal ID column.",
   ];
   return lines.join("\n");
 }
@@ -201,11 +239,11 @@ Deno.serve(async (req) => {
 
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = (data as { error?: { message?: string } })?.error?.message || `Groq error ${r.status}`;
-      return json({ error: msg }, 200);
+      const msg = (data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`;
+      return json({ error: conciseProviderError(msg) }, 200);
     }
 
-    let text = ((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim();
+    let text = stripInternalIdsFromAnswer(((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim());
     let uncertain = false;
     const m = text.match(/<ALLBEE_UNCERTAIN>([\s\S]*?)<\/ALLBEE_UNCERTAIN>/i);
     if (m) {
