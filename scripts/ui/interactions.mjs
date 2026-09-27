@@ -66,6 +66,24 @@ export async function verifyInteractions(page, out, writeFileSync, resolve) {
   await page.getByText("Payout details saved. Verification is pending.").waitFor();
   assert.equal(await page.evaluate(()=>window.__uiMock.rpcs.filter(r=>r.name==="apn_upsert_withdrawal_bank_account").length),1);
  });
+ await check("APN AI quotation wizard opens and saves a draft",async()=>{
+  await open("partner","apn/ai",1440);
+  await page.getByRole("button",{name:"Generate Quotation",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await dialog.waitFor();
+  await dialog.getByRole("button",{name:/Website Development/}).click();
+  await dialog.getByRole("button",{name:/Static website/}).click();
+  await dialog.getByRole("button",{name:"Continue",exact:true}).click();
+  await dialog.getByRole("button",{name:"React",exact:true}).click();
+  await dialog.getByRole("button",{name:"Continue",exact:true}).click();
+  await dialog.getByRole("button",{name:"Continue",exact:true}).click();
+  await dialog.getByRole("button",{name:/Normal delivery/}).click();
+  await dialog.getByRole("button",{name:"Continue",exact:true}).click();
+  await dialog.getByPlaceholder("Person or business").fill("Quotation Regression Client");
+  await dialog.getByRole("button",{name:"Continue",exact:true}).click();
+  await dialog.getByRole("button",{name:/Save draft/}).click();
+  await dialog.getByText(/Quotation QT/).waitFor();
+ });
  await check("Superadmin attendance Edit opens without runtime crash",async()=>{
   await open("superadmin","attendance",1440);
   const edit=page.getByRole("button",{name:"Edit",exact:true}).first();

@@ -2,6 +2,9 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./AllbeeApp.jsx";
 import { supabase } from "./supabaseClient";
+import { installChunkRecovery } from "./chunkRecovery.js";
+
+installChunkRecovery();
 
 // App itself owns a large hook/render tree, so the boundary inside App cannot
 // catch an exception thrown while App is rendering. Keep a final boundary at
