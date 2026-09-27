@@ -1,0 +1,120 @@
+/* APN conversation workspace. Scoped to avoid changing employee/admin chat. */
+.apn-nav-shell .apn-body:has(.apn-teamchat) { padding:16px 20px 20px; }
+.apn-teamchat { --chat-accent:#424fc4; --chat-soft:color-mix(in srgb,var(--chat-accent) 9%,var(--surface)); display:flex; flex-direction:column; height:calc(100dvh - 110px); min-height:360px; border:1px solid var(--border); border-radius:22px; overflow:hidden; background:var(--surface); box-shadow:0 12px 40px rgba(25,35,74,.07); color:var(--ink); }
+.apn-teamchat .apn-tc-header { flex:none; padding:16px 22px; justify-content:space-between; gap:12px; background:var(--surface); }
+.tc-brand { display:flex; align-items:center; gap:12px; }
+.tc-brand-icon { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; color:white; background:linear-gradient(140deg,#119da9,#4257bf); box-shadow:0 5px 12px #168eaa22; }
+.tc-brand h2 { font-size:20px; line-height:1.25; margin:3px 0 0; letter-spacing:-.6px; }
+.tc-eyebrow { font-size:9px; font-weight:800; letter-spacing:1.5px; color:var(--muted); }
+.apn-teamchat .apn-tc-header .seg { background:var(--surface-2); box-shadow:none; padding:4px; border:0; }
+.apn-teamchat .apn-tc-header .seg button { min-height:40px; min-width:72px; font-size:12px; padding:8px 12px; }
+.apn-teamchat .apn-tc-header .seg button.on { color:var(--chat-accent); background:var(--surface); box-shadow:0 2px 6px #15244110; }
+.apn-teamchat .apn-tc-shell { grid-template-columns:minmax(290px,32%) minmax(0,1fr); }
+.apn-teamchat .apn-tc-sidebar { padding:20px 12px 16px; overscroll-behavior:contain; }
+.tc-inbox-heading { display:flex; justify-content:space-between; gap:10px; align-items:center; margin:0 8px 18px; }
+.apn-teamchat .apn-tc-sidebar-title { font-size:18px; color:var(--ink); }
+.apn-teamchat .apn-tc-sidebar-subtitle { font-size:11px; margin:5px 0 0; line-height:1.5; }
+.apn-teamchat .apn-tc-search { padding:10px 12px; margin:0 6px 12px; border:1px solid transparent; border-radius:12px; color:var(--muted); }
+.apn-teamchat .apn-tc-search:focus-within { border-color:var(--chat-accent); box-shadow:0 0 0 3px var(--chat-soft); }
+.apn-teamchat .apn-tc-search input { min-width:0; font-size:13px; color:var(--ink); }
+.tc-inbox-filters { display:flex; gap:6px; padding:0 6px 18px; }
+.tc-inbox-filters button { min-height:34px; padding:6px 14px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--muted); font-size:12px; font-weight:650; cursor:pointer; }
+.tc-inbox-filters button[aria-pressed=true] { border-color:transparent; background:var(--chat-soft); color:var(--chat-accent); }
+.apn-teamchat .apn-tc-card { margin-bottom:20px; }
+.apn-teamchat .apn-tc-card-title { font-size:9px; letter-spacing:1.2px; padding:0 10px; }
+.apn-teamchat .apn-tc-recent-row { width:100%; min-width:0; display:flex; gap:12px; align-items:center; padding:13px 10px; border:0; border-radius:12px; color:var(--ink); background:transparent; cursor:pointer; text-align:left; transition:background 140ms ease; }
+.apn-teamchat .apn-tc-recent-row:hover { background:var(--surface-2); }
+.apn-teamchat .apn-tc-recent-row.active { background:var(--chat-soft); box-shadow:inset 3px 0 var(--chat-accent); }
+.apn-teamchat .apn-tc-recent-copy { min-width:0; flex:1; }
+.apn-teamchat .apn-tc-recent-copy b { font-size:13px; font-weight:700; }
+.apn-teamchat .apn-tc-recent-copy span { margin-top:5px; font-size:12px; color:var(--muted); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.apn-teamchat .apn-tc-unread { min-width:21px; height:21px; display:grid; place-items:center; padding:0 5px; border-radius:99px; color:white; background:var(--chat-accent); font-size:10px; }
+.apn-teamchat .apn-tc-contact { padding:12px 10px; }
+.apn-teamchat .apn-tc-contact .hint-line { font-size:10px; margin-top:3px; line-height:1.4; }
+.apn-teamchat .apn-tc-available { font-size:9px; background:var(--surface-2); padding:4px 6px; border-radius:6px; }
+.tc-list-empty { color:var(--muted); font-size:12px; padding:8px 10px; }
+.tc-discover { border-top:1px solid var(--border)!important; padding-top:12px!important; }
+.tc-discover summary { display:flex; gap:8px; align-items:center; cursor:pointer; font-size:12px; font-weight:700; padding:10px; border-radius:8px; list-style:none; }
+.tc-discover summary::-webkit-details-marker { display:none; }
+.tc-discover summary span { margin-left:auto; padding:3px 7px; background:var(--surface-2); border-radius:7px; font-size:10px; }
+.tc-discover > .hint-line { padding:0 10px; font-size:11px; }
+.apn-teamchat .apn-tc-partner-list { background:transparent; border:0; padding:0; }
+.apn-teamchat .apn-tc-partner-row { flex-wrap:wrap; gap:8px; }
+.apn-teamchat .apn-tc-status { display:none; }
+.apn-teamchat .apn-tc-partner-row .btn { min-height:36px; }
+.apn-teamchat .apn-tc-main, .apn-teamchat .apn-tc-body > .apn-tc-chat { background-color:color-mix(in srgb,var(--bg) 92%,#d7e4ef); background-image:radial-gradient(color-mix(in srgb,var(--muted) 13%,transparent) .65px,transparent .65px); background-size:18px 18px; }
+.apn-teamchat .apn-tc-main-empty { padding:24px; }
+.tc-welcome { max-width:470px; }
+.tc-welcome-art { position:relative; display:grid; place-items:center; width:220px; height:155px; margin:0 auto 34px; color:var(--chat-accent); border-radius:50%; background:radial-gradient(ellipse,var(--chat-soft),transparent 70%); }
+.tc-welcome-art > svg { opacity:1!important; padding:16px; box-sizing:content-box; border-radius:24px; background:var(--surface); box-shadow:0 14px 40px #24378012; transform:rotate(-8deg); }
+.tc-welcome-art span, .tc-welcome-art i { position:absolute; font-size:10px; font-style:normal; padding:10px 14px; border-radius:12px; box-shadow:0 7px 22px #24378010; }
+.tc-welcome-art span { top:7px; left:-12px; transform:rotate(-4deg); color:var(--ink); background:var(--surface); }
+.tc-welcome-art i { right:-10px; bottom:7px; transform:rotate(5deg); background:var(--chat-accent); color:#fff; }
+.tc-welcome h3 { font-size:clamp(24px,2.5vw,34px); line-height:1.25; letter-spacing:-1px; color:var(--ink); margin:12px 0; }
+.tc-welcome p { font-size:13px; line-height:1.8; color:var(--muted); }
+.tc-welcome-note { display:flex; align-items:center; justify-content:center; gap:8px; color:var(--muted); font-size:10px; margin-top:28px; }
+.apn-teamchat .apn-tc-chat { height:100%; position:relative; overflow:hidden; }
+.apn-teamchat .apn-tc-chathead { min-height:74px; gap:12px; padding:12px 20px; background:var(--surface); backdrop-filter:none; }
+.tc-thread-title { font-size:14px; font-weight:750; flex:1; min-width:0; overflow-wrap:anywhere; }
+.apn-teamchat .apn-tc-presence { font-size:11px; font-weight:400; margin-top:4px; }
+.apn-teamchat .apn-tc-chathead .linkbtn { display:grid; place-items:center; width:36px; height:40px; flex:none; }
+.tc-message-search { padding:10px 18px; background:var(--surface); border-bottom:1px solid var(--border); }
+.tc-message-search .input { min-width:0; }
+.apn-teamchat .apn-tc-messages { min-height:0; overscroll-behavior:contain; padding:20px clamp(16px,3vw,40px); gap:12px; }
+.apn-teamchat .tc-date { align-self:center; margin:5px 0 12px; font-size:10px; color:var(--muted); }
+.tc-date span { padding:6px 13px; background:var(--surface); border:1px solid var(--border); border-radius:99px; }
+.apn-teamchat .apn-tc-msg { max-width:min(85%,580px); gap:8px; }
+.apn-teamchat .apn-tc-bubble-wrap { min-width:0; padding-right:22px; }
+.apn-teamchat .apn-tc-msg.mine .apn-tc-bubble-wrap { padding-right:0; padding-left:22px; }
+.tc-sender { font-size:10px; font-weight:700; color:var(--muted); margin:0 0 5px 3px; }
+.apn-teamchat .apn-tc-bubble { font-size:13px; line-height:1.65; padding:10px 14px; border:1px solid color-mix(in srgb,var(--border) 60%,transparent); border-radius:16px 16px 16px 4px; background:var(--surface); color:var(--ink); white-space:pre-wrap; overflow-wrap:anywhere; box-shadow:0 2px 3px #20305006; }
+.apn-teamchat .apn-tc-msg.mine .apn-tc-bubble { background:var(--chat-accent); color:#fff; border-color:transparent; border-radius:16px 16px 4px 16px; }
+.apn-teamchat .apn-tc-time { display:flex; justify-content:flex-end; gap:5px; margin-top:6px; font-size:9px; opacity:.8; line-height:1; }
+.apn-teamchat .apn-tc-delete-timer { display:none; }
+.tc-message-more { position:absolute; top:0; right:-8px; display:grid; place-items:center; width:30px; height:32px; border:0; color:var(--muted); background:transparent; border-radius:8px; cursor:pointer; }
+.apn-tc-msg.mine .tc-message-more { right:auto; left:-8px; }
+.tc-message-more:hover, .tc-message-more[aria-expanded=true] { background:var(--surface); color:var(--chat-accent); }
+.apn-teamchat .apn-tc-msg-menu { width:220px; max-width:calc(100vw - 64px); flex-wrap:wrap; border-radius:12px; padding:8px; gap:4px; }
+.apn-teamchat .apn-tc-msg.theirs .apn-tc-msg-menu { right:auto; left:0; }
+.apn-teamchat .apn-tc-msg-menu button { color:var(--ink); min-height:36px; }
+.apn-teamchat .apn-tc-msg-menu button.danger { color:var(--neg); }
+.apn-teamchat .apn-tc-compose { display:block; flex:none; padding:14px 18px 10px; background:var(--surface); backdrop-filter:none; }
+.tc-composer-field { min-width:0; flex:1; }
+.apn-teamchat .apn-tc-compose .textarea { width:100%; min-height:46px; max-height:110px; font-size:14px; line-height:1.5; border-radius:14px; background:var(--surface-2); padding:12px 14px; }
+.apn-teamchat .apn-tc-compose .btn.primary { min-height:46px; height:46px; border-radius:13px; padding:0 16px; display:flex; align-items:center; justify-content:center; gap:8px; background:var(--chat-accent); }
+.apn-teamchat .tc-attach { width:44px; height:46px; flex:none; }
+.tc-composer-hint { font-size:9px; color:var(--muted); text-align:center; margin-top:9px; }
+.apn-teamchat .tc-thread-error { margin:8px 12px; font-size:12px; }
+.tc-new-messages { position:absolute; right:20px; bottom:100px; z-index:5; background:var(--surface); color:var(--chat-accent); border:1px solid var(--border); box-shadow:0 4px 15px #24378018; border-radius:20px; padding:9px 13px; display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; }
+.apn-teamchat .apn-tc-group-pane { padding:20px; }
+.apn-teamchat .apn-tc-online-dot { animation:none; }
+@media(min-width:761px) and (max-width:1100px) { .apn-teamchat .apn-tc-shell { grid-template-columns:280px minmax(0,1fr); } .tc-brand h2 { font-size:17px; } .tc-eyebrow { letter-spacing:1px; } }
+@media(max-width:900px) {
+ .apn-nav-shell .apn-body:has(.apn-teamchat) { padding:8px 10px 78px; }
+ .apn-teamchat { height:calc(100dvh - 152px); }
+}
+@media(max-width:760px) {
+ .apn-nav-shell .apn-body:has(.apn-teamchat) { padding:0 0 70px; }
+ .apn-teamchat { height:calc(100dvh - 134px - env(safe-area-inset-bottom)); min-height:280px; border:0; border-radius:0; box-shadow:none; }
+ .apn-teamchat .apn-tc-header { padding:12px 14px; flex-wrap:wrap; gap:12px; }
+ .tc-brand { gap:9px; }
+ .tc-brand-icon { width:36px; height:36px; border-radius:11px; }
+ .tc-brand h2 { font-size:18px; }
+ .apn-teamchat .apn-tc-header .seg { width:100%; }
+ .apn-teamchat .apn-tc-header .seg button { flex:1; min-width:0; }
+ .apn-teamchat:has(.has-selection) .tc-brand, .apn-teamchat:has(.apn-tc-body > .apn-tc-chat) .tc-brand { display:none; }
+ .apn-teamchat .apn-tc-shell { grid-template-columns:minmax(0,1fr); }
+ .apn-teamchat .apn-tc-sidebar { padding:16px 10px; }
+ .apn-teamchat .apn-tc-chathead { padding:10px 12px; min-height:65px; gap:8px; }
+ .apn-teamchat .apn-tc-messages { padding:14px 12px; gap:10px; }
+ .apn-teamchat .apn-tc-msg { max-width:92%; }
+ .apn-teamchat .apn-tc-compose { padding:10px 10px 8px; }
+ .apn-teamchat .apn-tc-compose .textarea { font-size:16px; }
+ .apn-teamchat .apn-tc-compose .btn.primary { min-width:46px; width:46px; padding:0; }
+ .apn-teamchat .apn-tc-compose .btn.primary span { display:none; }
+ .tc-composer-hint { display:none; }
+ .apn-teamchat .tc-attach { width:36px; min-width:36px; }
+ .apn-teamchat .apn-tc-contact .apn-tc-available { display:none; }
+ .tc-message-search { padding:8px 12px; }
+}
+@media(prefers-reduced-motion:reduce) { .apn-teamchat *, .apn-teamchat *::before { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }

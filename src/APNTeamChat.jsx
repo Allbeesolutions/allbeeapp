@@ -1,8 +1,18 @@
 import React from "react";
+import { MoreHorizontal, Users, X, ArrowDown, Send as SendIcon } from "lucide-react";
+import "./ui/team-chat.css";
 
 export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go, runtime = {} }) {
   const { useState, useEffect, useRef, useCallback, useReducedMotion, supabase, emitToast, Empty, Avatar, apnIdFor, fmtDateTime, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, MessageCircle, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL } = runtime;
   const Paperclip = runtime.Paperclip || MessageCircle;
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const fileRef = useRef(null);
+  const composerRef = useRef(null);
+  const nearBottom = useRef(true);
+  const [newMessages, setNewMessages] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [section, setSection] = useState("person");
   const [conversations, setConversations] = useState([]);          // from apn_list_conversations
   const [friends, setFriends] = useState([]);                        // accepted friend pairs -> {otherId, otherName, otherApnId}
@@ -150,13 +160,14 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     // an already-open thread must never clear it first: that blank frame is the
     // visible flicker users were seeing after every send/realtime event.
     if (open) {
+      selectedRef.current = conv;
       setSelected(conv);
       setMessages([]);
     }
     setErr("");
     try {
       const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.id });
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || selectedRef.current?.id !== conv.id) return;
       if (error) throw new Error(error.message);
       const msgs = Array.isArray(data) ? data : [];
       setMessages(msgs);
@@ -164,11 +175,12 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       // advance the caller's read cursor to the latest message so the badge clears
       if (msgs.length) await supabase.rpc("apn_mark_read", { p_conversation_id: conv.id, p_message_id: msgs[msgs.length - 1].id });
     } catch (e) {
-      if (mountedRef.current) setErr(e.message || String(e));
+      if (mountedRef.current && selectedRef.current?.id === conv.id) setErr(e.message || String(e));
     }
   }, []);
 
   const openConversation = useCallback(async (conv) => {
+    setComposer("");setComposerFile(null);setReplyTo(null);setEditMessage(null);setMessageSearch("");setSearchedMessages(null);setContextMessage(null);nearBottom.current=true;setNewMessages(false);
     await loadMessages(conv);
     // scroll to bottom after messages render
     setTimeout(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, 50);
@@ -301,8 +313,11 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 
   const sendMessage = async () => {
     const body = (composer || "").trim();
-    if ((!body && !composerFile) || !selected) return;
+    if ((!body && !composerFile) || !selected || sendingRef.current) return;
     if (composerFile && composerFile.size > 10 * 1024 * 1024) { setErr("Attachments must be 10 MB or smaller."); return; }
+    sendingRef.current=true;setSending(true);
+    let messageCreated=false;
+    const originalReply=replyTo;
     const convId = selected.id;
     const file = composerFile;
     setComposer(""); setComposerFile(null); setReplyTo(null); setErr("");
@@ -310,6 +325,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       const mentions = Array.from(new Set((body.match(/@[A-Za-z0-9_.-]+/g) || []).map((x) => x.slice(1))));
       const { data, error } = await supabase.rpc("apn_send_message_v3", { p_conversation_id: convId, p_body: body || (file ? `📎 ${file.name}` : "Attachment"), p_reply_to_id: replyTo?.id || null, p_mentions: mentions });
       if (error) throw new Error(error.message);
+      messageCreated=true;
       const messageId = data?.[0]?.message_id;
       if (file && messageId) {
         const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_").slice(-160);
@@ -321,7 +337,8 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       }
       await loadMessages(selected, { open: false });
       await loadConversations(false);
-    } catch (e) { setComposer(body); setComposerFile(file); setErr(e.message || String(e)); }
+    } catch (e) { if(!messageCreated){setComposer(body);setComposerFile(file);setReplyTo(originalReply);}setErr(e.message || String(e)); }
+    finally { sendingRef.current=false;setSending(false); }
   };
 
   const openAttachment = async (attachment) => {
@@ -442,26 +459,94 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const totalUnread = conversations.reduce((s, c) => s + Number(c.unread_count || 0), 0)
     + requests.filter((r) => r.direction === "incoming" && r.status === "pending").length;
 
+  const dayLabel = (value) => {
+    const date=new Date(value); if(!Number.isFinite(date.getTime()))return "Messages";
+    const today=new Date(); if(date.toDateString()===today.toDateString())return "Today";
+    const yesterday=new Date(); yesterday.setDate(yesterday.getDate()-1);
+    return date.toDateString()===yesterday.toDateString() ? "Yesterday" : date.toLocaleDateString([], {day:"numeric",month:"short",year:"numeric"});
+  };
+  const scrollToLatest = () => { const el=scrollRef.current; if(el)el.scrollTo?.({top:el.scrollHeight,behavior:reduced?"auto":"smooth"});nearBottom.current=true;setNewMessages(false); };
+  useEffect(()=>{ const el=scrollRef.current;if(!el)return;if(nearBottom.current){el.scrollTop=el.scrollHeight;}else{setNewMessages(true);} },[messages.length]);
+  const matchesContact = (value) => String(value||"").toLowerCase().includes(contactSearch.trim().toLowerCase());
+  const recentChats = conversations.filter(c=>c.conv_type==="person"&&matchesContact([c.subject,c.last_message].join(" "))&&(!unreadOnly||Number(c.unread_count)>0));
+  const renderConversation = () => (
+<div className="apn-tc-chat">
+                  <div className="apn-tc-chathead">
+                    <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
+                    <Avatar name={selected.subject || "Chat"} size={40} fontSize={15} />
+                    <div className="tc-thread-title">{selected.subject}
+                      {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
+                    </div>
+                    <button className="iconbtn" aria-label="Search this conversation" aria-expanded={searchOpen} onClick={() => { setSearchOpen(!searchOpen); setMessageSearch(""); }}><Search size={18}/></button>
+                  </div>
+                  {searchOpen && <div className="tc-message-search">
+                    <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+                      <Search size={15} />
+                      <input className="input" value={messageSearch} onChange={(e) => setMessageSearch(e.target.value)} placeholder="Search messages, mentions, or senders…" aria-label="Search messages" />
+                      {messageSearch && <button className="linkbtn" onClick={() => setMessageSearch("")} aria-label="Clear message search">×</button>}
+                    </div>
+                  </div>}
+                  {err && <div className="auth-msg err tc-thread-error" role="alert">{err}</div>}
+                  <div ref={scrollRef} className="apn-tc-messages" role="log" aria-label="Conversation messages" onScroll={() => { const el=scrollRef.current; nearBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<90; if(nearBottom.current)setNewMessages(false); }} onClick={() => setContextMessage(null)}>
+                    {filteredMessages.map((m, index) => {
+                      const isMe = m.sender_id === pid;
+                      const ts = m.created_at ? new Date(m.created_at) : null;
+                      const remaining = ts ? Math.max(0, 300000 - (chatNow - ts.getTime())) : 0;
+                      const canDelete = isMe && remaining > 0 && !String(m.id).startsWith("tmp-");
+                      const status = isMe ? (m.read_at ? "✓✓" : m.delivered_at ? "✓✓" : "✓") : "";
+                      return <React.Fragment key={m.id || m.created_at}>{(index===0 || dayLabel(filteredMessages[index-1].created_at)!==dayLabel(m.created_at)) && <div className="tc-date"><span>{dayLabel(m.created_at)}</span></div>}<div className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`} onDoubleClick={(e) => { e.stopPropagation(); setContextMessage(m); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMessage(m); }}>
+                        {!isMe && <Avatar name={m.sender_name || "?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9} style={{flexShrink:0}} />}
+                        <div className="apn-tc-bubble-wrap">
+                          {!isMe && <div className="tc-sender">{m.sender_name || "Partner"}</div>}
+                          <div className="apn-tc-bubble">
+                            {m.reply_to_id && (() => { const parent = messages.find((x) => x.id === m.reply_to_id); return <div className="apn-tc-reply-preview">↳ {parent ? `${parent.sender_name || "Message"}: ${String(parent.body || "").slice(0, 90)}` : "Reply"}</div>; })()}
+                            <div className="apn-tc-text">{m.body}</div>{Array.isArray(m.mentions) && m.mentions.length > 0 && <div className="hint-line" style={{ fontSize: 11, marginTop: 4 }}>Mentioned: {m.mentions.map((x) => `@${x}`).join(" ")}</div>}{Array.isArray(m.attachments) && m.attachments.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>{m.attachments.map((a) => <button key={a.id} className="btn sm" onClick={(e) => { e.stopPropagation(); openAttachment(a); }}><Paperclip size={12} />{a.file_name}</button>)}</div>}
+                            <div className="apn-tc-time" title={ts ? fmtDateTime(ts) : ""}>{ts ? ts.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : ""}{m.edited_at ? " · edited" : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div>
+                          </div>
+                          {Array.isArray(m.reactions) && m.reactions.length > 0 && <div className="apn-tc-reactions">{m.reactions.map((r) => <button key={r.emoji} className={`apn-tc-reaction ${r.mine ? "mine" : ""}`} disabled={reactionBusy === `${m.id}:${r.emoji}`} onClick={() => toggleReaction(m, r.emoji)}>{r.emoji} {r.count}</button>)}</div>}
+                          {isMe && remaining > 0 && <div className="apn-tc-delete-timer">Edit/Delete available {Math.floor(remaining/60000)}:{String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}</div>}
+                          <button className="tc-message-more" aria-label={"Actions for message from " + (isMe ? "you" : m.sender_name || "partner")} aria-expanded={contextMessage?.id===m.id} onClick={(e)=>{e.stopPropagation();setContextMessage(contextMessage?.id===m.id ? null : m);}}><MoreHorizontal size={17}/></button>
+                          {contextMessage?.id === m.id && <div role="group" aria-label="Message actions" className="apn-tc-msg-menu" onClick={(e) => e.stopPropagation()}><button onClick={() => { setReplyTo(m); setContextMessage(null); }}>Reply</button><button aria-label="React with thumbs up" onClick={() => toggleReaction(m, "👍")}>👍</button><button aria-label="React with heart" onClick={() => toggleReaction(m, "❤️")}>❤️</button><button aria-label="React with laughter" onClick={() => toggleReaction(m, "😂")}>😂</button><button onClick={() => showMessageInfo(m)}>INFO</button>{isMe && remaining > 0 && <button onClick={() => { setEditMessage(m); setComposer(m.body || ""); setContextMessage(null); }}>Edit</button>}{canDelete && <button className="danger" onClick={() => deleteMessage(m)}><Trash2 size={13}/>Delete</button>}</div>}
+                        </div>
+                      </div></React.Fragment>;
+                    })}
+                    {filteredMessages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title={messageSearch ? "No matching messages" : "No messages yet"} text={messageSearch ? "Try another search." : "Send the first message."} />}
+                  </div>
+                  {newMessages && <button className="tc-new-messages" onClick={scrollToLatest}><ArrowDown size={14}/>New messages</button>}
+                  <div className="apn-tc-compose">
+                    {(replyTo || editMessage) && <div className="apn-tc-compose-mode"><span>{editMessage ? "Editing message" : `Replying to ${replyTo?.sender_name || "message"}`}</span><button className="linkbtn" aria-label="Cancel reply or edit" onClick={() => { setReplyTo(null); setEditMessage(null); setComposer(""); }}>×</button></div>}
+                    {composerFile && <div className="hint-line" style={{ marginBottom: 6 }}>Attachment: <b>{composerFile.name}</b> · {Math.round(composerFile.size / 1024)} KB <button className="linkbtn" onClick={() => setComposerFile(null)}>remove</button></div>}
+                    <div style={{ display: "flex", gap: 7, alignItems: "flex-end" }}>
+                      <button className="iconbtn tc-attach" aria-label="Attach file" disabled={sending} onClick={()=>fileRef.current?.click()}><Paperclip size={20}/></button><input ref={fileRef} type="file" hidden onChange={(e)=>{setComposerFile(e.target.files?.[0]||null);e.target.value="";}} />
+                      <div className="tc-composer-field"><textarea ref={composerRef} disabled={sending} className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder={editMessage ? "Edit message…" : replyTo ? "Write your reply…" : "Type a message…"} rows={1} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); editMessage ? editNow() : sendMessage(); } }} /></div>
+                      <button className="btn primary" onClick={editMessage ? editNow : sendMessage} aria-label={editMessage ? "Save message" : "Send"} disabled={sending || (!composer.trim() && !composerFile) || !selected}><SendIcon size={19}/><span>{sending ? "Sending…" : editMessage ? "Save" : "Send"}</span></button>
+                    </div>
+                    <div className="tc-composer-hint">Shift + Enter for a new line · @APNID to mention · Files up to 10 MB</div>
+                  </div>
+                </div>
+  );
+
   return (
-    <div className="apn apn-teamchat" data-theme={isDark ? "dark" : "light"} style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 100px)" }}>
-      <div className="apn-tc-header">
-        <div className="seg" style={{ flex: "none" }}>{CHAT_SECTIONS.map((s) => <button key={s} className={section === s ? "on" : ""} onClick={() => { setSection(s); setSelected(null); }}>{CHAT_SECTION_LABEL[s]}{s === "person" && totalUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 5 }}>{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>)}</div>
+    <div className="apn apn-teamchat" data-theme={isDark ? "dark" : "light"} onKeyDown={(e)=>{if(e.key==="Escape"){setContextMessage(null);setSearchOpen(false);setMessageSearch("");}}}>
+      <div className="apn-tc-header"><div className="tc-brand"><span className="tc-brand-icon"><MessageCircle size={22}/></span><div><span className="tc-eyebrow">ALLBEE CONNECT</span><h2>Team Chat</h2></div></div>
+        <div className="seg" style={{ flex: "none" }}>{CHAT_SECTIONS.map((s) => <button key={s} aria-pressed={section === s} className={section === s ? "on" : ""} onClick={() => { setSection(s); setSelected(null); }}>{CHAT_SECTION_LABEL[s]}{s === "person" && totalUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 5 }}>{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>)}</div>
       </div>
       <div className="apn-tc-body">
         {section === "person" && (
           <div className={`apn-tc-shell ${selected ? "has-selection" : ""}`}>
             <aside className="apn-tc-sidebar">
-              <div className="apn-tc-sidebar-title">Team Chat</div>
-              <div className="apn-tc-sidebar-subtitle">Connect with partners in your network</div>
+              <div className="tc-inbox-heading"><div><div className="apn-tc-sidebar-title">Conversations</div><div className="apn-tc-sidebar-subtitle">A little closer. A lot more connected.</div></div><Avatar name={me.name} size={36}/></div>
+              <div className="apn-tc-search"><Search size={17}/><input value={contactSearch} onChange={e=>setContactSearch(e.target.value)} placeholder="Search chats or people" aria-label="Search chats or people"/>{contactSearch && <button className="linkbtn" aria-label="Clear chat search" onClick={()=>setContactSearch("")}><X size={15}/></button>}</div>
+              <div className="tc-inbox-filters"><button aria-pressed={!unreadOnly} onClick={()=>setUnreadOnly(false)}>All chats</button><button aria-pressed={unreadOnly} onClick={()=>setUnreadOnly(true)}>Unread</button></div>
               {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
 
-              {conversations.filter((c) => c.conv_type === "person").length > 0 && (
+              {(recentChats.length>0 || unreadOnly || contactSearch) && (
                 <div className="apn-tc-card">
                   <div className="apn-tc-card-title">Recent Chats</div>
-                  <div className="apn-tc-recent-list">
-                    {conversations.filter((c) => c.conv_type === "person").slice(0, 8).map((c) => (
-                      <button key={c.conversation_id} className="apn-tc-recent-row" onClick={() => openConversation({ id: c.conversation_id, subject: c.subject || "Chat", conv_type: "person" })}>
-                        <div className="apn-tc-recent-avatar"><MessageCircle size={15} /></div>
+                  <div className="apn-tc-recent-list">{!recentChats.length && <p className="tc-list-empty">{unreadOnly ? "You’re all caught up." : "No conversations match your search."}</p>}
+                    {recentChats.map((c) => (
+                      <button key={c.conversation_id} className={"apn-tc-recent-row"+(selected?.id===c.conversation_id?" active":"")} aria-current={selected?.id===c.conversation_id ? "true" : undefined} onClick={() => openConversation({ id: c.conversation_id, subject: c.subject || "Chat", conv_type: "person" })}>
+                        <Avatar name={c.subject || "Chat"} size={42} fontSize={15}/>
                         <div className="apn-tc-recent-copy"><b>{c.subject || "Chat"}</b><span>{c.last_message || "No messages yet"}</span></div>
                         {Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{Number(c.unread_count) > 99 ? "99+" : c.unread_count}</span>}
                       </button>
@@ -472,7 +557,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 
               <div className="apn-tc-card">
                 <div className="apn-tc-card-title">AllBee Support</div>
-                {contacts.filter((c) => c.contact_type === "admin" || c.contact_type === "superadmin").map((a) => {
+                {contacts.filter((c) => (c.contact_type === "admin" || c.contact_type === "superadmin") && matchesContact(c.name)).map((a) => {
                   const supportLabel = /mohamed\s+backer\s+alim/i.test(a.name || "")
                     ? "Chat with AllBee Founder and CEO"
                     : /^haji$/i.test((a.name || "").trim())
@@ -482,17 +567,17 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                     <button key={a.contact_id} className="apn-tc-item apn-tc-contact" onClick={() => openAdminChat(a)}>
                       <Avatar name={a.name} url={a.photo_url} size={36} fontSize={13} />
                       <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{a.name}</div><div className="hint-line">{supportLabel}</div></div>
-                      <span className="apn-tc-available">Always available</span><ChevronRight size={16} color="var(--muted)" />
+                      <span className="apn-tc-available">Support</span><ChevronRight size={16} color="var(--muted)" />
                     </button>
                   );
                 })}
                 {!contacts.some((c) => c.contact_type === "admin" || c.contact_type === "superadmin") && !loading && <div className="hint-line">No management contacts available.</div>}
               </div>
 
-              <div className="apn-tc-card">
-                <div className="apn-tc-card-title">Available Partners</div>
+              <details className="apn-tc-card tc-discover" open={conversations.length===0 || !!contactSearch}>
+                <summary><Users size={16}/>Find partners<span>{contacts.filter(c=>c.contact_type==="partner").length}</span></summary>
                 <div className="hint-line" style={{ marginBottom: 8 }}>Send a friend request to start chatting</div>
-                <input className="input" value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search partner by name, code or district…" aria-label="Search APN partners" />
+
                 <div className="apn-tc-partner-list">
                   {loading && <div className="hint-line" style={{ padding: 10 }}>Loading partners…</div>}
                   {!loading && contacts.filter((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())).map((c) => {
@@ -506,7 +591,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                   })}
                   {!loading && !contacts.some((c) => c.contact_type === "partner" && [c.name, c.apn_id, c.district, c.state].join(" ").toLowerCase().includes(contactSearch.trim().toLowerCase())) && <div className="hint-line" style={{ padding: 10 }}>No partners found.</div>}
                 </div>
-              </div>
+              </details>
 
               {requests.filter((r) => r.status === "pending").length > 0 && <div className="apn-tc-card">
                 <div className="apn-tc-card-title">Friend Requests</div>
@@ -519,54 +604,8 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 
             <main className="apn-tc-main">
               {selected ? (
-                <div className="apn-tc-chat" ref={scrollRef}>
-                  <div className="apn-tc-chathead">
-                    <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
-                    <div style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{selected.subject}
-                      {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
-                    </div>
-                  </div>
-                  <div style={{ padding: "8px 10px 0" }}>
-                    <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
-                      <Search size={15} />
-                      <input className="input" value={messageSearch} onChange={(e) => setMessageSearch(e.target.value)} placeholder="Search messages, mentions, or senders…" aria-label="Search messages" />
-                      {messageSearch && <button className="linkbtn" onClick={() => setMessageSearch("")} aria-label="Clear message search">×</button>}
-                    </div>
-                  </div>
-                  <div className="apn-tc-messages" onClick={() => setContextMessage(null)}>
-                    {filteredMessages.map((m) => {
-                      const isMe = m.sender_id === pid;
-                      const ts = m.created_at ? new Date(m.created_at) : null;
-                      const remaining = ts ? Math.max(0, 300000 - (chatNow - ts.getTime())) : 0;
-                      const canDelete = isMe && remaining > 0 && !String(m.id).startsWith("tmp-");
-                      const status = isMe ? (m.read_at ? "✓✓" : m.delivered_at ? "✓✓" : "✓") : "";
-                      return <div key={m.id || m.created_at} className={`apn-tc-msg ${isMe ? "mine" : "theirs"}`} onDoubleClick={(e) => { e.stopPropagation(); setContextMessage(m); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMessage(m); }}>
-                        {!isMe && <Avatar name={m.sender_name || "?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9} />}
-                        <div className="apn-tc-bubble-wrap">
-                          <div className="apn-tc-bubble">
-                            {m.reply_to_id && (() => { const parent = messages.find((x) => x.id === m.reply_to_id); return <div className="apn-tc-reply-preview">↳ {parent ? `${parent.sender_name || "Message"}: ${String(parent.body || "").slice(0, 90)}` : "Reply"}</div>; })()}
-                            <div className="apn-tc-text">{m.body}</div>{Array.isArray(m.mentions) && m.mentions.length > 0 && <div className="hint-line" style={{ fontSize: 11, marginTop: 4 }}>Mentioned: {m.mentions.map((x) => `@${x}`).join(" ")}</div>}{Array.isArray(m.attachments) && m.attachments.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>{m.attachments.map((a) => <button key={a.id} className="btn sm" onClick={(e) => { e.stopPropagation(); openAttachment(a); }}><Paperclip size={12} />{a.file_name}</button>)}</div>}
-                            <div className="apn-tc-time">{ts ? fmtDateTime(ts) : ""}{m.edited_at ? " · edited" : ""} {status && <span className={`apn-tc-ticks ${m.read_at ? "read" : ""}`}>{status}</span>}</div>
-                          </div>
-                          {Array.isArray(m.reactions) && m.reactions.length > 0 && <div className="apn-tc-reactions">{m.reactions.map((r) => <button key={r.emoji} className={`apn-tc-reaction ${r.mine ? "mine" : ""}`} disabled={reactionBusy === `${m.id}:${r.emoji}`} onClick={() => toggleReaction(m, r.emoji)}>{r.emoji} {r.count}</button>)}</div>}
-                          {isMe && remaining > 0 && <div className="apn-tc-delete-timer">Edit/Delete available {Math.floor(remaining/60000)}:{String(Math.floor((remaining%60000)/1000)).padStart(2,"0")}</div>}
-                          {contextMessage?.id === m.id && <div className="apn-tc-msg-menu" onClick={(e) => e.stopPropagation()}><button onClick={() => { setReplyTo(m); setContextMessage(null); }}>Reply</button><button onClick={() => toggleReaction(m, "👍")}>👍</button><button onClick={() => toggleReaction(m, "❤️")}>❤️</button><button onClick={() => toggleReaction(m, "😂")}>😂</button><button onClick={() => showMessageInfo(m)}>INFO</button>{isMe && remaining > 0 && <button onClick={() => { setEditMessage(m); setComposer(m.body || ""); setContextMessage(null); }}>Edit</button>}{canDelete && <button className="danger" onClick={() => deleteMessage(m)}><Trash2 size={13}/>Delete</button>}</div>}
-                        </div>
-                      </div>;
-                    })}
-                    {filteredMessages.length === 0 && !loading && <Empty icon={<MessageSquare size={20} />} title={messageSearch ? "No matching messages" : "No messages yet"} text={messageSearch ? "Try another search." : "Send the first message."} />}
-                  </div>
-                  <div className="apn-tc-compose">
-                    {(replyTo || editMessage) && <div className="apn-tc-compose-mode"><span>{editMessage ? "Editing message" : `Replying to ${replyTo?.sender_name || "message"}`}</span><button className="linkbtn" onClick={() => { setReplyTo(null); setEditMessage(null); setComposer(""); }}>×</button></div>}
-                    {composerFile && <div className="hint-line" style={{ marginBottom: 6 }}>Attachment: <b>{composerFile.name}</b> · {Math.round(composerFile.size / 1024)} KB <button className="linkbtn" onClick={() => setComposerFile(null)}>remove</button></div>}
-                    <div style={{ display: "flex", gap: 7, alignItems: "flex-end" }}>
-                      <label className="btn" title="Attach file" style={{ cursor: "pointer", height: 44, display: "inline-flex", alignItems: "center" }}><Paperclip size={16} /><input type="file" hidden onChange={(e) => setComposerFile(e.target.files?.[0] || null)} /></label>
-                      <div style={{ flex: 1 }}><textarea className="textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder={editMessage ? "Edit message…" : replyTo ? "Write your reply…" : "Type a message…"} rows={2} maxLength={2000} aria-label="Message" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); editMessage ? editNow() : sendMessage(); } }} /><div className="hint-line" style={{ fontSize: 11, marginTop: 3 }}>Use <b>@APNID</b> to record a mention · private attachments up to 10 MB</div></div>
-                      <button className="btn primary" onClick={editMessage ? editNow : sendMessage} disabled={(!composer.trim() && !composerFile) || !selected}>{editMessage ? "Save" : "Send"}</button>
-                    </div>
-                  </div>
-                </div>
-              ) : <div className="apn-tc-main-empty"><div><MessageSquare size={30} color="var(--muted)" /><div className="apn-tc-main-title">Friend chats</div><div className="hint-line">Select a partner from the list to start messaging.</div></div></div>}
+                renderConversation()
+              ) : <div className="apn-tc-main-empty"><div className="tc-welcome"><div className="tc-welcome-art" aria-hidden="true"><MessageCircle size={48}/><span>Let’s make things happen.</span><i>Great idea ✨</i></div><span className="tc-eyebrow">YOUR PEOPLE. YOUR WORKSPACE.</span><h3>Good work starts with<br/>a conversation.</h3><p>Share an update, ask a question, or celebrate a win.<br/>Choose a chat to get started.</p><div className="tc-welcome-note"><Users size={15}/>Connected through ALLBEE</div></div></div>}
             </main>
           </div>
         )}
@@ -584,16 +623,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
             {!loading && !err && <button className="btn primary" style={{ marginBottom: 12 }} onClick={openState}>Open {me.state || "State"} Chat</button>}
           </div>
         )}
-        {selected && section !== "person" && (
-          <div className="apn-tc-chat" ref={scrollRef}>
-            <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button><div style={{ fontWeight: 700, flex: 1 }}>{selected.subject}</div></div>
-            <div className="apn-tc-messages">
-              {filteredMessages.map((m) => { const isMe=m.sender_id===pid; const ts=m.created_at?new Date(m.created_at):null; return <div key={m.id||m.created_at} className={`apn-tc-msg ${isMe?"mine":"theirs"}`}>{!isMe&&<Avatar name={m.sender_name||"?"} url={contacts.find((c) => String(c.contact_id) === String(m.sender_id))?.photo_url} size={22} fontSize={9}/>}<div className="apn-tc-bubble"><div>{m.body}</div><div className="apn-tc-time">{ts?fmtDateTime(ts):""}</div></div></div>; })}
-              {messages.length===0&&!loading&&<Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
-            </div>
-            <div className="apn-tc-compose"><textarea className="textarea" value={composer} onChange={e=>setComposer(e.target.value)} placeholder="Type a message…" rows={2} maxLength={2000} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}}}/><button className="btn primary" onClick={sendMessage} disabled={!composer.trim()||!selected}>Send</button></div>
-          </div>
-        )}
+        {selected && section !== "person" && renderConversation()}
       </div>
       {messageInfo && <div className="apn-tc-info-overlay" onClick={() => setMessageInfo(null)}>
         <div className="apn-tc-info-card" onClick={(e) => e.stopPropagation()}>

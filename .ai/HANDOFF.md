@@ -12,3 +12,7 @@ Next: review committed UI package; deploy only with authorization for this new p
 
 
 2026-09-27 release: user authorized deployment. UI commit 8b796f9 pushed. Vercel production dpl_25DXKeMKauehhBcdm5gGygzt86Kn is Ready, alias allbeeapp-six.vercel.app. Custom app.allbeesolutions.com also serves the new UI (index-BDXavdIi.js). Public sign-in checks passed on both URLs at 320/390/768/1440: HTTP200, no overflow/page errors/crashes. No new authentication required; HHC completed deployment. No database migration or live authenticated/RLS certification. Evidence: LIVE_UI_RELEASE.json; rerun node scripts/ui/live-smoke.mjs.
+
+## APN Team Chat UI checkpoint — 2026-09-27
+
+Completed screenshot-scoped chat redesign from baseline ed752ad. Verified 243 tests, build, and 33 mocked responsive/interaction checks. See CHAT_UI_COVERAGE.md and chat-evidence/results.json. No DB changes or deployment in this batch. Next: authorized release and live signed-in/device checks. Unrelated AGENTS/state/release edits preserved. HHC primary; RDC used after HHC transport failure.

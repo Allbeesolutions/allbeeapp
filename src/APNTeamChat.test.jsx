@@ -59,6 +59,25 @@ describe("APN Team Chat", () => {
     await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith("apn_send_message_v3", { p_conversation_id:"conv1", p_body:"Hello from ALLBEE", p_reply_to_id:null, p_mentions:[] }));
   });
 
+  it("blocks duplicate sends and restores the draft after a failed save", async () => {
+    const defaultRpc = supabase.rpc.getMockImplementation();
+    let finishSend;
+    supabase.rpc.mockImplementation((fn, args) => fn === "apn_send_message_v3"
+      ? new Promise(resolve => { finishSend = resolve; }) : defaultRpc(fn, args));
+    render(<APNPortal db={db} profile={profile} session={session} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Friend One")).toBeTruthy());
+    fireEvent.click(screen.getAllByRole("button", { name:"Chat" })[0]);
+    const input = await screen.findByPlaceholderText("Type a message…");
+    fireEvent.change(input, { target:{ value:"Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name:"Send" }));
+    fireEvent.keyDown(input, { key:"Enter" });
+    expect(supabase.rpc.mock.calls.filter(([fn]) => fn === "apn_send_message_v3")).toHaveLength(1);
+    await act(async () => finishSend({ data:null, error:{ message:"Connection interrupted" } }));
+    expect(input.value).toBe("Keep my draft");
+    expect(screen.getAllByText("Connection interrupted").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name:"Send" }).disabled).toBe(false);
+  });
+
   it("keeps the visible admin chat while realtime refresh is pending", async () => {
     let messageCall = 0;
     supabase.rpc.mockImplementation((fn) => {

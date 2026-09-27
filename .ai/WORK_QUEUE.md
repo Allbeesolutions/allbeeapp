@@ -22,3 +22,6 @@
 - [x] UI-03 Reproducible browser coverage and release handoff.
 - [x] UI-04 Deploy authorized UI commit 8b796f9; both public URLs verified.
 - [ ] UI-05 Authenticated production checks and existing live DB/RLS access gates.
+
+- [x] CHAT-01 APN responsive messenger redesign; 243 tests and 33 mocked browser checks pass. See CHAT_UI_COVERAGE.md.
+- [ ] CHAT-02 Authorized release and real-device/signed-in delivery checks for the chat redesign.

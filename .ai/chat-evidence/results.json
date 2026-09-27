@@ -1,0 +1,138 @@
+{
+  "mocked": true,
+  "checkedAt": "2026-09-27T12:24:29.632Z",
+  "results": [
+    {
+      "name": "partner 320px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 360px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 375px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 390px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 430px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 768px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 1024px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 1366px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 1440px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "partner 1920px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 320px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 360px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 375px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 390px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 430px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 768px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 1024px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 1366px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 1440px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "district_head 1920px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 320px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 360px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 375px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 390px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 430px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 768px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 1024px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 1366px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 1440px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "state_head 1920px inbox and thread",
+      "pass": true
+    },
+    {
+      "name": "Unread, reply, search, failed send, retry and group rooms",
+      "pass": true
+    },
+    {
+      "name": "Dark and reduced motion 390px",
+      "pass": true
+    },
+    {
+      "name": "Dark and reduced motion 1440px",
+      "pass": true
+    }
+  ]
+}
