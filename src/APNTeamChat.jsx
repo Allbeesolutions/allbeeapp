@@ -47,6 +47,26 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 
   const me = meRow || { id: pid, name: profile?.name || "Partner" };
   const myApnId = apnIdFor(meRow) || "-";
+  const myPhoto = profile?.photo_url || meRow?.profilePicture || meRow?.photo_url || meRow?.photoUrl || null;
+  const contactForConversation = useCallback((conversation) => {
+    if (!conversation) return null;
+    const participantId = conversation.participant_id || conversation.other_id || conversation.contact_id;
+    if (participantId) {
+      const byId = contacts.find((c) => String(c.contact_id) === String(participantId));
+      if (byId) return byId;
+    }
+    const participantApnId = conversation.participant_apn_id || conversation.other_apn_id;
+    if (participantApnId) {
+      const byApn = contacts.find((c) => String(c.apn_id || "").toLowerCase() === String(participantApnId).toLowerCase());
+      if (byApn) return byApn;
+    }
+    // Legacy conversation RPCs only expose the subject. Resolve by name only
+    // when it identifies exactly one contact; never guess between duplicate names.
+    const subject = String(conversation.subject || "").trim().toLowerCase();
+    if (!subject) return null;
+    const matches = contacts.filter((c) => String(c.name || "").trim().toLowerCase() === subject);
+    return matches.length === 1 ? matches[0] : null;
+  }, [contacts]);
 
   // Truthful presence: heartbeat while this chat is open and mark offline on cleanup.
   useEffect(() => {
@@ -493,7 +513,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 <div className="apn-tc-chat">
                   <div className="apn-tc-chathead">
                     <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
-                    <Avatar name={selected.subject || "Chat"} size={40} fontSize={15} />
+                    <Avatar name={contactForConversation(selected)?.name || selected.subject || "Chat"} url={contactForConversation(selected)?.photo_url} size={40} fontSize={15} />
                     <div className="tc-thread-title">{selected.subject}
                       {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
                     </div>
@@ -555,7 +575,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
         {section === "person" && (
           <div className={`apn-tc-shell ${selected ? "has-selection" : ""}`}>
             <aside className="apn-tc-sidebar">
-              <div className="tc-inbox-heading"><div><div className="apn-tc-sidebar-title">Conversations</div><div className="apn-tc-sidebar-subtitle">A little closer. A lot more connected.</div></div><Avatar name={me.name} size={36}/></div>
+              <div className="tc-inbox-heading"><div><div className="apn-tc-sidebar-title">Conversations</div><div className="apn-tc-sidebar-subtitle">A little closer. A lot more connected.</div></div><Avatar name={me.name} url={myPhoto} size={36}/></div>
               <div className="apn-tc-search"><Search size={17}/><input value={contactSearch} onChange={e=>setContactSearch(e.target.value)} placeholder="Search chats or people" aria-label="Search chats or people"/>{contactSearch && <button className="linkbtn" aria-label="Clear chat search" onClick={()=>setContactSearch("")}><X size={15}/></button>}</div>
               <div className="tc-inbox-filters"><button aria-pressed={!unreadOnly} onClick={()=>setUnreadOnly(false)}>All chats</button><button aria-pressed={unreadOnly} onClick={()=>setUnreadOnly(true)}>Unread</button></div>
               {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
@@ -566,7 +586,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                   <div className="apn-tc-recent-list">{!recentChats.length && <p className="tc-list-empty">{unreadOnly ? "You’re all caught up." : "No conversations match your search."}</p>}
                     {recentChats.map((c) => (
                       <button key={c.conversation_id} className={"apn-tc-recent-row"+(selected?.id===c.conversation_id?" active":"")} aria-current={selected?.id===c.conversation_id ? "true" : undefined} onClick={() => openConversation({ id: c.conversation_id, subject: c.subject || "Chat", conv_type: "person" })}>
-                        <Avatar name={c.subject || "Chat"} size={42} fontSize={15}/>
+                        <Avatar name={contactForConversation(c)?.name || c.subject || "Chat"} url={contactForConversation(c)?.photo_url} size={42} fontSize={15}/>
                         <div className="apn-tc-recent-copy"><b>{c.subject || "Chat"}</b><span>{c.last_message || "No messages yet"}</span></div>
                         {Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{Number(c.unread_count) > 99 ? "99+" : c.unread_count}</span>}
                       </button>

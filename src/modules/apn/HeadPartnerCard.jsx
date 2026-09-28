@@ -52,7 +52,7 @@ export function APNHeadPartnerCard({
   return (
     <div className="apn-rowcard apn-head-partner-card">
       <div className="apn-head-partner-main">
-        <Avatar name={partner.name} size={38} />
+        <Avatar name={partner.name} url={partner.profilePicture || partner.photo_url || partner.photoUrl || null} size={38} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 750 }}>
             {partner.name} <span className="badge pri" style={{ marginLeft: 5 }}>{stats.level.name}</span>

@@ -1437,8 +1437,9 @@ function avatarColor(name) {
 function Avatar({ name, url, size = 26, fontSize, style }) {
   const fs = fontSize || Math.max(10, Math.round(size * 0.42));
   return (
-    <div className="avatar" style={{ background: avatarColor(name || "?"), width: size, height: size, fontSize: fs, overflow: "hidden", padding: 0, ...style }}>
-      {url ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (name || "?")[0]}
+    <div className="avatar" style={{ position: "relative", background: avatarColor(name || "?"), width: size, height: size, fontSize: fs, overflow: "hidden", padding: 0, ...style }}>
+      <span aria-hidden="true">{(name || "?")[0]}</span>
+      {url && <img src={url} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
     </div>
   );
 }
