@@ -246,7 +246,7 @@ Deno.serve(async (req) => {
       ...sanitized.chat,
     ];
 
-    const models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] as const;
+    const models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.1-8b-instant"] as const;
     let data: Record<string, unknown> = {};
     let providerError = "";
     for (const model of models) {
