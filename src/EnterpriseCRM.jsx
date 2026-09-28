@@ -2,6 +2,15 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import * as Icons from "./icons.jsx";
 
+const redactAIContactText = (value) => String(value ?? "")
+  .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email redacted]")
+  .replace(/(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)/g, "[phone redacted]");
+const redactAIData = (value) => {
+  if (Array.isArray(value)) return value.map(redactAIData);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k,v]) => [k, /^(email|mobile|phone|whatsapp)$/i.test(k) ? (v ? `[${k.toLowerCase()} redacted]` : v) : redactAIData(v)]));
+  return typeof value === "string" ? redactAIContactText(value) : value;
+};
+
 export default function EnterpriseCRM(props) {
   const runtime = props.runtime || {};
   const { todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons, ...iconOverrides } = runtime;
@@ -189,7 +198,8 @@ export default function EnterpriseCRM(props) {
         "This is an approval-based copilot: suggest or draft text only. Never claim that a message was sent, a follow-up was scheduled, a quote was changed, or any CRM record was mutated.",
         kind === "followup" ? "Draft a concise professional follow-up message suitable for WhatsApp/email. Include a clear next step and do not invent details." : kind === "quote" ? "Draft a concise quotation response acknowledging scope, pricing review, and next step without inventing prices or commitments." : "Identify the single best next CRM action, with a short reason and urgency. Do not perform it."
       ].join("\n");
-      const context = `CRM LEAD\n${JSON.stringify({ customer_name:selected.customer_name, company:selected.company, mobile:selected.mobile, email:selected.email, status:selected.status, priority:selected.priority, expected_budget:selected.expected_budget, project_category:selected.project_category, remarks:selected.remarks, activities:leadActivities, followUps:leadFollowUps, quotes:leadQuotes })}\n\nWORKSPACE SNAPSHOT\n${buildAIContext?.(db, company) || "Not available"}`;
+      const aiLeadEvidence = redactAIData({ customer_name:selected.customer_name, company:selected.company, mobile:selected.mobile, email:selected.email, status:selected.status, priority:selected.priority, expected_budget:selected.expected_budget, project_category:selected.project_category, remarks:selected.remarks, activities:leadActivities, followUps:leadFollowUps, quotes:leadQuotes });
+      const context = `CRM LEAD\n${JSON.stringify(aiLeadEvidence)}\n\nWORKSPACE SNAPSHOT\n${buildAIContext?.(db, company) || "Not available"}`;
       const reply = await callAI(cfg, `${system}\n\n${context}`, [{ role: "user", content: kind === "followup" ? "Draft the follow-up now." : kind === "quote" ? "Draft the quotation response now." : "Recommend the next action now." }]);
       setAiDraft(reply || "No AI recommendation returned.");
       setAiDraftKind(kind);
