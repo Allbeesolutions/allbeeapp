@@ -2,6 +2,7 @@ import { createServer } from "vite";
 import { chromium } from "playwright";
 import { resolve } from "node:path";
 import { strict as assert } from "node:assert";
+
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const server = await createServer({ root, server: { host:"127.0.0.1", port:0 }, define: {
   "import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET": JSON.stringify("true"),
@@ -21,68 +22,89 @@ await page.route("**/*", route => {
   return ["127.0.0.1","localhost"].includes(u.hostname) || ["data:","blob:"].includes(u.protocol) ? route.continue() : route.abort();
 });
 let checks=0;
+const launcher = () => page.getByRole("button", { name:"Ask ALLBEE AI with mascot" });
+
 try {
+  // APN: responsive placement for partner + head roles.
   for (const role of ["partner","district_head","state_head"]) for (const width of widths) {
-    await page.setViewportSize({width,height:900});
-    await page.goto(`http://127.0.0.1:${port}/?role=${role}#/apn/home`);
-    await page.locator('[data-apn-page="home"]').waitFor();
-    assert.equal(await page.getByRole("button",{name:"Ask ALLBEE AI with mascot"}).count(),0);
-    assert(await page.locator(".apn-ai-banner .allbee-mascot img").count());
-    await page.evaluate(()=>location.hash="#/apn/wallet");
-    await page.locator('[data-apn-page="wallet"]').waitFor();
-    const button=page.locator(".allbee-mascot-button");
-    await button.waitFor({state:"attached"});
-    // Collision detection runs on requestAnimationFrame plus a delayed layout check.
-    // Let it settle before comparing the React state to actual CSS visibility.
-    await page.waitForTimeout(500);
-    if(role==="partner" && width===390) await page.screenshot({path:"/tmp/allbee-mascot-wallet-390.png"});
-    const position=await button.evaluate(el=>{
-      const r=el.getBoundingClientRect(), nav=document.querySelector(".apn-bottomnav")?.getBoundingClientRect();
-      return {left:r.left,right:r.right,bottom:r.bottom,navTop:nav?.top,loaded:el.querySelector("img")?.naturalWidth||0,covered:el.closest(".allbee-mascot-launcher")?.classList.contains("is-covered")};
+    await page.setViewportSize({ width, height:900 });
+    await page.goto(`http://127.0.0.1:${port}/?role=${role}#/apn/network`);
+    await page.locator('[data-apn-page="network"]').waitFor();
+    await launcher().waitFor({ state:"attached" });
+    await page.waitForTimeout(450);
+    const position = await launcher().evaluate(el => {
+      const r = el.getBoundingClientRect();
+      const nav = document.querySelector(".apn-bottomnav")?.getBoundingClientRect();
+      const img = el.querySelector("img");
+      return { left:r.left, right:r.right, bottom:r.bottom, navTop:nav?.top, loaded:img?.naturalWidth||0, src:img?.getAttribute("src")||"", covered:el.closest(".allbee-mascot-launcher")?.classList.contains("is-covered") };
     });
-    assert(position.left>=0 && position.right<=width+1, `offscreen ${role} ${width}`);
-    if(width<773) assert(position.bottom<=position.navTop, `bottom nav collision ${role} ${width}`);
-    assert(position.loaded>0,`image unavailable ${role} ${width}`);
-    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-    assert.equal(await button.isVisible(),!position.covered,`collision visibility ${role} ${width}`);
+    assert(position.left >= 0 && position.right <= width + 1, `offscreen ${role} ${width}`);
+    if (width < 773) assert(position.bottom <= position.navTop, `bottom-nav collision ${role} ${width}`);
+    assert(position.loaded > 0, `transparent mascot unavailable ${role} ${width}`);
+    assert.equal(position.src, "/allbee-ai-mascot.png");
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    assert.equal(await launcher().isVisible(), !position.covered, `collision visibility ${role} ${width}`);
     checks++;
   }
-  await page.setViewportSize({width:1440,height:900});
-  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/home`);
-  await page.locator('[data-apn-page="home"]').waitFor();
-  await page.evaluate(()=>location.hash="#/apn/wallet");
-  await page.getByRole("button",{name:"Ask ALLBEE AI with mascot"}).focus();
-  await page.keyboard.press("Enter");
-  await page.locator('[data-apn-page="ai"]').waitFor();
-  assert.equal(await page.getByRole("button",{name:"Ask ALLBEE AI with mascot"}).count(),0);
-  assert(await page.locator(".apn-ai-welcome .allbee-mascot img").count());
-  checks++;
-  for(const route of ["leads","quotations","chat"]) {
+
+  // APN launcher is shell-level, so it exists on every major APN page, including AI itself.
+  await page.setViewportSize({ width:1440, height:900 });
+  for (const route of ["home","leads","wallet","withdrawals","network","chat","targets","quotations","documents","agreements","notifications","learn","profile","ai","support"]) {
     await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/${route}`);
     await page.locator(`[data-apn-page="${route}"]`).waitFor();
-    assert.equal(await page.getByRole("button",{name:"Ask ALLBEE AI with mascot"}).count(),0,`duplicate/conflicting launcher on ${route}`);
+    assert.equal(await launcher().count(), 1, `APN launcher missing on ${route}`);
     checks++;
   }
-  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/home`);
-  await page.locator('[data-apn-page="home"]').waitFor();
-  await page.evaluate(()=>location.hash="#/apn/wallet");
-  await page.locator(".allbee-mascot-button").waitFor({state:"attached"});
-  await page.getByRole("button",{name:"Search",exact:true}).click();
-  assert.equal(await page.getByRole("button",{name:"Ask ALLBEE AI with mascot"}).count(),0);
+  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/network`);
+  await page.locator('[data-apn-page="network"]').waitFor();
+  await launcher().focus();
+  await page.keyboard.press("Enter");
+  await page.locator('[data-apn-page="ai"]').waitFor();
+  assert(await page.locator(".apn-ai-welcome .allbee-mascot img").count());
   checks++;
+
+  // Internal employee workspace: launcher persists and opens the real ALLBEE AI route.
+  for (const role of ["staff","intern"]) {
+    await page.goto(`http://127.0.0.1:${port}/?role=${role}#/dashboard`);
+    await page.locator("main.page-enter").waitFor();
+    assert.equal(await launcher().count(), 1, `workspace launcher missing for ${role}`);
+    await launcher().click();
+    await page.waitForFunction(() => location.hash.includes("assistant"));
+    assert.equal(await launcher().count(), 1, `workspace launcher missing on AI page for ${role}`);
+    checks++;
+  }
+
+  // Client portal: launcher exists on overview/support and opens a client-scoped AI surface.
   await page.goto(`http://127.0.0.1:${port}/?role=client#/dashboard`);
-  assert.equal(await page.getByRole("button",{name:"Ask ALLBEE AI with mascot"}).count(),0);
+  await page.getByText("Client portal", { exact:true }).waitFor();
+  assert.equal(await launcher().count(), 1);
+  await page.getByRole("button", { name:/Support/ }).click();
+  assert.equal(await launcher().count(), 1);
+  await launcher().click();
+  await page.getByRole("button", { name:"ALLBEE AI", exact:true }).waitFor();
+  await page.getByText("Your workspace assistant", { exact:true }).waitFor();
+  assert.equal(await launcher().count(), 1);
   checks++;
+
+  // Login: the same floating mascot opens the existing safe sign-in helper.
   await page.goto(`http://127.0.0.1:${port}/?role=anonymous`);
-  await page.getByRole("button",{name:/Open login help/}).waitFor();
-  assert(await page.locator(".web-ai-fab .allbee-mascot img").count());
+  await launcher().waitFor();
+  assert.equal(await page.locator('.allbee-mascot-launcher--login img').getAttribute('src'), '/allbee-ai-mascot.png');
+  await launcher().click();
+  await page.locator('.web-ai-panel').waitFor();
+  assert(await page.locator('.web-ai-panel .allbee-mascot img').count());
   checks++;
-  await page.emulateMedia({reducedMotion:"reduce"});
-  const animation=await page.locator(".web-ai-fab .allbee-mascot img").evaluate(el=>getComputedStyle(el).animationName);
-  assert.equal(animation,"none");
+
+  // Reduced motion applies to the transparent mascot too.
+  await page.goto(`http://127.0.0.1:${port}/?role=anonymous`);
+  await page.emulateMedia({ reducedMotion:"reduce" });
+  await launcher().waitFor();
+  const animation = await page.locator('.allbee-mascot-launcher--login .allbee-mascot img').evaluate(el => getComputedStyle(el).animationName);
+  assert.equal(animation, "none");
   checks++;
+
   console.log(`Mascot browser checks: ${checks} passed; page errors: ${failures.length}`);
-  assert.deepEqual(failures,[]);
+  assert.deepEqual(failures, []);
 } finally {
   await browser.close();
   await server.close();

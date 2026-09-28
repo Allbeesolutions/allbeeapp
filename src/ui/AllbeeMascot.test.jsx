@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("ALLBEE mascot", () => {
   it("uses the supplied artwork with decorative semantics and supports working states", () => {
     const { rerender, container } = render(<AllbeeMascot state="thinking" size={32} />);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/allbee-ai-mascot.jpeg");
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/allbee-ai-mascot.png");
     expect(container.querySelector(".allbee-mascot--thinking")).toBeTruthy();
     expect(container.querySelector("img")?.getAttribute("alt")).toBe("");
     rerender(<AllbeeMascot state="success" size={32} />);
@@ -52,5 +52,9 @@ describe("ALLBEE mascot", () => {
     expect(css).toContain("env(safe-area-inset-bottom)");
     expect(css).toContain("prefers-reduced-motion:reduce");
     expect(css).toContain(".allbee-mascot-button:focus-visible");
+    expect(css).toContain("allbee-mascot-launcher--client");
+    expect(css).toContain("allbee-mascot-launcher--login");
+    expect(css).toContain("background:transparent");
+    expect(css).toContain("object-fit:contain");
   });
 });

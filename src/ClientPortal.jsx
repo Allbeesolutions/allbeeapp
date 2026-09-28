@@ -1,7 +1,10 @@
 import React, { useState } from "react";
+import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
+import { Sparkles } from "./icons.jsx";
+const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 
 export default function ClientPortal({ db, profile, signOut, isDark, config, reload, runtime }) {
-  const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, fmtDate, fmtDateTime, money, LOGO_ICON } = runtime;
+  const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON } = runtime;
   const myId = profile?.id;
   const co = companyOf(config);
   const posts = [...db.portal_posts].filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -10,6 +13,13 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   const files = [...db.documents].filter((d) => d.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const quotes = [...db.quotations].filter((q) => q.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const invoices = [...db.invoices].filter((iv) => iv.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  // Never hand the client assistant the wider workspace snapshot. Its AI context
+  // is built only from rows already scoped to this signed-in client.
+  const clientAIDb = {
+    clients: [], leads: [], quotations: quotes, invoices, projects: [], tasks: [], class_students: [], students: [], marketing: [], concepts: [], inhouse: [], planned: [],
+    apn_users: [], transactions: [], withdrawals: [], audit: [], attendance: [], leave: [], updates: [], team_chat: [], notifications: [], rewards: [], agreements: [], materials: [], targets: [],
+    portal_posts: posts, documents: files,
+  };
   const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";
   const [portalView, setPortalView] = useState("home");
   const [helpFormOpen, setHelpFormOpen] = useState(false);
@@ -47,11 +57,12 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         <PortalRefreshButton onRefresh={reload} />
         <button type="button" className="userchip" onClick={signOut} aria-label="Sign out of client portal"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={26} /><span className="userchip-name">{profile?.name}</span><LogOut size={15} /></button>
       </header>
-      <div className="content page-enter" style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className="content page-enter client-portal-content" style={{ maxWidth: 820, margin: "0 auto" }}>
         <div className="page-head"><h3>Welcome, {profile?.name?.split(" ")[0] || "there"}</h3></div>
         <div className="seg" style={{ margin: "0 0 16px", width: "max-content" }}>
           <button className={portalView === "home" ? "on" : ""} onClick={() => setPortalView("home")}><Home size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Overview</button>
           <button className={portalView === "support" ? "on" : ""} onClick={() => setPortalView("support")}><Headset size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Support{openTickets > 0 && <span className="badge accent" style={{ marginLeft: 6 }}>{openTickets}</span>}</button>
+          <button className={portalView === "ai" ? "on" : ""} onClick={() => setPortalView("ai")}><Sparkles size={14} style={{ verticalAlign: -2, marginRight: 5 }} />ALLBEE AI</button>
         </div>
 
         {portalView === "home" && (<>
@@ -129,7 +140,10 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         </>)}
 
         {portalView === "support" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading support…</div>}><LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} runtime={runtime} /></React.Suspense>}
+
+        {portalView === "ai" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") setPortalView("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>}
       </div>
+      <AllbeeAIFloatingAssistant onOpen={() => setPortalView("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen} />
     </div>
   );
 }

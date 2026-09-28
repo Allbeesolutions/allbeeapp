@@ -650,6 +650,16 @@ function buildAIContext(db, company) {
     L.push(`\nINVOICES (${db.invoices.length}):`);
     inv.forEach((i) => L.push(`- ${i.number || ""} ${i.client || "—"}${i.title ? " · " + i.title : ""} · ${i.status || "Draft"} · ${money(i.amount || 0)}${i.dueDate ? " · due " + i.dueDate : ""}`));
   }
+  const portalUpdates = cap(db.portal_posts, 30);
+  if (portalUpdates.length) {
+    L.push(`\nCLIENT PORTAL UPDATES (${db.portal_posts.length}):`);
+    portalUpdates.forEach((x) => L.push(`- ${scrubText(x.title || "Update").slice(0, 100)} · ${x.status || x.kind || "update"}${x.body ? " · " + scrubText(String(x.body)).slice(0, 180) : ""}`));
+  }
+  const sharedDocs = cap(db.documents, 30);
+  if (sharedDocs.length) {
+    L.push(`\nSHARED FILES (${db.documents.length}):`);
+    sharedDocs.forEach((d) => L.push(`- ${scrubText(d.title || "File").slice(0, 100)}${d.category ? " · " + scrubText(d.category).slice(0, 60) : ""}${d.notes ? " · " + scrubText(String(d.notes)).slice(0, 120) : ""}`));
+  }
   const proj = cap(db.projects, 40);
   if (proj.length) {
     L.push(`\nPROJECTS (${db.projects.length}):`);
@@ -3503,7 +3513,7 @@ function LoginAccessAssistant({ onPick }) {
     if (chip.go) goNode(chip.go);
   };
 
-  if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><span className="web-ai-fab-logo" aria-hidden="true"><AllbeeMascot state="idle" size={30} /></span><span>Need help signing in?</span></button>;
+  if (!open) return <AllbeeAIFloatingAssistant onOpen={() => setOpen(true)} context="login" surface="login" collisionRootSelector="body" />;
   return (
     <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI — access and login assistant">
       <header className="web-ai-head" style={{ position: "relative", paddingRight: 68 }}>
@@ -5451,7 +5461,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
 
       <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></main>
 
-      <AllbeeAIFloatingAssistant onOpen={() => go("ai")} displayName={meRow?.name} context={tab} hidden={!!modal || searchOpen || sidebarOpen || ["home", "ai", "leads", "quotations", "chat"].includes(tab)} />
+      <AllbeeAIFloatingAssistant onOpen={() => go("ai")} displayName={meRow?.name} context={tab} surface="apn" collisionRootSelector=".apn-body" hidden={!!modal || searchOpen || sidebarOpen} />
       {showFab && <button className="apn-fab" aria-label={tab === "leads" ? "Submit a lead" : "Create quotation"} onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
@@ -7168,7 +7178,7 @@ export default function App() {
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading your portal…" />;
-    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, fmtDate, fmtDateTime, money, LOGO_ICON }} /></React.Suspense>);
+    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Sparkles, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON }} /></React.Suspense>);
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
@@ -7440,6 +7450,15 @@ export default function App() {
             </main>
           </div>
         </div>
+
+        <AllbeeAIFloatingAssistant
+          onOpen={() => go("assistant")}
+          displayName={currentUser}
+          context={safeRoute}
+          surface="workspace"
+          collisionRootSelector=".main"
+          hidden={!!modal || searchOpen || menuOpen || userMenu}
+        />
 
         <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
           {[["dashboard", "Home", Home], (role === "accountant" ? ["accounts", "Accounts", Wallet] : ["tasks", "Tasks", ListTodo]), ["notifications", "Alerts", Bell], ["assistant", "AI", AllbeeAIMark], ["search", "Search", Search]].map(([key, label, Icon]) => <button key={key} className={key === safeRoute ? "active" : ""} onClick={() => key === "search" ? setSearchOpen(true) : go(key)} aria-label={label} aria-current={key === safeRoute ? "page" : undefined}>
