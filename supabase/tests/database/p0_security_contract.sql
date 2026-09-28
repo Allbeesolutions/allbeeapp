@@ -79,3 +79,22 @@ do $$ declare q text; begin
  select qual into q from pg_policies where schemaname='public' and tablename='apn_chat_attachments' and policyname='apn_chat_attachments_select';
  if q is null or q not like '%apn_chat_attachments.conversation_id%' then raise exception 'P0: APN attachment select policy lost conversation correlation'; end if;
 end $$;
+
+-- Critical system mutations are RPC-only from the application and deny anonymous execution.
+do $$ begin
+ if has_function_privilege('anon','public.app_config_save_patch(jsonb)','EXECUTE') then raise exception 'P0: config mutation RPC exposed to anon'; end if;
+ if has_function_privilege('anon','public.finance_period_set_lock(text,boolean)','EXECUTE') then raise exception 'P0: finance lock RPC exposed to anon'; end if;
+end $$;
+
+-- Sensitive profile/APN mutation guards must keep a pinned safe search_path.
+do $$ declare n text; cfg text[]; begin
+ foreach n in array array['profiles_guard','apn_users_guard','apn_users_head_guard'] loop
+   select p.proconfig into cfg from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace where ns.nspname='public' and p.proname=n limit 1;
+   if cfg is null or not exists(select 1 from unnest(cfg) x where x like 'search_path=%pg_catalog%public%pg_temp%') then raise exception 'P0: unsafe search_path for %',n; end if;
+ end loop;
+end $$;
+
+-- AI memory bulk synchronization is an Edge/service operation, never a browser RPC.
+do $$ begin
+ if has_function_privilege('authenticated','public.ai_memory_sync_business()','EXECUTE') or has_function_privilege('authenticated','public.ai_memory_sync_knowledge()','EXECUTE') then raise exception 'P0: internal AI memory sync exposed to authenticated'; end if;
+end $$;

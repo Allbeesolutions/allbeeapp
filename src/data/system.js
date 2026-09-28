@@ -15,8 +15,8 @@ export async function fetchConfigRows(supabase) {
 }
 
 export async function saveConfigRows(supabase, patch) {
-  const rows = Object.entries(patch).map(([key, value]) => ({ key, value: value == null ? "" : String(value) }));
-  const { error } = await supabase.from("app_config").upsert(rows, { onConflict: "key" });
+  const normalized = Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, value == null ? "" : String(value)]));
+  const { error } = await supabase.rpc("app_config_save_patch", { p_patch: normalized });
   if (error) throw new Error(error.message);
 }
 
@@ -26,11 +26,11 @@ export async function fetchFinancialLocks(supabase, loadTableRows) {
 }
 
 export async function lockFinancialPeriod(supabase, period, who) {
-  const { error } = await supabase.from("fin_locks").upsert({ period, locked_by: who || null }, { onConflict: "period" });
+  const { error } = await supabase.rpc("finance_period_set_lock", { p_period: period, p_locked: true });
   if (error) throw new Error(error.message);
 }
 
 export async function unlockFinancialPeriod(supabase, period) {
-  const { error } = await supabase.from("fin_locks").delete().eq("period", period);
+  const { error } = await supabase.rpc("finance_period_set_lock", { p_period: period, p_locked: false });
   if (error) throw new Error(error.message);
 }

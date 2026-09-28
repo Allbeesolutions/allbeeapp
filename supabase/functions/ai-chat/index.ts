@@ -27,6 +27,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createRemoteJWKSet, jwtVerify } from "https://esm.sh/jose@5.9.6";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -67,20 +68,14 @@ async function verifyUser(authorization: string | null): Promise<{ id?: string }
   }
 }
 
-// ── Per-user rate limit (in-memory sliding window; resets on cold start) ──
-const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const RATE_MAX = 60; // calls per user per hour
-const rateHits = new Map<string, number[]>();
-function rateLimited(userId: string): boolean {
-  const now = Date.now();
-  const recent = (rateHits.get(userId) || []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (recent.length >= RATE_MAX) {
-    rateHits.set(userId, recent);
-    return true;
-  }
-  recent.push(now);
-  rateHits.set(userId, recent);
-  return false;
+// ── Persistent per-user rate limit (shared across all Edge instances) ─────
+async function rateLimit(authorization: string) {
+  const base = Deno.env.get("SUPABASE_URL") || "";
+  const anon = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const client = createClient(base, anon, { global: { headers: { Authorization: authorization } } });
+  const { data, error } = await client.rpc("edge_user_rate_limit", { p_scope: "ai-chat", p_limit: 60, p_window_seconds: 3600 });
+  if (error) throw new Error("AI usage protection is temporarily unavailable.");
+  return data as { allowed?: boolean; retry_after?: number };
 }
 
 // ── Bounds (keep abuse cost low) ──────────────────────────────────────────
@@ -118,8 +113,10 @@ Deno.serve(async (req) => {
   try {
     const user = await verifyUser(req.headers.get("Authorization"));
     if (!user) return json({ error: "Not signed in." }, 401);
-    if (rateLimited(user.id!)) {
-      return json({ error: "Too many requests. Please wait and try again later." }, 429);
+    const usage = await rateLimit(req.headers.get("Authorization") || "");
+    if (usage.allowed === false) {
+      const retry = Number(usage.retry_after || 60);
+      return json({ error: `ALLBEE AI is busy due to high usage. Please try again in ${retry}s.`, retry_after_seconds: retry }, 429);
     }
 
     const length = Number(req.headers.get("content-length") || 0);
