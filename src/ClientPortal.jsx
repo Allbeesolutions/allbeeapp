@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
 import { Sparkles, User, Upload, Check, ShieldCheck, FileText, Banknote, FileCheck2, FolderKanban, ArrowRight, RefreshCw } from "./icons.jsx";
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
