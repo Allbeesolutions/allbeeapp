@@ -1580,3 +1580,9 @@ img, video, canvas, svg { max-width:100%; }
  .seg { max-width:100%; overflow-x:auto; }
  .seg button { flex-shrink:0; white-space:nowrap; }
 }
+
+/* Shared chat maximise/minimise treatment */
+.chat-surface-expandable{position:relative}
+.chat-surface-expandable.chat-expanded{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;min-height:0!important;z-index:10000!important;margin:0!important;border-radius:18px!important;background:var(--bg)!important;box-shadow:0 24px 80px rgba(15,23,42,.24)!important}
+.chat-surface-expandable .chat-expand-corner{position:absolute;top:10px;right:10px;z-index:30}
+@media(max-width:760px){.chat-surface-expandable.chat-expanded{inset:0!important;border-radius:0!important}.chat-surface-expandable .chat-expand-corner{top:8px;right:8px}}

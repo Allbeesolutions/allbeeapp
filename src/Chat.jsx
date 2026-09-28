@@ -1,7 +1,8 @@
 import React from "react";
+import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 
-export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime }) {
-  const { useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm } = runtime;
+export default function Chat({ db, mutate, me, team, onlineIds = new Set(), presenceReady = false, onRefresh, isAdmin, runtime }) {
+  const { useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm } = runtime;
   const [chatChannel, setChatChannel] = useState("employee");
   const [apnUnread, setApnUnread] = useState(0);
   const [text, setText] = useState("");
@@ -12,19 +13,25 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [expanded, setExpanded] = useState(false);
   const list = [...db.chat].filter((m) => !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
   // The app-level Supabase Realtime channel already watches chat/team_chat and
   // performs scoped reloads on actual database changes. Avoid a 12-second polling
   // loop here; it created continuous egress even when nobody was sending messages.
   const refresh = async () => { if (!onRefresh) return; setRefreshing(true); try { await onRefresh(); } finally { setTimeout(() => setRefreshing(false), 400); } };
-  // Read receipts: mark messages from others as seen by me (converges once all seen).
+  // Read receipts are server-owned. Direct UPDATE on chat is intentionally denied
+  // by RLS; use the guarded RPC and patch local state without enqueueing persistence.
   useEffect(() => {
     const unseen = db.chat.filter((m) => m.userId !== me.id && !m.deleted && !(m.seenBy || []).includes(me.id));
     if (!unseen.length) return;
-    const ids = new Set(unseen.map((m) => m.id));
-    mutate((d) => ({ ...d, chat: d.chat.map((m) => ids.has(m.id) ? { ...m, seenBy: Array.from(new Set([...(m.seenBy || []), me.id])) } : m) }), null);
-  }, [db.chat, me.id, mutate]);
+    const ids = unseen.map((m) => m.id);
+    supabase.rpc("chat_mark_seen", { p_ids: ids }).then(({ error }) => {
+      if (error) { console.warn("Could not save chat read state:", error.message); return; }
+      const idSet = new Set(ids);
+      mutate((d) => ({ ...d, chat: d.chat.map((m) => idSet.has(m.id) ? { ...m, seenBy: Array.from(new Set([...(m.seenBy || []), me.id])) } : m) }), null, { localOnly: true });
+    });
+  }, [db.chat, me.id, mutate, supabase]);
   const send = () => {
     const t = text.trim(); if (!t) return;
     setText("");
@@ -49,17 +56,18 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
     }
     if (attachment.url) window.open(attachment.url, "_blank", "noopener,noreferrer");
   };
-  const onlineCount = (team || []).filter((p) => p.id !== me.id && (typeof isOnline !== "function" || isOnline(p))).length;
+  const onlineCount = (team || []).filter((p) => p.id !== me.id && onlineIds.has(p.id)).length;
   const startEdit = (m) => { setEditId(m.id); setEditText(m.text); };
-  const saveEdit = async (m) => { const t = editText.trim(); if (!t) { setEditId(null); return; } try { const { data, error } = await supabase.rpc("chat_edit_message", { p_id: m.id, p_text: t }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? data : x) }), null); setEditId(null); setEditText(""); } catch (e) { emitToast(e?.message || "Could not edit message.", "error"); } };
+  const saveEdit = async (m) => { const t = editText.trim(); if (!t) { setEditId(null); return; } try { const { data, error } = await supabase.rpc("chat_edit_message", { p_id: m.id, p_text: t }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? data : x) }), null, { localOnly: true }); setEditId(null); setEditText(""); } catch (e) { emitToast(e?.message || "Could not edit message.", "error"); } };
   // Delete = tombstone (keeps message order, works under existing chat RLS).
   // Admins can delete anyone's; everyone else only their own.
   const del = (m) => setConfirmDelete(m);
-  const deleteNow = async () => { if (!confirmDelete) return; try { const { data, error } = await supabase.rpc("chat_delete_message", { p_id: confirmDelete.id }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? data : x) }), null); setConfirmDelete(null); } catch (e) { emitToast(e?.message || "Could not delete message.", "error"); } };
+  const deleteNow = async () => { if (!confirmDelete) return; try { const { data, error } = await supabase.rpc("chat_delete_message", { p_id: confirmDelete.id }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? data : x) }), null, { localOnly: true }); setConfirmDelete(null); } catch (e) { emitToast(e?.message || "Could not delete message.", "error"); } };
   // Names of teammates who've seen one of my messages.
   const seenNames = (m) => (m.seenBy || []).filter((u) => u !== me.id).map((u) => ((team || []).find((p) => p.id === u)?.name) || "Someone").filter(Boolean);
   const employeeView = (<>
-    <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+    <div className={`content chat-surface-expandable${expanded ? " chat-expanded" : ""}`} style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+      <div className="chat-expand-corner"><ExpandableChatButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} /></div>
       <div className="page-head"><h3>Team chat</h3><span className="spacer" />{onlineCount > 0 && <span className="hint-line" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginRight: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--pos)", display: "inline-block" }} />{onlineCount} online</span>}<button className="btn sm" onClick={refresh} disabled={refreshing} title="Refresh messages"><RefreshCw size={14} className={refreshing ? "spin" : ""} />Refresh</button></div>
       <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {list.length === 0 ? <Empty icon={<Send size={22} color="var(--muted)" />} title="Say hello 👋" text="This channel is shared with the whole internal team." />
@@ -67,7 +75,7 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
             const mine = m.userId === me.id;
             return (
               <div key={m.id} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row" }}>
-                <div style={{ position: "relative", flex: "none" }}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{typeof isOnline === "function" && isOnline((team || []).find((p) => p.id === m.userId)) && <span title="Online" style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: "50%", background: "var(--pos)", border: "2px solid var(--surface, #fff)" }} />}</div>
+                <div style={{ position: "relative", flex: "none" }}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: "50%", background: "var(--pos)", border: "2px solid var(--surface, #fff)" }} />}</div>
                 <div style={{ maxWidth: "72%" }}>
                   {editId === m.id ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

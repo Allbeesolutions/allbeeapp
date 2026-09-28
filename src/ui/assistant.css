@@ -1,5 +1,10 @@
 .assistant-heading { gap:12px; }
-.assistant-workspace { display:flex; flex-direction:column; height:min(760px,calc(100dvh - 220px)); min-height:420px; overflow:hidden; }
+.assistant-workspace { display:flex; flex-direction:column; height:min(760px,calc(100dvh - 220px)); min-height:420px; overflow:hidden; position:relative; }
+.chat-expand-corner { position:absolute; top:10px; right:10px; z-index:8; }
+.chat-expand-toggle { background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(10px); box-shadow:0 3px 12px rgba(15,23,42,.08); }
+.assistant-workspace.chat-expanded { position:fixed; inset:12px; width:auto; height:auto; min-height:0; max-height:none; z-index:10000; margin:0; border-radius:18px; box-shadow:0 24px 80px rgba(15,23,42,.24); }
+.assistant-workspace.chat-expanded .assistant-transcript { padding-top:52px; }
+@media(max-width:760px) { .assistant-workspace.chat-expanded { inset:0; border-radius:0; } .chat-expand-corner { top:8px; right:8px; } }
 .assistant-transcript { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:24px; }
 .assistant-welcome { max-width:650px; margin:clamp(12px,4vh,48px) auto; }
 .assistant-eyebrow { font-size:11px; letter-spacing:.1em; font-weight:700; color:var(--primary); }

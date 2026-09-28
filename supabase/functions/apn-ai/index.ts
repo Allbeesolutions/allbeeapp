@@ -262,7 +262,22 @@ Deno.serve(async (req) => {
       // A 400/401/404 can be model-specific (retired model, entitlement, request compatibility),
       // so stopping here defeats failover even when a later model is healthy.
     }
-    if (providerError) return json({ error: "ALLBEE AI is temporarily busy. Please try again." }, 200);
+    if (providerError) {
+      const wallet = (context.wallet || {}) as Record<string, unknown>;
+      const ledger = Array.isArray(context.ledger) ? context.ledger as Array<Record<string, unknown>> : [];
+      const projects = Array.isArray(context.projects) ? context.projects as Array<Record<string, unknown>> : [];
+      const collections = Array.isArray(context.revenueCollections) ? context.revenueCollections as Array<Record<string, unknown>> : [];
+      const amount = (v: unknown) => `₹${Number(v || 0).toLocaleString("en-IN")}`;
+      const rows = ledger.slice(0, 8).map((x) => `• ${amount(x.amount)} — ${String(x.commissionType || x.sourceType || "commission")} — eligible ${String(x.eligibleFrom || x.eventAt || "recorded")}`).join("\n");
+      const text = [
+        "The AI language provider is busy, so I’m answering directly from your verified ALLBEE records.",
+        `**Wallet:** ${amount(wallet.balance ?? wallet.total_balance ?? wallet.totalBalance)}`,
+        context.nextEligibleDate ? `**Next eligibility date:** ${String(context.nextEligibleDate)}` : "",
+        rows ? `**Recent commission records**\n${rows}` : "**Commission records:** none currently on record.",
+        `**Projects:** ${projects.length} · **Revenue collections:** ${collections.length}`,
+      ].filter(Boolean).join("\n\n");
+      return json({ text, uncertain: false, degraded: true, relevantIds: relevantIdsOf(context) });
+    }
 
     let text = stripInternalIdsFromAnswer(((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim());
     let uncertain = false;

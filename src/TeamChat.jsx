@@ -1,7 +1,10 @@
+import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
+
 export default function TeamChat({ db, mutate, me, members, teamId, onRefresh, runtime = {} }) {
   const { Empty, Send, Avatar, Confirm, fmtDateTime, uid, useState, useRef, useEffect, supabase, emitToast } = runtime;
   const [text, setText] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [expanded, setExpanded] = useState(false);
   const endRef = useRef(null);
   const list = [...(db.team_chat || [])].filter((m) => m.teamId === teamId && !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
@@ -24,13 +27,14 @@ export default function TeamChat({ db, mutate, me, members, teamId, onRefresh, r
     try {
       const { data, error } = await supabase.rpc("team_chat_delete_message", { p_id: confirmDelete.id });
       if (error) throw error;
-      mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === confirmDelete.id ? data : x) }), null);
+      mutate((d) => ({ ...d, team_chat: d.team_chat.map((x) => x.id === confirmDelete.id ? data : x) }), null, { localOnly: true });
       setConfirmDelete(null);
     } catch (e) { emitToast?.(e?.message || "Could not delete message.", "error"); }
   };
   const photo = (id) => members.find((p) => p.id === id)?.photo_url;
   return (<>
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 360 }}>
+    <div className={`chat-surface-expandable${expanded ? " chat-expanded" : ""}`} style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 260px)", minHeight: 360 }}>
+      <div className="chat-expand-corner"><ExpandableChatButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} /></div>
       <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {list.length === 0 ? <Empty icon={<Send size={22} color="var(--muted)" />} title="No messages yet" text="This chat is private to your team." />
           : list.map((m) => {

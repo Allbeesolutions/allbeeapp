@@ -1,11 +1,13 @@
 import React from "react";
 import { MoreHorizontal, Users, X, ArrowDown, Send as SendIcon } from "lucide-react";
 import "./ui/team-chat.css";
+import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 
 export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, refreshTick, go, runtime = {} }) {
   const { useState, useEffect, useRef, useCallback, useReducedMotion, supabase, emitToast, Empty, Avatar, apnIdFor, fmtDateTime, Search, Trash2, ChevronRight, ArrowLeft, Send, MessageSquare, MessageCircle, AlertTriangle, CHAT_SECTIONS, CHAT_SECTION_LABEL } = runtime;
   const Paperclip = runtime.Paperclip || MessageCircle;
   const [sending, setSending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const sendingRef = useRef(false);
   const fileRef = useRef(null);
   const composerRef = useRef(null);
@@ -567,7 +569,8 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   );
 
   return (
-    <div className="apn apn-teamchat" data-theme={isDark ? "dark" : "light"} onKeyDown={(e)=>{if(e.key==="Escape"){setContextMessage(null);setSearchOpen(false);setMessageSearch("");}}}>
+    <div className={`apn apn-teamchat chat-surface-expandable${expanded ? " chat-expanded" : ""}`} data-theme={isDark ? "dark" : "light"} onKeyDown={(e)=>{if(e.key==="Escape"){if(expanded){setExpanded(false);e.stopPropagation();return;}setContextMessage(null);setSearchOpen(false);setMessageSearch("");}}}>
+      <div className="chat-expand-corner"><ExpandableChatButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} /></div>
       <div className="apn-tc-header"><div className="tc-brand"><span className="tc-brand-icon"><MessageCircle size={22}/></span><div><span className="tc-eyebrow">ALLBEE CONNECT</span><h2>Team Chat</h2></div></div>
         <div className="seg" style={{ flex: "none" }}>{CHAT_SECTIONS.map((s) => <button key={s} aria-pressed={section === s} className={section === s ? "on" : ""} onClick={() => { setSection(s); setSelected(null); }}>{CHAT_SECTION_LABEL[s]}{s === "person" && totalUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 5 }}>{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>)}</div>
       </div>

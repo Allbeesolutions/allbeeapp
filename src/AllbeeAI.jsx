@@ -3,6 +3,7 @@ import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
 import { AllbeeMascot } from "./ui/AllbeeMascot.jsx";
 import "./ui/assistant.css";
 import { AlertTriangle, Check, Copy, RefreshCw, RotateCcw, Send, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 
 export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime }) {
   const { aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase } = runtime;
@@ -30,6 +31,7 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
   const [copyError, setCopyError] = useState("");
   const [thinkingLabel, setThinkingLabel] = useState("Understanding your request…");
   const [stopped, setStopped] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const requestRef = useRef(0);
 
   useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [messages, busy]);
@@ -119,7 +121,10 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
       setInput(content);
       const raw = String(e?.message || e || "");
       const retry = raw.match(/try again in\s+([0-9.]+)s/i);
-      setError(retry ? `ALLBEE AI is busy right now. Please try again in ${retry[1]}s — your message is saved.` : /too many requests|rate limit|429/i.test(raw) ? "ALLBEE AI is busy due to high usage. Your message is saved — please try again shortly." : /network|fetch|timeout|503|502|504/i.test(raw) ? "ALLBEE AI couldn't reach the service. Your message is saved — check your connection and try again." : "Couldn’t get a reply. Your message is saved below. Try again, or edit it before sending.");
+      // Provider retry durations are implementation details and can be fractional,
+      // stale by render time, or change between fallback models. Keep the product
+      // message useful without exposing a fake-looking seconds counter.
+      setError(retry || /too many requests|rate limit|429/i.test(raw) ? "ALLBEE AI is busy due to high usage. Your message is saved — please try again shortly." : /network|fetch|timeout|503|502|504/i.test(raw) ? "ALLBEE AI couldn't reach the service. Your message is saved — check your connection and try again." : "Couldn’t get a reply. Your message is saved below. Try again, or edit it before sending.");
     } finally {
       if (requestRef.current === requestId) { sendingRef.current = false; setBusy(false); }
       setTimeout(() => boxRef.current?.focus(), 30);
@@ -135,6 +140,7 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
   };
   const copy = async (txt, i) => { try { await navigator.clipboard.writeText(txt || ""); setCopyError(""); setCopied(i); setTimeout(() => setCopied(-1), 1500); } catch { setCopyError("Copy is unavailable here. Select the response text to copy it."); } };
   const onKey = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent?.isComposing) { e.preventDefault(); send(); } };
+  useEffect(() => { if (!expanded) return undefined; const onEscape = (e) => { if (e.key === "Escape") setExpanded(false); }; document.addEventListener("keydown", onEscape); return () => document.removeEventListener("keydown", onEscape); }, [expanded]);
 
   if (!configured) return <div className="content assistant-page">
     <div className="page-head"><AllbeeAIMark size={30} /><h3>ALLBEE AI</h3></div>
@@ -153,7 +159,8 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
       <span className="spacer" />
       {messages.length > 0 && <button className="btn sm" disabled={busy} onClick={() => { setMessages([]); setError(""); setFailedInput(null); setInput(""); boxRef.current?.focus(); }}><RotateCcw size={14} />New chat</button>}
     </div>
-    <section className="card assistant-workspace" aria-label="ALLBEE AI conversation">
+    <section className={`card assistant-workspace${expanded ? " chat-expanded" : ""}`} aria-label="ALLBEE AI conversation">
+      <div className="chat-expand-corner"><ExpandableChatButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} /></div>
       <div ref={scroller} className="assistant-transcript" role="log" aria-live="polite" aria-relevant="additions text">
         {messages.length === 0 ? <div className="assistant-welcome">
           <AllbeeMascot state="hello" size={92} /><span className="assistant-eyebrow">WORK SMARTER WITH ALLBEE</span>

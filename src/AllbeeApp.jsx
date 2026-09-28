@@ -62,6 +62,8 @@ import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNoti
 import { apnSafeHtml } from "./modules/apn/content.js";
 import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
 import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
+import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
+import { resolvePersonAvatar } from "./identity/avatarResolver.js";
 const LazyAPNDocuments = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNDocuments })));
 const LazyAPNNotifications = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNNotifications })));
 import { APNBankDetails } from "./modules/apn/BankDetails.jsx";
@@ -515,7 +517,15 @@ async function applyDiff(prev, next) {
     // (e.g. its RLS policy hasn't been added yet) that must NEVER block the
     // user's actual change — log it quietly and carry on.
     const optional = t === "audit";
-    if (upserts.length) ops.push(supabase.from(t).upsert(upserts).then((r) => { if (r.error) { if (optional) { console.warn(`Audit log skipped: ${r.error.message}`); return; } throw new Error(`Saving ${t}: ${r.error.message}`); } }));
+    if (upserts.length) {
+      const inserts = upserts.filter((row) => !before.has(row.id));
+      const updates = upserts.filter((row) => before.has(row.id));
+      // Do not use UPSERT for brand-new rows. Postgres ON CONFLICT DO UPDATE
+      // requires UPDATE privilege even when the row is only being inserted,
+      // which previously broke restricted APN/chat creation paths.
+      if (inserts.length) ops.push(supabase.from(t).insert(inserts).then((r) => { if (r.error) { if (optional) { console.warn(`Audit log skipped: ${r.error.message}`); return; } throw new Error(`Saving ${t}: ${r.error.message}`); } }));
+      if (updates.length) ops.push(supabase.from(t).upsert(updates).then((r) => { if (r.error) { if (optional) { console.warn(`Audit log skipped: ${r.error.message}`); return; } throw new Error(`Saving ${t}: ${r.error.message}`); } }));
+    }
     if (deletes.length) ops.push(supabase.from(t).delete().in("id", deletes).then((r) => { if (r.error) { if (optional) return; throw new Error(`Deleting from ${t}: ${r.error.message}`); } }));
   }
   await Promise.all(ops);
@@ -1640,7 +1650,7 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
           <Empty icon={<ScrollText size={22} color="var(--muted)" />} title="Nothing here yet" text="Your activity feed fills up as the team works." />
         ) : recent.map((a) => (
           <div key={a.id} className="item-row activity-row" role="button" tabIndex={0} aria-label={`View activity details: ${a.description || a.action || "activity"}`} onClick={(e) => { e.stopPropagation(); onOpenActivity?.(a); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onOpenActivity?.(a); } }}>
-            <Avatar name={a.user || "System"} url={a.avatar} size={28} fontSize={11} />
+            <Avatar name={a.user || "System"} url={resolvePersonAvatar({ people: team, apnUsers: db.apn_users || [] }, { userId: a.userId, name: a.user }, a.avatar)} size={28} fontSize={11} />
             <div className="item-main"><div className="item-title" style={{ fontWeight: 500, fontSize: 14 }}>{a.description || `${a.user || "System"} ${a.action || "performed an action"}`}</div>
               <div className="item-meta"><span>{activityModuleOf(a.module)}</span><span>{fmtTime(a.ts)}</span></div></div>
           </div>
@@ -2331,7 +2341,7 @@ function TaskDetail({ db, taskId, me, isAdmin, currentUser, mutate, openModal, r
         {(t.comments || []).length === 0 && <div className="hint-line">No comments yet.</div>}
         {(t.comments || []).map((c) => (
           <div key={c.id} className="comment">
-            <Avatar name={c.by} url={(team || []).find((p) => p.name === c.by)?.photo_url} size={30} fontSize={12} />
+            <Avatar name={c.by} url={resolvePersonAvatar({ people: team, apnUsers: db.apn_users || [] }, { userId: c.userId || c.byId, name: c.by }, c.avatar)} size={30} fontSize={12} />
             <div className="body">
               <div className="who">{c.by}</div>
               <div className="txt">{c.text}</div>
@@ -3922,6 +3932,7 @@ export function AdminAPNChat({ me, onUnreadChange }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const mounted = useRef(true);
   const scrollRef = useRef(null);
   const openRequestRef = useRef(0);
@@ -4054,7 +4065,8 @@ export function AdminAPNChat({ me, onUnreadChange }) {
   const profilePhotoFor = (id) => contacts.find((c) => String(c.contact_id) === String(id))?.photo_url || null;
 
   return (
-    <div className="content" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+    <div className={`content chat-surface-expandable${expanded ? " chat-expanded" : ""}`} style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+      <div className="chat-expand-corner"><ExpandableChatButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} /></div>
       <div className="page-head"><h3>APN chat</h3><span className="spacer" />{unread > 0 && <span className="badge action-badge" style={{ marginRight: 8 }}>{unread > 99 ? "99+" : unread} new</span>}<button className="btn sm" onClick={() => load()}><RefreshCw size={14} />Refresh</button></div>
       {err && <div className="auth-msg err" style={{ marginBottom: 10 }}><AlertTriangle size={14} />{err}</div>}
       <div className={`card apn-admin-chat-shell${selected ? " has-selection" : ""}`} style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: selected ? "330px 1fr" : "1fr", overflow: "hidden" }}>
@@ -4665,6 +4677,7 @@ function APNAI({ meRow, go, mutate, pid }) {
   const [asked, setAsked] = useState(null);
   const [ticketDone, setTicketDone] = useState("");
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -4750,7 +4763,8 @@ function APNAI({ meRow, go, mutate, pid }) {
         </div>
       </div>
 
-      <div className="apn-rowcard">
+      <div className={`apn-rowcard chat-surface-expandable${expanded ? " chat-expanded" : ""}`}>
+        <div className="chat-expand-corner"><ExpandableChatButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} /></div>
         <div className="apn-ai-chat" ref={chatContainerRef} role="log" aria-label="Assistant conversation" aria-live="polite">
           {msgs.length === 0 && <div className="apn-ai-welcome"><AllbeeMascot state="hello" size={84} /><h3>What can we work on today?</h3><p>Understand your earnings, plan your next step or get help from the team. Choose a prompt above or ask below.</p></div>}
           {msgs.map((m, i) => (
@@ -5075,7 +5089,7 @@ function APNWithdrawalRequestModal({ db, pid, liveWallets = null, onClose, onDon
     </select></Field>
     <div className="calc-box"><div className="calc-row"><span>{walletType === "all" ? "Total withdrawable" : `Withdrawable ${apnWalletLabel(walletType)}`}</span><b className="mono">{money(max)}</b></div><div className="calc-row"><span>Currently locked</span><b className="mono">{money(walletType === "all" ? walletRows.reduce((sum, row) => sum + (Number(row.locked) || 0), 0) : wallet?.locked)}</b></div></div>
     <Field label="Amount" required error={amount && value <= 0 ? "Enter an amount above ₹0." : value > max ? `Maximum available is ${money(max)}.` : ""}>
-      <div style={{ display: "flex", gap: 7 }}><input className="input mono" style={{ flex: 1 }} type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /><button type="button" className="btn sm" onClick={() => setAmount(String(max))} disabled={max <= 0}>Max</button></div>
+      <div style={{ display: "flex", gap: 7 }}><input className="input mono" style={{ flex: 1 }} type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /><button type="button" className="btn sm" onClick={() => setAmount(String(max))} disabled={max <= 0}>{walletType === "all" ? "Withdraw all" : "Max"}</button></div>
     </Field>
     <Field label="Preferred method" required><div className="seg"><button type="button" className={method === "upi" ? "on" : ""} onClick={() => setMethod("upi")} disabled={!account?.upi_id}>UPI</button><button type="button" className={method === "bank_transfer" ? "on" : ""} onClick={() => setMethod("bank_transfer")} disabled={!account?.account_number}>Bank transfer</button></div></Field>
     {account && <div className="hint-line" style={{ marginTop: -5, marginBottom: 10 }}>{method === "upi" ? `UPI: ${account.upi_id}` : `${account.bank_name || "Bank"} · ••••${String(account.account_number || "").slice(-4)}`} · verification {account.verification_status}</div>}
@@ -6218,6 +6232,8 @@ export default function App() {
   const [partnerDataReady, setPartnerDataReady] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine !== false);
+  const [onlineIds, setOnlineIds] = useState(() => new Set());
+  const [presenceReady, setPresenceReady] = useState(false);
   const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
   const [route, setRoute] = useState("dashboard");
   const [apnTab, setApnTab] = useState(() => { const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/"); return parts[0] === "apn" && parts[1] ? parts[1] : ""; });
@@ -6259,6 +6275,28 @@ export default function App() {
   const inactiveCount = useMemo(() => (isSuper ? inactiveMembers(team).length : 0), [isSuper, team]);
   const canFinance = canFinanceRole(role);  // the money (superadmin OR accountant)
   const me = { id: session?.user?.id, name: currentUser, role };
+
+  // App-wide presence: a signed-in user is online regardless of which ALLBEE
+  // route they are viewing. Team Chat consumes this shared connection state.
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId || !profile) { setOnlineIds(new Set()); setPresenceReady(false); return undefined; }
+    let active = true;
+    setPresenceReady(false);
+    const channel = supabase.channel("allbee-internal-presence", { config: { presence: { key: userId } } });
+    const sync = () => {
+      if (!active) return;
+      setOnlineIds(new Set(Object.keys(channel.presenceState()).filter(Boolean)));
+      setPresenceReady(true);
+    };
+    channel.on("presence", { event: "sync" }, sync);
+    channel.subscribe(async (status) => {
+      if (!active) return;
+      if (status === "SUBSCRIBED") await channel.track({ user_id: userId, online_at: new Date().toISOString() });
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setPresenceReady(false);
+    });
+    return () => { active = false; setPresenceReady(false); channel.untrack?.()?.catch?.(() => {}); supabase.removeChannel?.(channel); };
+  }, [session?.user?.id, profile?.id]);
 
   const refreshFinanceBalances = useCallback(async () => {
     if (!session?.user?.id || !canFinance) { setFinanceBalances(null); return null; }
@@ -6676,7 +6714,7 @@ export default function App() {
   const dbRef = useRef(db);
   useEffect(() => { dbRef.current = db; }, [db]);
 
-  const mutate = useCallback((updater, audit) => {
+  const mutate = useCallback((updater, audit, options = {}) => {
     // Any local mutation invalidates an in-flight background hydration snapshot.
     // Otherwise a slow full reload could finish after this optimistic change and
     // replace the user's fresh state with an older server snapshot.
@@ -6697,8 +6735,9 @@ export default function App() {
     }
     dbRef.current = next;
     setDb(next);
+    if (options.localOnly) return Promise.resolve();
     const persistence = enqueuePersist(prev, next);
-    persistence.catch((e) => setSyncError(e.message || String(e)));
+    persistence.then(() => setSyncError(null)).catch((e) => setSyncError(e.message || String(e)));
     return persistence;
   }, [currentUser, me.id, profile?.photo_url, enqueuePersist]);
 
@@ -7318,7 +7357,7 @@ export default function App() {
       case "sheets": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading sheets…</div></div>}> <LazySheets db={db} openModal={openModal} removeItem={removeItem} runtime={{ ...Icons, Empty, Field, emitToast, fmtDate, avatarColor, DOC_CATEGORIES, KB_CATEGORIES, Notifications: LazyNotifications, Tasks: LazyTasks }} />;</React.Suspense>;
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
-      case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm }} /></React.Suspense>;
+      case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onlineIds={onlineIds} presenceReady={presenceReady} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm }} /></React.Suspense>;
       case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ ...Icons, Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, round2, avatarColor, Avatar }} /></React.Suspense>;
       case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ ...Icons, Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, avatarColor, round2, todayISO, Avatar }} /></React.Suspense>;
       case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ ...Icons, money, fmtDate, Empty, staffEarnings }} /></React.Suspense>;
