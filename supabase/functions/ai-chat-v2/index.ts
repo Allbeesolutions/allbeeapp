@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
       data = await r.json().catch(() => ({})) as Record<string, unknown>;
       if (r.ok) { providerError = ""; break; }
       providerError = String((data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`);
-      if (![429, 500, 502, 503, 504].includes(r.status)) break;
+      // Continue through every configured fallback for any provider/model error.
     }
     if (providerError) return json({ error: "ALLBEE AI is temporarily busy. Please try again." }, 200);
 
