@@ -23,6 +23,6 @@ describe("stale mobile build recovery", () => {
   it("forces service-worker update checks and advances the shell cache generation", () => {
     expect(guard).toContain('register("/sw.js", { updateViaCache: "none" })');
     expect(guard).toContain("registration.update()");
-    expect(sw).toContain("allbee-shell-v2");
+    expect(sw).toContain("allbee-shell-v3");
   });
 });
