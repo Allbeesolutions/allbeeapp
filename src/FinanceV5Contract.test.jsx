@@ -116,3 +116,13 @@ describe("Finance v5 contracts", () => {
     expect(accounts).toContain('whiteSpace: "normal"');
   });
 });
+
+describe("withdrawal internal RPC grants", () => {
+  it("keeps privileged wallet helpers off the client Data API", () => {
+    const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260929100500_harden_withdrawal_internal_rpc_grants.sql"), "utf8");
+    expect(sql).toContain("apn_withdrawal_notify(text,text,text,text,text) from public, anon, authenticated");
+    expect(sql).toContain("apn_withdrawal_refresh_wallet(text) from public, anon, authenticated");
+    expect(sql).toContain("apn_withdrawal_source_totals(text,text) from public, anon, authenticated");
+    expect(sql).toContain("alter default privileges for role postgres in schema public revoke execute on functions from public");
+  });
+});

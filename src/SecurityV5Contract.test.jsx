@@ -64,3 +64,26 @@ describe("Current security hardening regression contracts", () => {
     expect(teamChat).toContain("revoke update on public.team_chat from authenticated, anon, public");
   });
 });
+
+describe("internal APN helper RPC grants", () => {
+  it("keeps privileged system writers off the browser Data API", () => {
+    const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260929103000_harden_apn_internal_helper_rpc_grants.sql"), "utf8");
+    for (const helper of [
+      "apn_consolidated_wallet_refresh(text)",
+      "apn_referral_audit(text,text,text,jsonb)",
+      "apn_referral_notify(text,text,text,text)",
+      "apn_referral_refresh_wallet(text)",
+      "apn_rule_audit(text,text,text,jsonb)",
+      "apn_withdrawal_add_timeline(public.apn_withdrawal_requests,text,text)",
+      "apn_withdrawal_audit_event(text,text,uuid,jsonb)",
+    ]) expect(sql).toContain(`${helper} from public, anon, authenticated`);
+  });
+});
+
+describe("CRM and Knowledge internal logger grants", () => {
+  it("prevents clients from forging privileged system log records", () => {
+    const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260929105500_harden_crm_knowledge_internal_loggers.sql"), "utf8");
+    expect(sql).toContain("crm_log_event(text,text,text,uuid,uuid,uuid,jsonb) from public, anon, authenticated");
+    expect(sql).toContain("knowledge_log_change(text,text,text,jsonb,jsonb,text,text) from public, anon, authenticated");
+  });
+});
