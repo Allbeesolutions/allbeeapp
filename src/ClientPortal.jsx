@@ -48,7 +48,20 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   const [profileBusy, setProfileBusy] = useState(false);
   const [clientAIEnabled, setClientAIEnabled] = useState(false);
   const [clientAILoading, setClientAILoading] = useState(true);
-  useEffect(() => { let alive=true; supabase.rpc("client_ai_status").then(({data,error}) => { if(alive){ setClientAIEnabled(!error && data === true); setClientAILoading(false); } }); return () => { alive=false; }; }, [supabase, myId]);
+  useEffect(() => {
+    let alive = true;
+    setClientAILoading(true);
+    if (!supabase || typeof supabase.rpc !== "function") {
+      setClientAIEnabled(false);
+      setClientAILoading(false);
+      return () => { alive = false; };
+    }
+    Promise.resolve(supabase.rpc("client_ai_status"))
+      .then(({ data, error }) => { if (alive) setClientAIEnabled(!error && data === true); })
+      .catch(() => { if (alive) setClientAIEnabled(false); })
+      .finally(() => { if (alive) setClientAILoading(false); });
+    return () => { alive = false; };
+  }, [supabase, myId]);
   const photoRef = useRef(null);
   const openProfile = () => { setProfileDraft({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" }); navigateClient("profile"); };
   const saveClientProfile = async () => { setProfileBusy(true); try { await saveMyProfile?.({ ...profileDraft, name: profileDraft.name.trim(), mobile: profileDraft.mobile.trim(), dob: profileDraft.dob || null, username: profileDraft.username.trim().toLowerCase() || null }); emitToast("Profile updated.", "success"); await reload(); } catch(e) { emitToast(e.message || "Could not update profile.", "error"); } finally { setProfileBusy(false); } };
