@@ -25,6 +25,9 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   const [portalView, setPortalView] = useState("home");
   const [profileDraft, setProfileDraft] = useState({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" });
   const [profileBusy, setProfileBusy] = useState(false);
+  const [clientAIEnabled, setClientAIEnabled] = useState(false);
+  const [clientAILoading, setClientAILoading] = useState(true);
+  useEffect(() => { let alive=true; supabase.rpc("client_ai_status").then(({data,error}) => { if(alive){ setClientAIEnabled(!error && data === true); setClientAILoading(false); } }); return () => { alive=false; }; }, [supabase, myId]);
   const photoRef = useRef(null);
   const openProfile = () => { setProfileDraft({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" }); setPortalView("profile"); };
   const saveClientProfile = async () => { setProfileBusy(true); try { await saveMyProfile?.({ ...profileDraft, name: profileDraft.name.trim(), mobile: profileDraft.mobile.trim(), username: profileDraft.username.trim().toLowerCase() || null }); emitToast("Profile updated.", "success"); await reload(); } catch(e) { emitToast(e.message || "Could not update profile.", "error"); } finally { setProfileBusy(false); } };
@@ -163,9 +166,9 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
 
         {portalView === "support" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading support…</div>}><LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} runtime={runtime} /></React.Suspense>}
 
-        {portalView === "ai" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") setPortalView("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>}
+        {portalView === "ai" && (clientAILoading ? <div className="card" aria-busy="true">Checking ALLBEE AI access…</div> : !clientAIEnabled ? <div className="card assistant-unavailable"><h3>ALLBEE AI is not enabled for this account</h3><p>Your ALLBEE administrator can enable AI from Clients → Client accounts.</p></div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") setPortalView("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>)}
       </div>
-      <AllbeeAIFloatingAssistant onOpen={() => setPortalView("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen} />
+      <AllbeeAIFloatingAssistant onOpen={() => setPortalView("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled} />
     </div>
   );
 }

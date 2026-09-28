@@ -1,14 +1,18 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import * as Icons from "./icons.jsx";
 
 export default function Clients(props) {
   const { db, mutate, openModal, removeItem, isAdmin = true, me, portalClients = [], deleteClientAccount, changeProfile } = props;
-  const { Empty, LoadMore, avatarColor, fmtDate } = props.runtime || {};
+  const { Empty, LoadMore, avatarColor, fmtDate, supabase, emitToast } = props.runtime || {};
   const { Building2, ExternalLink, FileText, Pencil, Plus, Search, Trash2 } = Icons;
 
   const [q, setQ] = useState("");
   const [n, setN] = useState(25);
   const [accountTab, setAccountTab] = useState("pending");
+  const [aiAccess, setAiAccess] = useState({});
+  const [aiBusy, setAiBusy] = useState("");
+  useEffect(() => { if (!isAdmin || !supabase) return; supabase.rpc("admin_list_client_ai").then(({data}) => setAiAccess(Object.fromEntries((data || []).map(x => [x.client_id, !!x.enabled])))); }, [isAdmin, supabase, portalClients.length]);
+  const setClientAI = async (p, enabled) => { setAiBusy(p.id); const { error } = await supabase.rpc("admin_set_client_ai", { p_client_id: p.id, p_enabled: enabled }); setAiBusy(""); if (error) { emitToast?.("Could not update ALLBEE AI access", "error"); return; } setAiAccess(x => ({ ...x, [p.id]: enabled })); emitToast?.(`ALLBEE AI ${enabled ? "enabled" : "disabled"} for ${p.name}`, "success"); };
   const all = [...db.clients].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const scoped = isAdmin ? all : all.filter((c) => c.ownerId === (me && me.id));
   const list = q.trim() ? scoped.filter((c) => (c.name + " " + (c.company || "") + " " + (c.phone || "") + " " + (c.email || "")).toLowerCase().includes(q.toLowerCase())) : scoped;
@@ -68,13 +72,14 @@ export default function Clients(props) {
         {accountRows.length === 0
           ? <Empty icon={<ExternalLink size={22} color="var(--muted)" />} title={accountTab === "pending" ? "No pending client registrations" : accountTab === "rejected" ? "No rejected registrations" : "No registered clients yet"} text={accountTab === "pending" ? "New client signups waiting for approval will appear here." : accountTab === "rejected" ? "Rejected registrations can be reconsidered here." : "Approved client portal accounts appear here."} />
           : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>Client</th><th>Contact</th><th>Joined</th><th>Status</th>{isAdmin && <th>Actions</th>}</tr></thead>
+            <thead><tr><th>Client</th><th>Contact</th><th>Joined</th><th>Status</th>{isAdmin && <th>ALLBEE AI</th>}{isAdmin && <th>Actions</th>}</tr></thead>
             <tbody>{accountRows.map((p) => (
               <tr key={p.id}>
                 <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(p.name), width: 24, height: 24, fontSize: 10 }}>{(p.name || "?")[0]}</span>{p.name}</span></td>
                 <td>{p.email && <div style={{ fontSize: 13 }}>{p.email}</div>}{p.mobile && <div className="hint-line" style={{ fontSize: 11 }}>{p.mobile}</div>}{!p.email && !p.mobile && "—"}</td>
                 <td className="mono" style={{ whiteSpace: "nowrap", color: "var(--muted)", fontSize: 13 }}>{p.created_at ? fmtDate(p.created_at) : "—"}</td>
                 <td>{p.status === "rejected" ? <span className="badge neg">Rejected</span> : p.approved === false ? <span className="badge pri">Pending approval</span> : <span className={"badge " + (p.active === false ? "neg" : "pos")}>{p.active === false ? "Inactive" : "Active"}</span>}</td>
+                {isAdmin && <td><button className={`btn sm ${aiAccess[p.id] ? "primary" : ""}`} disabled={aiBusy === p.id || p.approved !== true || p.active === false} onClick={() => setClientAI(p, !aiAccess[p.id])}>{aiAccess[p.id] ? "AI Enabled" : "Enable AI"}</button></td>}
                 {isAdmin && <td><div className="row-actions">
                   {accountTab === "pending" && <><button className="btn sm primary" onClick={() => approveAccount(p)}>Approve</button><button className="btn sm" onClick={() => rejectAccount(p)}>Reject</button></>}
                   {accountTab === "rejected" && <button className="btn sm primary" onClick={() => reconsiderAccount(p)}>Reconsider</button>}
