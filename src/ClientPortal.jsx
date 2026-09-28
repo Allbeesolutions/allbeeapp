@@ -144,7 +144,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
 
         {(co.name || co.address || co.email || co.phone || co.website) && (
           <div className="hint-line" style={{ marginTop: 20, textAlign: "center", lineHeight: 1.6 }}>
-            {co.name && <div><a className="client-footer-brand" href="https://www.allbeesolutions.com/" target="_blank" rel="noreferrer" aria-label="Visit ALLBEE Solutions website"><span className="client-footer-logo">A</span><span>{co.name}</span></a></div>}
+            {co.name && <div><a className="client-footer-brand" href="https://www.allbeesolutions.com/" target="_blank" rel="noreferrer" aria-label="Visit ALLBEE Solutions website"><img className="client-footer-logo-img" src={LOGO_ICON} alt="" aria-hidden="true" /><span>{co.name}</span></a></div>}
             {co.address && <div>{co.address}</div>}
             {[co.phone, co.email, co.website].filter(Boolean).length > 0 && <div>{[co.phone, co.email, co.website].filter(Boolean).join("  ·  ")}</div>}
           </div>
