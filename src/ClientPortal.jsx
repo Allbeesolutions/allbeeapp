@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
 import { Sparkles, User, Upload, Check, ShieldCheck, FileText, Banknote, FileCheck2, FolderKanban, ArrowRight, RefreshCw } from "./icons.jsx";
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
+const LazyClientSupportChat = React.lazy(() => import("./ClientSupportChat.jsx"));
 
 export default function ClientPortal({ db, profile, signOut, isDark, config, reload, saveMyProfile, runtime }) {
   const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment } = runtime;
