@@ -115,8 +115,8 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not signed in." }, 401);
     const usage = await rateLimit(req.headers.get("Authorization") || "");
     if (usage.allowed === false) {
-      const retry = Number(usage.retry_after || 60);
-      return json({ error: `ALLBEE AI is busy due to high usage. Please try again in ${retry}s.`, retry_after_seconds: retry }, 429);
+      const retry = Math.max(1, Math.ceil(Number(usage.retry_after || 60)));
+      return json({ error: `Please try again in ${retry}s.`, retry_after_seconds: retry }, 429);
     }
 
     const length = Number(req.headers.get("content-length") || 0);

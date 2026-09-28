@@ -4,7 +4,7 @@ import { friendlyAIErrorText, stripInternalRecordIds } from "./aiText.jsx";
 describe("AI response hygiene", () => {
   it("reduces provider TPM errors to the retry countdown only", () => {
     const raw = "Rate limit reached for model `openai/gpt-oss-120b` in organization `org_secret` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 4916, Requested 5165. Please try again in 15.6075s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing";
-    expect(friendlyAIErrorText(new Error(raw))).toBe("ALLBEE AI is currently busy due to high usage. Please try again in 15.6075s.");
+    expect(friendlyAIErrorText(new Error(raw))).toBe("Please try again in 16s.");
   });
 
   it("removes internal UUIDs and record-id labels from displayed answers", () => {

@@ -120,7 +120,10 @@ const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0
 function conciseProviderError(message: string): string {
   const retry = String(message || "").match(/please\s+try\s+again\s+in\s+([0-9.]+)s/i)
     || String(message || "").match(/try\s+again\s+in\s+([0-9.]+)\s*s/i);
-  if (retry) return `ALLBEE AI is currently busy due to high usage. Please try again in ${retry[1]}s.`;
+  if (retry) {
+    const seconds = Math.max(1, Math.ceil(Number(retry[1]) || 1));
+    return `Please try again in ${seconds}s.`;
+  }
   return "ALLBEE AI is temporarily busy. Please try again shortly.";
 }
 

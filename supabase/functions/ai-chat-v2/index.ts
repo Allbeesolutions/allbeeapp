@@ -149,8 +149,8 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not signed in." }, 401);
     const usage = await rateLimit(req.headers.get("Authorization") || "");
     if (usage.allowed === false) {
-      const retry = Number(usage.retry_after || 60);
-      return json({ error: `ALLBEE AI is busy due to high usage. Please try again in ${retry}s.`, retry_after_seconds: retry }, 429);
+      const retry = Math.max(1, Math.ceil(Number(usage.retry_after || 60)));
+      return json({ error: `Please try again in ${retry}s.`, retry_after_seconds: retry }, 429);
     }
 
     const length = Number(req.headers.get("content-length") || 0);
@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
     if (!r.ok) {
       const msg = (data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`;
       const retry = String(msg).match(/try\s+again\s+in\s+([0-9.]+)s/i);
-      return json({ error: retry ? `ALLBEE AI is busy due to high usage. Please try again in ${retry[1]}s.` : r.status === 429 ? "ALLBEE AI is busy due to high usage. Please try again shortly." : "ALLBEE AI is temporarily unavailable. Please try again shortly." }, 200);
+      return json({ error: retry ? `Please try again in ${Math.max(1, Math.ceil(Number(retry[1]) || 1))}s.` : r.status === 429 ? "Please try again shortly." : "ALLBEE AI is temporarily unavailable. Please try again shortly." }, 200);
     }
 
     const text = ((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim();
