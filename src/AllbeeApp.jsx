@@ -12,6 +12,7 @@ import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
 import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
+import { AllbeeMascot, AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
 const LazyPrivacyPolicy = React.lazy(() => import("./PrivacyPolicy.jsx"));
 const {
   LayoutDashboard, Wallet, ArrowDownToLine, ListTodo, TrendingUp, Lightbulb,
@@ -3502,11 +3503,11 @@ function LoginAccessAssistant({ onPick }) {
     if (chip.go) goNode(chip.go);
   };
 
-  if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><span className="web-ai-fab-logo" aria-hidden="true"><img src={LOGO_FULL} alt="" /></span><span>Need help signing in?</span></button>;
+  if (!open) return <button className="web-ai-fab" onClick={() => setOpen(true)} aria-label="Open login help — AllBee AI"><span className="web-ai-fab-logo" aria-hidden="true"><AllbeeMascot state="idle" size={30} /></span><span>Need help signing in?</span></button>;
   return (
     <section className="web-ai-panel" role="dialog" aria-modal="false" aria-label="AllBee AI — access and login assistant">
       <header className="web-ai-head" style={{ position: "relative", paddingRight: 68 }}>
-        <div className="web-ai-avatar"><AllbeeAIMark size={26} /></div>
+        <div className="web-ai-avatar"><AllbeeMascot state="hello" size={36} /></div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800 }}>AllBee AI</div>
           <div style={{ fontSize: 11, opacity: .82 }}>Access &amp; login assistant</div>
@@ -4740,7 +4741,7 @@ function APNAI({ meRow, go, mutate, pid }) {
 
       <div className="apn-rowcard">
         <div className="apn-ai-chat" ref={chatContainerRef} role="log" aria-label="Assistant conversation" aria-live="polite">
-          {msgs.length === 0 && <div className="apn-ai-welcome"><AllbeeAIMark size={42} /><h3>What can we work on today?</h3><p>Understand your earnings, plan your next step or get help from the team. Choose a prompt above or ask below.</p></div>}
+          {msgs.length === 0 && <div className="apn-ai-welcome"><AllbeeMascot state="hello" size={84} /><h3>What can we work on today?</h3><p>Understand your earnings, plan your next step or get help from the team. Choose a prompt above or ask below.</p></div>}
           {msgs.map((m, i) => (
             <div key={i}>
               <div className={"apn-ai-msg " + (m.role === "user" ? "user" : m.err ? "err" : "bot")} style={{ lineHeight: 1.55 }}>
@@ -4757,7 +4758,7 @@ function APNAI({ meRow, go, mutate, pid }) {
               )}
             </div>
           ))}
-          {busy && <div className="apn-ai-msg bot" style={{ color: "var(--muted)" }}><span className="ai-dot" style={{ marginRight: 6 }}>●</span>ALLBEE AI is checking your records…</div>}
+          {busy && <div className="apn-ai-msg bot" style={{ color: "var(--muted)" }}><AllbeeMascot state="thinking" size={28} />ALLBEE AI is checking your records…</div>}
           {ticketDone && <div className="apn-ai-msg bot" style={{ borderColor: "var(--pos)" }}>{ticketDone}</div>}
         </div>
 
@@ -4938,7 +4939,7 @@ function APNHome({ db, meRow, stats, snap, pid, go, openModal, mutate, onOpenPro
       </div>
 
       <button className="apn-ai-banner" type="button" onClick={() => go("ai")} aria-label="Open ALLBEE AI">
-        <span className="apn-ai-banner-ic"><AllbeeAIMark size={24} /></span>
+        <span className="apn-ai-banner-ic"><AllbeeMascot state="hello" size={36} /></span>
         <span className="apn-ai-banner-main"><b>ALLBEE AI</b><span>Ask anything about your wallet, commissions & rules — or escalate to support.</span></span>
         <span className="apn-ai-banner-go"><ChevronRight size={16} /></span>
       </button>
@@ -5450,6 +5451,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
 
       <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></main>
 
+      <AllbeeAIFloatingAssistant onOpen={() => go("ai")} displayName={meRow?.name} context={tab} hidden={!!modal || searchOpen || sidebarOpen || ["home", "ai", "leads", "quotations", "chat"].includes(tab)} />
       {showFab && <button className="apn-fab" aria-label={tab === "leads" ? "Submit a lead" : "Create quotation"} onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}

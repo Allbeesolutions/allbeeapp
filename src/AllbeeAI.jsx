@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
+import { AllbeeMascot } from "./ui/AllbeeMascot.jsx";
 import "./ui/assistant.css";
 import { AlertTriangle, Check, Copy, RefreshCw, RotateCcw, Send, Settings as SettingsIcon, Sparkles } from "lucide-react";
 
@@ -141,7 +142,7 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
     <section className="card assistant-workspace" aria-label="ALLBEE AI conversation">
       <div ref={scroller} className="assistant-transcript" role="log" aria-live="polite" aria-relevant="additions text">
         {messages.length === 0 ? <div className="assistant-welcome">
-          <span className="assistant-eyebrow">WORK SMARTER WITH ALLBEE</span>
+          <AllbeeMascot state="hello" size={92} /><span className="assistant-eyebrow">WORK SMARTER WITH ALLBEE</span>
           <h4>What can we move forward, {me?.name?.split(" ")[0] || "today"}?</h4>
           <p>Turn your workspace information into a clear next step. Draft a reply, prepare a quotation or organise what’s pending.</p>
           <div className="assistant-prompts">{AI_QUICK_PROMPTS.map(([label,prompt]) => <button key={label} className="assistant-prompt" onClick={() => send(prompt)} disabled={busy}><span>{label}</span><span aria-hidden="true">↗</span></button>)}</div>
@@ -155,7 +156,7 @@ ${knowledgeContext || "The catalog is still loading; say that pricing must be co
             </div>}
           </article>)}
         </div>}
-        {busy && <div className="assistant-thinking" role="status"><span className="assistant-thinking-mark"><AllbeeAIMark size={22} /></span><span>{thinkingLabel}</span><span className="assistant-thinking-dots" aria-hidden="true"><i/><i/><i/></span><button type="button" className="btn sm assistant-stop" onClick={stop}>Stop</button></div>}
+        {busy && <div className="assistant-thinking" role="status"><span className="assistant-thinking-mark"><AllbeeMascot state="thinking" size={32} /></span><span>{thinkingLabel}</span><span className="assistant-thinking-dots" aria-hidden="true"><i/><i/><i/></span><button type="button" className="btn sm assistant-stop" onClick={stop}>Stop</button></div>}
         {stopped && !busy && <div className="assistant-stopped" role="status">Response stopped. Your conversation is unchanged.</div>}
       </div>
       {error && <div className="assistant-error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><span>{error}</span><button className="btn sm" disabled={busy} onClick={()=>send(failedInput)}>Try again</button></div>}

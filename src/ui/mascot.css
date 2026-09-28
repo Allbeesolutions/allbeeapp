@@ -1,0 +1,43 @@
+/* The artwork moves inside its frame. The launcher itself stays anchored. */
+.allbee-mascot { --mascot-size:72px; display:inline-grid; place-items:center; width:var(--mascot-size); height:var(--mascot-size); flex:none; overflow:hidden; border-radius:50%; background:#fff; isolation:isolate; }
+.allbee-mascot img { display:block; width:100%; height:100%; object-fit:cover; user-select:none; transform-origin:50% 65%; }
+.allbee-mascot--idle img { animation:allbee-mascot-breathe 4s ease-in-out infinite; }
+.allbee-mascot--hello img,.allbee-mascot--wave img { animation:allbee-mascot-wave 850ms ease-in-out 2; }
+.allbee-mascot--thinking img,.allbee-mascot--working img { animation:allbee-mascot-think 1.6s ease-in-out infinite; }
+.allbee-mascot--listening img { transform:scale(1.055) rotate(-3deg); }
+.allbee-mascot--success img { animation:allbee-mascot-success 650ms ease-out 1; }
+.allbee-mascot--notification img,.allbee-mascot--attention img { animation:allbee-mascot-wave 850ms ease-in-out 2; }
+.allbee-mascot-launcher { position:fixed; right:22px; bottom:24px; z-index:44; display:flex; align-items:center; gap:9px; pointer-events:none; }
+.allbee-mascot-launcher.is-covered { visibility:hidden; pointer-events:none; }
+.allbee-mascot-button { width:76px; height:76px; padding:4px; border:1px solid rgba(27,144,204,.38); border-radius:50%; background:linear-gradient(145deg,#fff,#dffaff); box-shadow:0 12px 30px rgba(9,55,114,.2),0 2px 6px rgba(5,34,80,.12); cursor:pointer; pointer-events:auto; transition:transform .2s ease,box-shadow .2s ease; }
+.allbee-mascot-button:hover { transform:translateY(-3px); box-shadow:0 16px 34px rgba(9,55,114,.25),0 2px 7px rgba(5,34,80,.13); }
+.allbee-mascot-button:active { transform:scale(.94); }
+.allbee-mascot-button:focus-visible { outline:3px solid #0078c8; outline-offset:3px; }
+.allbee-mascot-button:hover .allbee-mascot img { animation:none; transform:scale(1.05) rotate(-3deg); }
+.allbee-mascot-greeting { max-width:min(210px,calc(100vw - 116px)); padding:10px 13px; border:1px solid var(--border,#d6e5ec); border-radius:15px 15px 4px 15px; background:var(--surface,#fff); color:var(--text,#132d46); box-shadow:0 7px 24px rgba(13,46,88,.14); font-size:13px; font-weight:700; line-height:1.3; white-space:nowrap; pointer-events:none; animation:allbee-mascot-appear .25s ease-out both; }
+.assistant-welcome > .allbee-mascot { display:grid; margin-bottom:16px; box-shadow:0 10px 30px rgba(14,72,129,.14); border:3px solid #dcf7ff; }
+.assistant-welcome .assistant-eyebrow { display:block; }
+.apn-nav-shell:has([role="dialog"]) .allbee-mascot-launcher { display:none; }
+.assistant-thinking .allbee-mascot { border:1px solid #d8f3fa; }
+.apn-ai-banner-ic .allbee-mascot { border:1px solid rgba(255,255,255,.7); }
+.apn-ai-welcome .allbee-mascot { margin-bottom:8px; border:3px solid #dcf7ff; box-shadow:0 10px 25px rgba(14,72,129,.12); }
+.web-ai-fab-logo { animation:none !important; }
+.web-ai-fab-logo .allbee-mascot { --mascot-size:30px; }
+@keyframes allbee-mascot-breathe { 0%,100% { transform:translateY(0) scale(1); } 50% { transform:translateY(-2px) scale(1.015); } }
+@keyframes allbee-mascot-wave { 0%,100% { transform:rotate(0); } 35% { transform:rotate(-6deg) scale(1.04); } 70% { transform:rotate(3deg); } }
+@keyframes allbee-mascot-think { 0%,100% { transform:rotate(-2deg); } 50% { transform:rotate(2deg) translateY(-2px); } }
+@keyframes allbee-mascot-success { 0%,100% { transform:scale(1); } 55% { transform:scale(1.08) rotate(-4deg); } }
+@keyframes allbee-mascot-appear { from { opacity:0; transform:translateX(6px); } to { opacity:1; transform:translateX(0); } }
+@media(max-width:772px) {
+  .allbee-mascot-launcher { right:14px; bottom:calc(80px + env(safe-area-inset-bottom)); }
+  .allbee-mascot-launcher.is-covered { visibility:hidden; pointer-events:none; }
+.allbee-mascot-button { width:64px; height:64px; padding:3px; }
+  .allbee-mascot-button .allbee-mascot { --mascot-size:56px !important; }
+  .allbee-mascot-greeting { font-size:12px; padding:8px 10px; }
+}
+@media(max-width:359px) { .allbee-mascot-launcher { right:9px; } }
+@media(prefers-reduced-motion:reduce) {
+  .allbee-mascot img,.allbee-mascot-greeting { animation:none !important; transition:none !important; transform:none !important; }
+  .allbee-mascot-button { transition:none; }
+  .allbee-mascot-button:hover,.allbee-mascot-button:active { transform:none; }
+}
