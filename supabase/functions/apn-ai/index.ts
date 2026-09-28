@@ -117,16 +117,6 @@ const SYSTEM_HEAD = `You are ALLBEE AI — the personal APN partner assistant. Y
 
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 
-function conciseProviderError(message: string): string {
-  const retry = String(message || "").match(/please\s+try\s+again\s+in\s+([0-9.]+)s/i)
-    || String(message || "").match(/try\s+again\s+in\s+([0-9.]+)\s*s/i);
-  if (retry) {
-    const seconds = Math.max(1, Math.ceil(Number(retry[1]) || 1));
-    return `Please try again in ${seconds}s.`;
-  }
-  return "ALLBEE AI is temporarily busy. Please try again shortly.";
-}
-
 function stripInternalIdsFromAnswer(input: string): string {
   const lines = String(input || "").replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
@@ -256,18 +246,21 @@ Deno.serve(async (req) => {
       ...sanitized.chat,
     ];
 
-    const model = "openai/gpt-oss-120b";
-    const r = await fetchProvider("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, max_tokens: sanitized.maxTokens, temperature: 0.2 }),
-    });
-
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const msg = (data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`;
-      return json({ error: conciseProviderError(msg) }, 200);
+    const models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] as const;
+    let data: Record<string, unknown> = {};
+    let providerError = "";
+    for (const model of models) {
+      const r = await fetchProvider("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model, messages, max_tokens: sanitized.maxTokens, temperature: 0.2 }),
+      }, 1);
+      data = await r.json().catch(() => ({})) as Record<string, unknown>;
+      if (r.ok) { providerError = ""; break; }
+      providerError = String((data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`);
+      if (![429, 500, 502, 503, 504].includes(r.status)) break;
     }
+    if (providerError) return json({ error: "ALLBEE AI is temporarily busy. Please try again." }, 200);
 
     let text = stripInternalIdsFromAnswer(((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim());
     let uncertain = false;

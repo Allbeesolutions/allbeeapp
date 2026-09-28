@@ -149,8 +149,7 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: "Not signed in." }, 401);
     const usage = await rateLimit(req.headers.get("Authorization") || "");
     if (usage.allowed === false) {
-      const retry = Math.max(1, Math.ceil(Number(usage.retry_after || 60)));
-      return json({ error: `Please try again in ${retry}s.`, retry_after_seconds: retry }, 429);
+      return json({ error: "ALLBEE AI usage limit reached. Please try again later." }, 429);
     }
 
     const length = Number(req.headers.get("content-length") || 0);
@@ -159,7 +158,6 @@ Deno.serve(async (req) => {
     const key = Deno.env.get("GROQ_API_KEY");
     if (!key) return json({ error: "GROQ_API_KEY is not set on the function." }, 200);
 
-    const model = "openai/gpt-oss-120b";
     const { system, chat, maxTokens } = sanitizePayload(await req.json().catch(() => ({})));
     if (chat.length === 0 && !system) return json({ error: "Empty request." }, 400);
 
@@ -169,23 +167,21 @@ Deno.serve(async (req) => {
       ...chat,
     ];
 
-    const r = await fetchProvider("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature: 0.4,
-      }),
-    });
-
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const msg = (data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`;
-      const retry = String(msg).match(/try\s+again\s+in\s+([0-9.]+)s/i);
-      return json({ error: retry ? `Please try again in ${Math.max(1, Math.ceil(Number(retry[1]) || 1))}s.` : r.status === 429 ? "Please try again shortly." : "ALLBEE AI is temporarily unavailable. Please try again shortly." }, 200);
+    const models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] as const;
+    let data: Record<string, unknown> = {};
+    let providerError = "";
+    for (const candidate of models) {
+      const r = await fetchProvider("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model: candidate, messages, max_tokens: maxTokens, temperature: 0.4 }),
+      }, 1);
+      data = await r.json().catch(() => ({})) as Record<string, unknown>;
+      if (r.ok) { providerError = ""; break; }
+      providerError = String((data as { error?: { message?: string } })?.error?.message || `Provider error ${r.status}`);
+      if (![429, 500, 502, 503, 504].includes(r.status)) break;
     }
+    if (providerError) return json({ error: "ALLBEE AI is temporarily busy. Please try again." }, 200);
 
     const text = ((data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content || "").trim();
     return json({ text });
