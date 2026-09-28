@@ -33,9 +33,21 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
   const attach = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setBusy(true);
-    try { const up = await uploadAttachment(file); mutate((d) => ({ ...d, chat: [...d.chat, { id: uid(), userId: me.id, userName: me.name, text: "", attachment: up, createdAt: Date.now() }] }), null); }
+    try { const up = await uploadAttachment(file, { privateBusiness: true }); mutate((d) => ({ ...d, chat: [...d.chat, { id: uid(), userId: me.id, userName: me.name, text: "", attachment: up, createdAt: Date.now() }] }), null); }
     catch (er) { emitToast(er.message || "Upload failed.", "error"); }
     finally { setBusy(false); if (e.target) e.target.value = ""; }
+  };
+  const openAttachment = async (attachment) => {
+    if (!attachment) return;
+    if (attachment.bucket === "business-files" && attachment.path) {
+      try {
+        const { data, error } = await supabase.storage.from("business-files").createSignedUrl(attachment.path, 600);
+        if (error) throw error;
+        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      } catch (e) { emitToast(e?.message || "Could not open attachment.", "error"); }
+      return;
+    }
+    if (attachment.url) window.open(attachment.url, "_blank", "noopener,noreferrer");
   };
   const onlineCount = (team || []).filter((p) => p.id !== me.id && (typeof isOnline !== "function" || isOnline(p))).length;
   const startEdit = (m) => { setEditId(m.id); setEditText(m.text); };
@@ -65,9 +77,11 @@ export default function Chat({ db, mutate, me, team, onRefresh, isAdmin, runtime
                   ) : m.deleted ? (
                     <div style={{ background: "var(--surface-2)", color: "var(--muted)", padding: "9px 13px", borderRadius: 12, fontSize: 13, fontStyle: "italic", display: "inline-flex", alignItems: "center", gap: 6 }}><X size={13} />This message was deleted</div>
                   ) : (
-                    <div style={{ background: mine ? "var(--primary)" : "var(--surface-2)", color: mine ? "#fff" : "var(--ink)", padding: "9px 13px", borderRadius: 12, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{m.text}{m.attachment && ((m.attachment.type || "").startsWith("image/")
-                      ? <a href={m.attachment.url} target="_blank" rel="noreferrer"><img src={m.attachment.url} alt={m.attachment.name || ""} style={{ display: "block", maxWidth: 220, maxHeight: 220, borderRadius: 8, marginTop: m.text ? 8 : 0 }} /></a>
-                      : <a href={m.attachment.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: m.text ? 8 : 0, color: mine ? "#fff" : "var(--primary)", textDecoration: "underline" }}><Paperclip size={13} />{m.attachment.name || "Attachment"}</a>)}</div>
+                    <div style={{ background: mine ? "var(--primary)" : "var(--surface-2)", color: mine ? "#fff" : "var(--ink)", padding: "9px 13px", borderRadius: 12, fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{m.text}{m.attachment && (m.attachment.bucket === "business-files"
+                      ? <button type="button" onClick={() => openAttachment(m.attachment)} style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: m.text ? 8 : 0, color: mine ? "#fff" : "var(--primary)", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline" }}><Paperclip size={13} />{m.attachment.name || "Private attachment"}</button>
+                      : ((m.attachment.type || "").startsWith("image/")
+                        ? <a href={m.attachment.url} target="_blank" rel="noreferrer"><img src={m.attachment.url} alt={m.attachment.name || ""} style={{ display: "block", maxWidth: 220, maxHeight: 220, borderRadius: 8, marginTop: m.text ? 8 : 0 }} /></a>
+                        : <a href={m.attachment.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: m.text ? 8 : 0, color: mine ? "#fff" : "var(--primary)", textDecoration: "underline" }}><Paperclip size={13} />{m.attachment.name || "Attachment"}</a>))}</div>
                   )}
                   {!m.deleted && <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : m.userName} · {fmtDateTime(m.createdAt)}{m.editedAt ? " · edited" : ""}{mine && seenNames(m).length > 0 ? " · Seen by " + (seenNames(m).length <= 2 ? seenNames(m).join(", ") : `${seenNames(m).slice(0, 2).join(", ")} +${seenNames(m).length - 2}`) : ""}{mine && editId !== m.id && (typeof withinMinutes === "function" ? withinMinutes(m.createdAt, 5) : false) && <button onClick={() => startEdit(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Edit</button>}{mine && editId !== m.id && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}{!mine && isAdmin && editId !== m.id && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}</div>}
                 </div>

@@ -311,12 +311,13 @@ async function uploadAttachment(file, options = {}) {
   if (!fileLimitOK(file)) throw new Error(`File too large \u2014 ${k === "image" ? "images" : k === "pdf" ? "PDFs" : "documents"} are limited to ${FILE_LIMITS[k]} MB.`);
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const bucket = options.publicMedia ? "public-media" : "attachments";
+  const bucket = options.publicMedia ? "public-media" : options.privateBusiness ? "business-files" : "attachments";
   if (options.publicMedia && k !== "image") throw new Error("Public media only accepts images.");
   const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(error.message);
+  if (options.privateBusiness) return { url: "", bucket, name: file.name, size: file.size, type: file.type, path };
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return { url: data.publicUrl, name: file.name, size: file.size, type: file.type, path };
+  return { url: data.publicUrl, bucket, name: file.name, size: file.size, type: file.type, path };
 }
 // Recover the storage object key from a public URL so the retention sweep can
 // delete the underlying file (older uploads only stored the URL, not the key).

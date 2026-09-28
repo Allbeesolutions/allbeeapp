@@ -1,0 +1,11 @@
+begin;
+insert into storage.buckets(id,name,public,file_size_limit) values('business-files','business-files',false,15728640) on conflict(id) do update set public=false,file_size_limit=15728640;
+drop policy if exists "business_files_insert_internal" on storage.objects;
+drop policy if exists "business_files_select_internal" on storage.objects;
+drop policy if exists "business_files_update_owner_admin" on storage.objects;
+drop policy if exists "business_files_delete_owner_admin" on storage.objects;
+create policy "business_files_insert_internal" on storage.objects for insert to authenticated with check(bucket_id='business-files' and not public.is_client());
+create policy "business_files_select_internal" on storage.objects for select to authenticated using(bucket_id='business-files' and not public.is_client());
+create policy "business_files_update_owner_admin" on storage.objects for update to authenticated using(bucket_id='business-files' and (owner_id=(select auth.uid()::text) or public.is_admin())) with check(bucket_id='business-files' and (owner_id=(select auth.uid()::text) or public.is_admin()));
+create policy "business_files_delete_owner_admin" on storage.objects for delete to authenticated using(bucket_id='business-files' and (owner_id=(select auth.uid()::text) or public.is_admin()));
+commit;
