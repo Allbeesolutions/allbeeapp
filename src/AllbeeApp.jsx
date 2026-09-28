@@ -513,6 +513,19 @@ async function applyDiff(prev, next) {
     }
     const deletes = [];
     if (t !== "audit") for (const id of before.keys()) if (!after.has(id)) deletes.push(id);
+    // Finance is an accounting ledger, not disposable client state. The app uses
+    // route-scoped/partial hydration, so an empty or stale client snapshot must
+    // never be interpreted as authority to erase historical transactions.
+    // A transaction may be deleted only by the explicit soft-delete workflow,
+    // which atomically adds that exact row to the recycle collection.
+    if (t === "transactions" && deletes.length) {
+      const recycledTransactionIds = new Set((next?.recycle || [])
+        .filter((entry) => entry?.table === "transactions" && entry?.item?.id)
+        .map((entry) => entry.item.id));
+      for (let i = deletes.length - 1; i >= 0; i -= 1) {
+        if (!recycledTransactionIds.has(deletes[i])) deletes.splice(i, 1);
+      }
+    }
     // The audit table is an append-only activity log. If it can't be written
     // (e.g. its RLS policy hasn't been added yet) that must NEVER block the
     // user's actual change — log it quietly and carry on.
