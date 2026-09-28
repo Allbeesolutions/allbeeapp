@@ -306,14 +306,16 @@ function notifVisibleTo(n, profile) {
 const FILE_LIMITS = { image: 10, pdf: 50, doc: 25 };
 const fileKind = (file) => { const t = ((file && file.type) || "").toLowerCase(); if (t.startsWith("image/")) return "image"; if (t === "application/pdf") return "pdf"; return "doc"; };
 const fileLimitOK = (file) => ((file && file.size) || 0) <= FILE_LIMITS[fileKind(file)] * 1024 * 1024;
-async function uploadAttachment(file) {
+async function uploadAttachment(file, options = {}) {
   const k = fileKind(file);
   if (!fileLimitOK(file)) throw new Error(`File too large \u2014 ${k === "image" ? "images" : k === "pdf" ? "PDFs" : "documents"} are limited to ${FILE_LIMITS[k]} MB.`);
   const ext = (file.name.split(".").pop() || "bin").toLowerCase();
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from("attachments").upload(path, file, { upsert: false, contentType: file.type || undefined });
+  const bucket = options.publicMedia ? "public-media" : "attachments";
+  if (options.publicMedia && k !== "image") throw new Error("Public media only accepts images.");
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from("attachments").getPublicUrl(path);
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return { url: data.publicUrl, name: file.name, size: file.size, type: file.type, path };
 }
 // Recover the storage object key from a public URL so the retention sweep can
@@ -3127,7 +3129,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
     const file = e.target.files?.[0]; if (!file) return;
     if (!(file.type || "").startsWith("image/")) { setErr("Please choose an image file."); if (e.target) e.target.value = ""; return; }
     setUploading(true); setErr(""); setDone(false);
-    try { const up = await uploadAttachment(file); setPhoto(up.url); await saveMyProfile({ photo_url: up.url }); setDone(true); }
+    try { const up = await uploadAttachment(file, { publicMedia: true }); setPhoto(up.url); await saveMyProfile({ photo_url: up.url }); setDone(true); }
     catch (er) { setErr(er.message || "Couldn't upload that image."); }
     finally { setUploading(false); if (e.target) e.target.value = ""; }
   };

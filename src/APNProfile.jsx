@@ -37,7 +37,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
     const ext = String(file.name || "").split(".").pop()?.toLowerCase();
     if (!(file.type === "image/jpeg" || file.type === "image/png" || file.type === "image/webp") || !["jpg", "jpeg", "png", "webp"].includes(ext)) { setErr("Choose a JPG, JPEG, PNG, or WEBP image."); event.target.value = ""; return; }
     setUploading(true); setErr("");
-    try { const uploaded = await uploadAttachment(file); set("photoUrl", uploaded.url); }
+    try { const uploaded = await uploadAttachment(file, { publicMedia: true }); set("photoUrl", uploaded.url); }
     catch (error) { setErr(error.message || "Couldn't upload that image."); }
     finally { setUploading(false); event.target.value = ""; }
   };
