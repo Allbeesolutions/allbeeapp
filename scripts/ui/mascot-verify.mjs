@@ -95,6 +95,25 @@ try {
   assert(await page.locator('.web-ai-panel .allbee-mascot img').count());
   checks++;
 
+  // Personality: hover/focus greets the authenticated user while the fixed launcher remains pixel-stable.
+  await page.setViewportSize({ width:1440, height:900 });
+  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/home`);
+  await page.locator('[data-apn-page="home"]').waitFor();
+  await launcher().waitFor();
+  const stableStart = await launcher().boundingBox();
+  await launcher().hover();
+  await page.getByRole("status").waitFor();
+  assert.match(await page.getByRole("status").textContent(), /^Hello, .+! 👋$/);
+  const hoverState = await page.locator(".allbee-mascot-launcher .allbee-mascot").getAttribute("class");
+  assert(hoverState.includes("allbee-mascot--wave"), "hover should trigger a wave");
+  for (let i=0;i<8;i++) {
+    await page.waitForTimeout(250);
+    const sample = await launcher().boundingBox();
+    assert(Math.abs(sample.x-stableStart.x)<0.1 && Math.abs(sample.y-stableStart.y)<0.1, `launcher moved during animation sample ${i}`);
+  }
+  await page.mouse.move(400,400);
+  checks++;
+
   // Reduced motion applies to the transparent mascot too.
   await page.goto(`http://127.0.0.1:${port}/?role=anonymous`);
   await page.emulateMedia({ reducedMotion:"reduce" });

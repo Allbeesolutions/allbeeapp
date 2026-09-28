@@ -22,9 +22,12 @@ describe("ALLBEE mascot", () => {
     render(<AllbeeAIFloatingAssistant onOpen={onOpen} displayName="Maya Patel" />);
     expect(screen.getByRole("status").textContent).toContain("Maya");
     const button = screen.getByRole("button", { name: "Ask ALLBEE AI with mascot" });
+    fireEvent.mouseEnter(button);
+    expect(screen.getByRole("status").textContent).toMatch(/Maya/);
     fireEvent.click(button);
     act(() => { button.focus(); fireEvent.keyDown(button, { key: "Enter" }); }); // Native buttons activate via browser, not custom key handlers.
     expect(onOpen).toHaveBeenCalledTimes(1);
+    fireEvent.blur(button);
     expect(screen.queryByRole("status")).toBeNull();
   });
 
@@ -56,11 +59,17 @@ describe("ALLBEE mascot", () => {
     expect(css).toContain("allbee-mascot-launcher--login");
     expect(css).toContain("background:transparent");
     expect(css).toContain("object-fit:contain");
-    expect(css).toContain(".allbee-mascot--idle img { animation:none; }");
+    expect(css).toContain(".allbee-mascot--idle img { animation:allbee-mascot-idle");
+    expect(css).toContain("will-change:transform");
+    expect(css).toContain("transform:translateZ(0)");
+    expect(css).not.toContain("translateY(");
     expect(css).toContain(".allbee-mascot-button { width:76px; height:76px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none;");
     expect(css).not.toContain("--mascot-lift");
     const source = readFileSync(`${process.cwd()}/src/ui/AllbeeMascot.jsx`, "utf8");
     expect(source).not.toContain("setLift");
     expect(source).not.toContain("MutationObserver");
+    expect(source).toContain("Hello,");
+    expect(source).toContain("onMouseEnter={onEnter}");
+    expect(source).toContain("onFocus={onEnter}");
   });
 });
