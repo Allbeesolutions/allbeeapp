@@ -1,5 +1,6 @@
 import React from "react";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
+import AdminClientChat from "./AdminClientChat.jsx";
 
 export default function Chat({ db, mutate, me, team, onlineIds = new Set(), presenceReady = false, onRefresh, isAdmin, runtime }) {
   const { useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm } = runtime;
@@ -113,7 +114,8 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
     <div className="seg" style={{ maxWidth: 430 }}>
       <button className={chatChannel === "employee" ? "on" : ""} onClick={() => setChatChannel("employee")}>Employee</button>
       <button className={chatChannel === "apn" ? "on" : ""} onClick={() => setChatChannel("apn")}>APN{apnUnread > 0 && <span className="badge action-badge" style={{ marginLeft: 6 }}>{apnUnread > 99 ? "99+" : apnUnread}</span>}</button>
+      <button className={chatChannel === "client" ? "on" : ""} onClick={() => setChatChannel("client")}>Client</button>
     </div>
   </div>}
-  {isAdmin && chatChannel === "apn" ? <AdminAPNChat me={me} onUnreadChange={setApnUnread} /> : employeeView}</>);
+  {isAdmin && chatChannel === "apn" ? <AdminAPNChat me={me} onUnreadChange={setApnUnread} /> : isAdmin && chatChannel === "client" ? <AdminClientChat me={me} runtime={runtime} /> : employeeView}</>);
 }
