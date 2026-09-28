@@ -376,7 +376,9 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     }
     const db = emptyDB();
     const loaded = await mapWithConcurrency(BOOTSTRAP_TABLES, BOOTSTRAP_TABLES.length, async (t) => [
-      t, await loadTableRows(supabase, t, "id,data,updated_at", "created_at", BOOTSTRAP_TIMEOUT_MS, 0, true, 500, 500)
+      // Legacy JSON tables have `updated_at` as their physical timestamp; `createdAt` lives inside `data`.
+      // Ordering by SQL `created_at` rejects the bootstrap page and can render real finance as an empty snapshot.
+      t, await loadTableRows(supabase, t, "id,data,updated_at", "updated_at", BOOTSTRAP_TIMEOUT_MS, 0, true, 500, 500)
     ]);
     for (const [t, rows] of loaded) {
       db[t] = (rows || [])

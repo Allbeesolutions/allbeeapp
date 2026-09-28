@@ -1,0 +1,6 @@
+-- Recover the two consolidated finance records proven by the surviving Accounts audit trail.
+-- The granular pre-cleanup entries were explicitly deleted on 2026-06-17 and are intentionally not restored.
+insert into public.transactions(id,data,updated_at) values
+('recovery-historical-income-20260617', jsonb_build_object('id','recovery-historical-income-20260617','kind','income','date','2026-06-17','amount',109339,'client','','project','ALL INCOME FROM NOV2025 TO JUNE 2026','category','Historical summary','notes','Recovered from authoritative Accounts audit after accidental ledger loss.','hajiPct',50,'alimPct',50,'createdAt',(extract(epoch from timestamptz '2026-06-17 18:24:56.850+00')*1000)::bigint), clock_timestamp()),
+('recovery-historical-expense-20260617', jsonb_build_object('id','recovery-historical-expense-20260617','kind','expense','date','2026-06-17','amount',100714,'client','','project','ALL EXPENSES FROM NOV2025 TO JUNE 2026','category','Historical summary','notes','Recovered from authoritative Accounts audit after accidental ledger loss.','hajiPct',50,'alimPct',50,'scope','company','createdAt',(extract(epoch from timestamptz '2026-06-17 18:26:55.023+00')*1000)::bigint), clock_timestamp())
+on conflict(id) do update set data=excluded.data, updated_at=excluded.updated_at;

@@ -24,6 +24,8 @@ describe("mocked role bootstrap request scopes", () => {
     const reads = loadTableRows.mock.calls.map(([, table]) => table);
     expect(reads).toContain("tasks");
     expect(reads).toContain("attendance");
+    const transactionRead = loadTableRows.mock.calls.find(([, table]) => table === "transactions");
+    expect(transactionRead?.[3]).toBe("updated_at");
     expect(reads).not.toContain("apn_commission_projects");
     expect(reads).not.toContain("crm_leads");
     expect(new Set(reads).size).toBe(reads.length);
