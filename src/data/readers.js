@@ -296,7 +296,7 @@ export function createDataReaders({ supabase, emptyDB, loadTableRows }) {
     leads: ["apn_leads","apn_users"], quotations: ["apn_quotations","apn_users"],
     wallet: ["apn_commissions","apn_commission_projects","apn_revenue_collections","apn_consolidated_wallets","apn_referral_earnings","apn_withdrawal_requests","apn_leads","apn_users"],
     withdrawals: ["apn_withdrawal_requests","apn_withdrawal_wallets","apn_withdrawal_status_history","apn_referral_codes","apn_referral_wallets","apn_commission_projects","apn_revenue_collections","apn_commissions","apn_users"],
-    network: ["apn_users","apn_referral_earnings","apn_referral_relationships","apn_referral_timeline"],
+    network: ["apn_users","apn_referral_codes","apn_referral_wallets","apn_referral_earnings","apn_referral_relationships","apn_referral_timeline"],
     chat: ["apn_users"], learn: ["apn_training","apn_quizzes","apn_users"],
     targets: ["apn_targets","apn_users"], documents: ["apn_documents","apn_users"],
     agreements: ["apn_agreements","apn_agreement_acceptances","apn_agreement_company","apn_users"],
