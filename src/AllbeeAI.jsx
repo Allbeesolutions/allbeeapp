@@ -7,10 +7,14 @@ import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 
 export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime }) {
   const { aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase } = runtime;
-  const cfg = aiConfigOf(config);
+  const baseCfg = aiConfigOf(config);
   const company = companyOf(config);
-  const configured = aiConfigured(cfg);
   const isClient = role === "client";
+  // Client access is authorized separately by ClientPortal via client_ai_status().
+  // Clients may not be allowed to read the internal app_config.ai row, so once
+  // entitled they use the fixed authenticated server gateway directly.
+  const cfg = isClient ? { ...baseCfg, enabled: true, mode: "function", functionName: "ai-chat-v2" } : baseCfg;
+  const configured = aiConfigured(cfg);
   const quickPrompts = isClient ? [
     ["Explain my quotation", "Explain the quotation visible in my client portal in simple terms. Do not invent missing details."],
     ["Invoice status", "Summarise the invoices visible in my client portal, including payment status and due dates."],
