@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
-import { Sparkles } from "./icons.jsx";
+import { Sparkles, User, Upload, Check, ShieldCheck, FileText, Banknote, FileCheck2, FolderKanban, ArrowRight, RefreshCw } from "./icons.jsx";
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 
-export default function ClientPortal({ db, profile, signOut, isDark, config, reload, runtime }) {
-  const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON } = runtime;
+export default function ClientPortal({ db, profile, signOut, isDark, config, reload, saveMyProfile, runtime }) {
+  const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment } = runtime;
   const myId = profile?.id;
   const co = companyOf(config);
   const posts = [...db.portal_posts].filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -22,6 +22,12 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   };
   const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";
   const [portalView, setPortalView] = useState("home");
+  const [profileDraft, setProfileDraft] = useState({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" });
+  const [profileBusy, setProfileBusy] = useState(false);
+  const photoRef = useRef(null);
+  const openProfile = () => { setProfileDraft({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" }); setPortalView("profile"); };
+  const saveClientProfile = async () => { setProfileBusy(true); try { await saveMyProfile?.({ ...profileDraft, name: profileDraft.name.trim(), mobile: profileDraft.mobile.trim(), username: profileDraft.username.trim().toLowerCase() || null }); emitToast("Profile updated.", "success"); await reload(); } catch(e) { emitToast(e.message || "Could not update profile.", "error"); } finally { setProfileBusy(false); } };
+  const uploadClientPhoto = async (e) => { const file=e.target.files?.[0]; if(!file) return; setProfileBusy(true); try { const up=await uploadAttachment(file,{publicMedia:true}); await saveMyProfile?.({photo_url:up.url}); emitToast("Profile photo updated.","success"); await reload(); } catch(er) { emitToast(er.message || "Could not upload photo.","error"); } finally { setProfileBusy(false); e.target.value=""; } };
   const [helpFormOpen, setHelpFormOpen] = useState(false);
   const [helpBusy, setHelpBusy] = useState(false);
   const myTickets = [...(db.support_tickets || [])].filter((t) => t.client_id === myId).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
@@ -55,18 +61,24 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         <div><h2 style={{ fontSize: 16 }}>{co.name || "ALLBEE Solutions"}</h2><div className="topbar-sub">Client portal</div></div>
         <span className="spacer" style={{ flex: 1 }} />
         <PortalRefreshButton onRefresh={reload} />
-        <button type="button" className="userchip" onClick={signOut} aria-label="Sign out of client portal"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={26} /><span className="userchip-name">{profile?.name}</span><LogOut size={15} /></button>
+        <button type="button" className="userchip" onClick={openProfile} aria-label="Open my profile"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={30} /><span className="userchip-name">{profile?.name}</span><User size={15} /></button>
       </header>
       <div className="content page-enter client-portal-content" style={{ maxWidth: 820, margin: "0 auto" }}>
-        <div className="page-head"><h3>Welcome, {profile?.name?.split(" ")[0] || "there"}</h3></div>
+        <section className="client-hero"><div><span className="client-eyebrow">CLIENT WORKSPACE</span><h1>Welcome back, {profile?.name?.split(" ")[0] || "there"}</h1><p>Everything ALLBEE is working on for you, in one clear place.</p></div><button className="btn client-profile-cta" onClick={openProfile}><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={34}/><span><b>My profile</b><small>Account & preferences</small></span><ArrowRight size={16}/></button></section>
         <div className="seg" style={{ margin: "0 0 16px", width: "max-content" }}>
           <button className={portalView === "home" ? "on" : ""} onClick={() => setPortalView("home")}><Home size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Overview</button>
           <button className={portalView === "support" ? "on" : ""} onClick={() => setPortalView("support")}><Headset size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Support{openTickets > 0 && <span className="badge accent" style={{ marginLeft: 6 }}>{openTickets}</span>}</button>
-          <button className={portalView === "ai" ? "on" : ""} onClick={() => setPortalView("ai")}><Sparkles size={14} style={{ verticalAlign: -2, marginRight: 5 }} />ALLBEE AI</button>
+          <button className={portalView === "ai" ? "on" : ""} onClick={() => setPortalView("ai")}><Sparkles size={14} style={{ verticalAlign: -2, marginRight: 5 }} />ALLBEE AI</button><button className={portalView === "profile" ? "on" : ""} onClick={openProfile}><User size={14} style={{ verticalAlign: -2, marginRight: 5 }} />My profile</button>
         </div>
 
         {portalView === "home" && (<>
-        <div className="card stat" style={{ marginBottom: 16 }}>
+        <div className="client-kpi-grid">
+          <button onClick={() => document.getElementById("client-updates")?.scrollIntoView({behavior:"smooth"})}><span><FileText size={18}/></span><b>{updates.length}</b><small>Project updates</small></button>
+          <button onClick={() => document.getElementById("client-quotes")?.scrollIntoView({behavior:"smooth"})}><span><FileCheck2 size={18}/></span><b>{quotes.length}</b><small>Quotations</small></button>
+          <button onClick={() => document.getElementById("client-invoices")?.scrollIntoView({behavior:"smooth"})}><span><Banknote size={18}/></span><b>{invoices.length}</b><small>Invoices</small></button>
+          <button onClick={() => document.getElementById("client-files")?.scrollIntoView({behavior:"smooth"})}><span><FolderKanban size={18}/></span><b>{files.length + deliverables.length}</b><small>Shared files</small></button>
+        </div>
+        <div id="client-updates" className="card stat client-section" style={{ marginBottom: 16 }}>
           <div className="lbl" style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 4 }}>Your project updates</div>
           {updates.length === 0 ? <p className="hint-line" style={{ margin: "8px 0 0" }}>No updates yet. We'll post progress here as we go.</p>
             : <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>{updates.map((p) => (
@@ -79,7 +91,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
             ))}</div>}
         </div>
 
-        <div className="card stat">
+        <div id="client-quotes" className="card stat client-section">
           <div className="lbl" style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 4 }}>Your quotations</div>
           {quotes.length === 0 ? <p className="hint-line" style={{ margin: "8px 0 0" }}>No quotations shared with you yet.</p>
             : <div style={{ overflowX: "auto", marginTop: 10 }}><table className="tbl">
@@ -93,7 +105,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
           <p className="hint-line" style={{ marginTop: 12 }}>Questions about a quote? Reply to the email from your ALLBEE contact.</p>
         </div>
 
-        <div className="card stat" style={{ marginTop: 16 }}>
+        <div id="client-invoices" className="card stat client-section" style={{ marginTop: 16 }}>
           <div className="lbl" style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 4 }}>Your invoices</div>
           {invoices.length === 0 ? <p className="hint-line" style={{ margin: "8px 0 0" }}>No invoices yet.</p>
             : <div style={{ overflowX: "auto", marginTop: 10 }}><table className="tbl">
@@ -119,7 +131,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
             ))}</div>}
         </div>
 
-        <div className="card stat" style={{ marginTop: 16 }}>
+        <div id="client-files" className="card stat client-section" style={{ marginTop: 16 }}>
           <div className="lbl" style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", marginBottom: 4 }}>Files</div>
           {files.length === 0 ? <p className="hint-line" style={{ margin: "8px 0 0" }}>No files shared yet.</p>
             : <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>{files.map((d) => (
@@ -138,6 +150,11 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
           </div>
         )}
         </>)}
+
+        {portalView === "profile" && <div className="client-profile-grid">
+          <section className="card client-profile-card"><div className="client-profile-cover"></div><div className="client-profile-avatar"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={86}/><button className="btn sm" onClick={() => photoRef.current?.click()} disabled={profileBusy}><Upload size={14}/>Change photo</button><input ref={photoRef} type="file" accept="image/*" hidden onChange={uploadClientPhoto}/></div><h2>{profile?.name}</h2><p>{profile?.email}</p><span className="badge pos"><ShieldCheck size={12}/> Verified client account</span></section>
+          <section className="card client-profile-form"><div className="client-section-head"><div><span className="client-eyebrow">PERSONAL DETAILS</span><h3>My profile</h3></div></div><div className="grid2"><label>Full name<input className="input" value={profileDraft.name} onChange={e=>setProfileDraft(x=>({...x,name:e.target.value}))}/></label><label>Mobile<input className="input" type="tel" value={profileDraft.mobile} onChange={e=>setProfileDraft(x=>({...x,mobile:e.target.value}))}/></label><label>Date of birth<input className="input" type="date" value={profileDraft.dob || ""} onChange={e=>setProfileDraft(x=>({...x,dob:e.target.value}))}/></label><label>Username<input className="input" value={profileDraft.username} onChange={e=>setProfileDraft(x=>({...x,username:e.target.value}))}/></label></div><label>Sign-in email<input className="input" value={profile?.email || ""} disabled/></label><div className="client-profile-actions"><button className="btn primary" onClick={saveClientProfile} disabled={profileBusy}>{profileBusy?<RefreshCw size={15} className="spin"/>:<Check size={15}/>}Save changes</button><button className="btn" onClick={()=>saveMyProfile?.({photo_url:null}).then(reload)} disabled={!profile?.photo_url}>Remove photo</button><button className="btn" onClick={signOut}><LogOut size={15}/>Sign out</button></div><div className="client-security-note"><ShieldCheck size={18}/><div><b>Account security</b><span>Your email and client access are protected by ALLBEE authentication. Contact support if you need your sign-in email changed.</span></div></div></section>
+        </div>}
 
         {portalView === "support" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading support…</div>}><LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} runtime={runtime} /></React.Suspense>}
 

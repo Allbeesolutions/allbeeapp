@@ -7245,7 +7245,7 @@ export default function App() {
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading your portal…" />;
-    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Sparkles, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON }} /></React.Suspense>);
+    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} saveMyProfile={saveMyProfile} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Sparkles, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment }} /></React.Suspense>);
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
