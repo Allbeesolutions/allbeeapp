@@ -1577,7 +1577,8 @@ function Dashboard({ db, bal, go, openBalance, onOpenActivity, showMoney = true,
     try { localStorage.setItem("allbee_dashboard_widgets", JSON.stringify(next)); } catch { /* local preference only */ }
     return next;
   });
-  const m = snapshot?.finance?.transactions ? { rev: Number(snapshot.finance.transactions.income) || 0, exp: Number(snapshot.finance.transactions.expenses) || 0 } : monthStats(db);
+  // The finance RPC transaction summary is lifetime. These cards are monthly, so use dated ledger rows.
+  const m = monthStats(db);
   const apnSummary = showOps ? apnCommissionDashboardSummary(db) : null;
   const pending = db.tasks.filter((t) => t.status !== "Completed").length;
   const active = db.projects.filter((p) => p.stage !== "Completed").length;
