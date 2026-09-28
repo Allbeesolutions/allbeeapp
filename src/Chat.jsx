@@ -15,11 +15,18 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [expanded, setExpanded] = useState(false);
-  const list = [...db.chat].filter((m) => !m.deleted).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const [teamReactions, setTeamReactions] = useState({});
+  const [reactionFor, setReactionFor] = useState(null);
+  const list = [...db.chat].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
   // The app-level Supabase Realtime channel already watches chat/team_chat and
   // performs scoped reloads on actual database changes. Avoid a 12-second polling
   // loop here; it created continuous egress even when nobody was sending messages.
+  useEffect(() => {
+    const ids=list.map(m=>m.id).filter(Boolean); if(!ids.length){setTeamReactions({});return;}
+    supabase.rpc("chat_list_reactions",{p_ids:ids}).then(({data})=>{const next={};(data||[]).forEach(r=>{(next[r.message_id] ||= []).push(r)});setTeamReactions(next);});
+  }, [db.chat, supabase]);
+  const toggleTeamReaction=async(m,emoji)=>{if(m.deleted)return;await supabase.rpc("chat_toggle_reaction",{p_id:m.id,p_emoji:emoji});const {data}=await supabase.rpc("chat_list_reactions",{p_ids:[m.id]});setTeamReactions(x=>({...x,[m.id]:data||[]}));setReactionFor(null);};
   const refresh = async () => { if (!onRefresh) return; setRefreshing(true); try { await onRefresh(); } finally { setTimeout(() => setRefreshing(false), 400); } };
   // Read receipts are server-owned. Direct UPDATE on chat is intentionally denied
   // by RLS; use the guarded RPC and patch local state without enqueueing persistence.
@@ -62,7 +69,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
   const saveEdit = async (m) => { const t = editText.trim(); if (!t) { setEditId(null); return; } try { const { data, error } = await supabase.rpc("chat_edit_message", { p_id: m.id, p_text: t }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === m.id ? data : x) }), null, { localOnly: true }); setEditId(null); setEditText(""); } catch (e) { emitToast(e?.message || "Could not edit message.", "error"); } };
   // Delete = tombstone (keeps message order, works under existing chat RLS).
   // Admins can delete anyone's; everyone else only their own.
-  const del = (m) => setConfirmDelete(m);
+  const del = (m) => { if (m.userId !== me.id || Date.now() - Number(m.createdAt || 0) > 3600000) return; setConfirmDelete(m); };
   const deleteNow = async () => { if (!confirmDelete) return; try { const { data, error } = await supabase.rpc("chat_delete_message", { p_id: confirmDelete.id }); if (error) throw error; mutate((d) => ({ ...d, chat: d.chat.map((x) => x.id === confirmDelete.id ? data : x) }), null, { localOnly: true }); setConfirmDelete(null); } catch (e) { emitToast(e?.message || "Could not delete message.", "error"); } };
   // Names of teammates who've seen one of my messages.
   const seenNames = (m) => (m.seenBy || []).filter((u) => u !== me.id).map((u) => ((team || []).find((p) => p.id === u)?.name) || "Someone").filter(Boolean);
@@ -75,7 +82,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
           : list.map((m) => {
             const mine = m.userId === me.id;
             return (
-              <div key={m.id} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row" }}>
+              <div key={m.id} onDoubleClick={() => !m.deleted && toggleTeamReaction(m,"❤️")} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row", position:"relative" }}>
                 <div style={{ position: "relative", flex: "none" }}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: "50%", background: "var(--pos)", border: "2px solid var(--surface, #fff)" }} />}</div>
                 <div style={{ maxWidth: "72%" }}>
                   {editId === m.id ? (
@@ -92,7 +99,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
                         ? <a href={m.attachment.url} target="_blank" rel="noreferrer"><img src={m.attachment.url} alt={m.attachment.name || ""} style={{ display: "block", maxWidth: 220, maxHeight: 220, borderRadius: 8, marginTop: m.text ? 8 : 0 }} /></a>
                         : <a href={m.attachment.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: m.text ? 8 : 0, color: mine ? "#fff" : "var(--primary)", textDecoration: "underline" }}><Paperclip size={13} />{m.attachment.name || "Attachment"}</a>))}</div>
                   )}
-                  {!m.deleted && <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : m.userName} · {fmtDateTime(m.createdAt)}{m.editedAt ? " · edited" : ""}{mine && seenNames(m).length > 0 ? " · Seen by " + (seenNames(m).length <= 2 ? seenNames(m).join(", ") : `${seenNames(m).slice(0, 2).join(", ")} +${seenNames(m).length - 2}`) : ""}{mine && editId !== m.id && (typeof withinMinutes === "function" ? withinMinutes(m.createdAt, 5) : false) && <button onClick={() => startEdit(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Edit</button>}{mine && editId !== m.id && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}{!mine && isAdmin && editId !== m.id && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}</div>}
+                  {!m.deleted && <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : m.userName} · {fmtDateTime(m.createdAt)}{m.editedAt ? " · edited" : ""}{mine && seenNames(m).length > 0 ? " · Seen by " + (seenNames(m).length <= 2 ? seenNames(m).join(", ") : `${seenNames(m).slice(0, 2).join(", ")} +${seenNames(m).length - 2}`) : ""}{mine && editId !== m.id && (typeof withinMinutes === "function" ? withinMinutes(m.createdAt, 5) : false) && <button onClick={() => startEdit(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Edit</button>}{mine && editId !== m.id && Date.now()-Number(m.createdAt||0)<=3600000 && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}{!m.deleted && <><button onClick={()=>setReactionFor(reactionFor===m.id?null:m.id)} style={{marginLeft:6,background:"none",border:0,cursor:"pointer"}}>☺</button>{reactionFor===m.id&&<span className="team-reaction-picker">{["👍","❤️","😂","😮","😢","🎉"].map(e=><button key={e} onClick={()=>toggleTeamReaction(m,e)}>{e}</button>)}</span>}</>}{(teamReactions[m.id]||[]).map(r=><button key={r.emoji} className={`team-reaction-pill ${r.mine?"mine":""}`} onClick={()=>toggleTeamReaction(m,r.emoji)}>{r.emoji} {r.reaction_count}</button>)}</div>}
                 </div>
               </div>
             );
