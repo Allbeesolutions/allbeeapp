@@ -6,7 +6,9 @@ describe("client approval navigation contract", () => {
   const clients = fs.readFileSync("src/Clients.jsx", "utf8");
   it("keeps client approvals out of Team and exposes them in Clients", () => {
     expect(app).toContain('const pending = team.filter((p) => p.role === "staff" && p.approved === false)');
-    expect(clients).toContain("Approve &amp; activate");
+    expect(clients).toContain(">Approve</button>");
+    expect(clients).toContain(">Reject</button>");
+    expect(clients).toContain(">Reconsider</button>");
     expect(app).toContain('key === "clients" && <ActionBadge count={newClientRegistrations}');
   });
   it("acknowledges the client nav notification when Clients is opened", () => {

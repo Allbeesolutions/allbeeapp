@@ -8,6 +8,7 @@ export default function Clients(props) {
 
   const [q, setQ] = useState("");
   const [n, setN] = useState(25);
+  const [accountTab, setAccountTab] = useState("pending");
   const all = [...db.clients].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const scoped = isAdmin ? all : all.filter((c) => c.ownerId === (me && me.id));
   const list = q.trim() ? scoped.filter((c) => (c.name + " " + (c.company || "") + " " + (c.phone || "") + " " + (c.email || "")).toLowerCase().includes(q.toLowerCase())) : scoped;
@@ -15,8 +16,14 @@ export default function Clients(props) {
   const quote = (c) => openModal({ type: "quotation", initial: { client: c.name } });
   // Registered clients = people who signed up themselves from the login screen
   // (choose "Client"). Newest first.
-  const registered = [...portalClients].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const portalSorted = [...portalClients].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const pendingAccounts = portalSorted.filter((p) => p.approved === false && p.status !== "rejected");
+  const rejectedAccounts = portalSorted.filter((p) => p.status === "rejected");
+  const registered = portalSorted.filter((p) => p.approved === true && p.status !== "rejected");
+  const accountRows = accountTab === "pending" ? pendingAccounts : accountTab === "rejected" ? rejectedAccounts : registered;
   const approveAccount = (p) => changeProfile?.(p.id, { approved: true, active: true, status: "active" }, `approved client ${p.name}'s account`);
+  const rejectAccount = (p) => changeProfile?.(p.id, { approved: false, active: false, status: "rejected" }, `rejected client ${p.name}'s registration`);
+  const reconsiderAccount = (p) => changeProfile?.(p.id, { approved: false, active: false, status: "pending" }, `reconsidered client ${p.name}'s registration`);
   const deactivateAccount = (p) => changeProfile?.(p.id, { active: false, status: "inactive" }, `deactivated client ${p.name}'s account`);
   const activateAccount = (p) => changeProfile?.(p.id, { approved: true, active: true, status: "active" }, `activated client ${p.name}'s account`);
   const removeAccount = (p) => openModal({
@@ -50,24 +57,28 @@ export default function Clients(props) {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-          <ExternalLink size={15} /> Registered clients
-          {registered.length > 0 && <span className="badge" style={{ marginLeft: 2 }}>{registered.length}</span>}
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <ExternalLink size={15} /><strong>Client accounts</strong>
+          <div className="seg" style={{ marginLeft: "auto" }}>
+            <button className={accountTab === "pending" ? "on" : ""} onClick={() => setAccountTab("pending")}>Pending {pendingAccounts.length > 0 && <span className="badge action-badge" style={{ marginLeft: 5 }}>{pendingAccounts.length}</span>}</button>
+            <button className={accountTab === "registered" ? "on" : ""} onClick={() => setAccountTab("registered")}>Registered <span className="badge" style={{ marginLeft: 5 }}>{registered.length}</span></button>
+            <button className={accountTab === "rejected" ? "on" : ""} onClick={() => setAccountTab("rejected")}>Rejected {rejectedAccounts.length > 0 && <span className="badge" style={{ marginLeft: 5 }}>{rejectedAccounts.length}</span>}</button>
+          </div>
         </div>
-        {registered.length === 0
-          ? <Empty icon={<ExternalLink size={22} color="var(--muted)" />} title="No registered clients yet" text="When someone signs up from the login screen and chooses “Client”, their account shows up here." />
+        {accountRows.length === 0
+          ? <Empty icon={<ExternalLink size={22} color="var(--muted)" />} title={accountTab === "pending" ? "No pending client registrations" : accountTab === "rejected" ? "No rejected registrations" : "No registered clients yet"} text={accountTab === "pending" ? "New client signups waiting for approval will appear here." : accountTab === "rejected" ? "Rejected registrations can be reconsidered here." : "Approved client portal accounts appear here."} />
           : <div style={{ overflowX: "auto" }}><table className="tbl">
-            <thead><tr><th>Client</th><th>Contact</th><th>Joined</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
-            <tbody>{registered.map((p) => (
+            <thead><tr><th>Client</th><th>Contact</th><th>Joined</th><th>Status</th>{isAdmin && <th>Actions</th>}</tr></thead>
+            <tbody>{accountRows.map((p) => (
               <tr key={p.id}>
                 <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(p.name), width: 24, height: 24, fontSize: 10 }}>{(p.name || "?")[0]}</span>{p.name}</span></td>
                 <td>{p.email && <div style={{ fontSize: 13 }}>{p.email}</div>}{p.mobile && <div className="hint-line" style={{ fontSize: 11 }}>{p.mobile}</div>}{!p.email && !p.mobile && "—"}</td>
                 <td className="mono" style={{ whiteSpace: "nowrap", color: "var(--muted)", fontSize: 13 }}>{p.created_at ? fmtDate(p.created_at) : "—"}</td>
-                <td>{p.approved === false
-                  ? <span className="badge pri" style={{ fontSize: 10 }}>Pending approval</span>
-                  : <span className={"badge " + (p.active === false ? "neg" : "pos")} style={{ fontSize: 10 }}>{p.active === false ? "Inactive" : "Active"}</span>}</td>
+                <td>{p.status === "rejected" ? <span className="badge neg">Rejected</span> : p.approved === false ? <span className="badge pri">Pending approval</span> : <span className={"badge " + (p.active === false ? "neg" : "pos")}>{p.active === false ? "Inactive" : "Active"}</span>}</td>
                 {isAdmin && <td><div className="row-actions">
-                  {p.approved === false ? <button className="btn sm primary" onClick={() => approveAccount(p)}>Approve &amp; activate</button> : p.active === false ? <button className="btn sm primary" onClick={() => activateAccount(p)}>Activate</button> : <button className="btn sm" onClick={() => deactivateAccount(p)}>Deactivate</button>}
+                  {accountTab === "pending" && <><button className="btn sm primary" onClick={() => approveAccount(p)}>Approve</button><button className="btn sm" onClick={() => rejectAccount(p)}>Reject</button></>}
+                  {accountTab === "rejected" && <button className="btn sm primary" onClick={() => reconsiderAccount(p)}>Reconsider</button>}
+                  {accountTab === "registered" && (p.active === false ? <button className="btn sm primary" onClick={() => activateAccount(p)}>Activate</button> : <button className="btn sm" onClick={() => deactivateAccount(p)}>Deactivate</button>)}
                   <button className="iconbtn" style={{ width: 30, height: 30 }} title="Delete client account" onClick={() => removeAccount(p)}><Trash2 size={14} /></button>
                 </div></td>}
               </tr>
