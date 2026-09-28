@@ -2718,7 +2718,7 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
   const isSuper = me.role === "superadmin";
   const pending = team.filter((p) => (p.role === "staff" || p.role === "client") && p.approved === false);
   const roster = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head");          // clients & APN partners live in their own portals, not the internal roster
-  const approve = (p) => { haptic(10); changeProfile(p.id, { approved: true }, `approved ${p.name}'s account`); };
+  const approve = (p) => { haptic(10); changeProfile(p.id, { approved: true, active: true, status: "active" }, `approved ${p.name}'s account`); };
   const reject = (p) => changeProfile(p.id, { approved: false, status: "terminated", active: false }, `rejected ${p.name}'s account`);
   return (
     <div className="content">
@@ -7231,11 +7231,11 @@ export default function App() {
   if (passwordRecovery) return gateChild(<PasswordRecovery isDark={isDark} onComplete={() => { setPasswordRecovery(false); try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } }} />);
   if (profile === undefined) return <LoadingScreen isDark={isDark} note="Signing you in…" />;
   if (profile === null) return gateChild(<div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20 }}><div className="card" role="alert"><h2>ALLBEE account profile unavailable</h2><p>We could not load your account. Sign out and sign in again.</p><button className="btn" onClick={signOut}>Sign out</button></div></div>);
-  if (profile && profile.active === false && role !== "partner")
-    return gateChild(<Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />);
-  // new staff & client sign-ups wait for a partner to approve them
+  // Pending signup is not a suspension: show approval state before inactive gate.
   if (profile && (role === "staff" || role === "client") && profile.approved === false)
     return gateChild(<ApprovalPending isDark={isDark} name={currentUser} onSignOut={signOut} />);
+  if (profile && profile.active === false && role !== "partner")
+    return gateChild(<Blocked isDark={isDark} name={currentUser} onSignOut={signOut} />);
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading your portal…" />;
@@ -7356,7 +7356,7 @@ export default function App() {
             runtime={{ ...Icons, todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons, aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, supabase }} />
         </React.Suspense>
       );
-      case "clients": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading clients…</div></div>}><LazyClients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} runtime={{ Empty, LoadMore, avatarColor, fmtDate }} /></React.Suspense>;
+      case "clients": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading clients…</div></div>}><LazyClients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} changeProfile={changeProfile} runtime={{ Empty, LoadMore, avatarColor, fmtDate }} /></React.Suspense>;
       case "quotations": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading quotations…</div></div>}> <LazyQuotations db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} currentUser={currentUser} isAdmin={isAdmin} runtime={{ Empty, money, uid, QUOTE_STATUS, VAULT_CATEGORIES, fmtDate, avatarColor }} />;</React.Suspense>;
       case "invoices": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading invoices…</div></div>}><LazyInvoices db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ useState, Banknote, BadgeCheck, FileText, Plus, Pencil, Trash2, Empty, money, todayISO, fmtDate, INVOICE_STATUS }} /></React.Suspense>;
       case "portal-posts": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading client updates…</div></div>}><LazyPortalPosts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} portalClients={portalClients} runtime={{ ...Icons, Empty, Plus, Trash2, ExternalLink, Building2, Link2, Pencil, fmtDateTime }} /></React.Suspense>;

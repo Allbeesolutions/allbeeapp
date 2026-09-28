@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import * as Icons from "./icons.jsx";
 
 export default function Clients(props) {
-  const { db, mutate, openModal, removeItem, isAdmin = true, me, portalClients = [], deleteClientAccount } = props;
+  const { db, mutate, openModal, removeItem, isAdmin = true, me, portalClients = [], deleteClientAccount, changeProfile } = props;
   const { Empty, LoadMore, avatarColor, fmtDate } = props.runtime || {};
   const { Building2, ExternalLink, FileText, Pencil, Plus, Search, Trash2 } = Icons;
 
@@ -16,6 +16,9 @@ export default function Clients(props) {
   // Registered clients = people who signed up themselves from the login screen
   // (choose "Client"). Newest first.
   const registered = [...portalClients].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const approveAccount = (p) => changeProfile?.(p.id, { approved: true, active: true, status: "active" }, `approved client ${p.name}'s account`);
+  const deactivateAccount = (p) => changeProfile?.(p.id, { active: false, status: "inactive" }, `deactivated client ${p.name}'s account`);
+  const activateAccount = (p) => changeProfile?.(p.id, { approved: true, active: true, status: "active" }, `activated client ${p.name}'s account`);
   const removeAccount = (p) => openModal({
     type: "deleteConfirm", title: "Delete client account?",
     body: `Permanently remove ${p.name}'s portal account?`,
@@ -64,6 +67,7 @@ export default function Clients(props) {
                   ? <span className="badge pri" style={{ fontSize: 10 }}>Pending approval</span>
                   : <span className={"badge " + (p.active === false ? "neg" : "pos")} style={{ fontSize: 10 }}>{p.active === false ? "Inactive" : "Active"}</span>}</td>
                 {isAdmin && <td><div className="row-actions">
+                  {p.approved === false ? <button className="btn sm primary" onClick={() => approveAccount(p)}>Approve &amp; activate</button> : p.active === false ? <button className="btn sm primary" onClick={() => activateAccount(p)}>Activate</button> : <button className="btn sm" onClick={() => deactivateAccount(p)}>Deactivate</button>}
                   <button className="iconbtn" style={{ width: 30, height: 30 }} title="Delete client account" onClick={() => removeAccount(p)}><Trash2 size={14} /></button>
                 </div></td>}
               </tr>
