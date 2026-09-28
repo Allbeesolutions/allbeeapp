@@ -5425,7 +5425,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
     ["profile", "Profile", <User size={20} color="var(--primary)" />, 0],
   ];
   const primary = [["home", "Home", Home], ["leads", "Leads", UserPlus], ["wallet", "Wallet", Wallet], ["network", "My Network", Users], ["chat", "Team Chat", MessageSquare]];
-  const showFab = tab === "quotations";
   return (
     <div className={`allbee apn apn-nav-shell${sidebarOpen ? " menu-open" : ""}`} data-theme={isDark ? "dark" : "light"}>
       <a className="apn-skip" href="#apn-content" onClick={(e) => { e.preventDefault(); document.getElementById("apn-content")?.focus(); }}>Skip to content</a>
@@ -5463,7 +5462,6 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></main>
 
       <AllbeeAIFloatingAssistant onOpen={() => go("ai")} displayName={meRow?.name} context={tab} surface="apn" collisionRootSelector=".apn-body" hidden={!!modal || searchOpen || sidebarOpen} />
-      {showFab && <button className="apn-fab" aria-label="Create quotation" onClick={() => setModal({ type: "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
       <GlobalPullToRefresh enabled={!modal && !searchOpen && !sidebarOpen} onRefresh={refreshPortal} />
