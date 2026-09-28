@@ -11,11 +11,13 @@ const LazyAPNAdminLeaderboard = React.lazy(() => import("./APNAdminLeaderboard.j
 const LazyAPNCommissionEntry = React.lazy(() => import("./APNCommissionEntry.jsx"));
 
 export default function APNAdmin(props) {
-  const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen, onTabChange, tabDataLoading = false } = props;
+  const { db, people = [], mutate, isSuper, isAdmin, currentUser, currentUserId, currentUserAvatar, currentUserDesignation, refreshPeople, initialTab, focusPartnerId, onFocusConsumed, onOpenRelated, onRefresh, onCommissionDeleted, onActionBadgeSeen, onTabChange, tabDataLoading = false } = props;
   const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, ...rest } = props.runtime || {};
   const { APNAdminActivityLog, APNAdminCommissions, APNAdminWithdrawals, APNAdminReferrals, APNAdminSupport, APNAdminContent, APNAdminDocs, APNAdminAgreements, APNAdminLeaderboard, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, AlertTriangle, Target, Bell, ActionBadge,
     APN_ACTION_BADGE_MAP, APN_ACTION_PENDING_STATUSES, APN_COMM_REVERSED, apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnCommissionProjectsOf, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify, apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry, apnDerivedTimeline, APN_TARGET_METRICS, apnIdFor, apnPartnerStats, apnRevenueCollectionsOf, exportRowsToExcel, round2, APNWarningForm, APNCreatePartnerForm, APNQuizForm, APNWithdrawalApprovalModal, APNBanForm, APNBulkForm, APNDeleteForm, APNDocForm, APNLeadManage, APNNoteForm, APNNotifForm, APNPermanentDeleteForm, APNReactivateForm, APNRejectForm, APNResetPasswordForm, APNSuspendForm, APNTargetForm, APNTrainingForm } = rest;
-  const [tab, setTab] = useState("partners");
+  const ADMIN_TABS = ["hub","partners","leads","commissions","withdrawals","referrals","support","targets","content","docs","agreements","notify","board","activity"];
+  const [tab, setTab] = useState(() => ADMIN_TABS.includes(initialTab) ? initialTab : "partners");
+  useEffect(() => { if (ADMIN_TABS.includes(initialTab) && initialTab !== tab) setTab(initialTab); }, [initialTab]);
   const [modal, setModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionError, setActionError] = useState("");

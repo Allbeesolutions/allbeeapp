@@ -6531,6 +6531,8 @@ export default function App() {
     apnTabRef.current = tab;
     setRouteDataLoading(true);
     setApnTab(tab);
+    const hash = `#/apn/${tab}`;
+    if (window.location.hash !== hash) window.location.hash = hash;
   }, [role]);
   const loadedRouteRef = useRef("");
   const dbAvailable = !!db;
@@ -7334,7 +7336,7 @@ export default function App() {
       case "team-leads": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading team leads…</div></div>}><LazyTeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} runtime={{ Empty, Avatar, Users, Plus, ShieldCheck, Pencil, Trash2, ROLE_LABEL, teamRosterIds }} /></React.Suspense>;
       case "apn": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading APN Admin…</div>}>
-          <LazyAPNAdmin onTabChange={changeApnTab} tabDataLoading={routeDataLoading} db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
+          <LazyAPNAdmin initialTab={apnTab} onTabChange={changeApnTab} tabDataLoading={routeDataLoading} db={db} people={team} mutate={mutate} isSuper={isSuper} isAdmin={isAdmin} currentUser={currentUser} currentUserId={profile?.id || session?.user?.id} currentUserAvatar={profile?.photo_url} currentUserDesignation={profile?.designation} refreshPeople={session ? () => loadPeople(session.user) : undefined} focusPartnerId={apnFocusPartnerId} onFocusConsumed={() => setApnFocusPartnerId(null)} onOpenRelated={openActivityRelated} onRefresh={reload} onCommissionDeleted={handleCommissionDeleted} onActionBadgeSeen={markApnActionBadgeSeen}
             runtime={{ ...Icons, supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, APN_SERVICES, APN_ACTION_PENDING_STATUSES, APN_SERVICE_LABEL, APN_ACTION_BADGE_MAP, APN_COMM_REVERSED, SearchableSelect, apnConsoleRow, apnCampaignOf, apnLivePartners, apnCommissionProjectsOf, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, apnLeaderboard: (db, scope, district, metric) => apnLeaderboard(db, scope, district, metric, apnLivePartners, apnPartnerStats, apnAttendanceScore, apnHealthScore), apnLeadTone, ActionBadge, Coins, GaugeCircle, FileCheck2, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, APNAdminActivityLog, APNAdminSupport,
               apnAdminActionCounts, apnApprovalNotification, apnApproverFor, apnBuildCommissions, apnEffectiveStatus, apnHealthScore, apnLastSeenLabel, apnMetricLabel, apnNotificationSender, apnNotify: (n) => apnNotify(n, uid), apnPercent, apnSafeHtml, apnStatusLabel, apnTargetProgress, apnTimelineEntry,
               APN_COMM_STATUS, apnCommTone, apnCommissionDashboardSummary, apnProjectSummary,

@@ -13,6 +13,7 @@ export function parseHash(hash) {
   if (!h) return { route:"dashboard", account:null, task:null };
   const parts = h.split("/");
   if (/^admin(?:[.;]+)?$/i.test(parts[0])) return { route:"apn", account:null, task:null, legacyAdmin:true };
+  if (parts[0] === "client") return { route:"dashboard", account:null, task:null, clientView:parts[1] || "home" };
   if (parts[0] === "accounts" && parts[1]) { const k=parts[1].toLowerCase(); return { route:"accounts", account:k === "haji" ? "Haji" : k === "alim" ? "Alim" : null, task:null }; }
   if (parts[0] === "tasks" && parts[1]) return { route:"tasks", account:null, task:decodeURIComponent(parts[1]) };
   if (parts[0] === "recently-deleted") return { route:"recently-deleted", account:null, task:null };

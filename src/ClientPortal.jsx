@@ -22,14 +22,35 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
     portal_posts: posts, documents: files,
   };
   const statusTone = (s) => s === "Completed" ? "pos" : s === "On hold" ? "neg" : s === "Review" ? "accent" : "pri";
-  const [portalView, setPortalView] = useState("home");
+  const CLIENT_VIEWS = ["home", "chat", "ai", "support", "profile"];
+  const readClientView = () => {
+    const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+    const candidate = parts[0] === "client" ? parts[1] : "";
+    if (CLIENT_VIEWS.includes(candidate)) return candidate;
+    try { const saved = sessionStorage.getItem(`allbee:client:view:${myId || "self"}`); return CLIENT_VIEWS.includes(saved) ? saved : "home"; } catch { return "home"; }
+  };
+  const [portalView, setPortalView] = useState(readClientView);
+  const navigateClient = (next) => {
+    const safe = CLIENT_VIEWS.includes(next) ? next : "home";
+    setPortalView(safe);
+    try { sessionStorage.setItem(`allbee:client:view:${myId || "self"}`, safe); } catch { /* storage can be disabled */ }
+    const hash = `#/client/${safe}`;
+    if (window.location.hash !== hash) window.location.hash = hash;
+  };
+  useEffect(() => {
+    const sync = () => { const next = readClientView(); setPortalView(next); };
+    const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+    if (parts[0] !== "client") navigateClient(portalView);
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, [myId]);
   const [profileDraft, setProfileDraft] = useState({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" });
   const [profileBusy, setProfileBusy] = useState(false);
   const [clientAIEnabled, setClientAIEnabled] = useState(false);
   const [clientAILoading, setClientAILoading] = useState(true);
   useEffect(() => { let alive=true; supabase.rpc("client_ai_status").then(({data,error}) => { if(alive){ setClientAIEnabled(!error && data === true); setClientAILoading(false); } }); return () => { alive=false; }; }, [supabase, myId]);
   const photoRef = useRef(null);
-  const openProfile = () => { setProfileDraft({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" }); setPortalView("profile"); };
+  const openProfile = () => { setProfileDraft({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" }); navigateClient("profile"); };
   const saveClientProfile = async () => { setProfileBusy(true); try { await saveMyProfile?.({ ...profileDraft, name: profileDraft.name.trim(), mobile: profileDraft.mobile.trim(), username: profileDraft.username.trim().toLowerCase() || null }); emitToast("Profile updated.", "success"); await reload(); } catch(e) { emitToast(e.message || "Could not update profile.", "error"); } finally { setProfileBusy(false); } };
   const uploadClientPhoto = async (e) => { const file=e.target.files?.[0]; if(!file) return; setProfileBusy(true); try { const up=await uploadAttachment(file,{publicMedia:true}); await saveMyProfile?.({photo_url:up.url}); emitToast("Profile photo updated.","success"); await reload(); } catch(er) { emitToast(er.message || "Could not upload photo.","error"); } finally { setProfileBusy(false); e.target.value=""; } };
   const [helpFormOpen, setHelpFormOpen] = useState(false);
@@ -70,10 +91,10 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
       <div className="content page-enter client-portal-content" style={{ maxWidth: 820, margin: "0 auto" }}>
         <section className="client-hero"><div><span className="client-eyebrow">CLIENT WORKSPACE</span><h1>Welcome back, {profile?.name?.split(" ")[0] || "there"}</h1><p>Everything ALLBEE is working on for you, in one clear place.</p></div><button className="btn client-profile-cta" onClick={openProfile}><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={34}/><span><b>My profile</b><small>Account & preferences</small></span><ArrowRight size={16}/></button></section>
         <div className="seg" style={{ margin: "0 0 16px", width: "max-content" }}>
-          <button className={portalView === "home" ? "on" : ""} onClick={() => setPortalView("home")}><Home size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Overview</button>
-          <button className={portalView === "chat" ? "on" : ""} onClick={() => setPortalView("chat")}><MessageCircle size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Chat</button>
-          <button className={portalView === "ai" ? "on" : ""} onClick={() => setPortalView("ai")}><Sparkles size={14} style={{ verticalAlign: -2, marginRight: 5 }} />ALLBEE AI</button>
-          <button className={portalView === "support" ? "on" : ""} onClick={() => setPortalView("support")}><Headset size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Support{openTickets > 0 && <span className="badge accent" style={{ marginLeft: 6 }}>{openTickets}</span>}</button>
+          <button className={portalView === "home" ? "on" : ""} onClick={() => navigateClient("home")}><Home size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Overview</button>
+          <button className={portalView === "chat" ? "on" : ""} onClick={() => navigateClient("chat")}><MessageCircle size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Chat</button>
+          <button className={portalView === "ai" ? "on" : ""} onClick={() => navigateClient("ai")}><Sparkles size={14} style={{ verticalAlign: -2, marginRight: 5 }} />ALLBEE AI</button>
+          <button className={portalView === "support" ? "on" : ""} onClick={() => navigateClient("support")}><Headset size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Support{openTickets > 0 && <span className="badge accent" style={{ marginLeft: 6 }}>{openTickets}</span>}</button>
           <button className={portalView === "profile" ? "on" : ""} onClick={openProfile}><User size={14} style={{ verticalAlign: -2, marginRight: 5 }} />My profile</button>
         </div>
 
@@ -166,9 +187,9 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
 
         {portalView === "support" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading support…</div>}><LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} runtime={runtime} /></React.Suspense>}
 
-        {portalView === "ai" && (clientAILoading ? <div className="card" aria-busy="true">Checking ALLBEE AI access…</div> : !clientAIEnabled ? <div className="card assistant-unavailable"><h3>ALLBEE AI is not enabled for this account</h3><p>Your ALLBEE administrator can enable AI from Clients → Client accounts.</p></div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") setPortalView("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>)}
+        {portalView === "ai" && (clientAILoading ? <div className="card" aria-busy="true">Checking ALLBEE AI access…</div> : !clientAIEnabled ? <div className="card assistant-unavailable"><h3>ALLBEE AI is not enabled for this account</h3><p>Your ALLBEE administrator can enable AI from Clients → Client accounts.</p></div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") navigateClient("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>)}
       </div>
-      <AllbeeAIFloatingAssistant onOpen={() => setPortalView("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled} />
+      <AllbeeAIFloatingAssistant onOpen={() => navigateClient("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled} />
     </div>
   );
 }
