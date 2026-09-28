@@ -41,7 +41,7 @@ try {
     assert(position.left >= 0 && position.right <= width + 1, `offscreen ${role} ${width}`);
     if (width < 773) assert(position.bottom <= position.navTop, `bottom-nav collision ${role} ${width}`);
     assert(position.loaded > 0, `transparent mascot unavailable ${role} ${width}`);
-    assert.equal(position.src, "/allbee-ai-mascot-v3.png");
+    assert(/(?:\/src\/assets\/|\/assets\/)allbee-ai-mascot[^/]*\.png(?:\?.*)?$/.test(position.src), `unexpected mascot asset ${position.src}`);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     assert.equal(await launcher().isVisible(), !position.covered, `collision visibility ${role} ${width}`);
     checks++;
@@ -89,7 +89,7 @@ try {
   // Login: the same floating mascot opens the existing safe sign-in helper.
   await page.goto(`http://127.0.0.1:${port}/?role=anonymous`);
   await launcher().waitFor();
-  assert.equal(await page.locator('.allbee-mascot-launcher--login img').getAttribute('src'), '/allbee-ai-mascot-v3.png');
+  assert(/(?:\/src\/assets\/|\/assets\/)allbee-ai-mascot[^/]*\.png(?:\?.*)?$/.test(await page.locator('.allbee-mascot-launcher--login img').getAttribute('src')));
   await launcher().click();
   await page.locator('.web-ai-panel').waitFor();
   assert(await page.locator('.web-ai-panel .allbee-mascot img').count());

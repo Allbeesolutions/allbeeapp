@@ -7,7 +7,8 @@ const mascot = fs.readFileSync("src/ui/AllbeeMascot.jsx", "utf8");
 
 describe("ALLBEE mascot surface coverage", () => {
   it("uses the transparent canonical PNG artwork", () => {
-    expect(mascot).toContain('/allbee-ai-mascot-v3.png');
+    expect(mascot).toContain('import mascotAsset from "../assets/allbee-ai-mascot.png"');
+    expect(mascot).toContain('src={mascotAsset}');
     expect(mascot).not.toContain('/allbee-ai-mascot.jpeg');
   });
   it("keeps the floating assistant on every APN tab while hiding only transient overlays", () => {

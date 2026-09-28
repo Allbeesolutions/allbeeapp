@@ -1,16 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const buildId = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || `${Date.now()}`;
+
 export default defineConfig({
-  plugins: [react()],
+  define: { __ALLBEE_BUILD_ID__: JSON.stringify(buildId) },
+  plugins: [
+    react(),
+    {
+      name: "allbee-build-manifest",
+      generateBundle() {
+        this.emitFile({ type: "asset", fileName: "allbee-build.json", source: JSON.stringify({ buildId }) });
+      },
+    },
+  ],
   server: { port: 5173 },
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // Split the two large, independently cacheable runtime packages.
-          // Keep React and the remaining dependency graph together to avoid
-          // circular manual chunks.
           if (id.includes("node_modules/lucide-react")) return "vendor-icons";
           if (id.includes("node_modules/@supabase")) return "vendor-supabase";
           if (id.includes("node_modules")) {

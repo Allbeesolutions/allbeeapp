@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./mascot.css";
+import mascotAsset from "../assets/allbee-ai-mascot.png";
 
 const INTRO_KEY = "allbee-mascot-intro-v2";
 const STATES = new Set(["idle", "hello", "wave", "thinking", "listening", "working", "success", "notification", "attention"]);
@@ -18,7 +19,7 @@ const CONTEXT_HINTS = {
 export function AllbeeMascot({ state = "idle", size = 72, className = "" }) {
   const safeState = STATES.has(state) ? state : "idle";
   return <span className={`allbee-mascot allbee-mascot--${safeState} ${className}`.trim()} style={{ "--mascot-size": `${size}px` }} aria-hidden="true">
-    <img src="/allbee-ai-mascot-v3.png" alt="" width="862" height="852" draggable="false" />
+    <img src={mascotAsset} alt="" width="862" height="852" draggable="false" />
   </span>;
 }
 

@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("ALLBEE mascot", () => {
   it("uses the supplied artwork with decorative semantics and supports working states", () => {
     const { rerender, container } = render(<AllbeeMascot state="thinking" size={32} />);
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("/allbee-ai-mascot-v3.png");
+    expect(container.querySelector("img")?.getAttribute("src")).toMatch(/allbee-ai-mascot.*\.png/);
     expect(container.querySelector(".allbee-mascot--thinking")).toBeTruthy();
     expect(container.querySelector("img")?.getAttribute("alt")).toBe("");
     rerender(<AllbeeMascot state="success" size={32} />);
