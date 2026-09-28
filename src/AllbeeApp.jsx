@@ -5126,7 +5126,7 @@ function APNTraining({ db, meRow, pid, mutate }) {
         <div className="apn-rowcard" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ fontWeight: 700 }}>{APN_SERVICE_LABEL[cat]} sales quiz</div>
-            <div className="hint-line" style={{ fontSize: 12 }}>{unlocked[cat] ? `Passed (${meRow.quizPasses?.[cat] ?? "✓"}%) — leads unlocked.` : catQuiz ? "Pass 60% to unlock lead submission." : "Quiz coming soon."}</div>
+            <div className="hint-line" style={{ fontSize: 12 }}>{unlocked[cat] ? `Passed (${meRow.quizPasses?.[cat] ?? "✓"}%) — leads unlocked.` : catQuiz ? "Pass 60% to unlock lead submission." : "No quiz has been assigned for this category yet."}</div>
           </div>
           {unlocked[cat] ? <span className="badge pos">Unlocked</span>
             : catQuiz ? <button className="btn primary" onClick={() => setQuiz(catQuiz)}><ClipboardCheck size={15} />Take quiz</button>

@@ -55,4 +55,12 @@ describe("Current security hardening regression contracts", () => {
     expect(audit).toContain("security_sensitive_change_trigger");
     expect(audit).toContain("security_sensitive_actions");
   });
+
+  it("does not expose internal team chat through an all-authenticated RLS policy", () => {
+    const teamChat = read("supabase/migrations/20260928182000_harden_team_chat_direct_rls.sql");
+    expect(teamChat).toContain("drop policy if exists team_chat_all_authenticated");
+    expect(teamChat).toContain("not public.is_client() and not public.is_partner()");
+    expect(teamChat).toContain("(data->>'userId') = auth.uid()::text");
+    expect(teamChat).toContain("revoke update on public.team_chat from authenticated, anon, public");
+  });
 });
