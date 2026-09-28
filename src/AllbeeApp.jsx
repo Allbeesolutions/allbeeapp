@@ -5462,7 +5462,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></main>
 
       <AllbeeAIFloatingAssistant onOpen={() => go("ai")} displayName={meRow?.name} context={tab} surface="apn" collisionRootSelector=".apn-body" hidden={!!modal || searchOpen || sidebarOpen} />
-      {showFab && <button className="apn-fab" aria-label={tab === "leads" ? "Submit a lead" : "Create quotation"} onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
+      {showFab && <button className={`apn-fab${tab === "leads" ? " apn-fab--left" : ""}`} aria-label={tab === "leads" ? "Submit a lead" : "Create quotation"} onClick={() => setModal({ type: tab === "leads" ? "apnLead" : "apnQuote" })}><Plus size={24} /></button>}
 
       {/* one global pull-to-refresh for every APN tab; overlays/sheets guard themselves */}
       <GlobalPullToRefresh enabled={!modal && !searchOpen && !sidebarOpen} onRefresh={refreshPortal} />
