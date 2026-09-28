@@ -2716,7 +2716,7 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
     return mods.length ? mods.map((k) => (GRANTABLE_MODULES.find((g) => g[0] === k) || [k, k])[1]).join(", ") : "Personal screens only";
   };
   const isSuper = me.role === "superadmin";
-  const pending = team.filter((p) => (p.role === "staff" || p.role === "client") && p.approved === false);
+  const pending = team.filter((p) => p.role === "staff" && p.approved === false);
   const roster = team.filter((p) => p.role !== "client" && p.role !== "partner" && p.role !== "district_head");          // clients & APN partners live in their own portals, not the internal roster
   const approve = (p) => { haptic(10); changeProfile(p.id, { approved: true, active: true, status: "active" }, `approved ${p.name}'s account`); };
   const reject = (p) => changeProfile(p.id, { approved: false, status: "terminated", active: false }, `rejected ${p.name}'s account`);
@@ -2730,7 +2730,7 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
             <div key={p.id} className="item-row">
               <Avatar name={p.name} url={p.photo_url} size={30} fontSize={12} />
               <div className="item-main">
-                <div className="item-title" style={{ fontSize: 14 }}>{p.name} <span className="badge accent" style={{ marginLeft: 4 }}>{p.role === "client" ? "Client" : "Staff"}</span></div>
+                <div className="item-title" style={{ fontSize: 14 }}>{p.name} <span className="badge accent" style={{ marginLeft: 4 }}>Staff</span></div>
                 <div className="item-meta"><span>{p.email}</span>{p.created_at && <span>Signed up {fmtDate(p.created_at.slice(0, 10))}</span>}</div>
               </div>
               <div className="row-actions">
@@ -6265,6 +6265,7 @@ export default function App() {
   const [config, setConfig] = useState(null);             // app_config (T&C body + version)
   const [locks, setLocks] = useState([]);                 // locked financial periods ('YYYY-MM')
   const [serverUnreadNotifs, setServerUnreadNotifs] = useState(null);
+  const [clientsSeenAt, setClientsSeenAt] = useState(() => { try { return Number(localStorage.getItem("allbee_clients_seen_at") || 0); } catch { return 0; } });
   const [dashboardSnapshot, setDashboardSnapshot] = useState(null);
   const [financeBalances, setFinanceBalances] = useState(null);
   const [navOrder, setNavOrder] = useState(() => { try { return JSON.parse(localStorage.getItem("allbee_navorder") || "null") || []; } catch { return []; } });
@@ -6974,6 +6975,11 @@ export default function App() {
   const setHash = (h) => { if (window.location.hash !== h) window.location.hash = h; };
   const go = (r) => {
     if (r !== route) setRouteDataLoading(true);
+    if (r === "clients") {
+      const seen = Date.now();
+      setClientsSeenAt(seen);
+      try { localStorage.setItem("allbee_clients_seen_at", String(seen)); } catch { /* ignore */ }
+    }
     setRoute(r); setAccountUser(null); setTaskDetailId(null); setMenuOpen(false);
     setHash(hashForRoute(r));
   };
@@ -7280,6 +7286,7 @@ export default function App() {
     : [];
   const unseenAnn = db.announcements.filter((a) => !profile?.notif_seen_at || (a.createdAt || 0) > new Date(profile.notif_seen_at).getTime()).length;
   const financeApnPartners = modal?.type === "income" ? (db.apn_users || []).filter((partner) => partner.status === "active") : [];
+  const newClientRegistrations = (team || []).filter((row) => row.role === "client" && new Date(row.created_at || 0).getTime() > clientsSeenAt).length;
   const actionCounts = (() => {
     const pending = (value) => ["pending", "Pending", "under_review", "processing", "Pending approval"].includes(value);
     const apnActions = apnAdminActionCounts(db, profile?.id, APN_ACTION_PENDING_STATUSES, APN_ACTION_BADGE_MAP);
@@ -7413,7 +7420,7 @@ export default function App() {
       {key === "apn" && <ActionBadge count={actionCounts.apn} label="APN action" />}
       {(key === "leads" || key === "quotations") && <ActionBadge count={actionCounts.crm} label="CRM action" />}
       {key === "accounts" && <ActionBadge count={actionCounts.finance} label="finance action" />}
-      {key === "clients" && <ActionBadge count={actionCounts.clients} label="client action" />}
+      {key === "clients" && <ActionBadge count={newClientRegistrations} label="new client registration" />}
       {key === "attendance" && <ActionBadge count={actionCounts.attendance} label="attendance action" />}
       {key === "activity" && isSuper && inactiveCount > 0 && <span className="badge neg">{inactiveCount}</span>}
     </>
