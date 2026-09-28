@@ -98,3 +98,9 @@ end $$;
 do $$ begin
  if has_function_privilege('authenticated','public.ai_memory_sync_business()','EXECUTE') or has_function_privilege('authenticated','public.ai_memory_sync_knowledge()','EXECUTE') then raise exception 'P0: internal AI memory sync exposed to authenticated'; end if;
 end $$;
+
+-- Legacy permissive chat policies must never return; they bypass the stricter chat contract.
+do $$ begin
+ if exists(select 1 from pg_policies where schemaname='public' and tablename='chat' and policyname in ('chat_insert_internal','chat_update_internal')) then raise exception 'P0: legacy permissive chat policy restored'; end if;
+ if not exists(select 1 from pg_policies where schemaname='public' and tablename='chat' and policyname='chat_ins' and with_check like '%NOT is_client()%') then raise exception 'P0: strict chat insert policy missing'; end if;
+end $$;
