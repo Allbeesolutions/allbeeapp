@@ -12,6 +12,6 @@ describe("mascot cache integrity contract", () => {
   it("ships the exact canonical transparent artwork bytes", () => {
     const file = fs.readFileSync("src/assets/allbee-ai-mascot.png");
     expect(file.length).toBeGreaterThan(100000);
-    expect(crypto.createHash("sha256").update(file).digest("hex")).toBe("71f0f23dfe6c755ff4cf7616e72c94b8f43adb77b33d228352b97ef6dc292ae4");
+    expect(crypto.createHash("sha256").update(file).digest("hex")).toBe("cd41701c8695dda0568ea0d4df02e28e87a3ed2ca133d1dd46f9c04d81e470d0");
   });
 });

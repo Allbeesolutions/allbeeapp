@@ -19,7 +19,7 @@ const CONTEXT_HINTS = {
 export function AllbeeMascot({ state = "idle", size = 72, className = "" }) {
   const safeState = STATES.has(state) ? state : "idle";
   return <span className={`allbee-mascot allbee-mascot--${safeState} ${className}`.trim()} style={{ "--mascot-size": `${size}px` }} aria-hidden="true">
-    <img src={mascotAsset} alt="" width="862" height="852" draggable="false" />
+    <img src={mascotAsset} alt="" width="1054" height="990" draggable="false" />
   </span>;
 }
 
