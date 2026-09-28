@@ -87,3 +87,13 @@ describe("CRM and Knowledge internal logger grants", () => {
     expect(sql).toContain("knowledge_log_change(text,text,text,jsonb,jsonb,text,text) from public, anon, authenticated");
   });
 });
+
+describe("team chat RLS auth init-plan optimization", () => {
+  it("evaluates auth.uid once per statement without changing ownership checks", () => {
+    const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260929113000_optimize_team_chat_rls_auth_initplan.sql"), "utf8");
+    expect(sql).toContain("data->>'userId' = (select auth.uid())::text");
+    expect(sql).toContain("not public.is_client()");
+    expect(sql).toContain("not public.is_partner()");
+    expect(sql).toContain("public.is_admin()");
+  });
+});
