@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function Attendance(props) {
   const {  db, mutate, me, isAdmin, isSuper, team, openModal  } = props;
-  const { Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal, useState, Modal, Field, Trash2, emitToast } = props.runtime || {};
+  const { Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal, useState, Modal, Field, Trash2, emitToast, Avatar } = props.runtime || {};
   const { CalendarDays, Check, CheckCircle2, Clock, LogIn, Pencil, Plane, UserCheck, Users, XCircle } = Icons;
 
   const today = todayISO();
@@ -120,7 +120,7 @@ export default function Attendance(props) {
               <thead><tr><th>Member</th><th>Status</th><th>In</th><th>Out</th><th className="num-cell">Hours</th>{isSuper && <th></th>}</tr></thead>
               <tbody>{roster.map(({ p, a, st }) => (
                 <tr key={p.id}>
-                  <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(p.name), width: 24, height: 24, fontSize: 10 }}>{p.name[0]}</span>{p.name}</span></td>
+                  <td><span className="who-cell"><Avatar name={p.name} url={p.photo_url} size={24} fontSize={10} />{p.name}</span></td>
                   <td><span className={"badge " + (st.tone === "muted" ? "" : st.tone)} style={st.tone === "muted" ? { background: "var(--surface-2)", color: "var(--muted)" } : undefined}>{st.label}</span></td>
                   <td className="mono">{clockTime(a?.checkIn)}</td><td className="mono">{clockTime(a?.checkOut)}</td>
                   <td className="num-cell mono">{a?.checkOut ? hoursBetween(a.checkIn, a.checkOut)?.toFixed(1) : "—"}</td>

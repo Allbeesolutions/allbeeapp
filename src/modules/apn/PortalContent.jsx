@@ -22,7 +22,7 @@ export function APNDocuments({ db, Empty }) {
 
 /* ── notifications ───────────────────────────────────────────────────── */
 
-export function APNNotifications({ db, meRow, Empty, Avatar, fmtDateTime }) {
+export function APNNotifications({ db, meRow, people = [], publicOwners = [], Empty, Avatar, fmtDateTime }) {
   const list = (db.apn_notifications || []).filter((n) => apnNotifVisible(n, meRow)).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div>
@@ -30,7 +30,7 @@ export function APNNotifications({ db, meRow, Empty, Avatar, fmtDateTime }) {
       {list.length === 0 ? <div className="apn-rowcard"><Empty icon={<Bell size={22} color="var(--muted)" />} title="No notifications" text="Training, commission and target updates will appear here." /></div>
         : <div className="apn-list">{list.map((n) => (
           <div key={n.id} className="apn-rowcard">
-            {(() => { const sender = apnNotificationSender(n); return <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={sender.name} url={sender.avatar} size={26} fontSize={10} /><div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation}</div></div>{n.level && n.level !== "General" && <span className={"badge " + (n.level === "Urgent" ? "neg" : "accent")}>{n.level}</span>}</div>; })()}
+            {(() => { const sender = apnNotificationSender(n, { people, apnUsers: db.apn_users || [], publicOwners }); return <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={sender.name} url={sender.avatar} size={26} fontSize={10} /><div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{n.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{sender.name} · {sender.designation}</div></div>{n.level && n.level !== "General" && <span className={"badge " + (n.level === "Urgent" ? "neg" : "accent")}>{n.level}</span>}</div>; })()}
             {n.body && <div style={{ marginTop: 5, fontSize: 14, lineHeight: 1.5, color: "var(--ink)" }}>{n.body}</div>}
             <div className="hint-line" style={{ fontSize: 11, marginTop: 6 }}>{fmtDateTime(n.createdAt)}</div>
           </div>

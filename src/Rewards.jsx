@@ -1,7 +1,7 @@
 import React from "react";
 
 function Rewards({ db, mutate, openModal, removeItem, me, isAdmin, team, runtime }) {
-  const { Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, FolderKanban, Award, Star, Trash2, avatarColor, round2, todayISO } = runtime;
+  const { Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, FolderKanban, Award, Star, Trash2, avatarColor, round2, todayISO, Avatar } = runtime;
   const all = [...db.rewards].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = isAdmin ? all : all.filter((r) => r.userId === me.id);
   const del = (r) => removeItem("rewards", r, { name: r.userName, audit: `removed recognition for ${r.userName}` });
@@ -33,7 +33,7 @@ function Rewards({ db, mutate, openModal, removeItem, me, isAdmin, team, runtime
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
             {nominees.map((n) => (
               <div key={n.badge} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <span className="avatar" style={{ background: avatarColor(n.p.name), width: 28, height: 28, fontSize: 11 }}>{n.p.name[0]}</span>
+                <Avatar name={n.p.name} url={n.p.photo_url} size={28} fontSize={11} />
                 <span style={{ fontWeight: 600 }}>{n.p.name}</span>
                 <span className="badge accent" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>{n.icon}{n.badge}</span>
                 <span className="hint-line" style={{ flex: 1, minWidth: 120, fontSize: 12 }}>{n.note}</span>
@@ -47,7 +47,7 @@ function Rewards({ db, mutate, openModal, removeItem, me, isAdmin, team, runtime
         {list.length === 0 ? <Empty icon={<Award size={22} color="var(--muted)" />} title={isAdmin ? "No recognition given yet" : "No recognition yet"} text={isAdmin ? "Celebrate good work — points feed the performance leaderboard." : "When an admin recognises your work, it shows up here."} action={isAdmin && <button className="btn primary" onClick={() => openModal({ type: "reward" })}><Award size={16} />Give recognition</button>} />
           : list.map((r) => (
             <div key={r.id} className="item-row">
-              <div className="avatar" style={{ background: avatarColor(r.userName), width: 34, height: 34, fontSize: 14 }}>{(r.userName || "?")[0]}</div>
+              <Avatar name={r.userName} url={(team || []).find((p) => p.id === r.userId || p.name === r.userName)?.photo_url} size={34} fontSize={14} />
               <div className="item-main">
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><span className="item-title">{r.userName}</span><span className="badge accent">{r.kind}</span><span className="badge pos">+{r.points} pts</span></div>
                 {r.note && <div className="item-meta" style={{ marginTop: 4 }}>{r.note}</div>}

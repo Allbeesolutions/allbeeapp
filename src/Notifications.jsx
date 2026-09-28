@@ -43,7 +43,7 @@ export default function Notifications({ db, mutate, openModal, removeItem, isAdm
     return {
       name: n.senderName || n.by || person?.name || "Admin",
       designation: n.senderDesignation || person?.designation || ROLE_LABEL[person?.role] || "Administrator",
-      avatar: n.senderAvatar || person?.photo_url || "",
+      avatar: person?.photo_url || n.senderAvatar || "",
     };
   };
   const markRead = async (n) => {

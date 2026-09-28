@@ -1,7 +1,7 @@
 import React from "react";
 
 function Performance({ db, team, runtime }) {
-  const { Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, TrendingUp, UserPlus, avatarColor, round2 } = runtime;
+  const { Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, TrendingUp, UserPlus, Avatar, avatarColor, round2 } = runtime;
   const month = new Date();
   const staff = (team || []).filter((p) => ["staff", "intern", "admin", "accountant"].includes(p.role) && p.active !== false);
   const rows = staff.map((p) => {
@@ -31,7 +31,7 @@ function Performance({ db, team, runtime }) {
             <tbody>{rows.map((r, i) => (
               <tr key={r.p.id}>
                 <td style={{ fontSize: 16 }}>{medal(i)}</td>
-                <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(r.p.name), width: 26, height: 26, fontSize: 11 }}>{r.p.name[0]}</span><span><div style={{ fontWeight: 600 }}>{r.p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[r.p.role]}</div></span></span></td>
+                <td><span className="who-cell"><Avatar name={r.p.name} url={r.p.photo_url} size={26} fontSize={11} /><span><div style={{ fontWeight: 600 }}>{r.p.name}</div><div className="hint-line" style={{ fontSize: 11 }}>{ROLE_LABEL[r.p.role]}</div></span></span></td>
                 <td className="num-cell mono">{r.done}</td><td className="num-cell mono">{r.leadsGen}</td><td className="num-cell mono">{r.leadsWon}</td><td className="num-cell mono">{r.hours}</td><td className="num-cell mono">{r.updateDays}</td><td className="num-cell mono">{r.points}</td>
                 <td className="num-cell mono" style={{ fontWeight: 700 }}>{r.score}</td>
               </tr>

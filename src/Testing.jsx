@@ -1,7 +1,7 @@
 import React from "react";
 
 export default function Testing({ db, mutate, openModal, removeItem, isAdmin, me, currentUser, team, runtime }) {
-  const { useState, LazyTestDetail, Empty, supabase, uid, haptic, uploadAttachment, fileKind, storagePathFromUrl, fmtTime, testProgress, testResultTone, TEST_MAX_IMAGES, TEST_IMAGE_TTL_DAYS, ArrowLeft, ClipboardCheck, FolderKanban, User, Pencil, Trash2, CheckCircle2, XCircle, RotateCcw, ListTodo, X, Plus, Bug, AlertTriangle, ImageIcon, RefreshCw, Send, FileText, ChevronRight, Hourglass, fmtDate, avatarColor } = runtime;
+  const { useState, LazyTestDetail, Empty, supabase, uid, haptic, uploadAttachment, fileKind, storagePathFromUrl, fmtTime, testProgress, testResultTone, TEST_MAX_IMAGES, TEST_IMAGE_TTL_DAYS, ArrowLeft, ClipboardCheck, FolderKanban, User, Pencil, Trash2, CheckCircle2, XCircle, RotateCcw, ListTodo, X, Plus, Bug, AlertTriangle, ImageIcon, RefreshCw, Send, FileText, ChevronRight, Hourglass, fmtDate, avatarColor, Avatar } = runtime;
   const [openId, setOpenId] = useState(null);
   const all = [...(db.testing || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = isAdmin ? all : all.filter((s) => s.assignedToId === me.id || (!!currentUser && s.assignedTo === currentUser));
@@ -37,7 +37,7 @@ export default function Testing({ db, mutate, openModal, removeItem, isAdmin, me
                     <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => setOpenId(s.id)}>
                       <td><div style={{ fontWeight: 600 }}>{s.title}</div><div className="hint-line" style={{ fontSize: 11 }}>{fmtDate(new Date(s.createdAt || Date.now()).toISOString().slice(0, 10))}{nBugs ? ` · ${nBugs} issue${nBugs > 1 ? "s" : ""}` : ""}</div></td>
                       <td>{s.projectName ? <span className="tag">{s.projectName}</span> : <span className="hint-line">—</span>}</td>
-                      <td><span className="who-cell"><span className="avatar" style={{ background: avatarColor(s.assignedTo || "?"), width: 24, height: 24, fontSize: 10 }}>{(s.assignedTo || "?")[0]}</span>{s.assignedTo || "Unassigned"}</span></td>
+                      <td><span className="who-cell"><Avatar name={s.assignedTo || "Unassigned"} url={(team || []).find((p) => p.id === s.assignedToId || p.name === s.assignedTo)?.photo_url} size={24} fontSize={10} />{s.assignedTo || "Unassigned"}</span></td>
                       <td className="mono">{p.done}/{p.total}</td>
                       <td><span className={"badge " + testResultTone(s.result)}>{s.result || "Pending"}</span></td>
                       <td onClick={(e) => e.stopPropagation()}><div className="row-actions">

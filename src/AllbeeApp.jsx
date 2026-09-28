@@ -1479,7 +1479,7 @@ function Birthdays({ team, windowDays = 30 }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
         {upcoming.slice(0, 6).map(({ p, days }) => (
           <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="avatar" style={{ background: avatarColor(p.name), width: 28, height: 28, fontSize: 11 }}>{p.name[0]}</span>
+            <Avatar name={p.name} url={p.photo_url} size={28} fontSize={11} />
             <span style={{ flex: 1, fontWeight: 600 }}>{p.name}{days === 0 ? " — wish them well!" : ""}</span>
             <span className="hint-line mono" style={{ fontSize: 12 }}>{dayMonth(p.dob)}</span>
             <span className={"badge " + (days === 0 ? "pos" : days <= 7 ? "accent" : "")}>{rel(days)}</span>
@@ -2015,7 +2015,7 @@ function ImportData({ mutate, currentUser, onClose, defaultTarget = "income", lo
   );
 }
 
-function AccountFull({ db, user, currentBalanceOverride, goBack }) {
+function AccountFull({ db, user, currentBalanceOverride, goBack, team = [] }) {
   const all = useMemo(() => ledgerFor(db, user), [db, user]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -2074,7 +2074,7 @@ function AccountFull({ db, user, currentBalanceOverride, goBack }) {
     <div className="content">
       <button className="backlink" onClick={goBack}><ArrowLeft size={15} />Back to Share &amp; accounts</button>
       <div className="detail-head">
-        <span className="avatar" style={{ background: avatarColor(user), width: 40, height: 40, fontSize: 17 }}>{user[0]}</span>
+        <Avatar name={user} url={(team || []).find((p) => p.name === user)?.photo_url} size={40} fontSize={17} />
         <div style={{ flex: 1, minWidth: 200 }}>
           <h3>{user} — account statement</h3>
           <div className="topbar-sub">Full balance breakdown for {user}</div>
@@ -2188,7 +2188,7 @@ function Progress({ db, mutate, isAdmin = true, currentUser, me, openTask }) {
   );
 }
 
-function TaskDetail({ db, taskId, me, isAdmin, currentUser, mutate, openModal, removeItem, goBack }) {
+function TaskDetail({ db, taskId, me, isAdmin, currentUser, mutate, openModal, removeItem, goBack, team = [] }) {
   const t = db.tasks.find((x) => x.id === taskId);
   const [comment, setComment] = useState("");
   const [atLabel, setAtLabel] = useState("");
@@ -2331,7 +2331,7 @@ function TaskDetail({ db, taskId, me, isAdmin, currentUser, mutate, openModal, r
         {(t.comments || []).length === 0 && <div className="hint-line">No comments yet.</div>}
         {(t.comments || []).map((c) => (
           <div key={c.id} className="comment">
-            <div className="avatar" style={{ background: avatarColor(c.by), width: 30, height: 30, fontSize: 12 }}>{(c.by || "?")[0]}</div>
+            <Avatar name={c.by} url={(team || []).find((p) => p.name === c.by)?.photo_url} size={30} fontSize={12} />
             <div className="body">
               <div className="who">{c.by}</div>
               <div className="txt">{c.text}</div>
@@ -2542,7 +2542,7 @@ function StaffDashboard({ db, me, go, mutate, openModal, team = [] }) {
       <div className="page-head"><h3>{greet}, {me.name}</h3></div>
 
       <div className="card stat" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <div className="avatar" style={{ background: avatarColor(me.name), width: 44, height: 44, fontSize: 18 }}>{me.name[0]}</div>
+        <Avatar name={me.name} url={(team || []).find((p) => p.id === me.id || p.name === me.name)?.photo_url} size={44} fontSize={18} />
         <div style={{ flex: 1, minWidth: 180 }}>
           <div className="lbl"><Clock size={14} /> Today · {fmtDate(today)}</div>
           <div style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>
@@ -2605,7 +2605,7 @@ function attStatus(db, userId, dateISO) {
 
 function leaveTone(s) { return s === "Approved" ? "pos" : s === "Rejected" ? "neg" : "pri"; }
 
-function Updates({ db, mutate, me, isAdmin, removeItem, openModal }) {
+function Updates({ db, mutate, me, isAdmin, removeItem, openModal, team = [] }) {
   const [text, setText] = useState("");
   const [editId, setEditId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -2642,7 +2642,7 @@ function Updates({ db, mutate, me, isAdmin, removeItem, openModal }) {
           <Empty icon={<MessageSquare size={22} color="var(--muted)" />} title="No updates yet" text={isAdmin ? "Daily updates from your team will show up here." : "Post your first update above."} />
         ) : list.map((u) => (
           <div key={u.id} className="item-row">
-            <div className="avatar" style={{ background: avatarColor(u.userName), width: 30, height: 30, fontSize: 12 }}>{u.userName[0]}</div>
+            <Avatar name={u.userName} url={(team || []).find((p) => p.id === u.userId || p.name === u.userName)?.photo_url} size={30} fontSize={12} />
             <div className="item-main">
               <div className="item-title" style={{ fontSize: 14 }}><b>{u.userName}</b></div>
               {editId === u.id ? (
@@ -2704,7 +2704,7 @@ function Team({ team, me, changeProfile, db, resolveResign, onActivity, onOpenAP
           <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><Hourglass size={15} /> {pending.length} account{pending.length > 1 ? "s" : ""} awaiting your approval</div>
           {pending.map((p) => (
             <div key={p.id} className="item-row">
-              <div className="avatar" style={{ background: avatarColor(p.name), width: 30, height: 30, fontSize: 12 }}>{(p.name || "?")[0]}</div>
+              <Avatar name={p.name} url={p.photo_url} size={30} fontSize={12} />
               <div className="item-main">
                 <div className="item-title" style={{ fontSize: 14 }}>{p.name} <span className="badge accent" style={{ marginLeft: 4 }}>{p.role === "client" ? "Client" : "Staff"}</span></div>
                 <div className="item-meta"><span>{p.email}</span>{p.created_at && <span>Signed up {fmtDate(p.created_at.slice(0, 10))}</span>}</div>
@@ -5254,7 +5254,7 @@ const referralLinkFor = (code) => {
 };
 const referralQrFor = (link) => link ? `https://quickchart.io/qr?size=220&text=${encodeURIComponent(link)}` : "";
 /* ── portal shell ────────────────────────────────────────────────────── */
-export function APNPortal({ db, profile, session, signOut, isDark, mutate, patchDb = () => {}, reload, onTabChange, tabDataLoading = false }) {
+export function APNPortal({ db, profile, people = [], session, signOut, isDark, mutate, patchDb = () => {}, reload, onTabChange, tabDataLoading = false }) {
   const pid = profile.id;
   const meRow = apnMe(db, pid);
   const [tab, setTab] = useState(() => {
@@ -5273,6 +5273,15 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
   const [agr, setAgr] = useState(null);
   const [agrLoading, setAgrLoading] = useState(true);
   const [agrError, setAgrError] = useState("");
+  const [publicOwners, setPublicOwners] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    supabase.rpc("public_owner_profiles").then(({ data, error }) => {
+      if (active && !error) setPublicOwners(Array.isArray(data) ? data : []);
+    });
+    return () => { active = false; };
+  }, []);
 
   // The agreement gate answer comes from the server-side apn_agreement_status
   // RPC (single source of truth). A failure is fail-closed: the partner cannot
@@ -5399,7 +5408,7 @@ export function APNPortal({ db, profile, session, signOut, isDark, mutate, patch
       case "agreements": return <APNAgreementCenter db={db} pid={pid} onRefresh={refreshPortal} />;
       case "ai": return <APNAI meRow={meRow} go={go} mutate={mutate} pid={pid} />;
       case "support": return <LazyAPNSupportTickets pid={pid} refreshTick={snapTick} supabase={supabase} APNStatusBadge={APNStatusBadge} fmtDateTime={fmtDateTime} />;
-      case "notifications": return <LazyAPNNotifications db={db} meRow={meRow} Empty={Empty} Avatar={Avatar} fmtDateTime={fmtDateTime} />;
+      case "notifications": return <LazyAPNNotifications db={db} meRow={meRow} people={people} publicOwners={publicOwners} Empty={Empty} Avatar={Avatar} fmtDateTime={fmtDateTime} />;
       case "achievements": return <LazyAPNAchievements db={db} pid={pid} BadgeCheck={BadgeCheck} />;
       case "leaderboard": return <LazyAPNLeaderboard db={db} meRow={meRow} pid={pid} Empty={Empty} Trophy={Trophy} Avatar={Avatar} apnAvatarUrl={apnAvatarUrl} money={money} />;
       case "district": return isHead ? <LazyAPNDistrict db={db} meRow={meRow} mutate={mutate} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} APNMetric={APNMetric} Empty={Empty} APNHeadPartnerCard={APNHeadPartnerCard} Avatar={Avatar} money={money} round2={round2} /> : isStateHead ? <LazyAPNStateHead db={db} meRow={meRow} mutate={mutate} patchDb={patchDb} openModal={setModal} supabase={supabase} uid={uid} emitToast={emitToast} round2={round2} APN_INACTIVE_DAYS={APN_INACTIVE_DAYS} APNMetric={APNMetric} Empty={Empty} APNHeadPartnerCard={APNHeadPartnerCard} Avatar={Avatar} money={money} /> : <APNHome db={db} meRow={meRow} stats={stats} snap={finSnap} pid={pid} go={go} openModal={setModal} mutate={mutate} profile={profile} onOpenProfile={() => go("profile")} />;
@@ -7183,7 +7192,7 @@ export default function App() {
   // internal app, so they never reach accounts, balances, the vault or the team.
   if (role === "partner") {
     if (loading || !db || !partnerDataReady) return <LoadingScreen isDark={isDark} note="Loading APN…" />;
-    return gateChild(<APNPortal onTabChange={changeApnTab} tabDataLoading={routeDataLoading} db={db} profile={profile} session={session} signOut={signOut} isDark={isDark} mutate={mutate} patchDb={patchDb} reload={reload} />);
+    return gateChild(<APNPortal onTabChange={changeApnTab} tabDataLoading={routeDataLoading} db={db} profile={profile} people={team} session={session} signOut={signOut} isDark={isDark} mutate={mutate} patchDb={patchDb} reload={reload} />);
   }
   // first login: require the core profile details before anything else
   if (profile && (!profile.mobile || !profile.dob))
@@ -7244,8 +7253,8 @@ export default function App() {
       return <div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "32%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>;
     }
     // full-page detail views take precedence over the tab routes
-    if (taskDetailId) return <TaskDetail db={db} taskId={taskDetailId} me={me} isAdmin={isAdmin} currentUser={currentUser} mutate={mutate} openModal={openModal} removeItem={removeItem} goBack={goBackDetail} />;
-    if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} currentBalanceOverride={bal[accountUser]} goBack={goBackDetail} />;
+    if (taskDetailId) return <TaskDetail db={db} taskId={taskDetailId} me={me} isAdmin={isAdmin} currentUser={currentUser} mutate={mutate} openModal={openModal} removeItem={removeItem} goBack={goBackDetail} team={team} />;
+    if (accountUser && canFinance) return <AccountFull db={db} user={accountUser} currentBalanceOverride={bal[accountUser]} goBack={goBackDetail} team={team} />;
 
     switch (safeRoute) {
       case "dashboard":
@@ -7258,9 +7267,9 @@ export default function App() {
       case "knowledge-engine": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Pricing &amp; Knowledge Center…</div></div>}><LazyPricingKnowledgeCenter isAdmin={isAdmin} runtime={{ ...Icons, Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast, AGREEMENT_CATEGORIES }} /></React.Suspense>;
       case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
       case "proposal-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Proposal Center…</div></div>}><LazyProposalCenter isAdmin={isAdmin} runtime={{ supabase, emitToast, money, Empty, Modal, Search, RefreshCw, AlertTriangle, FileText, ShieldAlert, Eye, Pencil, Activity, Download, Copy, Send, Check }} /></React.Suspense>;
-      case "attendance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading attendance…</div></div>}><LazyAttendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} runtime={{ Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal: LazyAttendanceEditModal, useState, Modal, Field, Trash2, emitToast }} /></React.Suspense>;
-      case "leave": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading leave…</div></div>}><LazyLeave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} runtime={{ Empty, avatarColor, fmtDate, haptic, leaveTone, ContactButtons }} /></React.Suspense>;
-      case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} />;
+      case "attendance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading attendance…</div></div>}><LazyAttendance db={db} mutate={mutate} me={me} isAdmin={isAdmin} isSuper={isSuper} team={team} openModal={openModal} runtime={{ Empty, Team, attStatus, attendanceFor, avatarColor, clockTime, fmtDate, haptic, hoursBetween, onApprovedLeave, sameMonth, startOfWeek, sumHours, todayISO, uid, AttendanceEditModal: LazyAttendanceEditModal, useState, Modal, Field, Trash2, emitToast, Avatar }} /></React.Suspense>;
+      case "leave": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading leave…</div></div>}><LazyLeave db={db} team={team} mutate={mutate} me={me} isAdmin={isAdmin} openModal={openModal} runtime={{ Empty, avatarColor, fmtDate, haptic, leaveTone, ContactButtons, Avatar }} /></React.Suspense>;
+      case "updates": return <Updates db={db} mutate={mutate} me={me} isAdmin={isAdmin} removeItem={removeItem} openModal={openModal} team={team} />;
       case "team": return <Team team={team} me={me} changeProfile={changeProfile} db={db} resolveResign={resolveResign} onActivity={recordActivity} onOpenAPN={() => go("apn")} />;
       case "team-leads": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading team leads…</div></div>}><LazyTeamLeads team={team} db={db} openModal={openModal} removeItem={removeItem} me={me} runtime={{ Empty, Avatar, Users, Plus, ShieldCheck, Pencil, Trash2, ROLE_LABEL, teamRosterIds }} /></React.Suspense>;
       case "apn": return (
@@ -7287,7 +7296,7 @@ export default function App() {
       case "marketing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading marketing…</div></div>}> <LazyMarketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts: LazyAccounts }} />;</React.Suspense>;
       case "projects": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading projects…</div></div>}> <LazyProjects db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} isAdmin={isAdmin} me={me} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts: LazyAccounts }} />;</React.Suspense>;
       case "inhouse": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading in-house projects…</div></div>}><LazyInHouse db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} team={team} runtime={{ Home, Activity, CheckCircle2, Wallet, Plus, Empty, priorityTone, INHOUSE_STAGES, money, fmtDate, ExternalLink, Pencil, Trash2, LockIcon }} /></React.Suspense>;
-      case "testing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading testing…</div></div>}><LazyTesting db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} runtime={{ useState, LazyTestDetail, Empty, supabase, uid, haptic, uploadAttachment, fileKind, storagePathFromUrl, fmtTime, testProgress, testResultTone, TEST_MAX_IMAGES, TEST_IMAGE_TTL_DAYS, ArrowLeft, ClipboardCheck, FolderKanban, User, Pencil, Trash2, CheckCircle2, XCircle, RotateCcw, ListTodo, X, Plus, Bug, AlertTriangle, ImageIcon, RefreshCw, Send, FileText, ChevronRight, Hourglass, fmtDate, avatarColor }} /></React.Suspense>;
+      case "testing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading testing…</div></div>}><LazyTesting db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} currentUser={currentUser} team={team} runtime={{ useState, LazyTestDetail, Empty, supabase, uid, haptic, uploadAttachment, fileKind, storagePathFromUrl, fmtTime, testProgress, testResultTone, TEST_MAX_IMAGES, TEST_IMAGE_TTL_DAYS, ArrowLeft, ClipboardCheck, FolderKanban, User, Pencil, Trash2, CheckCircle2, XCircle, RotateCcw, ListTodo, X, Plus, Bug, AlertTriangle, ImageIcon, RefreshCw, Send, FileText, ChevronRight, Hourglass, fmtDate, avatarColor, Avatar }} /></React.Suspense>;
       case "leads": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading CRM…</div>}>
           <LazyEnterpriseCRM db={db} team={team} me={me} isAdmin={isAdmin} reload={reload} config={config}
@@ -7310,8 +7319,8 @@ export default function App() {
       case "terms": return <TermsPage config={config} profile={profile} role={role} isAdmin={isAdmin} go={go} />;
       case "profile": return <MyProfile profile={profile} role={role} saveMyProfile={saveMyProfile} sessionEmail={session?.user?.email} />;
       case "chat": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading chat…</div></div>}><LazyChat db={db} mutate={mutate} me={me} team={team} onRefresh={reload} isAdmin={isAdmin} runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm }} /></React.Suspense>;
-      case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ ...Icons, Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, round2, avatarColor }} /></React.Suspense>;
-      case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ ...Icons, Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, avatarColor, round2, todayISO }} /></React.Suspense>;
+      case "performance": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading performance…</div></div>}><LazyPerformance db={db} team={team} runtime={{ ...Icons, Empty, money, sameMonth, sumHours, isTaskAssignee, ROLE_LABEL, round2, avatarColor, Avatar }} /></React.Suspense>;
+      case "rewards": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading rewards…</div></div>}><LazyRewards db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} me={me} isAdmin={isAdmin} team={team} runtime={{ ...Icons, Empty, fmtDate, sameMonth, sumHours, UserPlus, Clock, Check, X, Gift, avatarColor, round2, todayISO, Avatar }} /></React.Suspense>;
       case "earnings": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading earnings…</div></div>}><LazyMyEarnings db={db} me={me} role={role} payroll={db.payroll} profile={profile} go={go} runtime={{ ...Icons, money, fmtDate, Empty, staffEarnings }} /></React.Suspense>;
       case "recently-deleted": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading recycle bin…</div></div>}><LazyRecentlyDeleted db={db} openModal={openModal} restoreItem={restoreItem} runtime={{ ...Icons, Empty, Trash2, RotateCcw, avatarColor, fmtDateTime, RECYCLE_TTL_DAYS, fmtTime }} /></React.Suspense>;
       case "audit": return <AuditLog db={db} isSuper={isSuper} onOpenActivity={setActivityDetail} />;

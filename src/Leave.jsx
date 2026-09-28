@@ -3,7 +3,7 @@ import * as Icons from "./icons.jsx";
 
 export default function Leave(props) {
   const { db, team, mutate, me, isAdmin, openModal } = props;
-  const { Empty, avatarColor, fmtDate, haptic, leaveTone, ContactButtons } = props.runtime || {};
+  const { Empty, avatarColor, fmtDate, haptic, leaveTone, ContactButtons, Avatar } = props.runtime || {};
   const { CalendarDays, Check, Plane, Plus, Trash2, XCircle } = Icons;
 
   const [filter, setFilter] = useState(isAdmin ? "Pending" : "all");
@@ -29,7 +29,7 @@ export default function Leave(props) {
           <div key={l.id} className="item-row">
             <div className="item-main">
               <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                {isAdmin && <span className="avatar" style={{ background: avatarColor(l.userName), width: 24, height: 24, fontSize: 10 }}>{l.userName[0]}</span>}
+                {isAdmin && <Avatar name={l.userName} url={(team || []).find((p) => p.id === l.userId || p.name === l.userName)?.photo_url} size={24} fontSize={10} />}
                 <span className="item-title">{isAdmin ? l.userName + " · " : ""}{l.type} leave</span>
                 <span className={"badge " + leaveTone(l.status)}>{l.status}</span>
                 <span className="badge" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>{l.days} day{l.days > 1 ? "s" : ""}</span>

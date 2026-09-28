@@ -1,9 +1,12 @@
+import { resolvePersonAvatar } from "../../identity/avatarResolver.js";
 import { APN_APPROVERS } from "./constants.js";
 
 export const apnApproverFor = (actor) => /syed|haji/i.test(String(actor || "")) ? APN_APPROVERS[0] : APN_APPROVERS[1];
-export const apnNotificationSender = (n) => {
+export const apnNotificationSender = (n, identitySources = {}) => {
   const approvedBy = n?.approvedBy || {};
-  return { name: n?.senderName || approvedBy.name || n?.createdBy || "ALLBEE", designation: n?.senderDesignation || approvedBy.designation || n?.senderRole || "Admin", avatar: n?.senderAvatar || approvedBy.avatar || approvedBy.photo_url || "" };
+  const name = n?.senderName || approvedBy.name || n?.createdBy || "ALLBEE";
+  const snapshotAvatar = n?.senderAvatar || approvedBy.avatar || approvedBy.photo_url || "";
+  return { name, designation: n?.senderDesignation || approvedBy.designation || n?.senderRole || "Admin", avatar: resolvePersonAvatar(identitySources, { id: n?.senderId, senderId: n?.senderId, name, senderName: name, createdBy: n?.createdBy }, snapshotAvatar) };
 };
 export const apnApprovalNotification = (partner, actor) => {
   const approvedBy = apnApproverFor(actor);
