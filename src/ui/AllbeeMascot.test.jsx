@@ -56,5 +56,11 @@ describe("ALLBEE mascot", () => {
     expect(css).toContain("allbee-mascot-launcher--login");
     expect(css).toContain("background:transparent");
     expect(css).toContain("object-fit:contain");
+    expect(css).toContain(".allbee-mascot--idle img { animation:none; }");
+    expect(css).toContain(".allbee-mascot-button { width:76px; height:76px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none;");
+    expect(css).not.toContain("--mascot-lift");
+    const source = readFileSync(`${process.cwd()}/src/ui/AllbeeMascot.jsx`, "utf8");
+    expect(source).not.toContain("setLift");
+    expect(source).not.toContain("MutationObserver");
   });
 });

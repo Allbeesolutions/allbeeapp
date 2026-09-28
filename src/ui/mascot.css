@@ -1,16 +1,15 @@
 /* The transparent mascot artwork moves inside its frame. The launcher itself stays anchored. */
 .allbee-mascot { --mascot-size:72px; display:inline-grid; place-items:center; width:var(--mascot-size); height:var(--mascot-size); flex:none; overflow:visible; background:transparent; isolation:isolate; }
 .allbee-mascot img { display:block; width:100%; height:100%; object-fit:contain; user-select:none; transform-origin:50% 65%; filter:drop-shadow(0 4px 8px rgba(9,55,114,.12)); }
-.allbee-mascot--idle img { animation:allbee-mascot-breathe 4s ease-in-out infinite; }
+.allbee-mascot--idle img { animation:none; }
 .allbee-mascot--hello img,.allbee-mascot--wave img { animation:allbee-mascot-wave 850ms ease-in-out 2; }
 .allbee-mascot--thinking img,.allbee-mascot--working img { animation:allbee-mascot-think 1.6s ease-in-out infinite; }
 .allbee-mascot--listening img { transform:scale(1.055) rotate(-3deg); }
 .allbee-mascot--success img { animation:allbee-mascot-success 650ms ease-out 1; }
 .allbee-mascot--notification img,.allbee-mascot--attention img { animation:allbee-mascot-wave 850ms ease-in-out 2; }
-.allbee-mascot-launcher { --mascot-lift:0px; position:fixed; right:22px; bottom:24px; z-index:144; display:flex; align-items:center; gap:9px; pointer-events:none; transform:translateY(calc(-1 * var(--mascot-lift))); transition:transform .2s ease; }
-.allbee-mascot-launcher.is-covered { visibility:hidden; pointer-events:none; }
-.allbee-mascot-button { width:76px; height:76px; padding:4px; border:1px solid rgba(27,144,204,.38); border-radius:50%; background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(223,250,255,.92)); box-shadow:0 12px 30px rgba(9,55,114,.2),0 2px 6px rgba(5,34,80,.12); cursor:pointer; pointer-events:auto; transition:transform .2s ease,box-shadow .2s ease; display:grid; place-items:center; overflow:visible; }
-.allbee-mascot-button:hover { transform:translateY(-3px); box-shadow:0 16px 34px rgba(9,55,114,.25),0 2px 7px rgba(5,34,80,.13); }
+.allbee-mascot-launcher { position:fixed; right:22px; bottom:24px; z-index:144; display:flex; align-items:center; gap:9px; pointer-events:none; }
+.allbee-mascot-button { width:76px; height:76px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; cursor:pointer; pointer-events:auto; transition:transform .16s ease; display:grid; place-items:center; overflow:visible; }
+.allbee-mascot-button:hover { transform:none; box-shadow:none; }
 .allbee-mascot-button:active { transform:scale(.94); }
 .allbee-mascot-button:focus-visible { outline:3px solid #0078c8; outline-offset:3px; }
 .allbee-mascot-button:hover .allbee-mascot img { animation:none; transform:scale(1.05) rotate(-3deg); }
