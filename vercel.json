@@ -24,6 +24,19 @@
       ]
     },
     {
+      "source": "/allbee-ai-mascot.jpeg",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Content-Type",
+          "value": "image/png"
+        }
+      ]
+    },
+    {
       "source": "/allbee-ai-mascot(.*)",
       "headers": [
         {
