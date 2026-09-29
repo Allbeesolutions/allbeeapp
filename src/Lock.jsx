@@ -134,13 +134,15 @@ export default function Lock({ isDark, setDark, runtime }) {
   const onKey = (e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) submit(); };
 
   return (
-    <div className={"allbee lock" + ((mode === "signin" ? loginAs === "partner" && entry === "form" : acctType === "partner") ? " apn-auth" : "")} data-theme={isDark ? "dark" : "light"}>
+    <div className={"allbee lock" + ((mode === "signin" && entry === "form") || (mode === "signup" && acctType === "partner") ? " apn-auth" : "") + (mode === "signin" ? ` auth-${entry === "choose" ? "choose" : loginAs}` : "") } data-theme={isDark ? "dark" : "light"}>
       <ToastHost />
       <div className="lock-card">
         <FounderTap className="lock-logo" src={LOGO_FULL} alt="ALLBEE Solutions" />
         <p>{mode === "signin" ? (entry === "choose" ? "How would you like to sign in?" : (loginAs === "client" ? "Client sign in" : loginAs === "partner" ? "APN partner sign in" : "Employee sign in")) : "Create your account"}</p>
 
-        {((mode === "signin" && loginAs === "partner" && entry === "form") || (mode === "signup" && acctType === "partner")) && <div className="apn-auth-intro"><div className="apn-eyebrow">ALLBEE PARTNER NETWORK</div><h1>{mode === "signin" ? "Welcome back, partner." : "Your next chapter starts here."}</h1><p>{mode === "signin" ? "Your leads, earnings and team are ready when you are." : "Build relationships, develop your skills and grow with AllBee."}</p></div>}
+        {mode === "signin" && entry === "form" && <div className="apn-auth-intro auth-role-intro"><div className="apn-eyebrow">{loginAs === "partner" ? "ALLBEE PARTNER NETWORK" : loginAs === "client" ? "ALLBEE CLIENT PORTAL" : "ALLBEE TEAM WORKSPACE"}</div><h1>{loginAs === "partner" ? "Welcome back, partner." : loginAs === "client" ? "Welcome back, client." : "Welcome back to ALLBEE."}</h1><p>{loginAs === "partner" ? "Your leads, earnings and team are ready when you are." : loginAs === "client" ? "Your projects, quotations and support are ready when you are." : "Your workspace, tasks and team updates are ready when you are."}</p></div>}
+        {mode === "signup" && acctType === "partner" && <div className="apn-auth-intro"><div className="apn-eyebrow">ALLBEE PARTNER NETWORK</div><h1>Your next chapter starts here.</h1><p>Build relationships, develop your skills and grow with AllBee.</p></div>}
+        {mode === "signin" && entry === "choose" && <div className="auth-choice-intro"><div className="apn-eyebrow">ALLBEE BUSINESS MANAGEMENT</div><h1>Welcome to ALLBEE.</h1><p>Choose your workspace to continue securely.</p></div>}
         {mode === "signin" && entry === "choose" ? (
           <>
             <div className="choose-stack" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6, width: "100%" }}>
