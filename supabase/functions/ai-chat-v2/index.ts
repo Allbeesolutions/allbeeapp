@@ -145,9 +145,20 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
   try {
-    const user = await verifyUser(req.headers.get("Authorization"));
+    const authorization = req.headers.get("Authorization");
+    const user = await verifyUser(authorization);
     if (!user) return json({ error: "Not signed in." }, 401);
-    const usage = await rateLimit(req.headers.get("Authorization") || "");
+
+    // Authorization is enforced at the server boundary, independently of UI gating.
+    // Client accounts require an active per-client entitlement; internal staff roles
+    // remain authorized. APN/other authenticated roles are denied by default.
+    const base = Deno.env.get("SUPABASE_URL") || "";
+    const anon = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const authClient = createClient(base, anon, { global: { headers: { Authorization: authorization || "" } } });
+    const { data: authorized, error: authorizationError } = await authClient.rpc("ai_chat_authorized");
+    if (authorizationError || authorized !== true) return json({ error: "ALLBEE AI is not enabled for this account." }, 403);
+
+    const usage = await rateLimit(authorization || "");
     if (usage.allowed === false) {
       return json({ error: "ALLBEE AI usage limit reached. Please try again later." }, 429);
     }

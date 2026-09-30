@@ -1,8 +1,9 @@
 import React from "react";
+import usePersistedState from "./ui/usePersistedState.js";
 
 export default function MyTeam({ db, team, me, mutate, onRefresh, runtime }) {
   const { useState, todayISO, teamOfUser, Empty, Users, Avatar, isTaskAssignee, sameMonth, round2, sumHours, ROLE_LABEL, attStatus, fmtDate, attendanceFor, clockTime, ListTodo, priorityTone, assigneeText, CalendarClock, ContactButtons, TeamChat, teamRosterIds } = runtime;
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = usePersistedState("allbee:view:my-team", "overview");
   const [date, setDate] = useState(todayISO());
   const myTeam = teamOfUser(db.teams, me.id);
   if (!myTeam) {

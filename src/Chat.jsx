@@ -1,6 +1,7 @@
 import React from "react";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 import AdminClientChat from "./AdminClientChat.jsx";
+import { isTouchDoubleTap } from "./ui/doubleTap";
 
 export default function Chat({ db, mutate, me, team, onlineIds = new Set(), presenceReady = false, onRefresh, isAdmin, runtime }) {
   const { useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Check, MessageCircle, MessageSquare, Paperclip, RefreshCw, Send, Trash2, X, AdminAPNChat, Confirm } = runtime;
@@ -27,6 +28,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
     supabase.rpc("chat_list_reactions",{p_ids:ids}).then(({data})=>{const next={};(data||[]).forEach(r=>{(next[r.message_id] ||= []).push(r)});setTeamReactions(next);});
   }, [db.chat, supabase]);
   const toggleTeamReaction=async(m,emoji)=>{if(m.deleted)return;await supabase.rpc("chat_toggle_reaction",{p_id:m.id,p_emoji:emoji});const {data}=await supabase.rpc("chat_list_reactions",{p_ids:[m.id]});setTeamReactions(x=>({...x,[m.id]:data||[]}));setReactionFor(null);};
+  useEffect(()=>{const ch=supabase.channel("team-chat-reactions-live").on("postgres_changes",{event:"*",schema:"public",table:"team_chat_reactions"},()=>{const ids=list.map(m=>m.id).filter(Boolean);if(ids.length)supabase.rpc("chat_list_reactions",{p_ids:ids}).then(({data})=>{const next={};(data||[]).forEach(r=>{(next[r.message_id] ||= []).push(r)});setTeamReactions(next);});}).subscribe();return()=>supabase.removeChannel(ch)},[supabase,db.chat]);
   const refresh = async () => { if (!onRefresh) return; setRefreshing(true); try { await onRefresh(); } finally { setTimeout(() => setRefreshing(false), 400); } };
   // Read receipts are server-owned. Direct UPDATE on chat is intentionally denied
   // by RLS; use the guarded RPC and patch local state without enqueueing persistence.
@@ -82,7 +84,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
           : list.map((m) => {
             const mine = m.userId === me.id;
             return (
-              <div key={m.id} onDoubleClick={() => !m.deleted && toggleTeamReaction(m,"❤️")} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row", position:"relative" }}>
+              <div key={m.id} onDoubleClick={() => !m.deleted && toggleTeamReaction(m,"❤️")} onPointerUp={(e)=>{if(!m.deleted&&isTouchDoubleTap(m.id,e)){e.preventDefault();toggleTeamReaction(m,"❤️")}}} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row", position:"relative" }}>
                 <div style={{ position: "relative", flex: "none" }}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: "50%", background: "var(--pos)", border: "2px solid var(--surface, #fff)" }} />}</div>
                 <div style={{ maxWidth: "72%" }}>
                   {editId === m.id ? (

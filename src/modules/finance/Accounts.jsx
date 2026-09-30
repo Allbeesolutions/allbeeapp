@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowDownToLine, Check, ChevronRight, Hourglass, Lock as LockIcon, Pencil, Plus, Search, ShieldCheck, Trash2, Unlock as UnlockIcon, Wallet, X } from "lucide-react";
+import usePersistedState from "../../ui/usePersistedState.js";
 
 export default function Accounts({ db, bal, mutate, openModal, openBalance, removeItem, locks = [], lockPeriod, unlockPeriod, isSuper, currentUser, helpers }) {
   const { todayISO, supabase, emitToast, money, fmtPeriod, fmtDate, expenseScope, SplitBar, ExpenseSharePanel, Empty } = helpers;
-  const [view, setView] = useState("all");
+  const [view, setView] = usePersistedState("allbee:view:finance-accounts", "all");
   const [q, setQ] = useState("");
   const [financeV5, setFinanceV5] = useState(null);
   const [financeV5Error, setFinanceV5Error] = useState("");

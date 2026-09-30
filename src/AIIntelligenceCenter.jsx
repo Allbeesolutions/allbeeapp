@@ -6,6 +6,7 @@ import AIExecutiveV5 from "./AIExecutiveV5.jsx";
 import AutomationV4 from "./AutomationV4.jsx";
 import PlatformV6Operations from "./PlatformV6Operations.jsx";
 import { GaugeCircle, TrendingUp, Coins, Users, UserCheck, Target, Wallet, ShieldAlert, AlertTriangle, X, Sparkles, Lightbulb, CheckCircle2, Search, RefreshCw, Check, ArrowRight, FileText } from "./icons.jsx";
+import usePersistedState from "./ui/usePersistedState.js";
 
 const crmCount = (db, key, predicate) => (db?.[key] || []).filter(predicate).length;
 
@@ -16,7 +17,7 @@ export default function AIIntelligenceCenter(props) {
   const sb = runtimeSupabase || supabase;
 
   const [snapshot, setSnapshot] = useState(null);
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = usePersistedState("allbee:view:ai-intelligence", "overview");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);

@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
+import usePersistedState from "./ui/usePersistedState.js";
 
 export default function APNAdminCommissions({ db, setCommStatus, openProject, onDelete, onReverse, runtime = {} }) {
   const { supabase, todayISO, money, fmtDate, fmtDateTime, uid, round2, apnRevenueCollectionsOf, apnPartnerStats, apnRateForPrior, apnProjectStatus, apnFinancePostedFor, apnIdFor, Empty, Search, Plus, Trash2, Pencil, Save, Check, X, ChevronRight, ChevronDown, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, emitToast, Confirm, Modal, Field, APN_COMM_REVERSED, APN_COMM_STATUS, Coins, Undo2, apnCommTone, apnCommissionDashboardSummary, apnCommissionProjectsOf, apnProjectSummary } = runtime;
-  const [view, setView] = useState("all");
+  const [view, setView] = usePersistedState("allbee:view:apn-admin-commissions", "all");
   const projects = apnCommissionProjectsOf(db).map((project) => apnProjectSummary(db, project)).sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
   const legacy = (db.apn_commissions || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const partnerName = (id) => (db.apn_users || []).find((u) => u.id === id)?.name || "—";

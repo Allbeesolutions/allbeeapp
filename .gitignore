@@ -12,3 +12,9 @@ supabase/.temp/
 
 # Local generated UI evidence
 .ai/apn-ux-evidence/
+
+# Local agent/runtime scratch artifacts
+.qchunk*
+.tmp-allbee-*
+.ai/raw/
+.ai/*.png

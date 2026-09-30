@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import * as Icons from "./icons.jsx";
+import usePersistedState from "./ui/usePersistedState.js";
 
 const redactAIContactText = (value) => String(value ?? "")
   .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email redacted]")
@@ -17,7 +18,7 @@ export default function EnterpriseCRM(props) {
   const { Search, Plus, Sparkles, Trash2, Pencil, Save, Check, X, ChevronRight, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, UserPlus, Flame, CalendarClock, Trophy, XCircle, Coins, GaugeCircle, FolderKanban, AlertTriangle } = { ...Icons, ...iconOverrides };
   const { db, team = [], me, isAdmin, reload } = props;
   const { aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI } = runtime;
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = usePersistedState("allbee:view:crm", "overview");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
   const [priority, setPriority] = useState("All");

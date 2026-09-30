@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import * as Icons from "./icons.jsx";
 import { supabase } from "./supabaseClient";
+import usePersistedState from "./ui/usePersistedState.js";
 
 export default function PricingKnowledgeCenter(props) {
   const { isAdmin } = props;
   const { Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast, AlertTriangle, BookOpen, Check, Download, Pencil, Plus, RefreshCw, Search, ShieldAlert, X } = props.runtime || {};
   const tabs = [["services", "Services"], ["packages", "Packages"], ["pricing", "Pricing"], ["features", "Features"], ["delivery", "Delivery"], ["hosting", "Hosting"], ["maintenance", "AMC"], ["faq", "FAQs"], ["policies", "Policies"], ["discounts", "Discounts"], ["integrations", "Integrations"], ["knowledge", "Knowledge"]];
-  const [tab, setTab] = useState("services");
+  const [tab, setTab] = usePersistedState("allbee:view:pricing-knowledge", "services");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ items: [], total: 0, page_size: 25 });

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as Icons from "./icons.jsx";
+import usePersistedState from "./ui/usePersistedState.js";
 
 export default function APNNetwork(props) {
   const { db = {}, meRow, pid, reload, onOpenWithdrawals, refreshTick = 0 } = props;
@@ -7,7 +8,7 @@ export default function APNNetwork(props) {
 
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = usePersistedState("allbee:view:apn-network", "dashboard");
   const [network, setNetwork] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderPeriod, setLeaderPeriod] = useState("lifetime");

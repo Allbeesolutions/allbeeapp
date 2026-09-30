@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import usePersistedState from "./ui/usePersistedState.js";
 
 export function proposalSectionDisplay(section, money) {
   const c = section?.content || {};
@@ -21,7 +22,7 @@ export function printProposalDocument(detail, runtime) {
 
 export default function ProposalCenter({ isAdmin, runtime }) {
   const { supabase, emitToast, money, Empty, Modal, Search, RefreshCw, AlertTriangle, FileText, ShieldAlert, Eye, Pencil, Activity, Download, Copy, Send, Check } = runtime;
-  const [tab, setTab] = useState("proposals");
+  const [tab, setTab] = usePersistedState("allbee:view:proposal-center", "proposals");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [data, setData] = useState({ items: [], total: 0 });

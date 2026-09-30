@@ -6249,7 +6249,7 @@ export default function App() {
   const [onlineIds, setOnlineIds] = useState(() => new Set());
   const [presenceReady, setPresenceReady] = useState(false);
   const [isDark, setIsDark] = useState(() => { try { const v = localStorage.getItem("allbee_theme"); return v ? v === "dark" : false; } catch { return false; } });
-  const [route, setRoute] = useState("dashboard");
+  const [route, setRoute] = useState(() => parseHash(window.location.hash).route || "dashboard");
   const [apnTab, setApnTab] = useState(() => { const parts = (window.location.hash || "").replace(/^#\/?/, "").split("/"); return parts[0] === "apn" && parts[1] ? parts[1] : ""; });
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);   // universal search (Ctrl/⌘+K)
@@ -7007,6 +7007,11 @@ export default function App() {
       const p = parseHash(window.location.hash);
       setAccountUser(p.account); setTaskDetailId(p.task);
       if (p.route) setRoute((current) => { if (current !== p.route) setRouteDataLoading(true); return p.route; });
+      const hashParts = (window.location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean);
+      if (hashParts[0] === "apn" && hashParts[1] && profile?.role !== "partner") {
+        apnTabRef.current = hashParts[1];
+        setApnTab(hashParts[1]);
+      }
       if (normalized && p.route !== "apn") setRoute("apn");
     };
     apply();

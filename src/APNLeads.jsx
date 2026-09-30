@@ -1,8 +1,9 @@
 import React, { useState } from "react";
+import usePersistedState from "./ui/usePersistedState.js";
 
 export default function APNLeads({ db, meRow, pid, openModal, mutate, runtime = {} }) {
   const { apnLeadsOf, APN_SERVICE_LABEL, apnLeadTone, APN_LEAD_REJECTED, money, fmtDate, Empty, UserPlus, Plus, Handshake, AlertTriangle } = runtime;
-  const [view, setView] = useState("all");
+  const [view, setView] = usePersistedState("allbee:view:apn-leads", "all");
   const all = apnLeadsOf(db, pid).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = view === "all" ? all : view === "open" ? all.filter((l) => !["Converted", "Lost", "Invalid", "Fake", "Duplicate"].includes(l.status)) : all.filter((l) => l.status === "Converted");
   return (
