@@ -1,4 +1,5 @@
 import React from "react";
+import ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx";
 
 export default function APNProfile({ db, meRow, stats, snap, profile, sessionEmail, mutate, onSignOut, reload, isHead, go, runtime = {} }) {
   const { apnSnapshotWallet, apnSnapshotRate, apnGovernedLimit, useState, useRef, useEffect, apnAvatarUrl, supabase, uploadAttachment, Field, APNMetric, money, TrendingUp, Coins, Award, ShieldHalf, ShieldCheck, apnCalculatedGovernedExplanation, Avatar, Upload, Check, apnIdFor, APNBankDetails, LogOut } = runtime;
@@ -14,6 +15,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState(false);
   const [usernameState, setUsernameState] = useState("idle");
+  const [cropFile, setCropFile] = useState(null);
   const photoRef = useRef(null);
   const set = (key, value) => { setSaved(false); setF((current) => ({ ...current, [key]: value })); };
   useEffect(() => {
@@ -32,14 +34,16 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [db.apn_users, meRow.id, meRow.username, normalizedUsername, profile?.username]);
-  const pickPhoto = async (event) => {
-    const file = event.target.files?.[0]; if (!file) return;
-    const ext = String(file.name || "").split(".").pop()?.toLowerCase();
-    if (!(file.type === "image/jpeg" || file.type === "image/png" || file.type === "image/webp") || !["jpg", "jpeg", "png", "webp"].includes(ext)) { setErr("Choose a JPG, JPEG, PNG, or WEBP image."); event.target.value = ""; return; }
+  const pickPhoto = (event) => {
+    const file=event.target.files?.[0]; if(!file) return;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)){setErr("Choose a JPG, PNG, or WEBP image.");event.target.value="";return;}
+    setErr(""); setCropFile(file); event.target.value="";
+  };
+  const applyCroppedPhoto = async (file) => {
     setUploading(true); setErr("");
-    try { const uploaded = await uploadAttachment(file, { publicMedia: true }); set("photoUrl", uploaded.url); }
-    catch (error) { setErr(error.message || "Couldn't upload that image."); }
-    finally { setUploading(false); event.target.value = ""; }
+    try { const uploaded=await uploadAttachment(file,{publicMedia:true}); set("photoUrl",uploaded.url); setCropFile(null); }
+    catch(error){ setErr(error.message||"Couldn't upload that image."); }
+    finally { setUploading(false); }
   };
   const save = async () => {
     setErr(""); setSaved(false);
@@ -106,6 +110,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
       </div>
       <APNBankDetails db={db} pid={meRow.id} reload={reload} supabase={supabase} Field={Field} />
       <button className="btn" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={onSignOut}><LogOut size={16} />Sign out</button>
+      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop APN profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/>}
     </div>
   );
 }

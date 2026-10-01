@@ -12,6 +12,7 @@ import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
 import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
+import ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx";
 import { AllbeeMascot, AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
 const LazyPrivacyPolicy = React.lazy(() => import("./PrivacyPolicy.jsx"));
 const {
@@ -2987,6 +2988,20 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
   const [username, setUsername] = useState(profile?.username || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [cropFile, setCropFile] = useState(null);
+  const photoRef = useRef(null);
+  const pickPhoto = (e) => {
+    const file=e.target.files?.[0]; if(!file) return;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)){setErr("Choose a JPG, PNG, or WEBP image.");e.target.value="";return;}
+    setErr(""); setCropFile(file); e.target.value="";
+  };
+  const applyCroppedPhoto = async (file) => {
+    setUploading(true); setErr("");
+    try { const up=await uploadAttachment(file,{publicMedia:true}); setPhoto(up.url); setCropFile(null); }
+    catch(e){ setErr(e.message||"Couldn't upload that image."); }
+    finally { setUploading(false); }
+  };
   const save = async () => {
     setErr("");
     if (!name.trim()) { setErr("Tell us your full name."); return; }
@@ -3008,7 +3023,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
           <Field label="Full name" required><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Priya Sharma" /></Field>
           <Field label="Mobile number" required hint="Used for work contact and birthday wishes."><input className="input" type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="+91 …" /></Field>
           <Field label="Date of birth" required><input className="input" type="date" value={dob} onChange={(e) => setDob(e.target.value)} max={todayISO()} /></Field>
-          <Field label="Profile photo URL" hint="Optional — add or change this any time."><input className="input" value={photo} onChange={(e) => setPhoto(e.target.value)} placeholder="https://…" /></Field>
+          <Field label="Profile photo" hint="Optional — every uploaded profile photo is cropped to a 500 × 500 square before upload."><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><Avatar name={name||"?"} url={photo} size={44}/><button type="button" className="btn sm" onClick={()=>photoRef.current?.click()} disabled={uploading}>{uploading?<RefreshCw size={14} className="spin"/>:<Upload size={14}/>} {photo?"Change photo":"Choose photo"}</button>{photo&&<button type="button" className="btn sm" onClick={()=>setPhoto("")} disabled={uploading}>Remove</button>}<input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={pickPhoto} style={{display:"none"}}/></div></Field>
           <Field label="Username" hint="Optional — lets you sign in with a username instead of your email."><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. priya" /></Field>
         </div>
         {err && <div className="auth-msg err"><AlertTriangle size={14} /> {err}</div>}
@@ -3017,6 +3032,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
         </div>
         <button className="linkbtn" onClick={onSignOut}>Sign out</button>
       </div>
+      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop your profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/>}
     </div>
   );
 }
@@ -3160,15 +3176,19 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
   const [done, setDone] = useState(false);
   const photoRef = useRef(null);
   const [uploading, setUploading] = useState(false);
-  // Upload a display picture to storage, then persist just the photo (so it
-  // saves immediately even if the rest of the form isn't filled yet).
-  const pickPhoto = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    if (!(file.type || "").startsWith("image/")) { setErr("Please choose an image file."); if (e.target) e.target.value = ""; return; }
+  const [cropFile, setCropFile] = useState(null);
+  // Never upload the raw DP. Selection opens the shared 1:1 cropper first; only
+  // the confirmed 500×500 result is uploaded and persisted.
+  const pickPhoto = (e) => {
+    const file=e.target.files?.[0]; if(!file) return;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)){setErr("Choose a JPG, PNG, or WEBP image.");e.target.value="";return;}
+    setErr(""); setDone(false); setCropFile(file); e.target.value="";
+  };
+  const applyCroppedPhoto = async (file) => {
     setUploading(true); setErr(""); setDone(false);
-    try { const up = await uploadAttachment(file, { publicMedia: true }); setPhoto(up.url); await saveMyProfile({ photo_url: up.url }); setDone(true); }
-    catch (er) { setErr(er.message || "Couldn't upload that image."); }
-    finally { setUploading(false); if (e.target) e.target.value = ""; }
+    try { const up=await uploadAttachment(file,{publicMedia:true}); setPhoto(up.url); await saveMyProfile({photo_url:up.url}); setDone(true); setCropFile(null); }
+    catch(er){ setErr(er.message||"Couldn't upload that image."); }
+    finally { setUploading(false); }
   };
   useEffect(() => {
     setName(profile?.name || ""); setMobile(profile?.mobile || ""); setDob(profile?.dob || "");
@@ -3212,12 +3232,12 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
         </div>
         <div className="grid2">
           <Field label="Username" hint="Optional — sign in with this instead of email."><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. priya" /></Field>
-          <Field label="Profile photo" hint="Upload an image (max 10 MB) — saves right away.">
+          <Field label="Profile photo" hint="Choose an image, crop it to a 500 × 500 square, then it saves right away.">
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <div className="avatar" style={{ background: avatarColor(name || "?"), width: 40, height: 40, fontSize: 16, overflow: "hidden", padding: 0, flex: "none" }}>{photo ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (name || "?")[0]}</div>
               <button className="btn sm" type="button" onClick={() => photoRef.current?.click()} disabled={uploading}>{uploading ? <RefreshCw size={14} className="spin" /> : <Upload size={14} />}{photo ? "Change" : "Upload photo"}</button>
               {photo && <button className="btn sm" type="button" onClick={() => { setPhoto(""); saveMyProfile({ photo_url: null }); }}>Remove</button>}
-              <input ref={photoRef} type="file" accept="image/*" onChange={pickPhoto} style={{ display: "none" }} />
+              <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={pickPhoto} style={{ display: "none" }} />
             </div>
           </Field>
         </div>
@@ -3229,6 +3249,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
       </div>
       <ChangePasswordCard email={email} />
       <p className="hint-line" style={{ marginTop: 12 }}>Your role{profile?.designation ? " and job title are" : " is"} set by an admin. You can update the details above any time.</p>
+      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/>}
     </div>
   );
 }

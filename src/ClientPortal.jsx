@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
+import ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx";
 import { Sparkles, User, Upload, Check, ShieldCheck, FileText, Banknote, FileCheck2, FolderKanban, ArrowRight, RefreshCw } from "./icons.jsx";
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 const LazyClientSupportChat = React.lazy(() => import("./ClientSupportChat.jsx"));
@@ -63,9 +64,11 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
     return () => { alive = false; };
   }, [supabase, myId]);
   const photoRef = useRef(null);
+  const [cropFile,setCropFile]=useState(null);
   const openProfile = () => { setProfileDraft({ name: profile?.name || "", mobile: profile?.mobile || "", dob: profile?.dob || "", username: profile?.username || "" }); navigateClient("profile"); };
   const saveClientProfile = async () => { setProfileBusy(true); try { await saveMyProfile?.({ ...profileDraft, name: profileDraft.name.trim(), mobile: profileDraft.mobile.trim(), dob: profileDraft.dob || null, username: profileDraft.username.trim().toLowerCase() || null }); emitToast("Profile updated.", "success"); await reload(); } catch(e) { emitToast(e.message || "Could not update profile.", "error"); } finally { setProfileBusy(false); } };
-  const uploadClientPhoto = async (e) => { const file=e.target.files?.[0]; if(!file) return; setProfileBusy(true); try { const up=await uploadAttachment(file,{publicMedia:true}); await saveMyProfile?.({photo_url:up.url}); emitToast("Profile photo updated.","success"); await reload(); } catch(er) { emitToast(er.message || "Could not upload photo.","error"); } finally { setProfileBusy(false); e.target.value=""; } };
+  const uploadClientPhoto = (e) => { const file=e.target.files?.[0]; if(!file) return; if(!["image/jpeg","image/png","image/webp"].includes(file.type)){emitToast("Choose a JPG, PNG, or WEBP image.","error");e.target.value="";return;} setCropFile(file); e.target.value=""; };
+  const applyClientCroppedPhoto = async (file) => { setProfileBusy(true); try { const up=await uploadAttachment(file,{publicMedia:true}); await saveMyProfile?.({photo_url:up.url}); setCropFile(null); emitToast("Profile photo updated.","success"); await reload(); } catch(er) { emitToast(er.message || "Could not upload photo.","error"); } finally { setProfileBusy(false); } };
   const [helpFormOpen, setHelpFormOpen] = useState(false);
   const [helpBusy, setHelpBusy] = useState(false);
   const myTickets = [...(db.support_tickets || [])].filter((t) => t.client_id === myId).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
@@ -192,7 +195,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         </>)}
 
         {portalView === "profile" && <div className="client-profile-grid">
-          <section className="card client-profile-card"><div className="client-profile-cover"></div><div className="client-profile-avatar"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={86}/><button className="btn sm" onClick={() => photoRef.current?.click()} disabled={profileBusy}><Upload size={14}/>Change photo</button><input ref={photoRef} type="file" accept="image/*" hidden onChange={uploadClientPhoto}/></div><h2>{profile?.name}</h2><p>{profile?.email}</p><span className="badge pos"><ShieldCheck size={12}/> Verified client account</span></section>
+          <section className="card client-profile-card"><div className="client-profile-cover"></div><div className="client-profile-avatar"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={86}/><button className="btn sm" onClick={() => photoRef.current?.click()} disabled={profileBusy}><Upload size={14}/>Change photo</button><input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden onChange={uploadClientPhoto}/></div><h2>{profile?.name}</h2><p>{profile?.email}</p><span className="badge pos"><ShieldCheck size={12}/> Verified client account</span></section>
           <section className="card client-profile-form"><div className="client-section-head"><div><span className="client-eyebrow">PERSONAL DETAILS</span><h3>My profile</h3></div></div><div className="grid2"><label>Full name<input className="input" value={profileDraft.name} onChange={e=>setProfileDraft(x=>({...x,name:e.target.value}))}/></label><label>Mobile<input className="input" type="tel" value={profileDraft.mobile} onChange={e=>setProfileDraft(x=>({...x,mobile:e.target.value}))}/></label><label>Date of birth<input className="input" type="date" value={profileDraft.dob || ""} onChange={e=>setProfileDraft(x=>({...x,dob:e.target.value}))}/></label><label>Username<input className="input" value={profileDraft.username} onChange={e=>setProfileDraft(x=>({...x,username:e.target.value}))}/></label></div><label>Sign-in email<input className="input" value={profile?.email || ""} disabled/></label><div className="client-profile-actions"><button className="btn primary" onClick={saveClientProfile} disabled={profileBusy}>{profileBusy?<RefreshCw size={15} className="spin"/>:<Check size={15}/>}Save changes</button><button className="btn" onClick={()=>saveMyProfile?.({photo_url:null}).then(reload)} disabled={!profile?.photo_url}>Remove photo</button><button className="btn" onClick={signOut}><LogOut size={15}/>Sign out</button></div><div className="client-security-note"><ShieldCheck size={18}/><div><b>Account security</b><span>Your email and client access are protected by ALLBEE authentication. Contact support if you need your sign-in email changed.</span></div></div></section>
         </div>}
 
@@ -203,6 +206,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         {portalView === "ai" && (clientAILoading ? <div className="card" aria-busy="true">Checking ALLBEE AI access…</div> : !clientAIEnabled ? <div className="card assistant-unavailable"><h3>ALLBEE AI is not enabled for this account</h3><p>Your ALLBEE administrator can enable AI from Clients → Client accounts.</p></div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") navigateClient("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>)}
       </div>
       <AllbeeAIFloatingAssistant onOpen={() => navigateClient("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled} />
+      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop client profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyClientCroppedPhoto}/>}
     </div>
   );
 }
