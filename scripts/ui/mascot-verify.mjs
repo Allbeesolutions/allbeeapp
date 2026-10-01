@@ -22,7 +22,7 @@ await page.route("**/*", route => {
   return ["127.0.0.1","localhost"].includes(u.hostname) || ["data:","blob:"].includes(u.protocol) ? route.continue() : route.abort();
 });
 let checks=0;
-const launcher = () => page.getByRole("button", { name:"Ask ALLBEE AI with mascot" });
+const launcher = () => page.getByRole("button", { name:"Ask ALLBEE AI with mascot", includeHidden:true });
 
 try {
   // APN: responsive placement for partner + head roles.
@@ -63,6 +63,22 @@ try {
   assert(await page.locator(".apn-ai-welcome .allbee-mascot img").count());
   checks++;
 
+  // Focused editors and modal overlays yield the launcher entirely.
+  await page.setViewportSize({ width:390, height:900 });
+  const aiComposer = page.getByLabel("Message ALLBEE AI");
+  await aiComposer.focus();
+  assert.equal(await launcher().count(), 0, "launcher must hide while editing");
+  await aiComposer.evaluate(el => el.blur());
+  await launcher().waitFor({ state:"attached" });
+  checks++;
+  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/leads`);
+  await page.locator('[data-apn-page="leads"]').waitFor();
+  await page.locator(".apn-page-intro").getByRole("button", { name:"Submit a lead" }).click();
+  await page.getByRole("dialog").waitFor();
+  assert.equal(await launcher().count(), 0, "launcher must hide behind a modal");
+  checks++;
+
+  await page.setViewportSize({ width:1440, height:900 });
   // Internal employee workspace: launcher persists and opens the real ALLBEE AI route.
   for (const role of ["staff","intern"]) {
     await page.goto(`http://127.0.0.1:${port}/?role=${role}#/dashboard`);
@@ -75,8 +91,9 @@ try {
   }
 
   // Client portal: launcher exists on overview/support and opens a client-scoped AI surface.
-  await page.goto(`http://127.0.0.1:${port}/?role=client#/dashboard`);
+  await page.goto(`http://127.0.0.1:${port}/?role=client&clientAI=enabled#/dashboard`);
   await page.getByText("Client portal", { exact:true }).waitFor();
+  await launcher().waitFor();
   assert.equal(await launcher().count(), 1);
   await page.getByRole("button", { name:/Support/ }).click();
   assert.equal(await launcher().count(), 1);
@@ -84,6 +101,12 @@ try {
   await page.getByRole("button", { name:"ALLBEE AI", exact:true }).waitFor();
   await page.getByText("Your workspace assistant", { exact:true }).waitFor();
   assert.equal(await launcher().count(), 1);
+  checks++;
+
+  // An account without AI entitlement keeps the launcher hidden and cannot open AI.
+  await page.goto(`http://127.0.0.1:${port}/?role=client#/client/ai`);
+  await page.getByText("ALLBEE AI is not enabled for this account", { exact:true }).waitFor();
+  assert.equal(await launcher().count(), 0);
   checks++;
 
   // Login: the same floating mascot opens the existing safe sign-in helper.
@@ -97,13 +120,14 @@ try {
 
   // Personality: hover/focus greets the authenticated user while the fixed launcher remains pixel-stable.
   await page.setViewportSize({ width:1440, height:900 });
-  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/home`);
-  await page.locator('[data-apn-page="home"]').waitFor();
+  await page.goto(`http://127.0.0.1:${port}/?role=partner#/apn/network`);
+  await page.locator('[data-apn-page="network"]').waitFor();
   await launcher().waitFor();
   const stableStart = await launcher().boundingBox();
   await launcher().hover();
-  await page.getByRole("status").waitFor();
-  assert.match(await page.getByRole("status").textContent(), /^Hello, .+! 👋$/);
+  const greeting = page.locator(".allbee-mascot-greeting");
+  await greeting.waitFor();
+  assert.match(await greeting.textContent(), /^Hello, .+! 👋$/);
   const hoverState = await page.locator(".allbee-mascot-launcher .allbee-mascot").getAttribute("class");
   assert(hoverState.includes("allbee-mascot--wave"), "hover should trigger a wave");
   for (let i=0;i<8;i++) {
@@ -113,6 +137,39 @@ try {
   }
   await page.mouse.move(400,400);
   checks++;
+
+  // Real hit testing at top/middle/bottom of every APN destination.
+  // Include both document and nested scrolling containers; navigation stays accessible.
+  const apnRoutes = ["home","leads","wallet","withdrawals","network","chat","targets","quotations","documents","agreements","notifications","learn","profile","ai","support","achievements","leaderboard","district"];
+  for (const width of widths) for (const route of apnRoutes) {
+    await page.setViewportSize({ width, height:900 });
+    await page.goto(`http://127.0.0.1:${port}/?role=state_head#/apn/${route}`);
+    await page.locator(`[data-apn-page="${route}"]`).waitFor();
+    await page.locator(".apn-skeleton").waitFor({ state:"hidden" });
+    for (const fraction of [0, .5, 1]) {
+      await page.evaluate(f => {
+        for (const el of [document.scrollingElement, ...document.querySelectorAll(".apn-main,.apn-body,.tc-conversations,.tc-messages")]) {
+          if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight) * f;
+        }
+      }, fraction);
+      await page.waitForTimeout(120);
+      const collisions = await launcher().evaluate(button => {
+        const launcher = button.closest(".allbee-mascot-launcher"), r = button.getBoundingClientRect();
+        if (getComputedStyle(launcher).visibility === "hidden") return [];
+        const hits = new Set();
+        for (const x of [r.left + 2, (r.left+r.right)/2, r.right - 2]) for (const y of [r.top + 2, (r.top+r.bottom)/2, r.bottom - 2]) {
+          for (const el of document.elementsFromPoint(x, y)) {
+            const control = el.closest("button,a[href],input,select,textarea,[role='button']");
+            if (control && !launcher.contains(control)) hits.add(control.getAttribute("aria-label") || control.textContent || control.tagName);
+          }
+        }
+        return [...hits];
+      });
+      assert.deepEqual(collisions, [], `mascot covers an action: ${route} ${width} scroll ${fraction}`);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      checks++;
+    }
+  }
 
   // Reduced motion applies to the transparent mascot too.
   await page.goto(`http://127.0.0.1:${port}/?role=anonymous`);

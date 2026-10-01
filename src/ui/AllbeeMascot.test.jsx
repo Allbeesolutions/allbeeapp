@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AllbeeMascot, AllbeeAIFloatingAssistant } from "./AllbeeMascot.jsx";
 import { readFileSync } from "node:fs";
 
@@ -48,6 +48,23 @@ describe("ALLBEE mascot", () => {
     expect(screen.queryByRole("button", { name: "Ask ALLBEE AI with mascot" })).toBeNull();
     rerender(<AllbeeAIFloatingAssistant onOpen={onOpen} hidden={false} />);
     expect(screen.getByRole("button", { name: "Ask ALLBEE AI with mascot" })).toBeTruthy();
+  });
+
+  it("yields to an underlying action and returns after scrolling without moving", async () => {
+    const original = document.elementsFromPoint;
+    let obstructed = true;
+    document.elementsFromPoint = () => obstructed ? [screen.getByRole("button", { name: "Save details" })] : [];
+    try {
+      render(<section id="workspace"><button>Save details</button><AllbeeAIFloatingAssistant collisionRootSelector="#workspace" onOpen={() => {}} greeting={false} /></section>);
+      const launcher = screen.getByTestId("allbee-mascot-launcher");
+      await waitFor(() => expect(launcher.classList.contains("is-covered")).toBe(true));
+      expect(launcher.style.transform).toBe("");
+      obstructed = false;
+      fireEvent.scroll(document);
+      await waitFor(() => expect(launcher.classList.contains("is-covered")).toBe(false));
+    } finally {
+      document.elementsFromPoint = original;
+    }
   });
 
   it("has mobile safe-area placement and reduced-motion fallbacks", () => {

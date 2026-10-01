@@ -29,6 +29,7 @@ export const supabase = {...base,
   return b;
  },
  async rpc(name,args) {
+  if(name==="client_ai_status")return {data:params.get("clientAI")==="enabled",error:null};
   if(name==="apn_support_tickets_list") {
    if(window.__apnUX.slowTickets)await new Promise(r=>setTimeout(r,800));
    return window.__apnUX.failTickets?{data:null,error:{message:"Tickets are temporarily unavailable."}}:{data:empty?[]:[{id:"ticket-1",ticket_no:"APN-1042",category:"general",status:"open",question:"When will my next milestone be reviewed?",admin_response:"Your district head will review it this week.",created_at:new Date().toISOString()}],error:null};

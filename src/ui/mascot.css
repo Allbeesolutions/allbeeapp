@@ -11,6 +11,8 @@
 .allbee-mascot--notification img,.allbee-mascot--attention img { animation:allbee-mascot-wave 1.05s cubic-bezier(.36,.07,.19,.97) 1; }
 .allbee-mascot-launcher { position:fixed; right:22px; bottom:24px; z-index:144; display:flex; align-items:center; gap:9px; pointer-events:none; transform:translateZ(0); backface-visibility:hidden; -webkit-backface-visibility:hidden; }
 .allbee-mascot-button { width:76px; height:76px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; cursor:pointer; pointer-events:auto; transition:none; display:grid; place-items:center; overflow:visible; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+.allbee-mascot-launcher.is-covered { visibility:hidden; }
+.allbee-mascot-launcher.is-covered .allbee-mascot-button { pointer-events:none; }
 .allbee-mascot-button:hover { transform:none; box-shadow:none; }
 .allbee-mascot-button:active .allbee-mascot { transform:scale(.965); }
 .allbee-mascot-button:focus-visible { outline:3px solid #0078c8; outline-offset:3px; border-radius:14px; }

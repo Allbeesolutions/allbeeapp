@@ -44,11 +44,14 @@ export function AllbeeAIFloatingAssistant({
   context = "home",
   hidden = false,
   surface = "apn",
+  collisionRootSelector = null,
   greeting = true,
 }) {
   const [showGreeting, setShowGreeting] = useState(false);
   const [hoverGreeting, setHoverGreeting] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [covered, setCovered] = useState(false);
+  const launcherRef = useRef(null);
   const [personalityState, setPersonalityState] = useState("idle");
   const personalityTimer = useRef(null);
   const greetingTimer = useRef(null);
@@ -113,6 +116,50 @@ export function AllbeeAIFloatingAssistant({
     };
   }, []);
 
+  // Keep the launcher anchored, but yield its hit area to underlying actions.
+  // A fixed nine-point hit test avoids scanning every control on long pages.
+  useEffect(() => {
+    if (hidden || keyboardOpen) return undefined;
+    let frame = 0;
+    const root = collisionRootSelector ? document.querySelector(collisionRootSelector) : document.body;
+    const check = () => {
+      frame = 0;
+      const launcher = launcherRef.current;
+      const button = launcher?.querySelector("button");
+      if (!button || typeof document.elementsFromPoint !== "function") return;
+      const r = button.getBoundingClientRect();
+      let collision = false;
+      for (const x of [r.left + 2, (r.left + r.right) / 2, r.right - 2]) {
+        for (const y of [r.top + 2, (r.top + r.bottom) / 2, r.bottom - 2]) {
+          collision ||= document.elementsFromPoint(x, y).some((el) => {
+            const control = el.closest("button, a[href], input, select, textarea, [role='button']");
+            return control && !launcher.contains(control) && (!root || root.contains(control));
+          });
+        }
+      }
+      setCovered(collision);
+    };
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(check); };
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
+    if (root) {
+      observer?.observe(root);
+      for (const child of root.children) observer?.observe(child);
+    }
+    document.addEventListener("scroll", schedule, { capture: true, passive: true });
+    window.addEventListener("resize", schedule);
+    document.addEventListener("load", schedule, true);
+    const settle = window.setTimeout(schedule, 600);
+    schedule();
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("load", schedule, true);
+      window.clearTimeout(settle);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [hidden, keyboardOpen, context, surface, collisionRootSelector]);
+
   const interactiveGreeting = hoverGreeting && !showGreeting;
   const mascotState = useMemo(() => {
     if (showGreeting || hoverGreeting) return "wave";
@@ -131,7 +178,8 @@ export function AllbeeAIFloatingAssistant({
   };
 
   return <div
-    className={`allbee-mascot-launcher allbee-mascot-launcher--${surface}`}
+    ref={launcherRef}
+    className={`allbee-mascot-launcher allbee-mascot-launcher--${surface}${covered ? " is-covered" : ""}`}
     data-testid="allbee-mascot-launcher"
   >
     {(showGreeting || interactiveGreeting) && <span className="allbee-mascot-greeting" role="status">
