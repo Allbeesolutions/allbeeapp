@@ -12,7 +12,7 @@ import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
 import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
-import ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx";
+const LazyProfilePhotoCropper = React.lazy(() => import("./ui/ProfilePhotoCropper.jsx"));
 import { AllbeeMascot, AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
 const LazyPrivacyPolicy = React.lazy(() => import("./PrivacyPolicy.jsx"));
 const {
@@ -3033,7 +3033,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
         </div>
         <button className="linkbtn" onClick={onSignOut}>Sign out</button>
       </div>
-      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop your profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/>}
+      {cropFile&&<React.Suspense fallback={null}><LazyProfilePhotoCropper file={cropFile} title="Crop your profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/></React.Suspense>}
     </div>
   );
 }
@@ -3252,7 +3252,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
       </div>
       <ChangePasswordCard email={email} />
       <p className="hint-line" style={{ marginTop: 12 }}>Your role{profile?.designation ? " and job title are" : " is"} set by an admin. You can update the details above any time.</p>
-      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/>}
+      {cropFile&&<React.Suspense fallback={null}><LazyProfilePhotoCropper file={cropFile} title="Crop profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyCroppedPhoto}/></React.Suspense>}
     </div>
   );
 }
