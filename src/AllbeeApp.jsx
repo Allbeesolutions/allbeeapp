@@ -64,6 +64,8 @@ import { apnSafeHtml } from "./modules/apn/content.js";
 import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
 import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
+import ChatProfileCard from "./ui/ChatProfileCard.jsx";
+import MessageReactions from "./ui/MessageReactions.jsx";
 import { resolvePersonAvatar } from "./identity/avatarResolver.js";
 const LazyAPNDocuments = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNDocuments })));
 const LazyAPNNotifications = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNNotifications })));
@@ -3971,6 +3973,7 @@ export function AdminAPNChat({ me, onUnreadChange }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [contactProfile, setContactProfile] = useState(null);
   const mounted = useRef(true);
   const scrollRef = useRef(null);
   const openRequestRef = useRef(0);
@@ -4123,14 +4126,15 @@ export function AdminAPNChat({ me, onUnreadChange }) {
           </div>
         </aside>
         {selected ? <main className="apn-tc-chat" ref={scrollRef}>
-          <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }}><ArrowLeft size={17}/></button>{conversationContact(selected) && <Avatar name={conversationContact(selected)?.name || selected.subject || "APN"} url={conversationContact(selected)?.photo_url} size={34} fontSize={12} />}<div style={{fontWeight:700,flex:1}}>{selected.subject || "APN chat"}<div className="apn-tc-presence">{selected.conv_type === "person" ? "Partner conversation" : `${selected.conv_type || "APN"} conversation`}</div></div></div>
+          <div className="apn-tc-chathead"><button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }}><ArrowLeft size={17}/></button>{conversationContact(selected) ? <button type="button" className="tc-profile-trigger" onClick={()=>setContactProfile(conversationContact(selected))}><Avatar name={conversationContact(selected)?.name || selected.subject || "APN"} url={conversationContact(selected)?.photo_url} size={34} fontSize={12}/><div style={{fontWeight:700}}>{selected.subject || "APN chat"}<div className="apn-tc-presence">Partner conversation</div></div></button> : <div style={{fontWeight:700,flex:1}}>{selected.subject || "APN chat"}<div className="apn-tc-presence">{`${selected.conv_type || "APN"} conversation`}</div></div>}</div>
           <div className="apn-tc-messages">
-            {messages.map(m => { const mine = String(m.sender_id) === String(me.id); return <div key={m.id} className={`apn-tc-msg ${mine ? "mine" : "theirs"}`}>{!mine && <Avatar name={m.sender_name || "APN"} url={profilePhotoFor(m.sender_id)} size={24} fontSize={9} style={{ flexShrink: 0 }} />}<div className="apn-tc-bubble-wrap"><div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{m.created_at ? fmtDateTime(new Date(m.created_at)) : ""}</div></div></div></div>; })}
+            {messages.map(m => { const mine = String(m.sender_id) === String(me.id); return <MessageReactions key={m.id} message={m} supabase={supabase} mine={mine} onChanged={()=>open(selected)}><div className={`apn-tc-msg ${mine ? "mine" : "theirs"}`}>{!mine && <Avatar name={m.sender_name || "APN"} url={profilePhotoFor(m.sender_id)} size={24} fontSize={9} style={{ flexShrink: 0 }} />}<div className="apn-tc-bubble-wrap"><div className="apn-tc-bubble"><div className="apn-tc-text">{m.body}</div><div className="apn-tc-time">{m.created_at ? fmtDateTime(new Date(m.created_at)) : ""}</div></div></div></div></MessageReactions>; })}
             {messages.length === 0 && <Empty icon={<MessageSquare size={20}/>} title="No messages yet" text="Send the first message."/>}
           </div>
           <div className="apn-tc-compose"><textarea className="textarea" value={text} onChange={e => setText(e.target.value)} placeholder="Message the APN partner…" rows={2} maxLength={2000} onKeyDown={e => { if(e.key === "Enter" && !e.shiftKey){e.preventDefault();send();} }}/><button className="btn primary" onClick={send} disabled={!text.trim()}>Send</button></div>
         </main> : <div className="apn-tc-main-empty"><div><MessageSquare size={30} color="var(--muted)"/><div className="apn-tc-main-title">APN conversations</div><div className="hint-line">Select a partner conversation, district chat, or state chat.</div></div></div>}
       </div>
+      {contactProfile && <ChatProfileCard person={{...contactProfile,role_label:contactProfile.apn_id||"APN Partner",location:[contactProfile.district,contactProfile.state].filter(Boolean).join(" · ")}} Avatar={Avatar} X={X} onClose={()=>setContactProfile(null)}/>}
     </div>
   );
 }

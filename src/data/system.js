@@ -2,7 +2,7 @@ export async function fetchTeamRows(supabase, loadTableRows) {
   const rows = await loadTableRows(
     supabase,
     "profiles",
-    "id,name,email,role,active,created_at,status,mobile,dob,photo_url,perms,tnc_version,tnc_roles_accepted,approved,designation,last_active,last_login,last_logout,username",
+    "id,name,email,role,active,created_at,status,mobile,dob,photo_url,perms,tnc_version,tnc_roles_accepted,approved,designation,last_active,last_login,last_logout,username,bio",
     "created_at", 8000, 1, true, 500, 5000,
   );
   return rows.slice().sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));

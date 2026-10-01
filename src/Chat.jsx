@@ -1,6 +1,7 @@
 import React from "react";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 import AdminClientChat from "./AdminClientChat.jsx";
+import ChatProfileCard from "./ui/ChatProfileCard.jsx";
 import { isTouchDoubleTap } from "./ui/doubleTap";
 
 export default function Chat({ db, mutate, me, team, onlineIds = new Set(), presenceReady = false, onRefresh, isAdmin, runtime }) {
@@ -18,6 +19,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
   const [expanded, setExpanded] = useState(false);
   const [teamReactions, setTeamReactions] = useState({});
   const [reactionFor, setReactionFor] = useState(null);
+  const [contactProfile, setContactProfile] = useState(null);
   const list = [...db.chat].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [list.length]);
   // The app-level Supabase Realtime channel already watches chat/team_chat and
@@ -85,7 +87,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
             const mine = m.userId === me.id;
             return (
               <div key={m.id} onDoubleClick={() => !m.deleted && toggleTeamReaction(m,"❤️")} onPointerUp={(e)=>{if(!m.deleted&&isTouchDoubleTap(m.id,e)){e.preventDefault();toggleTeamReaction(m,"❤️")}}} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row", position:"relative" }}>
-                <div style={{ position: "relative", flex: "none" }}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" style={{ position: "absolute", right: -1, bottom: -1, width: 9, height: 9, borderRadius: "50%", background: "var(--pos)", border: "2px solid var(--surface, #fff)" }} />}</div>
+                <button type="button" className="chat-avatar-profile-trigger" aria-label={`View ${m.userName || "member"} profile`} onClick={()=>{const person=(team||[]).find(p=>String(p.id)===String(m.userId));setContactProfile({...person,name:person?.name||m.userName,role_label:person?.designation||person?.role||"ALLBEE Team"})}}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" className="chat-avatar-online" />}</button>
                 <div style={{ maxWidth: "72%" }}>
                   {editId === m.id ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -115,6 +117,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
         <button className="btn primary" onClick={send} disabled={!text.trim()}><Send size={16} />Send</button>
       </div>
     </div>
+    {contactProfile && <ChatProfileCard person={contactProfile} Avatar={Avatar} X={X} onClose={()=>setContactProfile(null)}/>}
     {confirmDelete && <Confirm title="Delete message?" body={`Delete ${confirmDelete.userId === me.id ? "your message" : `${confirmDelete.userName}'s message`} for everyone?`} onConfirm={deleteNow} onClose={() => setConfirmDelete(null)} />}
     </>
   );
