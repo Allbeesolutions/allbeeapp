@@ -35,6 +35,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const [err, setErr] = useState("");
   const [busyRequests, setBusyRequests] = useState(new Set());
   const [messageInfo, setMessageInfo] = useState(null);
+  const [contactProfile, setContactProfile] = useState(null);
   const [contextMessage, setContextMessage] = useState(null);
   const [chatNow, setChatNow] = useState(Date.now());
   const reduced = useReducedMotion();
@@ -128,7 +129,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
         // cache catches up by reading the same source tables directly.
         const [partnersRes, adminsRes, presenceRes] = await Promise.all([
           supabase.from("apn_users").select("id,data").neq("id", pid).limit(500),
-          supabase.from("profiles").select("id,name,role,photo_url,active,status").neq("id", pid).in("role", ["admin", "superadmin"]).limit(200),
+          supabase.from("profiles").select("id,name,role,photo_url,bio,active,status").neq("id", pid).in("role", ["admin", "superadmin"]).limit(200),
           supabase.from("apn_chat_presence").select("user_id,online,last_seen,updated_at").limit(500)
         ]);
         if (!mountedRef.current) return;
@@ -137,9 +138,9 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
         const fallbackPartners = (partnersRes.data || []).filter((u) => u?.data?.status === "active").map((u) => {
           const d = u.data || {}; const pr = presenceByUser.get(String(u.id));
           const availability = pr?.online && pr?.updated_at && (Date.now() - new Date(pr.updated_at).getTime() < 45000) ? "online" : "offline";
-          return { contact_id: String(u.id), contact_type: "partner", name: d.name || "Partner", apn_id: d.apnId || null, district: d.district || null, state: d.state || null, photo_url: d.profilePicture || d.photo_url || d.photoUrl || null, availability, last_seen: pr?.last_seen || null, relationship: "none" };
+          return { contact_id: String(u.id), contact_type: "partner", name: d.name || "Partner", bio: d.bio || "", apn_id: d.apnId || null, district: d.district || null, state: d.state || null, photo_url: d.profilePicture || d.photo_url || d.photoUrl || null, availability, last_seen: pr?.last_seen || null, relationship: "none" };
         });
-        const fallbackAdmins = (adminsRes.data || []).filter((a) => a.active && a.status === "active").map((a) => ({ contact_id: String(a.id), contact_type: a.role === "superadmin" ? "superadmin" : "admin", name: a.name || (a.role === "superadmin" ? "Super Admin" : "Admin"), apn_id: null, district: null, state: null, photo_url: a.photo_url || null, availability: "always_available", last_seen: null, relationship: "pre_enabled" }));
+        const fallbackAdmins = (adminsRes.data || []).filter((a) => a.active && a.status === "active").map((a) => ({ contact_id: String(a.id), contact_type: a.role === "superadmin" ? "superadmin" : "admin", name: a.name || (a.role === "superadmin" ? "Super Admin" : "Admin"), apn_id: null, district: null, state: null, photo_url: a.photo_url || null, bio: a.bio || "", availability: "always_available", last_seen: null, relationship: "pre_enabled" }));
         contactRows = [...fallbackAdmins, ...fallbackPartners];
       }
       // profiles.photo_url is the authoritative app-wide avatar. The APN contact
@@ -147,14 +148,14 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       // always overlay the live profile photo when it is available.
       const contactIds = contactRows.map((c) => String(c.contact_id || "")).filter(Boolean);
       if (contactIds.length) {
-        const photos = new Map();
+        const photos = new Map(); const bios = new Map();
         for (let i = 0; i < contactIds.length; i += 100) {
           const batch = contactIds.slice(i, i + 100);
-          const profileRes = await supabase.from("profiles").select("id,photo_url").in("id", batch);
+          const profileRes = await supabase.from("profiles").select("id,photo_url,bio").in("id", batch);
           if (!mountedRef.current) return;
-          if (!profileRes.error) (profileRes.data || []).forEach((r) => photos.set(String(r.id), r.photo_url || null));
+          if (!profileRes.error) (profileRes.data || []).forEach((r) => { photos.set(String(r.id), r.photo_url || null); bios.set(String(r.id), r.bio || ""); });
         }
-        contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null }));
+        contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null, bio: bios.get(String(c.contact_id)) || c.bio || "" }));
       }
       if (!mountedRef.current) return;
       setContacts(contactRows);
@@ -517,10 +518,11 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
 <div className="apn-tc-chat">
                   <div className="apn-tc-chathead">
                     <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
-                    <Avatar name={contactForConversation(selected)?.name || selected.subject || "Chat"} url={contactForConversation(selected)?.photo_url} size={40} fontSize={15} />
-                    <div className="tc-thread-title">{selected.subject}
+                    <button type="button" className="tc-profile-trigger" aria-label={`View ${contactForConversation(selected)?.name || selected.subject || "contact"} profile`} onClick={() => setContactProfile(contactForConversation(selected) || { name:selected.subject || "Chat" })}>
+                      <Avatar name={contactForConversation(selected)?.name || selected.subject || "Chat"} url={contactForConversation(selected)?.photo_url} size={40} fontSize={15} />
+                      <div className="tc-thread-title">{selected.subject}
                       {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
-                    </div>
+                    </div></button>
                     <button className="iconbtn" aria-label="Search this conversation" aria-expanded={searchOpen} onClick={() => { setSearchOpen(!searchOpen); setMessageSearch(""); }}><Search size={18}/></button>
                   </div>
                   {searchOpen && <div className="tc-message-search">
@@ -679,6 +681,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
           </div>
         )}
         {selected && section !== "person" && renderConversation()}
+        {contactProfile && <div className="tc-profile-overlay" role="dialog" aria-modal="true" aria-label={`${contactProfile.name || "Contact"} profile`} onClick={() => setContactProfile(null)}><div className="tc-profile-card" onClick={(e)=>e.stopPropagation()}><button className="iconbtn tc-profile-close" aria-label="Close profile" onClick={()=>setContactProfile(null)}><X size={18}/></button><Avatar name={contactProfile.name || "?"} url={contactProfile.photo_url} size={152} fontSize={46}/><h3>{contactProfile.name || "ALLBEE member"}</h3><div className="tc-profile-role">{contactProfile.contact_type === "superadmin" ? "Super Admin" : contactProfile.contact_type === "admin" ? "Admin" : contactProfile.apn_id || "APN Partner"}</div>{contactProfile.district && <div className="hint-line">{contactProfile.district}{contactProfile.state ? ` · ${contactProfile.state}` : ""}</div>}<div className="tc-profile-about"><span>Bio</span><p>{contactProfile.bio || "No bio yet."}</p></div></div></div>}
       </div>
       {messageInfo && <div className="apn-tc-info-overlay" onClick={() => setMessageInfo(null)}>
         <div className="apn-tc-info-card" onClick={(e) => e.stopPropagation()}>

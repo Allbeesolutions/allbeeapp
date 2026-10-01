@@ -8,7 +8,7 @@ describe("profile avatar synchronization", () => {
     expect(source).toContain("url={myPhoto}");
     expect(source).toContain("contactForConversation(c)?.photo_url");
     expect(source).toContain("contactForConversation(selected)?.photo_url");
-    expect(source).toContain('select("id,photo_url")');
+    expect(source).toContain('select("id,photo_url,bio")');
   });
   it("uses partner photos in APN network/head cards", () => {
     const network = fs.readFileSync("src/APNNetwork.jsx", "utf8");

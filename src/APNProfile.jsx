@@ -8,7 +8,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
   const governed = apnGovernedLimit(db, meRow.id);
   const [f, setF] = useState(() => ({
     name: meRow.name || "", username: meRow.username || profile?.username || "", email: meRow.email || profile?.email || sessionEmail || "", mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "",
-    address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", photoUrl: apnAvatarUrl(meRow, profile),
+    address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", bio: profile?.bio || meRow.bio || "", photoUrl: apnAvatarUrl(meRow, profile),
   }));
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -19,7 +19,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
   const photoRef = useRef(null);
   const set = (key, value) => { setSaved(false); setF((current) => ({ ...current, [key]: value })); };
   useEffect(() => {
-    setF({ name: meRow.name || "", username: meRow.username || profile?.username || "", email: meRow.email || profile?.email || sessionEmail || "", mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "", address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", photoUrl: apnAvatarUrl(meRow, profile) });
+    setF({ name: meRow.name || "", username: meRow.username || profile?.username || "", email: meRow.email || profile?.email || sessionEmail || "", mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "", address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", bio: profile?.bio || meRow.bio || "", photoUrl: apnAvatarUrl(meRow, profile) });
   }, [meRow.id, meRow.updatedAt, profile?.id, profile?.updated_at, sessionEmail]);
   const normalizedUsername = f.username.trim().toLowerCase().replace(/\s+/g, "");
   useEffect(() => {
@@ -63,11 +63,11 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
         const { error: authError } = await supabase.auth.updateUser({ email: f.email.trim().toLowerCase() });
         if (authError) throw new Error(authError.message);
       }
-      const { error: profileError } = await supabase.from("profiles").update({ name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || null, photo_url: f.photoUrl || null }).eq("id", meRow.id);
+      const { error: profileError } = await supabase.from("profiles").update({ name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || null, photo_url: f.photoUrl || null, bio: f.bio.trim().slice(0, 150) || null }).eq("id", meRow.id);
       if (profileError) throw new Error(profileError.message);
       const at = Date.now();
-      const nextProfile = { name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || "", address: f.address.trim(), district: f.district.trim(), taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(), college: f.college.trim(), profilePicture: f.photoUrl || "" };
-      const previousProfile = { name: meRow.name || "", username: meRow.username || profile?.username || "", email: previousEmail, mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "", address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", profilePicture: apnAvatarUrl(meRow, profile) };
+      const nextProfile = { name: f.name.trim(), username: normalizedUsername, email: f.email.trim().toLowerCase(), mobile: f.mobile.trim(), dob: f.dob || "", address: f.address.trim(), district: f.district.trim(), taluk: f.taluk.trim(), city: f.city.trim(), occupation: f.occupation.trim(), college: f.college.trim(), bio: f.bio.trim().slice(0, 150), profilePicture: f.photoUrl || "" };
+      const previousProfile = { name: meRow.name || "", username: meRow.username || profile?.username || "", email: previousEmail, mobile: meRow.mobile || profile?.mobile || "", dob: meRow.dob || profile?.dob || "", address: meRow.address || "", district: meRow.district || "", taluk: meRow.taluk || "", city: meRow.city || "", occupation: meRow.occupation || "", college: meRow.college || "", bio: profile?.bio || meRow.bio || "", profilePicture: apnAvatarUrl(meRow, profile) };
       const changedFields = Object.keys(nextProfile).filter((key) => String(previousProfile[key] ?? "") !== String(nextProfile[key] ?? ""));
       const profileAction = changedFields.includes("profilePicture") ? (nextProfile.profilePicture ? "changed APN profile picture" : "removed APN profile picture") : "updated own APN profile";
       mutate((d) => ({ ...d, apn_users: (d.apn_users || []).map((u) => u.id === meRow.id ? { ...u, ...nextProfile, updatedAt: at } : u) }), { action: profileAction, module: "APN", partnerId: meRow.id, previousValue: previousProfile, newValue: nextProfile, metadata: { changedFields } });
@@ -96,7 +96,7 @@ export default function APNProfile({ db, meRow, stats, snap, profile, sessionEma
       </div>
       <div className="apn-rowcard">
         <div className="hint-line" style={{ marginBottom: 12 }}>APN ID is permanent and cannot be edited.</div>
-        {field("Full name", "name")}{field("Username", "username")}
+        {field("Full name", "name")}{field("Username", "username")}<Field label="Bio" hint={`${f.bio.length}/150 · A short About shown on your ALLBEE chat profile.`}><textarea className="textarea" maxLength={150} rows={3} value={f.bio} onChange={(e) => set("bio", e.target.value)} placeholder="Tell your ALLBEE network a little about yourself…" /></Field>
         {f.username.trim() && <div className="hint-line" style={{ marginTop: -8, marginBottom: 10, color: usernameState === "taken" ? "var(--neg)" : usernameState === "available" ? "var(--pos)" : "var(--muted)" }}>{usernameState === "checking" ? "Checking username…" : usernameState === "taken" ? "Username is already taken." : usernameState === "available" ? "Username is available." : usernameState === "unknown" ? "Could not verify username availability." : ""}{usernameState === "taken" && <span> Try {normalizedUsername}1, {normalizedUsername}2, or {normalizedUsername}3.</span>}</div>}
         {field("Mobile number", "mobile")}{field("Email", "email", "email")}{field("Date of birth", "dob", "date")}
         {field("Full address", "address")}{field("District", "district")}{field("Taluk", "taluk")}{field("City", "city")}{field("Occupation", "occupation")}{field("College", "college")}

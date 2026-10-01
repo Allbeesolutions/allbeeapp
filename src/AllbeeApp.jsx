@@ -2986,6 +2986,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
   const [dob, setDob] = useState(profile?.dob || "");
   const [photo, setPhoto] = useState(profile?.photo_url || "");
   const [username, setUsername] = useState(profile?.username || "");
+  const [bio, setBio] = useState(profile?.bio || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -3009,7 +3010,7 @@ function ProfileSetup({ profile, onSave, onSignOut, isDark }) {
     if (!dob) { setErr("Add your date of birth."); return; }
     const uname = username.trim().toLowerCase().replace(/\s+/g, "");
     setBusy(true);
-    try { await onSave({ name: name.trim(), mobile: mobile.trim(), dob, photo_url: photo.trim() || null, username: uname || null }); }
+    try { await onSave({ name: name.trim(), mobile: mobile.trim(), dob, photo_url: photo.trim() || null, username: uname || null, bio: bio.trim().slice(0, 150) || null }); }
     catch (e) { setErr(e.message || "Couldn't save that. Try again."); setBusy(false); }
   };
   return (
@@ -3171,6 +3172,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
   const [dob, setDob] = useState(profile?.dob || "");
   const [photo, setPhoto] = useState(profile?.photo_url || "");
   const [username, setUsername] = useState(profile?.username || "");
+  const [bio, setBio] = useState(profile?.bio || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(false);
@@ -3192,8 +3194,8 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
   };
   useEffect(() => {
     setName(profile?.name || ""); setMobile(profile?.mobile || ""); setDob(profile?.dob || "");
-    setPhoto(profile?.photo_url || ""); setUsername(profile?.username || "");
-  }, [profile?.id, profile?.name, profile?.mobile, profile?.dob, profile?.photo_url, profile?.username]);
+    setPhoto(profile?.photo_url || ""); setUsername(profile?.username || ""); setBio(profile?.bio || "");
+  }, [profile?.id, profile?.name, profile?.mobile, profile?.dob, profile?.photo_url, profile?.username, profile?.bio]);
   const save = async () => {
     setErr(""); setDone(false);
     if (!name.trim()) { setErr("Enter your full name."); return; }
@@ -3230,6 +3232,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
           <Field label="Date of birth" required><input className="input" type="date" value={dob} onChange={(e) => setDob(e.target.value)} max={todayISO()} /></Field>
           <Field label="Email" hint="Your sign-in email — ask an admin to change it."><input className="input" value={email} disabled style={{ opacity: .7 }} /></Field>
         </div>
+        <Field label="Bio" hint={`${bio.length}/150 · Shown on your ALLBEE chat profile.`}><textarea className="textarea" maxLength={150} rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="A short About for your ALLBEE profile…" /></Field>
         <div className="grid2">
           <Field label="Username" hint="Optional — sign in with this instead of email."><input className="input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. priya" /></Field>
           <Field label="Profile photo" hint="Choose an image, crop it to a 500 × 500 square, then it saves right away.">
