@@ -3203,7 +3203,7 @@ function MyProfile({ profile, role, saveMyProfile, sessionEmail }) {
     if (!dob) { setErr("Add your date of birth."); return; }
     const uname = username.trim().toLowerCase().replace(/\s+/g, "");
     setBusy(true);
-    try { await saveMyProfile({ name: name.trim(), mobile: mobile.trim(), dob, photo_url: photo.trim() || null, username: uname || null }); setDone(true); }
+    try { await saveMyProfile({ name: name.trim(), mobile: mobile.trim(), dob, photo_url: photo.trim() || null, username: uname || null, bio: bio.trim().slice(0, 150) || null }); setDone(true); }
     catch (e) { setErr(e.message || "Couldn't save. That username may already be taken — try another."); }
     finally { setBusy(false); }
   };

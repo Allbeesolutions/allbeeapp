@@ -1645,3 +1645,4 @@ img, video, canvas, svg { max-width:100%; }
 @media(prefers-reduced-motion:reduce){.profile-crop-overlay{backdrop-filter:none;-webkit-backdrop-filter:none}}
 .drop-id-profile{display:flex!important;align-items:center!important;gap:9px!important;width:100%!important;padding:8px 10px 10px!important;margin-bottom:4px!important;border:0!important;border-bottom:1px solid var(--border)!important;border-radius:8px 8px 0 0!important;background:none!important;color:var(--ink)!important;text-align:left!important;cursor:pointer!important}
 .drop-id-profile:hover{background:var(--surface-2)!important}.drop-id-profile:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.client-password-card{margin-top:18px;padding-top:18px;border-top:1px solid var(--border)}.client-password-card .grid2{margin-bottom:12px}@media(max-width:640px){.client-password-card .grid2{grid-template-columns:1fr}.client-password-card .grid2>span:empty{display:none}}
