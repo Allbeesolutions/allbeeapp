@@ -7531,10 +7531,10 @@ export default function App() {
                 </button>
                 {userMenu && (
                   <div className="dropdown" onMouseLeave={() => setUserMenu(false)}>
-                    <div className="drop-id">
+                    <button type="button" className="drop-id drop-id-profile" aria-label="Open My Profile" onClick={() => { setUserMenu(false); go("profile"); }}>
                       <Avatar name={currentUser} url={profile?.photo_url} size={22} fontSize={10} />
                       <div><div style={{ fontWeight: 700, fontSize: 13 }}>{currentUser}</div><div className="hint-line" style={{ fontSize: 11 }}>{session?.user?.email}</div></div>
-                    </div>
+                    </button>
                     {role !== "superadmin" && <button onClick={() => { setUserMenu(false); openModal({ type: "resign" }); }}><XCircle size={15} />Request resignation</button>}
                     <button onClick={signOut}><LogOut size={15} />Sign out</button>
                   </div>
