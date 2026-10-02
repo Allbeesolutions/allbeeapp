@@ -1,0 +1,55 @@
+/* Shared APN message structure used by admin/client threads. */
+.apn-teamchat .shared-chat-message { width:fit-content; max-width:min(85%,580px); flex:none; }
+.apn-teamchat .shared-chat-message.is-mine { align-self:flex-end; }
+.apn-teamchat .shared-chat-message.is-theirs { align-self:flex-start; }
+.apn-teamchat .shared-chat-message > .apn-tc-msg { width:auto; max-width:100%; }
+.apn-teamchat .shared-chat-message .apn-tc-bubble-wrap { padding:0; }
+.apn-teamchat .shared-chat-message .msg-react-summary { justify-content:flex-start; padding-left:36px; }
+.apn-teamchat .shared-chat-message.is-mine .msg-react-summary { justify-content:flex-end; padding-left:0; }
+.apn-teamchat .shared-chat-message .msg-react-trigger { right:-6px; bottom:-8px; opacity:.6; }
+.apn-teamchat .shared-chat-message.is-mine .msg-react-trigger { right:auto; left:-6px; }
+.apn-teamchat .shared-chat-message.is-theirs .msg-react-picker { right:auto; left:0; }
+.apn-teamchat .shared-chat-compose { display:block!important; }
+.tc-composer-row { display:flex; gap:10px; align-items:flex-end; min-width:0; }
+.tc-composer-row .textarea { flex:1; min-width:0; resize:none; }
+.apn-teamchat .tc-thread-error { flex:none; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.apn-teamchat .tc-thread-error .btn { margin-left:auto; }
+.chat-thread-state { margin:auto; text-align:center; padding:24px; color:var(--muted); }
+.chat-thread-state b { color:var(--ink); display:block; margin-bottom:6px; }
+.chat-connection-note { font-size:11px; color:var(--muted); }
+.client-chat-row-tail time { white-space:nowrap; font-size:10px; color:var(--muted); }
+.apn-teamchat .client-chat-shell { border:0; border-radius:0; box-shadow:none; padding:0; }
+.apn-teamchat .client-chat-sidebar { display:flex; flex-direction:column; }
+.apn-teamchat .client-chat-list { overflow:auto; min-height:0; }
+.apn-teamchat .client-chat-main { background-color:color-mix(in srgb,var(--bg) 92%,#d7e4ef); background-image:radial-gradient(color-mix(in srgb,var(--muted) 13%,transparent) .65px,transparent .65px); background-size:18px 18px; }
+.apn-teamchat .client-chat-back { display:none!important; }
+.admin-client-chat-page.apn-teamchat { margin:0 24px 20px; width:calc(100% - 48px); height:calc(100dvh - 178px); min-height:280px; }
+.admin-client-chat-page .page-head { padding:16px 22px; margin:0; border-bottom:1px solid var(--border); gap:12px; }
+.admin-client-chat-page .page-head h3 { margin:0; font-size:20px; letter-spacing:-.5px; }
+.admin-client-chat-page .tc-inbox-heading { margin-bottom:14px; }
+.admin-client-chat-page .apn-tc-recent-copy b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.admin-client-chat-page .client-chat-row-tail { min-width:42px; gap:7px; }
+.admin-client-chat-page .client-chat-state { flex:1; }
+.apn-teamchat .shared-chat-message .msg-react-picker { max-width:min(300px,calc(100vw - 46px)); flex-wrap:wrap; border-radius:14px; }
+@media(max-width:760px) {
+ .admin-client-chat-page.apn-teamchat { margin:0 10px 10px; width:calc(100% - 20px); height:calc(100dvh - 200px); }
+ .admin-client-chat-page .page-head { padding:12px 14px; }
+ .apn-teamchat .client-chat-back { display:grid!important; }
+ .apn-teamchat .shared-chat-message { max-width:92%; }
+ .apn-teamchat .shared-chat-message .msg-react-trigger { opacity:.8; }
+ .apn-teamchat .shared-chat-compose { padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+ .apn-teamchat .tc-composer-row .btn.primary { flex:none; }
+}
+
+.client-support-thread.apn-teamchat { display:flex; flex-direction:column; height:calc(100dvh - 230px); min-height:280px; }
+.client-support-thread .apn-tc-messages { background-color:var(--bg); }
+.apn-teamchat .admin-apn-sidebar { overflow-y:auto; }
+.apn-admin-filters { margin:14px 0; flex-wrap:wrap; }
+@media(max-width:760px){ .client-support-thread.apn-teamchat { height:calc(100dvh - 208px); } .admin-client-chat-page .apn-tc-main-empty { display:none; } }
+
+.client-portal-content.client-chat-view { display:flex; flex-direction:column; height:calc(100dvh - 68px); min-height:280px; padding-top:16px!important; padding-bottom:16px!important; overflow:hidden; }
+.client-chat-view > .client-hero { display:none; }
+.client-chat-view > .seg { flex:none; margin-bottom:14px; }
+.client-chat-view .client-support-thread.apn-teamchat { flex:1; height:auto; min-height:0; width:100%; }
+.client-chat-view > .client-support-chat { overflow-y:auto; width:100%; margin:6px auto; }
+@media(max-width:760px) { .client-portal-content.client-chat-view { height:calc(100dvh - 58px); padding-bottom:calc(12px + env(safe-area-inset-bottom))!important; } .client-chat-view > .seg { position:static; } }

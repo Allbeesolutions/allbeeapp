@@ -1,4 +1,5 @@
 import React from "react";
+import {resolveChatPerson} from "./identity/chatIdentity.js";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 import AdminClientChat from "./AdminClientChat.jsx";
 import ChatProfileCard from "./ui/ChatProfileCard.jsx";
@@ -84,10 +85,11 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
       <div className="card" style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         {list.length === 0 ? <Empty icon={<Send size={22} color="var(--muted)" />} title="Say hello 👋" text="This channel is shared with the whole internal team." />
           : list.map((m) => {
-            const mine = m.userId === me.id;
+            const mine = String(m.userId) === String(me.id);
+            const person=resolveChatPerson(team,{id:m.userId,name:m.userName});
             return (
               <div key={m.id} onDoubleClick={() => !m.deleted && toggleTeamReaction(m,"❤️")} onPointerUp={(e)=>{if(!m.deleted&&isTouchDoubleTap(m.id,e)){e.preventDefault();toggleTeamReaction(m,"❤️")}}} style={{ display: "flex", gap: 10, flexDirection: mine ? "row-reverse" : "row", position:"relative" }}>
-                <button type="button" className="chat-avatar-profile-trigger" aria-label={`View ${m.userName || "member"} profile`} onClick={()=>{const person=(team||[]).find(p=>String(p.id)===String(m.userId));setContactProfile({...person,name:person?.name||m.userName,role_label:person?.designation||person?.role||"ALLBEE Team"})}}><Avatar name={m.userName} url={(team || []).find((p) => p.id === m.userId)?.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" className="chat-avatar-online" />}</button>
+                <button type="button" className="chat-avatar-profile-trigger" aria-label={`View ${person.name} profile`} onClick={()=>setContactProfile(person)}><Avatar name={person.name} url={person.photo_url} size={30} />{onlineIds.has(m.userId) && <span title="Online" className="chat-avatar-online" />}</button>
                 <div style={{ maxWidth: "72%" }}>
                   {editId === m.id ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -103,7 +105,7 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
                         ? <a href={m.attachment.url} target="_blank" rel="noreferrer"><img src={m.attachment.url} alt={m.attachment.name || ""} style={{ display: "block", maxWidth: 220, maxHeight: 220, borderRadius: 8, marginTop: m.text ? 8 : 0 }} /></a>
                         : <a href={m.attachment.url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: m.text ? 8 : 0, color: mine ? "#fff" : "var(--primary)", textDecoration: "underline" }}><Paperclip size={13} />{m.attachment.name || "Attachment"}</a>))}</div>
                   )}
-                  {!m.deleted && <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : m.userName} · {fmtDateTime(m.createdAt)}{m.editedAt ? " · edited" : ""}{mine && seenNames(m).length > 0 ? " · Seen by " + (seenNames(m).length <= 2 ? seenNames(m).join(", ") : `${seenNames(m).slice(0, 2).join(", ")} +${seenNames(m).length - 2}`) : ""}{mine && editId !== m.id && (typeof withinMinutes === "function" ? withinMinutes(m.createdAt, 5) : false) && <button onClick={() => startEdit(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Edit</button>}{mine && editId !== m.id && Date.now()-Number(m.createdAt||0)<=3600000 && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}{!m.deleted && <><button onClick={()=>setReactionFor(reactionFor===m.id?null:m.id)} style={{marginLeft:6,background:"none",border:0,cursor:"pointer"}}>☺</button>{reactionFor===m.id&&<span className="team-reaction-picker">{["👍","❤️","😂","😮","😢","🎉"].map(e=><button key={e} onClick={()=>toggleTeamReaction(m,e)}>{e}</button>)}</span>}</>}{(teamReactions[m.id]||[]).map(r=><button key={r.emoji} className={`team-reaction-pill ${r.mine?"mine":""}`} onClick={()=>toggleTeamReaction(m,r.emoji)}>{r.emoji} {r.reaction_count}</button>)}</div>}
+                  {!m.deleted && <div className="hint-line" style={{ fontSize: 11, marginTop: 3, textAlign: mine ? "right" : "left" }}>{mine ? "You" : person.name} · {fmtDateTime(m.createdAt)}{m.editedAt ? " · edited" : ""}{mine && seenNames(m).length > 0 ? " · Seen by " + (seenNames(m).length <= 2 ? seenNames(m).join(", ") : `${seenNames(m).slice(0, 2).join(", ")} +${seenNames(m).length - 2}`) : ""}{mine && editId !== m.id && (typeof withinMinutes === "function" ? withinMinutes(m.createdAt, 5) : false) && <button onClick={() => startEdit(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Edit</button>}{mine && editId !== m.id && Date.now()-Number(m.createdAt||0)<=3600000 && <button onClick={() => del(m)} style={{ marginLeft: 6, background: "none", border: "none", color: "var(--neg)", cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>Delete</button>}{!m.deleted && <><button onClick={()=>setReactionFor(reactionFor===m.id?null:m.id)} style={{marginLeft:6,background:"none",border:0,cursor:"pointer"}}>☺</button>{reactionFor===m.id&&<span className="team-reaction-picker">{["👍","❤️","😂","😮","😢","🎉"].map(e=><button key={e} onClick={()=>toggleTeamReaction(m,e)}>{e}</button>)}</span>}</>}{(teamReactions[m.id]||[]).map(r=><button key={r.emoji} className={`team-reaction-pill ${r.mine?"mine":""}`} onClick={()=>toggleTeamReaction(m,r.emoji)}>{r.emoji} {r.reaction_count}</button>)}</div>}
                 </div>
               </div>
             );
@@ -129,5 +131,5 @@ export default function Chat({ db, mutate, me, team, onlineIds = new Set(), pres
       <button className={chatChannel === "client" ? "on" : ""} onClick={() => setChatChannel("client")}>Client</button>
     </div>
   </div>}
-  {isAdmin && chatChannel === "apn" ? <AdminAPNChat me={me} onUnreadChange={setApnUnread} /> : isAdmin && chatChannel === "client" ? <AdminClientChat me={me} runtime={runtime} /> : employeeView}</>);
+  {isAdmin && chatChannel === "apn" ? <AdminAPNChat me={me} onUnreadChange={setApnUnread} /> : isAdmin && chatChannel === "client" ? <AdminClientChat me={me} people={team} runtime={runtime} /> : employeeView}</>);
 }

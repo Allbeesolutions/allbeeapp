@@ -122,3 +122,11 @@
 .tc-profile-photo-trigger{display:block;margin:0 auto 18px;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer}.tc-profile-photo-trigger:focus-visible{outline:3px solid var(--primary);outline-offset:4px}.tc-profile-photo-trigger>.avatar{margin:0}.tc-photo-viewer{position:fixed;inset:0;z-index:1500;display:grid;place-items:center;padding:24px;background:rgba(3,7,18,.92);backdrop-filter:blur(12px)}.tc-photo-viewer-square{width:min(75vw,75vh);height:auto;aspect-ratio:1/1;overflow:hidden;border-radius:18px;background:#0b0f19;box-shadow:0 24px 80px rgba(0,0,0,.38)}.tc-photo-viewer-square img{display:block;width:100%;height:100%;object-fit:cover;object-position:center}.tc-photo-viewer-close{position:absolute;top:max(20px,env(safe-area-inset-top));right:max(20px,env(safe-area-inset-right));z-index:1;background:rgba(255,255,255,.94);color:#111827}@media(max-width:600px){.tc-photo-viewer{padding:12px}.tc-photo-viewer-square{width:min(75vw,75vh);border-radius:14px}}
 /* Keep conversation identity at the start and search pinned to the far-right header edge. */
 .apn-tc-chathead>.tc-profile-trigger{margin-right:auto}.apn-tc-chathead>button[aria-label="Search this conversation"]{margin-left:auto;flex:0 0 auto}
+
+/* Profile dialogs remain usable at small widths and with long biographies. */
+.tc-profile-card { max-height:calc(100dvh - 40px); overflow-y:auto; color:var(--ink); }
+.tc-profile-photo-trigger:disabled { cursor:default; }
+.tc-photo-viewer-square img { object-fit:contain; }
+.tc-photo-viewer-square p { padding:24px; color:#fff; text-align:center; }
+.tc-thread-title { min-width:0; overflow-wrap:anywhere; }
+@media(max-width:600px) { .tc-profile-card { max-height:calc(100dvh - env(safe-area-inset-top)); } }

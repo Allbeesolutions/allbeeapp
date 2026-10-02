@@ -11,9 +11,9 @@ describe("ALLBEE mascot surface coverage", () => {
     expect(mascot).toContain('src={mascotAsset}');
     expect(mascot).not.toContain('/allbee-ai-mascot.jpeg');
   });
-  it("keeps the floating assistant on every APN tab while hiding only transient overlays", () => {
+  it("protects the chat composer while hiding the assistant for transient overlays", () => {
     expect(app).toContain('surface="apn"');
-    expect(app).toContain('hidden={!!modal || searchOpen || sidebarOpen}');
+    expect(app).toContain('hidden={!!modal || searchOpen || sidebarOpen || tab === "chat"}');
     expect(app).not.toContain('["home", "ai", "leads", "quotations", "chat"].includes(tab)');
   });
   it("mounts the same actionable launcher across internal workspace and login", () => {

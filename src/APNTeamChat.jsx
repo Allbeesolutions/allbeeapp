@@ -1,4 +1,7 @@
 import React from "react";
+import ChatProfileCard from "./ui/ChatProfileCard.jsx";
+import {conversationPerson,uniqueChatMessages} from "./identity/chatIdentity.js";
+import {hydrateConversationPeople} from "./identity/conversationIdentity.js";
 import { MoreHorizontal, Users, X, ArrowDown, Send as SendIcon } from "lucide-react";
 import "./ui/team-chat.css";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
@@ -36,7 +39,6 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const [busyRequests, setBusyRequests] = useState(new Set());
   const [messageInfo, setMessageInfo] = useState(null);
   const [contactProfile, setContactProfile] = useState(null);
-  const [profilePhoto, setProfilePhoto] = useState(null);
   const [contextMessage, setContextMessage] = useState(null);
   const [chatNow, setChatNow] = useState(Date.now());
   const reduced = useReducedMotion();
@@ -53,25 +55,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const me = meRow || { id: pid, name: profile?.name || "Partner" };
   const myApnId = apnIdFor(meRow) || "-";
   const myPhoto = profile?.photo_url || meRow?.profilePicture || meRow?.photo_url || meRow?.photoUrl || null;
-  const contactForConversation = useCallback((conversation) => {
-    if (!conversation) return null;
-    const participantId = conversation.participant_id || conversation.other_id || conversation.contact_id;
-    if (participantId) {
-      const byId = contacts.find((c) => String(c.contact_id) === String(participantId));
-      if (byId) return byId;
-    }
-    const participantApnId = conversation.participant_apn_id || conversation.other_apn_id;
-    if (participantApnId) {
-      const byApn = contacts.find((c) => String(c.apn_id || "").toLowerCase() === String(participantApnId).toLowerCase());
-      if (byApn) return byApn;
-    }
-    // Legacy conversation RPCs only expose the subject. Resolve by name only
-    // when it identifies exactly one contact; never guess between duplicate names.
-    const subject = String(conversation.subject || "").trim().toLowerCase();
-    if (!subject) return null;
-    const matches = contacts.filter((c) => String(c.name || "").trim().toLowerCase() === subject);
-    return matches.length === 1 ? matches[0] : null;
-  }, [contacts]);
+  const contactForConversation = useCallback(c => conversationPerson(contacts,c), [contacts]);
 
   // Truthful presence: heartbeat while this chat is open and mark offline on cleanup.
   useEffect(() => {
@@ -120,7 +104,9 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       const { data, error } = await supabase.rpc("apn_list_conversations");
       if (error) throw new Error(error.message);
       if (!mountedRef.current) return;
-      setConversations(Array.isArray(data) ? data : []);
+      const hydrated=await hydrateConversationPeople(supabase,data,pid);
+      if (!mountedRef.current) return;
+      setConversations(hydrated);
       const contactsRes = await supabase.rpc("apn_list_chat_contacts");
       if (!mountedRef.current) return;
       let contactRows = Array.isArray(contactsRes.data) ? contactsRes.data : [];
@@ -156,7 +142,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
           if (!mountedRef.current) return;
           if (!profileRes.error) (profileRes.data || []).forEach((r) => { photos.set(String(r.id), r.photo_url || null); bios.set(String(r.id), r.bio || ""); });
         }
-        contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.get(String(c.contact_id)) || c.photo_url || null, bio: bios.get(String(c.contact_id)) || c.bio || "" }));
+        contactRows = contactRows.map((c) => ({ ...c, photo_url: photos.has(String(c.contact_id)) ? photos.get(String(c.contact_id)) : c.photo_url || null, bio: bios.has(String(c.contact_id)) ? bios.get(String(c.contact_id)) : c.bio || "" }));
       }
       if (!mountedRef.current) return;
       setContacts(contactRows);
@@ -194,7 +180,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       const { data, error } = await supabase.rpc("apn_list_messages", { p_conversation_id: conv.id });
       if (!mountedRef.current || selectedRef.current?.id !== conv.id) return;
       if (error) throw new Error(error.message);
-      const msgs = Array.isArray(data) ? data : [];
+      const msgs = uniqueChatMessages(data);
       setMessages(msgs);
       await Promise.all(msgs.filter((m) => m.sender_id !== pid && !m.delivered_at).map((m) => supabase.rpc("apn_mark_delivered", { p_message_id: m.id })));
       // advance the caller's read cursor to the latest message so the badge clears
@@ -443,7 +429,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
     try {
       const { data, error } = await supabase.rpc("apn_get_or_create_admin_conversation", { p_admin_id: admin.contact_id });
       if (error) throw new Error(error.message);
-      if (data?.[0]) openConversation({ id: data[0].conversation_id, subject: data[0].subject, conv_type: "person" });
+      if (data?.[0]) openConversation({ id: data[0].conversation_id, subject: admin.name, participant_id: admin.contact_id, conv_type: "person" });
     } catch (e) { setErr(e.message || String(e)); }
   };
 
@@ -459,7 +445,8 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       if (!primary.error && primary.data?.[0]?.conversation_id) {
         openConversation({
           id: primary.data[0].conversation_id,
-          subject: primary.data[0].subject || other.name,
+          subject: other.name,
+          participant_id: other.contact_id || other.id,
           conv_type: "person",
           participant_apn_id: primary.data[0].participant_apn_id || otherApnId,
         });
@@ -472,7 +459,8 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
       if (!legacy.error && legacy.data?.[0]?.conversation_id) {
         openConversation({
           id: legacy.data[0].conversation_id,
-          subject: legacy.data[0].subject || other.name,
+          subject: other.name,
+          participant_id: other.contact_id || other.id,
           conv_type: "person",
           participant_apn_id: legacy.data[0].participant_apn_id || otherApnId,
         });
@@ -514,14 +502,14 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
   const scrollToLatest = () => { const el=scrollRef.current; if(el)el.scrollTo?.({top:el.scrollHeight,behavior:reduced?"auto":"smooth"});nearBottom.current=true;setNewMessages(false); };
   useEffect(()=>{ const el=scrollRef.current;if(!el)return;if(nearBottom.current){el.scrollTop=el.scrollHeight;}else{setNewMessages(true);} },[messages.length]);
   const matchesContact = (value) => String(value||"").toLowerCase().includes(contactSearch.trim().toLowerCase());
-  const recentChats = conversations.filter(c=>c.conv_type==="person"&&matchesContact([c.subject,c.last_message].join(" "))&&(!unreadOnly||Number(c.unread_count)>0));
+  const recentChats = conversations.filter(c=>c.conv_type==="person"&&matchesContact([contactForConversation(c)?.name || c.subject,c.last_message].join(" "))&&(!unreadOnly||Number(c.unread_count)>0));
   const renderConversation = () => (
 <div className="apn-tc-chat">
                   <div className="apn-tc-chathead">
                     <button className="linkbtn" onClick={() => { setSelected(null); setMessages([]); }} aria-label="Back to chats"><ArrowLeft size={17} /></button>
                     <button type="button" className="tc-profile-trigger" aria-label={`View ${contactForConversation(selected)?.name || selected.subject || "contact"} profile`} onClick={() => setContactProfile(contactForConversation(selected) || { name:selected.subject || "Chat" })}>
                       <Avatar name={contactForConversation(selected)?.name || selected.subject || "Chat"} url={contactForConversation(selected)?.photo_url} size={40} fontSize={15} />
-                      <div className="tc-thread-title">{selected.subject}
+                      <div className="tc-thread-title">{contactForConversation(selected)?.name || selected.subject}
                       {selected.participant_apn_id && (() => { const c = contacts.find((x) => x.apn_id === selected.participant_apn_id); return <div className="apn-tc-presence">{c?.availability === "online" ? <><span className="apn-tc-online-dot" />Online</> : <>Last seen {c?.last_seen ? fmtDateTime(new Date(c.last_seen)) : "unknown"}</>}</div>; })()}
                     </div></button>
                     <button className="iconbtn" aria-label="Search this conversation" aria-expanded={searchOpen} onClick={() => { setSearchOpen(!searchOpen); setMessageSearch(""); }}><Search size={18}/></button>
@@ -594,9 +582,9 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
                   <div className="apn-tc-card-title">Recent Chats</div>
                   <div className="apn-tc-recent-list">{!recentChats.length && <p className="tc-list-empty">{unreadOnly ? "You’re all caught up." : "No conversations match your search."}</p>}
                     {recentChats.map((c) => (
-                      <button key={c.conversation_id} className={"apn-tc-recent-row"+(selected?.id===c.conversation_id?" active":"")} aria-current={selected?.id===c.conversation_id ? "true" : undefined} onClick={() => openConversation({ id: c.conversation_id, subject: c.subject || "Chat", conv_type: "person" })}>
+                      <button key={c.conversation_id} className={"apn-tc-recent-row"+(selected?.id===c.conversation_id?" active":"")} aria-current={selected?.id===c.conversation_id ? "true" : undefined} onClick={() => openConversation({ ...c, id: c.conversation_id, subject: contactForConversation(c)?.name || c.subject || "Chat" })}>
                         <Avatar name={contactForConversation(c)?.name || c.subject || "Chat"} url={contactForConversation(c)?.photo_url} size={42} fontSize={15}/>
-                        <div className="apn-tc-recent-copy"><b>{c.subject || "Chat"}</b><span>{c.last_message || "No messages yet"}</span></div>
+                        <div className="apn-tc-recent-copy"><b>{contactForConversation(c)?.name || c.subject || "Chat"}</b><span>{c.last_message || "No messages yet"}</span></div>
                         {Number(c.unread_count || 0) > 0 && <span className="apn-tc-unread">{Number(c.unread_count) > 99 ? "99+" : c.unread_count}</span>}
                       </button>
                     ))}
@@ -682,8 +670,7 @@ export default function APNTeamChat({ db, meRow, pid, profile, isDark, isOpen, r
           </div>
         )}
         {selected && section !== "person" && renderConversation()}
-        {profilePhoto && <div className="tc-photo-viewer" role="dialog" aria-modal="true" aria-label={`${profilePhoto.name} photo`} onClick={() => setProfilePhoto(null)}><button className="iconbtn tc-photo-viewer-close" aria-label="Close photo" onClick={() => setProfilePhoto(null)}><X size={20}/></button><div className="tc-photo-viewer-square" onClick={(e)=>e.stopPropagation()}><img src={profilePhoto.url} alt={`${profilePhoto.name} profile`} /></div></div>}
-        {contactProfile && <div className="tc-profile-overlay" role="dialog" aria-modal="true" aria-label={`${contactProfile.name || "Contact"} profile`} onClick={() => setContactProfile(null)}><div className="tc-profile-card" onClick={(e)=>e.stopPropagation()}><button className="iconbtn tc-profile-close" aria-label="Close profile" onClick={()=>setContactProfile(null)}><X size={18}/></button><button type="button" className="tc-profile-photo-trigger" aria-label={`View ${contactProfile.name || "contact"} photo`} onClick={() => contactProfile.photo_url && setProfilePhoto({ name: contactProfile.name || "Contact", url: contactProfile.photo_url })}><Avatar name={contactProfile.name || "?"} url={contactProfile.photo_url} size={152} fontSize={46}/></button><h3>{contactProfile.name || "ALLBEE member"}</h3><div className="tc-profile-role">{contactProfile.contact_type === "superadmin" ? "Super Admin" : contactProfile.contact_type === "admin" ? "Admin" : contactProfile.apn_id || "APN Partner"}</div>{contactProfile.district && <div className="hint-line">{contactProfile.district}{contactProfile.state ? ` · ${contactProfile.state}` : ""}</div>}<div className="tc-profile-about"><span>Bio</span><p>{contactProfile.bio || "No bio yet."}</p></div></div></div>}
+        {contactProfile && <ChatProfileCard person={{...contactProfile,role_label:contactProfile.contact_type==="superadmin"?"Super Admin":contactProfile.contact_type==="admin"?"Admin":contactProfile.apn_id || "APN Partner",location:[contactProfile.district,contactProfile.state].filter(Boolean).join(" · ")}} Avatar={Avatar} X={X} onClose={()=>setContactProfile(null)}/>}
       </div>
       {messageInfo && <div className="apn-tc-info-overlay" onClick={() => setMessageInfo(null)}>
         <div className="apn-tc-info-card" onClick={(e) => e.stopPropagation()}>

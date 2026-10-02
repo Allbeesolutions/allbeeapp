@@ -112,7 +112,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         <PortalRefreshButton onRefresh={reload} />
         <button type="button" className="userchip" onClick={openProfile} aria-label="Open my profile"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={30} /><span className="userchip-name">{profile?.name}</span><User size={15} /></button>
       </header>
-      <div className="content page-enter client-portal-content" style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className={`content page-enter client-portal-content${portalView === "chat" ? " client-chat-view" : ""}`} style={{ maxWidth: 820, margin: "0 auto" }}>
         <section className="client-hero"><div><span className="client-eyebrow">CLIENT WORKSPACE</span><h1>Welcome back, {profile?.name?.split(" ")[0] || "there"}</h1><p>Everything ALLBEE is working on for you, in one clear place.</p></div><button className="btn client-profile-cta" onClick={openProfile}><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={34}/><span><b>My profile</b><small>Account & preferences</small></span><ArrowRight size={16}/></button></section>
         <div className="seg" style={{ margin: "0 0 16px", width: "max-content" }}>
           <button className={portalView === "home" ? "on" : ""} onClick={() => navigateClient("home")}><Home size={14} style={{ verticalAlign: -2, marginRight: 5 }} />Overview</button>
@@ -213,7 +213,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
 
         {portalView === "ai" && (clientAILoading ? <div className="card" aria-busy="true">Checking ALLBEE AI access…</div> : !clientAIEnabled ? <div className="card assistant-unavailable"><h3>ALLBEE AI is not enabled for this account</h3><p>Your ALLBEE administrator can enable AI from Clients → Client accounts.</p></div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") navigateClient("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>)}
       </div>
-      <AllbeeAIFloatingAssistant onOpen={() => navigateClient("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled} />
+      <AllbeeAIFloatingAssistant onOpen={() => navigateClient("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled || portalView === "chat"} />
       {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop client profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyClientCroppedPhoto}/>}
     </div>
   );
