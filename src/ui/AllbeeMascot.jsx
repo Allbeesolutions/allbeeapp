@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import "./mascot.css";
 import mascotAsset from "../assets/allbee-ai-mascot.png";
+import AllbeeMascotRig from "./AllbeeMascotRig.jsx";
 
 const INTRO_KEY = "allbee-mascot-intro-v3";
-const STATES = new Set(["idle", "hello", "wave", "thinking", "listening", "working", "success", "notification", "attention", "breathe", "happy"]);
+const PROMPT_KEY = "allbee-mascot-help-v1";
+const STATES = new Set(["idle", "hello", "wave", "walking", "curious", "thinking", "listening", "working", "success", "notification", "attention", "breathe", "happy"]);
 const CONTEXT_HINTS = {
   login: "Need help signing in?",
   wallet: "Need a wallet summary?",
@@ -12,18 +14,15 @@ const CONTEXT_HINTS = {
   quotations: "Need help with a quotation?",
   chat: "Need anything?",
   support: "Need help?",
-  assistant: "ALLBEE AI is ready",
+  assistant: "Any doubts? I'm here.",
 };
 
-function prefersReducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-}
-
-/** Canonical ALLBEE character. The image is decorative; the parent control owns accessibility. */
+/** Canonical pixels, with a jointed rig and an exact static fallback. */
 export function AllbeeMascot({ state = "idle", size = 72, className = "" }) {
   const safeState = STATES.has(state) ? state : "idle";
-  return <span className={`allbee-mascot allbee-mascot--${safeState} ${className}`.trim()} style={{ "--mascot-size": `${size}px` }} aria-hidden="true">
-    <img src={mascotAsset} alt="" width="1054" height="990" draggable="false" />
+  return <span className={`allbee-mascot allbee-mascot--${safeState} ${className}`.trim()} style={{ "--mascot-size": `${size}px` }} aria-hidden="true" data-mascot-state={safeState}>
+    <img className="allbee-mascot-static" src={mascotAsset} alt="" width="1054" height="990" draggable="false" />
+    <AllbeeMascotRig artwork={mascotAsset} />
   </span>;
 }
 
@@ -37,7 +36,46 @@ function shortGreeting(name, hello = false) {
   return first ? `Hi, ${first}! 👋` : "Hi! Need help? 👋";
 }
 
-/** Reusable floating launcher for APN, internal workspace, client portal and login. */
+function promptMemory() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(PROMPT_KEY) || "{}");
+    return { count: Number(value.count) || 0, last: Number(value.last) || 0 };
+  } catch { return { count: 0, last: 0 }; }
+}
+
+function useEnvironment() {
+  const [reducedMotion, setReducedMotion] = useState(() => !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
+  const [pageVisible, setPageVisible] = useState(() => !document.hidden);
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const changeMotion = () => setReducedMotion(!!media?.matches);
+    const changeVisibility = () => setPageVisible(!document.hidden);
+    media?.addEventListener?.("change", changeMotion);
+    document.addEventListener("visibilitychange", changeVisibility);
+    return () => {
+      media?.removeEventListener?.("change", changeMotion);
+      document.removeEventListener("visibilitychange", changeVisibility);
+    };
+  }, []);
+  return { reducedMotion, pageVisible };
+}
+
+// Hit-test controls rather than scanning every row in long dashboards.
+// The launcher yields if page content changes under its current position.
+function blockedRect(rect, launcher) {
+  if (typeof document.elementsFromPoint !== "function") return false;
+  for (const x of [rect.left + 2, (rect.left + rect.right) / 2, rect.right - 2]) {
+    for (const y of [rect.top + 2, (rect.top + rect.bottom) / 2, rect.bottom - 2]) {
+      if (document.elementsFromPoint(x, y).some((el) => {
+        const control = el.closest("button, a[href], input, select, textarea, [role='button']");
+        return control && !launcher.contains(control);
+      })) return true;
+    }
+  }
+  return false;
+}
+
+/** Same greeting, motion and AI routing across each authorised app shell. */
 export function AllbeeAIFloatingAssistant({
   onOpen,
   displayName,
@@ -47,67 +85,45 @@ export function AllbeeAIFloatingAssistant({
   collisionRootSelector = null,
   greeting = true,
 }) {
-  const [showGreeting, setShowGreeting] = useState(false);
-  const [hoverGreeting, setHoverGreeting] = useState(false);
+  const [bubble, setBubble] = useState(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [covered, setCovered] = useState(false);
-  const launcherRef = useRef(null);
+  const [walking, setWalking] = useState(false);
+  const [direction, setDirection] = useState("left");
   const [personalityState, setPersonalityState] = useState("idle");
-  const personalityTimer = useRef(null);
-  const greetingTimer = useRef(null);
-  const alive = useRef(true);
-
-  const clearPersonalityTimer = () => {
-    if (personalityTimer.current) window.clearTimeout(personalityTimer.current);
-    personalityTimer.current = null;
+  const { reducedMotion, pageVisible } = useEnvironment();
+  const bubbleId = useId();
+  const launcherRef = useRef(null);
+  const position = useRef({ x: 0, y: 0 });
+  const anchorY = useRef(0);
+  const relocationState = useRef(null);
+  const movementFrame = useRef(0);
+  const walkTimer = useRef(0);
+  const checkCollision = useRef(() => false);
+  const tapCount = useRef(0);
+  const previousContext = useRef(context);
+  const helpMemory = useRef(promptMemory());
+  const interacting = hovered || focused || !!bubble;
+  const unavailable = hidden || keyboardOpen || !pageVisible;
+  relocationState.current = { unavailable, reducedMotion, engaged: hovered || focused || !!bubble?.manual || walking };
+  const stopWalking = () => {
+    window.cancelAnimationFrame(movementFrame.current);
+    window.clearTimeout(walkTimer.current);
+    movementFrame.current = 0;
+    walkTimer.current = 0;
+    setWalking(false);
+  };
+  const place = (x, y) => {
+    position.current = { x, y };
+    launcherRef.current?.style.setProperty("--mascot-x", `${x}px`);
+    launcherRef.current?.style.setProperty("--mascot-y", `${y}px`);
   };
 
   useEffect(() => {
-    alive.current = true;
-    if (prefersReducedMotion()) return () => { alive.current = false; };
-
-    // Humanised loop: mostly calm, with brief natural gestures separated by long rests.
-    const schedule = (delay = 3600) => {
-      clearPersonalityTimer();
-      personalityTimer.current = window.setTimeout(() => {
-        if (!alive.current) return;
-        const sequence = ["breathe", "idle", "happy", "idle", "wave", "idle"];
-        const next = sequence[Math.floor(Math.random() * sequence.length)];
-        setPersonalityState(next);
-        const gestureDuration = next === "idle" ? 4200 + Math.random() * 3600 : 900 + Math.random() * 650;
-        personalityTimer.current = window.setTimeout(() => {
-          if (!alive.current) return;
-          setPersonalityState("idle");
-          schedule(4200 + Math.random() * 5200);
-        }, gestureDuration);
-      }, delay);
-    };
-    schedule(2600 + Math.random() * 2600);
-    return () => {
-      alive.current = false;
-      clearPersonalityTimer();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (hidden || !greeting) { setShowGreeting(false); return undefined; }
-    try {
-      if (sessionStorage.getItem(INTRO_KEY)) return undefined;
-      sessionStorage.setItem(INTRO_KEY, "shown");
-    } catch { /* Session storage may be unavailable; timeout still dismisses it. */ }
-    setShowGreeting(true);
-    greetingTimer.current = window.setTimeout(() => setShowGreeting(false), 4400);
-    return () => {
-      if (greetingTimer.current) window.clearTimeout(greetingTimer.current);
-    };
-  }, [hidden, greeting]);
-
-  useEffect(() => {
-    const isEditing = () => {
-      const el = document.activeElement;
-      return !!el && el.matches("input, textarea, select, [contenteditable='true']");
-    };
-    const update = () => setKeyboardOpen(isEditing());
+    const update = () => setKeyboardOpen(!!document.activeElement?.matches("input, textarea, select, [contenteditable='true']"));
+    update();
     document.addEventListener("focusin", update);
     document.addEventListener("focusout", update);
     return () => {
@@ -116,87 +132,257 @@ export function AllbeeAIFloatingAssistant({
     };
   }, []);
 
-  // Keep the launcher anchored, but yield its hit area to underlying actions.
-  // A fixed nine-point hit test avoids scanning every control on long pages.
+  useEffect(() => {
+    if (unavailable) {
+      setBubble(null);
+      setHovered(false);
+      setFocused(false);
+      return;
+    }
+    if (!greeting) return;
+    try {
+      if (sessionStorage.getItem(INTRO_KEY)) return;
+      sessionStorage.setItem(INTRO_KEY, "shown");
+    } catch { /* A private session can still dismiss the timed greeting. */ }
+    setBubble({ kind: "intro", hello: false });
+  }, [unavailable, greeting]);
+
+  // A new screen ends the previous greeting so a covered launcher can find
+  // a clear resting spot immediately after navigation.
+  useEffect(() => {
+    if (previousContext.current === context) return;
+    previousContext.current = context;
+    setBubble(null);
+    setHovered(false);
+    setFocused(false);
+  }, [context]);
+
+  useEffect(() => {
+    if (!bubble) return undefined;
+    const timer = window.setTimeout(() => setBubble(null), bubble.manual ? 14000 : 5200);
+    const focusFrame = bubble.keyboard ? window.requestAnimationFrame(() => launcherRef.current?.querySelector(".allbee-mascot-ask")?.focus()) : 0;
+    return () => { window.clearTimeout(timer); window.cancelAnimationFrame(focusFrame); };
+  }, [bubble]);
+
+  // At most three quiet help nudges per session, with 65–110 seconds between them.
+  // Nothing is spoken aloud or sent to the AI until the user chooses Ask AI.
+  useEffect(() => {
+    const stored = promptMemory();
+    const memory = { count: Math.max(stored.count, helpMemory.current.count), last: Math.max(stored.last, helpMemory.current.last) };
+    if (unavailable || covered || interacting || !greeting || memory.count >= 3) return undefined;
+    const delay = Math.max(65000 + Math.random() * 45000, memory.last + 65000 - Date.now());
+    const timer = window.setTimeout(() => {
+      const storedNow = promptMemory();
+      const current = { count: Math.max(storedNow.count, helpMemory.current.count), last: Math.max(storedNow.last, helpMemory.current.last) };
+      if (current.count >= 3) return;
+      const name = firstName(displayName);
+      const hints = [
+        name ? `Any doubts, ${name}?` : "Any doubts? I'm here.",
+        CONTEXT_HINTS[context] || "Need a hand here?",
+        "Got a question? Ask me.",
+      ];
+      setBubble({ kind: "help", text: hints[Math.floor(Math.random() * hints.length)] });
+      helpMemory.current = { count: current.count + 1, last: Date.now() };
+      try { sessionStorage.setItem(PROMPT_KEY, JSON.stringify(helpMemory.current)); } catch { /* The in-memory cap still applies. */ }
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [unavailable, covered, interacting, greeting, context, displayName]);
+
+  useEffect(() => {
+    if (unavailable || covered || interacting || walking || reducedMotion) {
+      setPersonalityState("idle");
+      return undefined;
+    }
+    let timer;
+    const rest = () => {
+      timer = window.setTimeout(() => {
+        const states = ["breathe", "curious", "happy", "idle"];
+        setPersonalityState(states[Math.floor(Math.random() * states.length)]);
+        timer = window.setTimeout(() => { setPersonalityState("idle"); rest(); }, 2100);
+      }, 8000 + Math.random() * 12000);
+    };
+    rest();
+    return () => window.clearTimeout(timer);
+  }, [unavailable, covered, interacting, walking, reducedMotion]);
+
   useEffect(() => {
     if (hidden || keyboardOpen) return undefined;
-    let frame = 0;
+    let frame = 0, relocationTimer = 0;
     const root = collisionRootSelector ? document.querySelector(collisionRootSelector) : document.body;
     const check = () => {
       frame = 0;
       const launcher = launcherRef.current;
-      const button = launcher?.querySelector("button");
-      if (!button || typeof document.elementsFromPoint !== "function") return;
-      const r = button.getBoundingClientRect();
-      let collision = false;
-      for (const x of [r.left + 2, (r.left + r.right) / 2, r.right - 2]) {
-        for (const y of [r.top + 2, (r.top + r.bottom) / 2, r.bottom - 2]) {
-          collision ||= document.elementsFromPoint(x, y).some((el) => {
-            const control = el.closest("button, a[href], input, select, textarea, [role='button']");
-            return control && !launcher.contains(control) && (!root || root.contains(control));
-          });
-        }
-      }
+      const button = launcher?.querySelector(".allbee-mascot-button");
+      if (!button) return false;
+      const limit = Math.min(innerWidth < 773 ? 104 : 210, Math.max(0, innerWidth - 114));
+      if (position.current.x < -limit) place(-limit, position.current.y);
+      const entering = root?.querySelector(".page-enter")?.getAnimations?.().some(animation =>
+        animation.playState === "running" && animation.effect?.getTiming().iterations !== Infinity);
+      const collision = !!entering || blockedRect(button.getBoundingClientRect(), launcher);
+      // Yield the hit area immediately; React keeps the visual state in sync.
+      launcher.classList.toggle("is-covered", collision);
       setCovered(collision);
+      if (!collision) { window.clearTimeout(relocationTimer); relocationTimer = 0; }
+      else if (!relocationTimer) {
+        // Reposition only while already hidden, never under an active pointer.
+        // A bounded search also handles full-width mobile footer actions.
+        relocationTimer = window.setTimeout(() => {
+          relocationTimer = 0;
+          const state = relocationState.current;
+          const current = launcherRef.current;
+          const currentButton = current?.querySelector(".allbee-mascot-button");
+          if (!currentButton || state.unavailable || state.reducedMotion || state.engaged) return;
+          const r = currentButton.getBoundingClientRect();
+          const start = position.current;
+          for (const y of [0, -28, -64, -100, -140, -180]) for (const x of [start.x, -limit / 3, -limit * 2 / 3, -limit, 0]) {
+            const dx = x - start.x, dy = y - start.y;
+            const candidate = { left:r.left+dx, right:r.right+dx, top:r.top+dy, bottom:r.bottom+dy };
+            if (candidate.left < 8 || candidate.right > innerWidth-8 || candidate.top < 16) continue;
+            if (!blockedRect(candidate, current)) {
+              anchorY.current = y;
+              place(x, y);
+              setCovered(false);
+              return;
+            }
+          }
+        }, 400);
+      }
+      return collision;
     };
+    checkCollision.current = check;
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(check); };
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
     if (root) {
       observer?.observe(root);
       for (const child of root.children) observer?.observe(child);
     }
+    // Async forms can change the controls under a fixed viewport without resizing it.
+    const mutations = typeof MutationObserver === "function" ? new MutationObserver((records) => {
+      if (records.some(record => !launcherRef.current?.contains(record.target))) schedule();
+    }) : null;
+    if (root) mutations?.observe(root, { childList:true, subtree:true, attributes:true, attributeFilter:["class", "hidden", "style"] });
     document.addEventListener("scroll", schedule, { capture: true, passive: true });
     window.addEventListener("resize", schedule);
     document.addEventListener("load", schedule, true);
+    document.addEventListener("animationend", schedule, true);
+    document.addEventListener("transitionend", schedule, true);
     const settle = window.setTimeout(schedule, 600);
+    place(position.current.x, position.current.y);
     schedule();
     return () => {
+      checkCollision.current = () => false;
       observer?.disconnect();
+      mutations?.disconnect();
       document.removeEventListener("scroll", schedule, true);
       window.removeEventListener("resize", schedule);
       document.removeEventListener("load", schedule, true);
+      document.removeEventListener("animationend", schedule, true);
+      document.removeEventListener("transitionend", schedule, true);
       window.clearTimeout(settle);
+      window.clearTimeout(relocationTimer);
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [hidden, keyboardOpen, context, surface, collisionRootSelector]);
+  }, [hidden, keyboardOpen, context, surface, collisionRootSelector, reducedMotion, interacting]);
 
-  const interactiveGreeting = hoverGreeting && !showGreeting;
-  const mascotState = useMemo(() => {
-    if (showGreeting || hoverGreeting) return "wave";
-    return personalityState;
-  }, [showGreeting, hoverGreeting, personalityState]);
+  // Short strolls at 12 CSS pixels/second; rest between walks. Check the entire
+  // swept corridor first, then recheck live content during motion.
+  useEffect(() => {
+    if (unavailable || covered || interacting || reducedMotion) {
+      stopWalking();
+      return undefined;
+    }
+    let disposed = false;
+    const schedule = () => {
+      walkTimer.current = window.setTimeout(begin, 7000 + Math.random() * 9000);
+    };
+    const begin = () => {
+      const launcher = launcherRef.current;
+      const button = launcher?.querySelector(".allbee-mascot-button");
+      if (disposed || !button) return;
+      const start = { ...position.current };
+      const limit = Math.min(innerWidth < 773 ? 104 : 210, Math.max(0, innerWidth - 114));
+      let x = -Math.round(limit * (.3 + Math.random() * .7));
+      if (Math.abs(x - start.x) < 28) x = start.x < -limit / 2 ? 0 : -limit;
+      const end = { x, y: anchorY.current - Math.round(Math.random() * 12) };
+      const dx = end.x - start.x, dy = end.y - start.y;
+      const rect = button.getBoundingClientRect();
+      const samples = Math.max(1, Math.ceil(Math.abs(dx) / 18));
+      for (let i = 0; i <= samples; i++) {
+        const f = i / samples;
+        if (blockedRect({ left: rect.left + dx * f, right: rect.right + dx * f, top: rect.top + dy * f, bottom: rect.bottom + dy * f }, launcher)) { schedule(); return; }
+      }
+      const duration = Math.max(3200, Math.hypot(dx, dy) / 12 * 1000);
+      let started = null, lastCheck = 0;
+      setDirection(dx < 0 ? "left" : "right");
+      setWalking(true);
+      const step = (now) => {
+        if (disposed) return;
+        if (started === null) started = now;
+        const progress = Math.min(1, (now - started) / duration);
+        place(start.x + dx * progress, start.y + dy * progress);
+        if (now - lastCheck > 100) {
+          lastCheck = now;
+          if (checkCollision.current()) { stopWalking(); return; }
+        }
+        if (progress < 1) movementFrame.current = window.requestAnimationFrame(step);
+        else { movementFrame.current = 0; setWalking(false); schedule(); }
+      };
+      movementFrame.current = window.requestAnimationFrame(step);
+    };
+    schedule();
+    return () => { disposed = true; stopWalking(); };
+  }, [unavailable, covered, interacting, reducedMotion, context]);
 
   if (hidden || keyboardOpen) return null;
-  const hint = CONTEXT_HINTS[context] || "Ask ALLBEE AI";
-  const onEnter = () => {
-    setHoverGreeting(true);
-    setPersonalityState("wave");
+  const visibleBubble = bubble || ((hovered || focused) ? { kind: "hello", hello: true } : null);
+  const mascotState = visibleBubble ? (visibleBubble.kind === "help" ? "attention" : "wave") : walking ? "walking" : personalityState;
+  const onEnter = (event) => { if (event.pointerType !== "touch") { stopWalking(); setHovered(true); } };
+  const onLeave = () => setHovered(false);
+  const openAI = () => {
+    stopWalking();
+    setBubble(null);
+    setHovered(false);
+    setFocused(false);
+    setPersonalityState("happy");
+    onOpen?.();
   };
-  const onLeave = () => {
-    setHoverGreeting(false);
-    setPersonalityState("idle");
+  const sayHello = (event) => {
+    stopWalking();
+    if (bubble?.manual) { openAI(); return; }
+    tapCount.current++;
+    setBubble({ kind: "hello", hello: tapCount.current % 2 === 0, manual: true, keyboard: event.detail === 0 });
   };
 
   return <div
     ref={launcherRef}
     className={`allbee-mascot-launcher allbee-mascot-launcher--${surface}${covered ? " is-covered" : ""}`}
     data-testid="allbee-mascot-launcher"
+    data-roaming={walking ? "walking" : "resting"}
+    data-direction={direction}
+    onPointerEnter={onEnter}
+    onPointerLeave={onLeave}
+    onFocus={(event) => { if (event.target.matches(":focus-visible")) { stopWalking(); setFocused(true); } }}
+    onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
   >
-    {(showGreeting || interactiveGreeting) && <span className="allbee-mascot-greeting" role="status">
-      {shortGreeting(displayName, interactiveGreeting)}
-    </span>}
+    {visibleBubble && <div className={`allbee-mascot-greeting${bubble?.manual ? " is-interactive" : ""}`} id={bubbleId}>
+      <span role="status" aria-live="polite">{visibleBubble.kind === "help" ? visibleBubble.text : shortGreeting(displayName, visibleBubble.hello)}</span>
+      {bubble?.manual && <>
+        <span className="allbee-mascot-greeting-hint">Any doubts? I'm here to help.</span>
+        <button type="button" className="allbee-mascot-ask" onClick={openAI} aria-label="Open ALLBEE AI">Ask AI <span aria-hidden="true">↗</span></button>
+        <button type="button" className="allbee-mascot-dismiss" aria-label="Dismiss ALLBEE AI greeting" onClick={() => { setBubble(null); setHovered(false); setFocused(false); }}>×</button>
+      </>}
+    </div>}
     <button
       type="button"
       className="allbee-mascot-button"
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      onFocus={onEnter}
-      onBlur={onLeave}
-      onClick={() => { setShowGreeting(false); setHoverGreeting(false); setPersonalityState("happy"); onOpen?.(); }}
+      onPointerDown={stopWalking}
+      onClick={sayHello}
       aria-label="Ask ALLBEE AI with mascot"
-      title={hint}
+      aria-expanded={!!bubble?.manual}
+      aria-controls={bubble?.manual ? bubbleId : undefined}
+      title={CONTEXT_HINTS[context] || "Say hello to ALLBEE AI"}
     >
-      <AllbeeMascot state={mascotState} size={68} />
+      <AllbeeMascot state={mascotState} size={74} />
     </button>
   </div>;
 }
