@@ -7,11 +7,12 @@ const root=resolve(new URL("../..",import.meta.url).pathname),out=resolve(root,"
 mkdirSync(out,{recursive:true});
 const routes=["home","leads","wallet","network","chat","targets","quotations","documents","agreements","notifications","learn","withdrawals","ai","support","achievements","leaderboard","district","profile"];
 const widths=[320,360,375,390,430,768,1024,1440];
+const loginOnly=process.argv.includes("--login-only");
 const server=await createServer({root,server:{host:"127.0.0.1",port:5191,strictPort:true},define:{"import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET":JSON.stringify("true"),"import.meta.env.VITE_PAUSE_TEST":JSON.stringify("0")},plugins:[{name:"isolated-apn-ux",enforce:"pre",resolveId(id){if(/(?:^|\/)supabaseClient(?:\.js)?$/.test(id))return resolve(root,"scripts/ui/apnUXMock.js")}}]});
 await server.listen();const browser=await chromium.launch();const page=await browser.newPage();page.setDefaultTimeout(10000);
 await page.route("**/*",r=>{const u=new URL(r.request().url());return ["127.0.0.1","localhost"].includes(u.hostname)||["data:","blob:"].includes(u.protocol)?r.continue():r.abort()});
 let errors=[];page.on("pageerror",e=>errors.push(e.message));const results=[];
-async function check(name,fn){errors=[];try{await fn();assert.deepEqual(errors,[]);results.push({name,pass:true});}catch(e){results.push({name,pass:false,error:e.message});await page.screenshot({path:resolve(out,"failure-"+results.length+".png")});}writeFileSync(resolve(out,"progress.json"),JSON.stringify(results));}
+async function check(name,fn){errors=[];try{await fn();assert.deepEqual(errors,[]);results.push({name,pass:true});}catch(e){const body=(await page.locator("body").innerText().catch(()=>"")).slice(0,400);results.push({name,pass:false,error:e.message,body});await page.screenshot({path:resolve(out,"failure-"+results.length+".png")});}writeFileSync(resolve(out,"progress.json"),JSON.stringify(results));}
 let visitIndex=0;
 async function visit(route,width,role="partner",data="populated"){
  await page.setViewportSize({width,height:900});
@@ -34,6 +35,7 @@ async function layout(){
  assert.equal(m.overflow,false,"document overflow");assert.equal(m.crash,false,"render crash");assert.deepEqual(m.clipped,[],"clipped controls");
 }
 try{
+ if(!loginOnly){
  for(const role of ["partner","district_head","state_head"])for(const route of routes)for(const width of widths){
   if(route==="district"&&role==="partner")continue;
   await check(role+" "+route+" "+width,async()=>{await visit(route,width,role);await layout();
@@ -92,13 +94,14 @@ try{
  for(const gate of ["pending","rejected","suspended","inactive"])await check("account gate "+gate,async()=>{
   await page.setViewportSize({width:320,height:900});await page.goto("http://127.0.0.1:5191/?role=partner&gate="+gate);await page.locator(".gate-card").waitFor();await layout();
  });
+ }
  for(const width of [320,390,768,1440])await check("partner login "+width,async()=>{
   await page.setViewportSize({width,height:900});await page.goto("http://127.0.0.1:5191/?role=anonymous");
   await page.getByRole("button",{name:"APN Partner Login",exact:true}).click();await page.getByRole("heading",{name:"Welcome back, partner."}).waitFor();await layout();
   await page.getByRole("button",{name:"Sign in",exact:true}).click();await page.getByRole("alert").waitFor();
   if([390,1440].includes(width))await page.screenshot({path:resolve(out,"login-"+width+".png")});
  });
- for(const route of routes.filter(r=>r!=="district"))await check("dark reduced motion "+route,async()=>{
+ if(!loginOnly) for(const route of routes.filter(r=>r!=="district"))await check("dark reduced motion "+route,async()=>{
   await visit(route,390);await page.evaluate(()=>localStorage.setItem("allbee_theme","dark"));await page.emulateMedia({reducedMotion:"reduce"});await page.reload();await page.locator("[data-apn-page]").waitFor();await page.locator(".apn-skeleton").waitFor({state:"hidden"});await layout();
   if(["home","wallet","profile","ai"].includes(route))await page.screenshot({path:resolve(out,"dark-"+route+".png")});
  });

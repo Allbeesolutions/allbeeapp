@@ -80,6 +80,38 @@ describe("populated admin client conversations",()=>{
   await act(async()=>finishA({data:[message],error:null}));
   expect(screen.queryByText("Hello")).toBeNull();expect(screen.getByText("Thread B")).toBeTruthy();
  });
+ it("cleans up its realtime channel and cancels queued refreshes on unmount",async()=>{
+  const f=fixture();
+  const view=render(<AdminClientChat me={me} runtime={f.runtime}/>);
+  await screen.findByText("Client A");
+  const count=f.rpc.mock.calls.length;
+  act(()=>{f.events[0]();view.unmount();});
+  await act(async()=>new Promise(resolve=>setTimeout(resolve,140)));
+  expect(f.supabase.removeChannel).toHaveBeenCalledTimes(1);
+  expect(f.rpc.mock.calls).toHaveLength(count);
+ });
+ it("does not render stale message results after leaving the conversation",async()=>{
+  let resolveMessages;
+  const f=fixture({apn_list_messages:()=>new Promise(resolve=>{resolveMessages=resolve;})});
+  await inbox(f);fireEvent.click(screen.getByText("Client A"));
+  fireEvent.click(screen.getByRole("button",{name:"Back to client chats"}));
+  await act(async()=>resolveMessages({data:[message],error:null}));
+  expect(screen.queryByText("Hello")).toBeNull();
+  expect(screen.queryByRole("log")).toBeNull();
+ });
+ it("does not leak an in-flight send failure into a newly selected thread",async()=>{
+  let rejectSend;
+  const f=fixture({apn_send_message_v3:()=>new Promise((resolve,reject)=>{rejectSend=reject;})});
+  await inbox(f);await openA();
+  fireEvent.change(screen.getByLabelText("Message"),{target:{value:"Unsent for A"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send",exact:true}));
+  fireEvent.click(screen.getByText("Client B"));
+  await act(async()=>rejectSend(new Error("Offline while sending A")));
+  expect(screen.queryByText("Offline while sending A")).toBeNull();
+  fireEvent.click(document.querySelector(".client-chat-list .apn-tc-recent-row"));
+  await screen.findByText("Hello");
+  expect(screen.getByLabelText("Message").value).toBe("Unsent for A");
+ });
  it("keeps the draft on thrown send failure and guards rapid retries",async()=>{
   let finish;let failure=true;
   const f=fixture({apn_send_message_v3:()=>failure?Promise.reject(new Error("Network unavailable")):new Promise(r=>finish=r)});
