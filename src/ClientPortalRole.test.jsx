@@ -18,6 +18,12 @@ const runtime = {
 };
 
 describe("mocked client portal navigation", () => {
+  it("keeps the client overview usable when scoped list responses are malformed", () => {
+    window.location.hash = "#/client/home";
+    render(<ClientPortal db={{ portal_posts: {}, documents: null, quotations: 42, invoices: "invalid", support_tickets: {} }} profile={{ id: "client-1", name: "Client One" }} signOut={vi.fn()} isDark={false} config={{}} reload={vi.fn()} runtime={runtime} />);
+    expect(screen.getByText("Your project updates")).toBeTruthy();
+    expect(screen.getByText("No updates yet. We\'ll post progress here as we go.")).toBeTruthy();
+  });
   it("shows only the client's updates and opens support", () => {
     const db = {
       portal_posts: [{ id: "own", clientId: "client-1", title: "My update" }, { id: "other", clientId: "client-2", title: "Other client's update" }],

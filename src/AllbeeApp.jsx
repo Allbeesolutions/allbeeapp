@@ -76,6 +76,7 @@ const LazyAPNDistrict = React.lazy(() => import("./modules/apn/DistrictHead.jsx"
 const LazyAPNStateHead = React.lazy(() => import("./modules/apn/StateHead.jsx").then((m) => ({ default: m.APNStateHead })));
 const LazyAPNSearch = React.lazy(() => import("./modules/apn/APNSearch.jsx").then((m) => ({ default: m.APNSearch })));
 import { APNTabErrorBoundary } from "./modules/apn/APNTabErrorBoundary.jsx";
+import PageErrorBoundary, { SafePageRenderer } from "./ui/PageErrorBoundary.jsx";
 const LazyAPNSupportTickets = React.lazy(() => import("./modules/apn/SupportTickets.jsx").then((m) => ({ default: m.APNSupportTickets })));
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -5351,7 +5352,7 @@ export function APNPortal({ db, profile, people = [], session, signOut, isDark, 
         <button className="iconbtn" style={{ width: 36, height: 36, padding: 0, borderRadius: "50%" }} onClick={() => go("profile")} aria-label="Open APN profile" title="Profile"><Avatar name={meRow.name} url={apnAvatarUrl(meRow, profile)} size={30} fontSize={12} /></button>
       </header>
 
-      <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}>{section()}</React.Suspense>}</APNTabErrorBoundary></div></main>
+      <main id="apn-content" tabIndex={-1} className="apn-body" data-apn-page={tab}><APNPageIntro tab={tab} onAction={(action) => action === "ai" ? go("ai") : setModal({ type: action === "lead" ? "apnLead" : "apnQuote" })} /><div className="page-enter" key={tab}><APNTabErrorBoundary key={tab}>{tabDataLoading ? <APNSkeleton /> : <React.Suspense fallback={<APNSkeleton />}><SafePageRenderer renderPage={section}/></React.Suspense>}</APNTabErrorBoundary></div></main>
 
       <AllbeeAIFloatingAssistant onOpen={() => go("ai")} displayName={meRow?.name} context={tab} surface="apn" collisionRootSelector=".apn-body" hidden={!!modal || searchOpen || sidebarOpen || tab === "chat"} />
 
@@ -7376,7 +7377,7 @@ export default function App() {
               </div>
             </header>
             <main className="page-enter" key={safeRoute + "|" + (taskDetailId || "") + "|" + (accountUser || "")}>
-              <React.Suspense fallback={<div className="content" aria-busy="true">Loading page…</div>}>{renderPage()}</React.Suspense>
+              <PageErrorBoundary key={safeRoute + "|" + (taskDetailId || "")} onNavigateHome={() => go("dashboard")}><React.Suspense fallback={<div className="content" aria-busy="true">Loading page…</div>}><SafePageRenderer renderPage={renderPage}/></React.Suspense></PageErrorBoundary>
             </main>
           </div>
         </div>

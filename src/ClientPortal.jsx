@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
 import ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx";
+import PageErrorBoundary from "./ui/PageErrorBoundary.jsx";
 import { Sparkles, User, Upload, Check, ShieldCheck, FileText, Banknote, FileCheck2, FolderKanban, ArrowRight, RefreshCw } from "./icons.jsx";
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
 const LazyClientSupportChat = React.lazy(() => import("./ClientSupportChat.jsx"));
@@ -9,12 +10,12 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment } = runtime;
   const myId = profile?.id;
   const co = companyOf(config);
-  const posts = [...db.portal_posts].filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const posts = (Array.isArray(db?.portal_posts) ? db.portal_posts : []).filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const updates = posts.filter((p) => (p.kind || "update") !== "deliverable");
   const deliverables = posts.filter((p) => (p.kind || "update") === "deliverable");
-  const files = [...db.documents].filter((d) => d.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const quotes = [...db.quotations].filter((q) => q.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const invoices = [...db.invoices].filter((iv) => iv.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const files = (Array.isArray(db?.documents) ? db.documents : []).filter((d) => d.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const quotes = (Array.isArray(db?.quotations) ? db.quotations : []).filter((q) => q.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const invoices = (Array.isArray(db?.invoices) ? db.invoices : []).filter((iv) => iv.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   // Never hand the client assistant the wider workspace snapshot. Its AI context
   // is built only from rows already scoped to this signed-in client.
   const clientAIDb = {
@@ -79,7 +80,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   const applyClientCroppedPhoto = async (file) => { setProfileBusy(true); try { const up=await uploadAttachment(file,{publicMedia:true}); await saveMyProfile?.({photo_url:up.url}); setCropFile(null); emitToast("Profile photo updated.","success"); await reload(); } catch(er) { emitToast(er.message || "Could not upload photo.","error"); } finally { setProfileBusy(false); } };
   const [helpFormOpen, setHelpFormOpen] = useState(false);
   const [helpBusy, setHelpBusy] = useState(false);
-  const myTickets = [...(db.support_tickets || [])].filter((t) => t.client_id === myId).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const myTickets = (Array.isArray(db?.support_tickets) ? db.support_tickets : []).filter((t) => t.client_id === myId).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
   const openTickets = myTickets.filter((t) => !["resolved", "closed"].includes(t.status)).length;
   const createSupportTicket = async (f) => {
     setHelpBusy(true);
@@ -122,6 +123,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
           <button className={portalView === "profile" ? "on" : ""} onClick={openProfile}><User size={14} style={{ verticalAlign: -2, marginRight: 5 }} />My profile</button>
         </div>
 
+        <PageErrorBoundary key={portalView} onNavigateHome={() => navigateClient("home")}>
         {portalView === "home" && (<>
         <div className="client-kpi-grid">
           <button onClick={() => document.getElementById("client-updates")?.scrollIntoView({behavior:"smooth"})}><span><FileText size={18}/></span><b>{updates.length}</b><small>Project updates</small></button>
@@ -212,6 +214,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         {portalView === "support" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading support…</div>}><LazyPortalHelpdesk myId={myId} tickets={myTickets} messages={db.support_ticket_messages || []} onCreate={createSupportTicket} onSend={sendSupportMessage} helpFormOpen={helpFormOpen} setHelpFormOpen={setHelpFormOpen} helpBusy={helpBusy} co={co} runtime={runtime} /></React.Suspense>}
 
         {portalView === "ai" && (clientAILoading ? <div className="card" aria-busy="true">Checking ALLBEE AI access…</div> : !clientAIEnabled ? <div className="card assistant-unavailable"><h3>ALLBEE AI is not enabled for this account</h3><p>Your ALLBEE administrator can enable AI from Clients → Client accounts.</p></div> : <React.Suspense fallback={<div className="card" aria-busy="true">Loading ALLBEE AI…</div>}><LazyAllbeeAI db={clientAIDb} config={config} me={{ id: myId, name: profile?.name || "Client" }} role="client" isAdmin={false} go={(target) => { if (target === "support") navigateClient("support"); }} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>)}
+        </PageErrorBoundary>
       </div>
       <AllbeeAIFloatingAssistant onOpen={() => navigateClient("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled || portalView === "chat"} />
       {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop client profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyClientCroppedPhoto}/>}

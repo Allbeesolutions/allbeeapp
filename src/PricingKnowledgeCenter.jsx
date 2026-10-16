@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import * as Icons from "./icons.jsx";
 import { supabase } from "./supabaseClient";
 import usePersistedState from "./ui/usePersistedState.js";
@@ -17,6 +17,9 @@ export default function PricingKnowledgeCenter(props) {
   const [jsonMode, setJsonMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const mounted = useRef(false);
+  const requestId = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; requestId.current += 1; }; }, []);
 
   const blankForm = (entity) => {
     if (entity === "services")  return { name: "", slug: "", description: "", active: true, custom_quote: false };
@@ -30,7 +33,8 @@ export default function PricingKnowledgeCenter(props) {
   const structuredTabs = new Set(["services", "packages", "pricing", "features", "delivery"]);
 
   const load = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || !mounted.current) return;
+    const currentRequest = ++requestId.current;
     setBusy(true); setError("");
     try {
       const [{ data: list, error: listError }, { data: counts, error: countError }] = await Promise.all([
@@ -39,9 +43,12 @@ export default function PricingKnowledgeCenter(props) {
       ]);
       if (listError) throw new Error(listError.message);
       if (countError) throw new Error(countError.message);
-      setData(list || { items: [], total: 0, page_size: 25 }); setSummary(counts || {});
-    } catch (e) { setError(e.message || "Knowledge catalog could not be loaded."); }
-    finally { setBusy(false); }
+      if (!mounted.current || currentRequest !== requestId.current) return;
+      const result = list && typeof list === "object" && !Array.isArray(list) ? list : {};
+      setData({ ...result, items: Array.isArray(result.items) ? result.items : [], total: Number(result.total) || 0, page_size: Number(result.page_size) || 25 });
+      setSummary(counts && typeof counts === "object" && !Array.isArray(counts) ? counts : {});
+    } catch (e) { if (mounted.current && currentRequest === requestId.current) setError(e.message || "Knowledge catalog could not be loaded."); }
+    finally { if (mounted.current && currentRequest === requestId.current) setBusy(false); }
   }, [isAdmin, page, query, tab]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [tab, query]);

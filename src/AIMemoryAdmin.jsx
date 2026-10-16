@@ -3,7 +3,7 @@ import {supabase} from "./supabaseClient";
 import {Trash2,CheckCircle2,RefreshCw,Search,ShieldAlert} from "./icons.jsx";
 export default function AIMemoryAdmin({fmtDateTime,emitToast}){
  const [rows,setRows]=useState([]),[health,setHealth]=useState({}),[q,setQ]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const load=useCallback(async()=>{setBusy(true);setError("");try{const [r,h]=await Promise.all([supabase.rpc("ai_memory_admin_explorer",{p_query:q||null,p_limit:100}),supabase.rpc("ai_memory_health")]);if(r.error)throw new Error(r.error.message);if(h.error)throw new Error(h.error.message);setRows(r.data||[]);setHealth(h.data||{});}catch(e){setError(e.message);}finally{setBusy(false);}},[q]);
+ const load=useCallback(async()=>{setBusy(true);setError("");try{const [r,h]=await Promise.all([supabase.rpc("ai_memory_admin_explorer",{p_query:q||null,p_limit:100}),supabase.rpc("ai_memory_health")]);if(r.error)throw new Error(r.error.message);if(h.error)throw new Error(h.error.message);setRows(Array.isArray(r.data)?r.data:[]);setHealth(h.data && typeof h.data === "object" && !Array.isArray(h.data) ? h.data : {});}catch(e){setError(e.message);}finally{setBusy(false);}},[q]);
  useEffect(()=>{load();},[load]);
  const resolve=async(id,resolution)=>{setBusy(true);try{const {error:e}=await supabase.rpc("ai_memory_resolve_conflict",{p_id:id,p_resolution:resolution});if(e)throw new Error(e.message);emitToast?.(resolution==="archive"?"Memory archived.":"Memory conflict resolved.","success");await load();}catch(e){setError(e.message);}finally{setBusy(false);}};
  return <div className="cards-grid" style={{gridTemplateColumns:"1fr"}}>{error&&<div className="auth-msg err">{error}</div>}
