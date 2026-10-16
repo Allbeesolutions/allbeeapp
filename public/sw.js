@@ -10,10 +10,9 @@ self.addEventListener('activate',event=>{
     const keys=await caches.keys();
     await Promise.all(keys.filter(k=>k.startsWith('allbee-')&&k!==CACHE).map(k=>caches.delete(k)));
     await self.clients.claim();
-    if(self.location.hostname==='app.allbeesolutions.com'){
-      const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
-      await Promise.all(windows.map(client=>client.navigate(client.url).catch(()=>{})));
-    }
+    // Never force-navigate active tabs during service-worker activation:
+    // that can discard an AI draft or a form in progress. The app's build
+    // update guard checks for a new version and defers reload while editing.
   })());
 });
 self.addEventListener('fetch',event=>{

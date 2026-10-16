@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import App from "./AllbeeApp.jsx";
 import { supabase } from "./supabaseClient";
 import { installChunkRecovery } from "./chunkRecovery.js";
-import { installAppUpdateGuard } from "./appUpdateGuard.js";
+import { installAppUpdateGuard, CURRENT_BUILD_ID } from "./appUpdateGuard.js";
+import { pageErrorPayload, sanitizeCrashText } from "./utils/errorTelemetry.js";
 
 installChunkRecovery();
 installAppUpdateGuard();
@@ -20,13 +21,10 @@ class RootErrorBoundary extends React.Component {
     // Best-effort production telemetry. Never let monitoring itself prevent the
     // recovery UI from rendering if auth/network/database is unavailable.
     try {
-      supabase.rpc("app_record_error", {
-        p_message: String(error?.message || error || "Unknown render error"),
-        p_stack: String(error?.stack || ""),
-        p_component_stack: String(info?.componentStack || ""),
-        p_path: `${window.location.pathname}${window.location.hash}`,
-        p_metadata: { source: "RootErrorBoundary", userAgent: String(navigator.userAgent || "") },
-      }).catch(() => {});
+      const buildId = CURRENT_BUILD_ID;
+      supabase.rpc("app_record_error", pageErrorPayload(
+        error, info, window.location.pathname + window.location.hash, buildId, "RootErrorBoundary"
+      )).catch(() => {});
     } catch { /* monitoring must never mask the original error */ }
   }
   render() {
@@ -36,7 +34,7 @@ class RootErrorBoundary extends React.Component {
           <div className="card" style={{ width: "min(720px, 100%)", padding: 24 }}>
             <h2 style={{ marginTop: 0 }}>ALLBEE could not render this screen</h2>
             <p className="hint-line">Your data is safe. A single module or malformed runtime value caused a render failure. Refresh the app to recover.</p>
-            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, maxHeight: 220, overflow: "auto" }}>{String(this.state.error?.message || this.state.error)}</pre>
+            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, maxHeight: 220, overflow: "auto" }}>{sanitizeCrashText(this.state.error?.message || this.state.error)}</pre>
             <button className="btn primary" onClick={() => window.location.reload()}>Reload ALLBEE</button>
           </div>
         </div>

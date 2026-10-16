@@ -17,6 +17,9 @@ jobs:
       - run: npm ci
       - run: npm test -- --run
       - run: npm run test:edge-auth
+      - run: npm run test:rpc-surface
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:crash-smoke
       - run: npm run build
       - run: npm run test:bundle
       - run: npm audit --omit=dev --audit-level=high

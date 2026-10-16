@@ -29,7 +29,7 @@ describe("ALLBEE AI surfaces", () => {
     await waitFor(() => expect(rpc).toHaveBeenCalledWith("knowledge_search", { p_query: "", p_limit: 12 }));
     fireEvent.click(screen.getByRole("button", { name: "Summarise" }));
     await waitFor(() => expect(baseRuntime.callAI).toHaveBeenCalled());
-    expect(invoke).toHaveBeenCalledWith("ai-memory-runtime", { body: { mode: "query", query: "summarise pending work", limit: 8 } });
+    expect(invoke).toHaveBeenCalledWith("ai-memory-runtime", expect.objectContaining({ body: { mode: "query", query: "summarise pending work", limit: 8 }, signal: expect.any(AbortSignal) }));
     expect(baseRuntime.callAI.mock.calls.at(-1)[1]).toContain("RETRIEVED AI MEMORY");
     expect(screen.getByText("Hello from AI")).toBeTruthy();
   });
@@ -88,6 +88,49 @@ describe("Assistant failure and retry", () => {
 });
 
 describe("Assistant response controls", () => {
+ it("falls back to the main assistant when memory indexing stalls", async () => {
+  let indexingSignal;
+  const invoke = vi.fn((_name, options) => {
+    indexingSignal = options.signal;
+    return new Promise(() => {});
+  });
+  const callAI = vi.fn().mockResolvedValue("Main assistant answered");
+  render(<AllbeeAI db={{}} config={{}} me={{ name: "Alex" }} role="admin" isAdmin go={vi.fn()} runtime={{ ...baseRuntime, callAI, supabase: { rpc: vi.fn(), functions: { invoke } } }} />);
+  fireEvent.change(screen.getByLabelText("Message ALLBEE AI"), { target: { value: "Help me" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(callAI).toHaveBeenCalledTimes(1), { timeout: 3000 });
+  expect(await screen.findByText("Main assistant answered")).toBeTruthy();
+  expect(indexingSignal.aborted).toBe(true);
+ });
+ it("can stop while optional memory indexing is stuck", async () => {
+  let memorySignal;
+  const invoke = vi.fn((_name, options) => {
+    memorySignal = options.signal;
+    return new Promise(() => {});
+  });
+  const callAI = vi.fn().mockResolvedValue("Unexpected reply");
+  render(<AllbeeAI db={{}} config={{}} me={{name:"Alex"}} role="admin" isAdmin go={vi.fn()} runtime={{ ...baseRuntime, callAI, supabase: { rpc: vi.fn(), functions: { invoke } } }} />);
+  fireEvent.change(screen.getByLabelText("Message ALLBEE AI"), { target: { value: "Check memory" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(memorySignal.aborted).toBe(true);
+  expect(screen.getByText("Response stopped. Your conversation is unchanged.")).toBeTruthy();
+  expect(callAI).not.toHaveBeenCalled();
+ });
+ it("aborts the gateway when leaving the AI screen", async () => {
+  let pendingSignal;
+  const callAI = vi.fn((_cfg, _system, _messages, _client, options) => {
+    pendingSignal = options.signal;
+    return new Promise(() => {});
+  });
+  const view = render(<AllbeeAI db={{}} config={{}} me={{name:"Alex"}} role="client" isAdmin={false} go={vi.fn()} runtime={{ ...baseRuntime, callAI }} />);
+  fireEvent.change(screen.getByLabelText("Message ALLBEE AI"), { target: { value: "Summarise" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(callAI).toHaveBeenCalledTimes(1));
+  view.unmount();
+  expect(pendingSignal.aborted).toBe(true);
+ });
  it("stops a pending response without appending stale output", async () => {
   let resolveRequest;
   const callAI = vi.fn(() => new Promise((resolve) => { resolveRequest = resolve; }));

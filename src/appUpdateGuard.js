@@ -3,7 +3,13 @@ const RELOAD_KEY = "allbee-build-reload";
 
 function editingNow() {
   const el = document.activeElement;
-  return !!el && el.matches?.("input, textarea, select, [contenteditable='true']");
+  if (!!el && el.matches?.("input, textarea, select, [contenteditable='true']")) return true;
+  // Conversations live in React state: a reload would silently lose their
+  // history or an unsent message. Wait until the user leaves this workspace.
+  const ai = document.querySelector(".assistant-workspace");
+  if (ai?.querySelector(".assistant-messages article, .assistant-thinking")) return true;
+  if (ai?.querySelector("textarea")?.value?.trim()) return true;
+  return false;
 }
 
 export function installAppUpdateGuard() {

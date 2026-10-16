@@ -77,6 +77,8 @@ const LazyAPNStateHead = React.lazy(() => import("./modules/apn/StateHead.jsx").
 const LazyAPNSearch = React.lazy(() => import("./modules/apn/APNSearch.jsx").then((m) => ({ default: m.APNSearch })));
 import { APNTabErrorBoundary } from "./modules/apn/APNTabErrorBoundary.jsx";
 import PageErrorBoundary, { SafePageRenderer } from "./ui/PageErrorBoundary.jsx";
+import { CURRENT_BUILD_ID } from "./appUpdateGuard.js";
+import { pageErrorPayload, sanitizeCrashText } from "./utils/errorTelemetry.js";
 const LazyAPNSupportTickets = React.lazy(() => import("./modules/apn/SupportTickets.jsx").then((m) => ({ default: m.APNSupportTickets })));
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -3362,20 +3364,17 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(err, info) {
     console.error("[ALLBEE] app render error", err, info);
     try {
-      supabase.rpc("app_record_error", {
-        p_message: String(err?.message || err || "Unknown render error"),
-        p_stack: String(err?.stack || ""),
-        p_component_stack: String(info?.componentStack || ""),
-        p_path: `${window.location.pathname}${window.location.hash}`,
-        p_metadata: { source: "AppErrorBoundary", userAgent: String(navigator.userAgent || "") },
-      }).catch(() => {});
+      const buildId = CURRENT_BUILD_ID;
+      supabase.rpc("app_record_error", pageErrorPayload(
+        err, info, window.location.pathname + window.location.hash, buildId, "AppErrorBoundary"
+      )).catch(() => {});
     } catch {}
   }
   render() {
     if (this.state.err) return (
       <div style={{ padding: 40, fontFamily: "system-ui", color: "#444" }}>
         <h3>Something went wrong rendering the app.</h3>
-        <pre style={{ whiteSpace: "pre-wrap" }}>{String(this.state.err)}</pre>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{sanitizeCrashText(this.state.err?.message || this.state.err)}</pre>
         <button onClick={() => this.setState({ err: null })}>Try again</button>
       </div>
     );

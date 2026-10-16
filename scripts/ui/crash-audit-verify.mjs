@@ -13,6 +13,8 @@ await server.listen();
 const port=server.httpServer.address().port;
 const browser=await chromium.launch();
 const results=[];
+const smoke=process.argv.includes("--smoke");
+const widths=smoke?[390]:[320,390,768,1440];
 function finish(name,pass,error=""){results.push({name,pass,error});console.log(JSON.stringify(results.at(-1)));}
 async function probe(name,{role,route,fault,width},run){
  const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:"block"});
@@ -35,7 +37,7 @@ async function probe(name,{role,route,fault,width},run){
  finally {await context.close();}
 }
 try{
- for(const width of [320,390,768,1440]){
+ for(const width of widths){
   await probe(`superadmin AI Center ${width}`,{role:"superadmin",route:"ai-center",width},async(page)=>{
    await page.getByRole("heading",{name:"AI Intelligence Center"}).waitFor();
    for(const tab of ["Lead AI","Partner AI","Employee AI","Finance AI","Observability","AI Delivery","AI Memory","AI Executive","V6 Operations","Automation","Reports","Settings"]) {
@@ -55,7 +57,7 @@ try{
    await page.locator(".assistant-page").first().waitFor();
   });
  }
- for(const width of [390,1440])await probe(`malformed AI payload ${width}`,{role:"superadmin",route:"ai-center",fault:true,width},async(page)=>{
+ for(const width of smoke?[390]:[390,1440])await probe(`malformed AI payload ${width}`,{role:"superadmin",route:"ai-center",fault:true,width},async(page)=>{
   await page.getByRole("heading",{name:"AI Intelligence Center"}).waitFor();
   for(const tab of ["Lead AI","Partner AI","Finance AI","Observability","AI Delivery","AI Memory","AI Executive","V6 Operations","Automation"]){
    await page.locator(".seg").first().getByRole("button",{name:tab,exact:true}).click();await page.waitForTimeout(80);

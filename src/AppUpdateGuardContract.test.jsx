@@ -19,6 +19,8 @@ describe("stale mobile build recovery", () => {
     expect(main).toContain("installAppUpdateGuard();");
     expect(guard).toContain("window.location.reload()");
     expect(guard).toContain('document.visibilityState === "hidden"');
+    expect(guard).toContain(".assistant-messages article");
+    expect(guard).toContain("ai?.querySelector(\"textarea\")");
   });
   it("forces service-worker update checks and advances the shell cache generation", () => {
     expect(guard).toContain('register("/sw.js", { updateViaCache: "none" })');

@@ -14,9 +14,9 @@ describe('PWA stale mascot eviction',()=>{
     expect(sw).toContain("url.pathname.startsWith('/assets/')");
     expect(sw).toContain(".catch(()=>caches.match(req))");
   });
-  it('reloads already-open controlled tabs after the cache migration',()=>{
-    expect(sw).toContain("self.location.hostname==='app.allbeesolutions.com'");
-    expect(sw).toContain("self.clients.matchAll({type:'window',includeUncontrolled:true})");
-    expect(sw).toContain("client.navigate(client.url)");
+  it('does not force-reload active tabs and discard unsent work during updates',()=>{
+    expect(sw).toContain("await self.clients.claim()");
+    expect(sw).not.toContain("client.navigate(client.url)");
+    expect(sw).not.toContain("self.location.hostname==='app.allbeesolutions.com'");
   });
 });
