@@ -6078,9 +6078,22 @@ export default function App() {
       }
     };
     load();
-    const timer = window.setInterval(load, 30000);
-    return () => { alive = false; window.clearInterval(timer); };
-  }, [session?.user?.id, canFinance, route]);
+    // Polling is account-scoped, not route-scoped. Recreating this interval
+    // on each page change fetched the same balances again unnecessarily.
+    // Hidden tabs can rely on the reconnect/data-change refresh on return.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") load();
+    }, 30000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [session?.user?.id, canFinance]);
 
   useEffect(() => {
     if (!canFinance || !db) return;

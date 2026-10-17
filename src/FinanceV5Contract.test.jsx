@@ -79,6 +79,13 @@ describe("Finance v5 contracts", () => {
     expect(app).toContain("financeBalances.apn_unwithdrawn");
     expect(app).toContain("authoritative={financeBalances}");
   });
+  it("avoids route-triggered finance polling and refreshes on tab return", () => {
+    expect(app).toContain('if (document.visibilityState !== "hidden") load();');
+    expect(app).toContain('document.addEventListener("visibilitychange", onVisible)');
+    expect(app).toContain('document.removeEventListener("visibilitychange", onVisible)');
+    expect(app).toContain('}, [session?.user?.id, canFinance]);');
+    expect(app).not.toContain('}, [session?.user?.id, canFinance, route]);');
+  });
   it("refreshes date-derived APN wallet balances before finance, portal, and AI reads", () => {
     expect(walletTimeSql).toContain("v_current_eligible := greatest(0, v_gross_eligible - v_withdrawn)");
     expect(walletTimeSql).toContain("v_total_balance := greatest(0, v_earned - v_withdrawn)");
