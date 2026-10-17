@@ -12,7 +12,9 @@ describe("admin page runtime regression coverage", () => {
     expect(app).toContain("Tasks: LazyTasks");
     expect(app).toContain("HELP_STATUS_LABEL, HELP_STATUS_TONE");
     expect(app).not.toContain("runtime={{ useState, useEffect, useRef, supabase, uid, Avatar, Empty, emitToast, fmtDateTime, isOnline, withinMinutes, uploadAttachment, AlertTriangle, ArrowLeft, Attach,");
-    expect(app).toContain("function Concepts({ db, mutate, openModal, removeItem })");
+    expect(app).toContain('React.lazy(() => import("./Concepts.jsx"))');
+    expect(app).toContain('<LazyConcepts db={db} openModal={openModal} removeItem={removeItem} Empty={Empty} />');
+    expect(read("Concepts.jsx")).toContain("export default function Concepts(");
     expect(app).toContain("function AuditLog({ db, isSuper, onOpenActivity })");
     expect(app).toContain("function Settings({ db, mutate, replaceDB");
     expect(app).toContain("apnPartnerProfileForm");

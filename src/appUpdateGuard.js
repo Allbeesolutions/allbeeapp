@@ -1,7 +1,7 @@
 const CURRENT_BUILD_ID = typeof __ALLBEE_BUILD_ID__ !== "undefined" ? String(__ALLBEE_BUILD_ID__) : "dev";
 const RELOAD_KEY = "allbee-build-reload";
 
-function editingNow() {
+export function editingNow() {
   const el = document.activeElement;
   if (!!el && el.matches?.("input, textarea, select, [contenteditable='true']")) return true;
   // Conversations live in React state: a reload would silently lose their

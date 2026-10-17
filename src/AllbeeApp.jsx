@@ -125,6 +125,7 @@ const LazyPrompts = React.lazy(() => import("./Prompts.jsx"));
 const LazyRecentlyDeleted = React.lazy(() => import("./RecentlyDeleted.jsx"));
 const LazyInHouse = React.lazy(() => import("./InHouse.jsx"));
 const LazyGlobalSearch = React.lazy(() => import("./GlobalSearch.jsx"));
+const LazyConcepts = React.lazy(() => import("./Concepts.jsx"));
 const LazyProposalCenter = React.lazy(() => import("./ProposalCenter.jsx"));
 const LazyLock = React.lazy(() => import("./Lock.jsx"));
 const LazyTestDetail = React.lazy(() => import("./TestDetail.jsx"));
@@ -237,24 +238,6 @@ function SearchHighlight({ text, q }) {
   const re = new RegExp(`(${escaped.join("|")})`, "ig");
   const test = new RegExp(`^(${escaped.join("|")})$`, "i");
   return <>{String(text).split(re).map((part, i) => test.test(part) ? <mark key={i} className="hl">{part}</mark> : <span key={i}>{part}</span>)}</>;
-}
-
-function Concepts({ db, mutate, openModal, removeItem }) {
-  const list = [...(db.concepts || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const del = (c) => removeItem("concepts", c, { name: c.title, audit: `deleted idea "${c.title}"` });
-  const convert = (c) => openModal({ type: "task", initial: { title: c.title, desc: c.notes }, fromConcept: c.id });
-  return <div className="content">
-    <div className="page-head"><h3>Concepts &amp; ideas</h3><span className="spacer" /><button className="btn primary" onClick={() => openModal({ type: "concept" })}><Plus size={16} />New idea</button></div>
-    <div className="cards-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
-      {list.length === 0 ? <div className="card" style={{ gridColumn: "1/-1" }}><Empty icon={<Lightbulb size={22} color="var(--muted)" />} title="No ideas saved" text="Park business ideas and future plans here. Turn any of them into a task with one tap." action={<button className="btn primary" onClick={() => openModal({ type: "concept" })}><Plus size={16} />New idea</button>} /></div>
-        : list.map((c) => <div key={c.id} className="card stat" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{c.title}</div>{c.notes && <div className="sub" style={{ lineHeight: 1.5 }}>{c.notes.length > 160 ? c.notes.slice(0, 160) + "…" : c.notes}</div>}
-          {c.tags?.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{c.tags.map((t) => <span key={t} className="tag">#{t}</span>)}</div>}
-          <div className="item-meta"><span>{fmtDate(c.date)}</span></div><div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-            <button className="btn sm primary" onClick={() => convert(c)}><ArrowRight size={13} />Convert to task</button><button aria-label="Edit record" className="btn sm" onClick={() => openModal({ type: "concept", initial: c })}><Pencil size={13} /></button><button aria-label="Delete record" className="btn sm danger" onClick={() => openModal({ type: "deleteConfirm", title: "Delete idea?", body: `Delete "${c.title}"?`, note: "It moves to Recently deleted — restore within 60 days.", onConfirm: () => del(c) })}><Trash2 size={13} /></button>
-          </div></div>)}
-    </div>
-  </div>;
 }
 
 // ── Class students (training institute) ────────────────────────────────────
@@ -7119,7 +7102,7 @@ export default function App() {
       case "accounts": return <LazyAccounts db={db} bal={bal} mutate={mutate} openModal={openModal} openBalance={openBalance} removeItem={removeItem} locks={locks} lockPeriod={lockPeriod} unlockPeriod={unlockPeriod} isSuper={isSuper} currentUser={currentUser} helpers={financeComponentHelpers} />;
       case "withdrawals": return <LazyWithdrawals db={db} bal={bal} mutate={mutate} openModal={openModal} removeItem={removeItem} isSuper={isSuper} currentUser={currentUser} helpers={financeComponentHelpers} />;
       case "progress": return <Progress db={db} mutate={mutate} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} />;
-      case "concepts": return <Concepts db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} />;
+      case "concepts": return <LazyConcepts db={db} openModal={openModal} removeItem={removeItem} Empty={Empty} />;
       case "courses": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading courses…</div></div>}> <LazyCourses db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts: LazyAccounts }} />;</React.Suspense>;
       case "class-students": return <ClassStudents db={db} openModal={openModal} removeItem={removeItem} mutate={mutate} currentUser={currentUser} config={config} saveClassWebhook={saveClassWebhook} isSuper={isSuper} />;
       case "marketing": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading marketing…</div></div>}> <LazyMarketing db={db} mutate={mutate} openModal={openModal} openIncome={openIncome} removeItem={removeItem} canFinance={canFinance} runtime={{ Empty, money, fmtDate, todayISO, avatarColor, marketingDue, PROJECT_STAGES, Accounts: LazyAccounts }} />;</React.Suspense>;

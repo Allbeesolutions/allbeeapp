@@ -8,13 +8,30 @@ mkdirSync(out,{recursive:true});
 const routes=["home","leads","wallet","network","chat","targets","quotations","documents","agreements","notifications","learn","withdrawals","ai","support","achievements","leaderboard","district","profile"];
 const widths=[320,360,375,390,430,768,1024,1440];
 const loginOnly=process.argv.includes("--login-only");
+const focus=process.argv.find((arg)=>arg.startsWith("--focus="))?.slice(8);
 const server=await createServer({root,server:{host:"127.0.0.1",port:5191,strictPort:true},define:{"import.meta.env.VITE_FOUNDER_LOCKDOWN_QUIET":JSON.stringify("true"),"import.meta.env.VITE_PAUSE_TEST":JSON.stringify("0")},plugins:[{name:"isolated-apn-ux",enforce:"pre",resolveId(id){if(/(?:^|\/)supabaseClient(?:\.js)?$/.test(id))return resolve(root,"scripts/ui/apnUXMock.js")}}]});
-await server.listen();const browser=await chromium.launch();const page=await browser.newPage();page.setDefaultTimeout(10000);
-await page.route("**/*",r=>{const u=new URL(r.request().url());return ["127.0.0.1","localhost"].includes(u.hostname)||["data:","blob:"].includes(u.protocol)?r.continue():r.abort()});
-let errors=[];page.on("pageerror",e=>errors.push(e.message));const results=[];
-async function check(name,fn){errors=[];try{await fn();assert.deepEqual(errors,[]);results.push({name,pass:true});}catch(e){const body=(await page.locator("body").innerText().catch(()=>"")).slice(0,400);results.push({name,pass:false,error:e.message,body});await page.screenshot({path:resolve(out,"failure-"+results.length+".png")});}writeFileSync(resolve(out,"progress.json"),JSON.stringify(results));}
+await server.listen();
+const browser=await chromium.launch();
+let errors=[];
+async function newTestPage(){
+ const current=await browser.newPage();
+ current.setDefaultTimeout(12000);
+ current.setDefaultNavigationTimeout(20000);
+ await current.route("**/*",r=>{const u=new URL(r.request().url());return ["127.0.0.1","localhost"].includes(u.hostname)||["data:","blob:"].includes(u.protocol)?r.continue():r.abort()});
+ current.on("pageerror",e=>errors.push(e.message));
+ return current;
+}
+let page=await newTestPage();
+const results=[];
+async function check(name,fn){if(focus && !name.includes(focus))return;errors=[];try{await fn();assert.deepEqual(errors,[]);results.push({name,pass:true});}catch(e){const body=(await page.locator("body").innerText().catch(()=>"")).slice(0,400);results.push({name,pass:false,error:e.message,body});await page.screenshot({path:resolve(out,"failure-"+results.length+".png")});}writeFileSync(resolve(out,"progress.json"),JSON.stringify(results));}
 let visitIndex=0;
 async function visit(route,width,role="partner",data="populated"){
+ // Hundreds of full Vite navigations can exhaust one Chromium page's module
+ // graph and make the last cases time out. Recycle at route boundaries.
+ if(visitIndex>0&&visitIndex%110===0){
+  await page.close();
+  page=await newTestPage();
+ }
  await page.setViewportSize({width,height:900});
  await page.goto("http://127.0.0.1:5191/?role="+role+"&case="+(++visitIndex)+"&data="+data+"#/apn/"+route,{waitUntil:"domcontentloaded"});
  await page.locator('[data-apn-page="'+route+'"]').waitFor();
