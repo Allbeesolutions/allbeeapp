@@ -6480,6 +6480,7 @@ export default function App() {
     // notification activity can arrive in bursts). Never start a full database
     // reload for every event. Coalesce the burst into one reload on the next
     // event-loop turn, while preserving the latest requested refresh.
+    let disposed = false;
     let reloadTimer = null;
     let reloadInFlight = null;
     let reloadQueued = false;
@@ -6489,6 +6490,7 @@ export default function App() {
     const dirtyTables = new Set();
     let forceFullReload = false;
     const scheduleReload = (payload, force = false) => {
+      if (disposed) return;
       const table = payload?.table;
       if (force) forceFullReload = true;
       if (table && (TABLES.includes(table) || Object.prototype.hasOwnProperty.call(REFERRAL_READS, table) ||
@@ -6503,29 +6505,30 @@ export default function App() {
       if (reloadTimer || reloadInFlight) return;
       reloadTimer = setTimeout(async () => {
         reloadTimer = null;
-        if (!reloadQueued) return;
+        if (disposed || !reloadQueued) return;
         reloadQueued = false;
         const tables = forceFullReload ? null : Array.from(dirtyTables);
         dirtyTables.clear();
         forceFullReload = false;
         reloadInFlight = reload(tables).catch(() => {}).finally(() => {
           reloadInFlight = null;
-          if (reloadQueued) scheduleReload(null, false);
+          if (!disposed && reloadQueued) scheduleReload(null, false);
         });
       }, 150);
     };
     const scheduleAuditReload = () => {
+      if (disposed) return;
       auditQueued = true;
       if (auditTimer || auditInFlight) return;
       auditTimer = setTimeout(async () => {
         auditTimer = null;
-        if (!auditQueued) return;
+        if (disposed || !auditQueued) return;
         auditQueued = false;
         auditInFlight = fetchAuditRows().then((audit) => {
-          setDb((prev) => prev ? { ...prev, audit } : prev);
-        }).catch((e) => setSyncError(e.message || String(e))).finally(() => {
+          if (!disposed) setDb((prev) => prev ? { ...prev, audit } : prev);
+        }).catch((e) => { if (!disposed) setSyncError(e.message || String(e)); }).finally(() => {
           auditInFlight = null;
-          if (auditQueued) scheduleAuditReload();
+          if (!disposed && auditQueued) scheduleAuditReload();
         });
       }, 250);
     };
@@ -6558,6 +6561,7 @@ export default function App() {
       onError: (e) => console.warn("[ALLBEE] realtime reconnect:", e),
     });
     return () => {
+      disposed = true;
       realtime.stop();
       if (reloadTimer) clearTimeout(reloadTimer);
       if (auditTimer) clearTimeout(auditTimer);
