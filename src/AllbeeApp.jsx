@@ -647,103 +647,6 @@ function renderAIText(text) {
   return nodes;
 }
 
-function buildAIContext(db, company) {
-  const cap = (arr, n) => (Array.isArray(arr) ? arr.slice(-n).reverse() : []);
-  const co = company || {};
-  const L = [];
-  L.push(`COMPANY: ${co.name || "ALLBEE Solutions"}${co.email ? " · " + co.email : ""}${co.phone ? " · " + co.phone : ""}${co.website ? " · " + co.website : ""}`);
-  if (co.address) L.push(`ADDRESS: ${co.address}`);
-
-  const clients = cap(db.clients, 40);
-  if (clients.length) {
-    L.push(`\nCLIENTS (${db.clients.length} total, newest first):`);
-    clients.forEach((c) => L.push(`- ${c.name}${c.company ? " (" + c.company + ")" : ""} · ${c.status || "—"}${c.phone ? " · " + maskPhone(c.phone) : ""}${c.email ? " · " + maskEmail(c.email) : ""}${c.value ? " · deal " + money(c.value) : ""}${c.notes ? " · " + scrubText(String(c.notes)).slice(0, 80) : ""}`));
-  }
-  const leads = cap(db.leads, 40);
-  if (leads.length) {
-    L.push(`\nLEADS (${db.leads.length}):`);
-    leads.forEach((x) => L.push(`- ${x.name}${x.company ? " (" + x.company + ")" : ""} · service ${x.service || "—"} · stage ${x.stage || "—"}${x.value ? " · est " + money(x.value) : ""}${x.leadOwner ? " · owner " + x.leadOwner : ""}${x.phone ? " · " + maskPhone(x.phone) : ""}${x.notes ? " · " + scrubText(String(x.notes)).slice(0, 80) : ""}`));
-  }
-  const quotes = cap(db.quotations, 30);
-  if (quotes.length) {
-    L.push(`\nQUOTATIONS (${db.quotations.length}):`);
-    quotes.forEach((q) => {
-      const items = (q.items || []).map((it) => `${scrubText(it.desc || "item").slice(0, 60)} x${it.qty || 1} @ ${money(it.rate || 0)}`).join("; ");
-      L.push(`- ${q.client || "—"}${q.title ? " · " + q.title : ""} · ${q.status || "Draft"} · total ${money(q.total || 0)}${items ? " · items: " + items.slice(0, 180) : ""}`);
-    });
-  }
-  const inv = cap(db.invoices, 30);
-  if (inv.length) {
-    L.push(`\nINVOICES (${db.invoices.length}):`);
-    inv.forEach((i) => L.push(`- ${i.number || ""} ${i.client || "—"}${i.title ? " · " + i.title : ""} · ${i.status || "Draft"} · ${money(i.amount || 0)}${i.dueDate ? " · due " + i.dueDate : ""}`));
-  }
-  const portalUpdates = cap(db.portal_posts, 30);
-  if (portalUpdates.length) {
-    L.push(`\nCLIENT PORTAL UPDATES (${db.portal_posts.length}):`);
-    portalUpdates.forEach((x) => L.push(`- ${scrubText(x.title || "Update").slice(0, 100)} · ${x.status || x.kind || "update"}${x.body ? " · " + scrubText(String(x.body)).slice(0, 180) : ""}`));
-  }
-  const sharedDocs = cap(db.documents, 30);
-  if (sharedDocs.length) {
-    L.push(`\nSHARED FILES (${db.documents.length}):`);
-    sharedDocs.forEach((d) => L.push(`- ${scrubText(d.title || "File").slice(0, 100)}${d.category ? " · " + scrubText(d.category).slice(0, 60) : ""}${d.notes ? " · " + scrubText(String(d.notes)).slice(0, 120) : ""}`));
-  }
-  const proj = cap(db.projects, 40);
-  if (proj.length) {
-    L.push(`\nPROJECTS (${db.projects.length}):`);
-    proj.forEach((p) => L.push(`- ${p.name}${p.client ? " for " + p.client : ""} · ${p.type || "—"} · ${p.stage || "—"}${p.cost ? " · " + money(p.cost) : ""}${p.expected ? " · due " + p.expected : ""}`));
-  }
-  const openTasks = (db.tasks || []).filter((t) => t.status !== "Completed");
-  const tks = cap(openTasks, 40);
-  if (tks.length) {
-    L.push(`\nOPEN TASKS (${openTasks.length}):`);
-    tks.forEach((t) => L.push(`- ${t.title} · ${assigneeText(t)} · ${t.status}${t.priority ? " · " + t.priority : ""}${t.due ? " · due " + t.due : ""}`));
-  }
-  const cs = cap(db.class_students, 30);
-  if (cs.length) {
-    L.push(`\nCLASS STUDENTS (${db.class_students.length}):`);
-    cs.forEach((s) => L.push(`- ${s.name}${s.course ? " · " + s.course : ""}${s.mode ? " · " + s.mode : ""}${s.fee ? " · fee " + money(s.fee) : ""}${s.paymentStatus ? " · " + s.paymentStatus : ""}`));
-  }
-  const counts = [];
-  if (db.students?.length) counts.push(`course students ${db.students.length}`);
-  if (db.marketing?.length) counts.push(`marketing clients ${db.marketing.length}`);
-  if (db.concepts?.length) counts.push(`concepts/ideas ${db.concepts.length}`);
-  if (db.inhouse?.length) counts.push(`in-house projects ${db.inhouse.length}`);
-  if (db.planned?.length) counts.push(`planned expenses ${db.planned.length}`);
-  if (counts.length) L.push(`\nOTHER COUNTS: ${counts.join(" · ")}`);
-  const apn = cap(db.apn_users, 60);
-  if (apn.length) {
-    L.push(`\nAPN PARTNER NETWORK (${db.apn_users.length} total):`);
-    apn.forEach((a) => L.push(`- ${a.name || a.username || "Partner"} · ${a.apnId || a.apn_id || "—"} · ${a.level || "—"} · ${a.status || "—"}${a.district ? " · district " + a.district : ""}${a.state ? " · state " + a.state : ""}${a.commissionRate != null ? " · commission " + a.commissionRate + "%" : ""}`));
-  }
-  const tx = cap(db.transactions, 50);
-  if (tx.length) {
-    L.push(`\nFINANCE TRANSACTIONS (${db.transactions.length} total, newest first):`);
-    tx.forEach((x) => L.push(`- ${x.date || x.ts || "—"} · ${x.type || x.category || "transaction"} · ${x.description || x.client || "—"} · ${money(x.amount || x.value || 0)} · ${x.status || "—"}`));
-  }
-  const withdrawals = cap(db.withdrawals, 30);
-  if (withdrawals.length) {
-    L.push(`\nWITHDRAWALS (${db.withdrawals.length} total):`);
-    withdrawals.forEach((w) => L.push(`- ${w.userName || w.user || "—"} · ${money(w.amount || 0)} · ${w.status || "—"} · ${w.requestedAt || w.date || "—"}`));
-  }
-  const audit = cap(db.audit, 50);
-  if (audit.length) {
-    L.push(`\nRECENT AUDIT ACTIVITY (${db.audit.length} total):`);
-    audit.forEach((a) => L.push(`- ${a.ts ? new Date(a.ts).toLocaleString("en-IN") : "—"} · ${a.user || "System"} · ${a.module || "—"} · ${a.action || "—"} · ${scrubText(a.description || "")}`));
-  }
-  const genericModules = [
-    ["tasks", "Tasks"], ["attendance", "Attendance"], ["leave", "Leave"], ["updates", "Daily updates"],
-    ["team_chat", "Team chat"], ["projects", "Projects"], ["inhouse", "In-house projects"], ["marketing", "Marketing"],
-    ["students", "Course students"], ["class_students", "Class students"], ["concepts", "Ideas"], ["notifications", "Notifications"],
-    ["agreements", "Agreements"], ["materials", "Materials"], ["targets", "Targets"], ["rewards", "Rewards"],
-  ];
-  const moduleCounts = genericModules.filter(([k]) => Array.isArray(db[k])).map(([k, label]) => `${label}: ${db[k].length}`);
-  if (moduleCounts.length) L.push(`\nMODULE COUNTS: ${moduleCounts.join(" · ")}`);
-  L.push(`\nNOTE: Client/lead phone numbers and emails in this snapshot are masked; free-text notes and item descriptions are scrubbed for contact details. Ask the user for a full contact when one is needed.`);
-
-  let out = L.join("\n");
-  if (out.length > 12000) out = out.slice(0, 12000) + "\n…(snapshot truncated)";
-  return out;
-}
 const AI_QUICK_PROMPTS = [
   ["Draft a quotation", "A client asked for a quotation. Ask me for the client name and what they need if it's not obvious, then draft a clear, itemised quotation in INR (₹) with a subtotal and total, professional wording, and short terms."],
   ["Reply to a client", "Help me write a short, professional reply to a client. Ask what the client said and the outcome I want, then draft it."],
@@ -7111,7 +7014,7 @@ export default function App() {
   // portal clients get their own surface and skip the internal profile/T&C gates
   if (role === "client") {
     if (loading || !db) return <LoadingScreen isDark={isDark} note="Loading your portal…" />;
-    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} saveMyProfile={saveMyProfile} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Sparkles, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment }} /></React.Suspense>);
+    return gateChild(<React.Suspense fallback={<LoadingScreen isDark={isDark} note="Loading client portal…" />}><LazyClientPortal db={db} profile={profile} signOut={signOut} isDark={isDark} config={config} reload={reload} saveMyProfile={saveMyProfile} runtime={{ Empty, Field, Modal, Plus, ChevronDown, Send, companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Sparkles, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, assigneeText, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment }} /></React.Suspense>);
   }
   // APN partners get their own mobile-first portal — fully separate from the
   // internal app, so they never reach accounts, balances, the vault or the team.
@@ -7188,7 +7091,7 @@ export default function App() {
           ? <StaffDashboard db={db} me={me} go={go} mutate={mutate} openModal={openModal} team={team} />
           : <Dashboard db={db} bal={bal} go={go} openBalance={openBalance} onOpenActivity={setActivityDetail} showMoney={canFinance} showOps={isAdmin} team={team} isSuper={isSuper} snapshot={dashboardSnapshot} />;
       case "tasks": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading tasks…</div></div>}><LazyTasks db={db} mutate={mutate} openModal={openModal} isAdmin={isAdmin} currentUser={currentUser} me={me} openTask={openTask} removeItem={removeItem} runtime={{ Empty, Progress, assigneeText, avatarColor, canActOnTask, canEditTask, fmtDate, haptic, isMultiAssignee, isTaskAssignee, nextTaskState, priorityTone, taskAction, taskAssignees }} /></React.Suspense>;
-      case "assistant": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "34%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>}><LazyAllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} runtime={{ aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>;
+      case "assistant": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true"><div className="skeleton skeleton-line" style={{ width: "34%" }} /><div className="skeleton" style={{ height: 180, marginTop: 12 }} /></div></div>}><LazyAllbeeAI db={db} config={config} me={me} role={role} isAdmin={isAdmin} go={go} runtime={{ aiConfigOf, companyOf, aiConfigured, assigneeText, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase }} /></React.Suspense>;
       case "ai-center": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading AI Intelligence…</div></div>}><LazyAIIntelligenceCenter db={db} go={go} openModal={openModal} reload={reload} mutate={mutate} runtime={{ Empty, Field, money, fmtDate, fmtDateTime, ROLE_LABEL, Search, TrendingUp, Users, Target, Activity, FileText, RefreshCw, Check, AlertTriangle, ArrowRight, emitToast, exportRowsToExcel, exportRowsToPDF, todayISO, supabase }} /></React.Suspense>;
       case "knowledge-engine": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading Pricing &amp; Knowledge Center…</div></div>}><LazyPricingKnowledgeCenter isAdmin={isAdmin} runtime={{ ...Icons, Field, Empty, Modal, money, todayISO, exportRowsToExcel, emitToast, AGREEMENT_CATEGORIES }} /></React.Suspense>;
       case "requirement-builder": return <RequirementBuilder isAdmin={isAdmin} />;
@@ -7226,7 +7129,7 @@ export default function App() {
       case "leads": return (
         <React.Suspense fallback={<div className="allbee-loading-card">Loading CRM…</div>}>
           <LazyEnterpriseCRM db={db} team={team} me={me} isAdmin={isAdmin} reload={reload} config={config}
-            runtime={{ ...Icons, todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons, aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, supabase }} />
+            runtime={{ ...Icons, todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons, aiConfigOf, companyOf, aiConfigured, assigneeText, callAI, supabase }} />
         </React.Suspense>
       );
       case "clients": return <React.Suspense fallback={<div className="content"><div className="card" aria-busy="true">Loading clients…</div></div>}><LazyClients db={db} mutate={mutate} openModal={openModal} removeItem={removeItem} isAdmin={isAdmin} me={me} portalClients={portalClients} deleteClientAccount={deleteClientAccount} changeProfile={changeProfile} runtime={{ Empty, LoadMore, avatarColor, fmtDate, supabase, emitToast }} /></React.Suspense>;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
+import { buildAIContext as makeAIContext } from "./ai/workspaceContext.js";
 import * as Icons from "./icons.jsx";
 import usePersistedState from "./ui/usePersistedState.js";
 
@@ -17,7 +18,8 @@ export default function EnterpriseCRM(props) {
   const { todayISO, round2, money, fmtDate, fmtDateTime, uid, emitToast, Confirm, Modal, Field, SelectOther, Empty, Avatar, PRIORITIES, ContactButtons, ...iconOverrides } = runtime;
   const { Search, Plus, Sparkles, Trash2, Pencil, Save, Check, X, ChevronRight, ArrowRight, Download, FileText, Activity, Filter, Send, Eye, MoreVertical, UserPlus, Flame, CalendarClock, Trophy, XCircle, Coins, GaugeCircle, FolderKanban, AlertTriangle } = { ...Icons, ...iconOverrides };
   const { db, team = [], me, isAdmin, reload } = props;
-  const { aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI } = runtime;
+  const { aiConfigOf, companyOf, aiConfigured, buildAIContext: suppliedAIContext, assigneeText, callAI } = runtime;
+  const buildAIContext = suppliedAIContext || ((snapshot, organization) => makeAIContext(snapshot, organization, assigneeText));
   const [tab, setTab] = usePersistedState("allbee:view:crm", "overview");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");

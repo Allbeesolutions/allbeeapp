@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { awaitWithTimeout } from "./ai/requestLifecycle.js";
 import AllbeeAIMark from "./ui/AllbeeAIMark.jsx";
+import { buildAIContext as makeAIContext } from "./ai/workspaceContext.js";
 import { AllbeeMascot } from "./ui/AllbeeMascot.jsx";
 import "./ui/assistant.css";
 import { AlertTriangle, Check, Copy, RefreshCw, RotateCcw, Send, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 
 export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime }) {
-  const { aiConfigOf, companyOf, aiConfigured, buildAIContext, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase } = runtime;
+  const { aiConfigOf, companyOf, aiConfigured, buildAIContext: suppliedAIContext, assigneeText, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, supabase } = runtime;
+  const buildAIContext = suppliedAIContext || ((snapshot, organization) => makeAIContext(snapshot, organization, assigneeText));
   const baseCfg = aiConfigOf(config);
   const company = useMemo(() => companyOf(config), [config]);
   const isClient = role === "client";
