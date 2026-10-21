@@ -74,7 +74,15 @@ export default function CustomerUsageTelemetry() {
       if (!id) return;
       current = next;
       if (id.newSession) emit('visit', current, null, null, id);
-      emit('view', current, null, null, id);
+      let duplicate = false;
+      try {
+        const key = 'allbee-usage-last-view-v1';
+        const last = JSON.parse(sessionStorage.getItem(key) || 'null');
+        const now = Date.now();
+        duplicate = last?.screen === current && now - Number(last.at) < 800;
+        sessionStorage.setItem(key, JSON.stringify({ screen:current, at:now }));
+      } catch { /* only a best-effort StrictMode deduplication */ }
+      if (!duplicate) emit('view', current, null, null, id);
       visibleSince = document.visibilityState === 'visible' ? Date.now() : 0;
     };
     const activity = () => {

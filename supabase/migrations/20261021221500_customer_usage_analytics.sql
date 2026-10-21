@@ -35,7 +35,7 @@ CREATE OR REPLACE FUNCTION public.app_record_customer_usage(
  p_visitor uuid,p_session uuid,p_kind text,p_screen text,
  p_target text DEFAULT NULL,p_seconds integer DEFAULT NULL
 ) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE v_actor uuid; v_recent integer;
+DECLARE v_actor uuid; v_recent integer; v_actor_hour integer;
 BEGIN
  v_actor := auth.uid();
  IF v_actor IS NULL THEN RAISE EXCEPTION 'Authentication required' USING ERRCODE='28000'; END IF;
@@ -49,10 +49,13 @@ BEGIN
  OR (p_kind<>'tap' AND p_target IS NOT NULL)
  OR (p_kind<>'active_time' AND p_seconds IS NOT NULL)
  THEN RETURN FALSE; END IF;
- PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(v_actor::text||p_session::text));
- SELECT count(*) INTO v_recent FROM public.app_customer_usage_events
-  WHERE actor_id=v_actor AND session_id=p_session AND created_at>now()-INTERVAL '1 hour';
- IF v_recent>=240 THEN RETURN FALSE; END IF;
+ PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(v_actor::text));
+ SELECT count(*) FILTER (WHERE session_id=p_session),count(*) INTO v_recent,v_actor_hour
+ FROM public.app_customer_usage_events
+ WHERE actor_id=v_actor AND created_at>now()-INTERVAL '1 hour';
+ -- Both session and per-actor budgets apply. Random new session IDs cannot bypass
+ -- the account cap across concurrent browser sessions.
+ IF v_recent>=240 OR v_actor_hour>=1200 THEN RETURN FALSE; END IF;
  INSERT INTO public.app_customer_usage_events
   (actor_id,visitor_id,session_id,kind,screen,target,active_seconds)
  VALUES (v_actor,p_visitor,p_session,p_kind,p_screen,p_target,p_seconds);
@@ -75,6 +78,11 @@ BEGIN
   'views7d',(SELECT count(*) FROM public.app_customer_usage_events WHERE kind='view' AND created_at>now()-INTERVAL '7 days'),
   'taps7d',(SELECT count(*) FROM public.app_customer_usage_events WHERE kind='tap' AND created_at>now()-INTERVAL '7 days'),
   'visitors7d',(SELECT count(DISTINCT actor_id) FROM public.app_customer_usage_events WHERE kind='visit' AND created_at>now()-INTERVAL '7 days'),
+  'returningUsers7d',(SELECT count(*) FROM (
+   SELECT actor_id FROM public.app_customer_usage_events
+   WHERE kind='visit' AND created_at>now()-INTERVAL '7 days'
+   GROUP BY actor_id HAVING count(DISTINCT session_id)>1
+  ) repeat_sessions),
   'activeMinutes7d',(SELECT ceil(coalesce(sum(active_seconds),0)/60.0) FROM public.app_customer_usage_events WHERE kind='active_time' AND created_at>now()-INTERVAL '7 days'),
   'daily',(SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY d.day),'[]'::jsonb) FROM (
    SELECT to_char(date_trunc('day',created_at),'YYYY-MM-DD') AS day,
@@ -104,3 +112,25 @@ GRANT EXECUTE ON FUNCTION public.app_customer_usage_report() TO authenticated;
 
 -- Retention needs an approved server-side scheduled cleanup, not an exposed
 -- admin-side deletion RPC. Neither migrations nor analytics UI perform deletion.
+
+-- Staged retention implementation. Creating this privileged function does NOT
+-- schedule it, call it, or delete rows. Owner must approve service cron later.
+CREATE OR REPLACE FUNCTION public.app_prune_customer_usage(p_limit integer DEFAULT 1000)
+RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE removed integer;
+BEGIN
+ IF p_limit IS NULL OR p_limit<1 OR p_limit>5000 THEN
+  RAISE EXCEPTION 'Invalid batch size' USING ERRCODE='22023';
+ END IF;
+ WITH overdue AS (
+  SELECT id FROM public.app_customer_usage_events
+  WHERE created_at<now()-INTERVAL '90 days'
+  ORDER BY created_at LIMIT p_limit FOR UPDATE SKIP LOCKED
+ )
+ DELETE FROM public.app_customer_usage_events e USING overdue
+ WHERE e.id=overdue.id;
+ GET DIAGNOSTICS removed=ROW_COUNT;
+ RETURN removed;
+END $$;
+REVOKE ALL ON FUNCTION public.app_prune_customer_usage(integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.app_prune_customer_usage(integer) TO service_role;
