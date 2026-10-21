@@ -1,67 +1,84 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
 import { safeUsageScreen, customerUsagePayload } from './usageAnalyticsRules';
+import {usageStorageKeys} from './usageAnalyticsKeys';
 
-const CHOICE = 'allbee-customer-usage-consent-v1';
-const VISITOR = 'allbee-usage-visitor-v1';
-const SESSION = 'allbee-usage-session-v1';
 const DNT = typeof navigator !== 'undefined' && (navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true);
-
-function loadChoice() {
-  try { return DNT ? 'no' : localStorage.getItem(CHOICE); }
+function loadChoice(uid) {
+  const keys=usageStorageKeys(uid);
+  if(!keys)return null;
+  try { return DNT ? 'no' : (localStorage.getItem(keys.choice)==='yes'?'yes':localStorage.getItem(keys.choice)==='no'?'no':null); }
   catch { return 'no'; }
 }
-function ids() {
-  let visitorId = localStorage.getItem(VISITOR);
-  if (!visitorId) { visitorId = crypto.randomUUID(); localStorage.setItem(VISITOR, visitorId); }
+function ids(uid) {
+  const keys=usageStorageKeys(uid);
+  if(!keys)throw Error('Signed-in user required');
+  let visitorId = localStorage.getItem(keys.visitor);
+  if (!visitorId) { visitorId = crypto.randomUUID(); localStorage.setItem(keys.visitor, visitorId); }
   let record = null;
   const now = Date.now();
-  try { record = JSON.parse(sessionStorage.getItem(SESSION) || 'null'); } catch { /* reset corrupt session */ }
+  try { record = JSON.parse(sessionStorage.getItem(keys.session) || 'null'); } catch { /* reset */ }
   if (!record?.id || now - Number(record.last) > 1800000 || now < Number(record.last))
     record = { id: crypto.randomUUID(), last: now, counted: false };
   const newSession = !record.counted;
   record.counted = true;
   record.last = now;
-  sessionStorage.setItem(SESSION, JSON.stringify(record));
+  sessionStorage.setItem(keys.session, JSON.stringify(record));
   return { visitorId, sessionId: record.id, newSession };
 }
 
 /** Authenticated, opt-in route/activity counts only; never collect text, links or inputs. */
 export default function CustomerUsageTelemetry() {
   const [uid, setUid] = useState('');
-  const [choice, setChoice] = useState(loadChoice);
+  const [choice, setChoice] = useState(null);
   const [open, setOpen] = useState(false);
   const choiceRef = useRef(choice);
   useEffect(() => {
-    let mounted = true;
+    let mounted = true, observedAuthEvent=false;
+    const apply = nextUid => {
+      if(!mounted)return;
+      const verifiedId=usageStorageKeys(nextUid)?nextUid:'';
+      const newChoice=loadChoice(verifiedId);
+      choiceRef.current=newChoice; // Stop an old account's in-flight listener immediately.
+      setUid(verifiedId);
+      setChoice(newChoice);
+      setOpen(false);
+    };
     supabase.auth.getSession().then(({ data }) => {
-      if (mounted) setUid(data?.session?.user?.id || '');
-    }).catch(() => {});
+      if(!observedAuthEvent)apply(data?.session?.user?.id || '');
+    }).catch(() => { if(!observedAuthEvent)apply(''); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) setUid(session?.user?.id || '');
+      observedAuthEvent=true;
+      apply(session?.user?.id || '');
     });
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
   const choose = (next) => {
+    const keys=usageStorageKeys(uid);
+    if(!keys)return;
     choiceRef.current = next;
     setChoice(next);
     setOpen(false);
     try {
-      localStorage.setItem(CHOICE, next);
-      if (next === 'no') { localStorage.removeItem(VISITOR); sessionStorage.removeItem(SESSION); }
-    } catch { /* no persistent storage = no event IDs after reload */ }
+      localStorage.setItem(keys.choice, next);
+      if (next === 'no') {
+        localStorage.removeItem(keys.visitor);
+        sessionStorage.removeItem(keys.session);
+        sessionStorage.removeItem(keys.lastView);
+      }
+    } catch { /* no persistent storage: telemetry remains best effort */ }
   };
 
   useEffect(() => {
-    if (!uid || choice !== 'yes' || DNT) return undefined;
+    if (!usageStorageKeys(uid) || choice !== 'yes' || DNT) return undefined;
     let active = true;
     let current = null;
     let visibleSince = document.visibilityState === 'visible' ? Date.now() : 0;
     const emit = (kind, screen, target = null, seconds = null, trackingIds = null) => {
       if (!active || choiceRef.current !== 'yes' || !screen) return;
       try {
-        const id = trackingIds || ids();
+        const id = trackingIds || ids(uid);
         const payload = customerUsagePayload({ visitorId: id.visitorId, sessionId: id.sessionId,
           kind, screen, target, seconds });
         if (payload) Promise.resolve(supabase.rpc('app_record_customer_usage', payload)).catch(() => {});
@@ -70,13 +87,13 @@ export default function CustomerUsageTelemetry() {
     const view = () => {
       const next = safeUsageScreen(window.location.hash);
       if (!next) { current = null; return; }
-      const id = (() => { try { return ids(); } catch { return null; } })();
+      const id = (() => { try { return ids(uid); } catch { return null; } })();
       if (!id) return;
       current = next;
       if (id.newSession) emit('visit', current, null, null, id);
       let duplicate = false;
       try {
-        const key = 'allbee-usage-last-view-v1';
+        const key = usageStorageKeys(uid)?.lastView;
         const last = JSON.parse(sessionStorage.getItem(key) || 'null');
         const now = Date.now();
         duplicate = last?.screen === current && now - Number(last.at) < 800;
