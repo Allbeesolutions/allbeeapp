@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./AllbeeApp.jsx";
+import CustomerUsageTelemetry from "./CustomerUsageTelemetry.jsx";
 import { supabase } from "./supabaseClient";
 import { installChunkRecovery } from "./chunkRecovery.js";
 import { installAppUpdateGuard, CURRENT_BUILD_ID } from "./appUpdateGuard.js";
@@ -48,5 +49,6 @@ createRoot(document.getElementById("root")).render(
     <RootErrorBoundary>
       <App />
     </RootErrorBoundary>
+    <CustomerUsageTelemetry />
   </React.StrictMode>
 );
