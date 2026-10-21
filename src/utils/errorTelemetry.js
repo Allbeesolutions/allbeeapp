@@ -31,3 +31,20 @@ export function pageErrorPayload(error, info, path, buildId = "dev", source = "P
     p_metadata: { source, fingerprint, buildId: String(buildId).slice(0, 80) },
   };
 }
+
+// Avoid producing hundreds of identical telemetry writes during a render loop.
+// This is an in-memory throttle, not a persistent client identifier.
+const sentFingerprints = new Map();
+export function shouldSendCrashReport(payload, now = Date.now(), windowMs = 60_000) {
+  const fingerprint = payload?.p_metadata?.fingerprint;
+  if (!fingerprint) return false;
+  const previous = sentFingerprints.get(fingerprint);
+  if (previous != null && now - previous >= 0 && now - previous < windowMs) return false;
+  sentFingerprints.set(fingerprint, now);
+  // Keep the map bounded even if many distinct crashes occur.
+  if (sentFingerprints.size > 256) sentFingerprints.delete(sentFingerprints.keys().next().value);
+  return true;
+}
+export function resetCrashThrottleForTests() {
+  sentFingerprints.clear();
+}

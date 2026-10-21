@@ -44,6 +44,7 @@ import { coalesceRequest } from "./data/requestCoalescer.js";
 import { fetchTeamRows, fetchConfigRows, saveConfigRows, fetchFinancialLocks, lockFinancialPeriod, unlockFinancialPeriod } from "./data/system.js";
 import { fetchDashboardSnapshot, fetchFinanceAccountBalances } from "./data/dashboard.js";
 import { startUnreadNotificationPolling } from "./data/notificationPolling.js";
+import { startVisiblePolling } from "./data/visiblePolling.js";
 import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, WITHDRAWAL_READS, CRM_READS, AI_READS, CLIENT_READS, HELPDESK_READS, AGREEMENT_READS, createDataReaders } from "./data/readers.js";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
@@ -79,7 +80,7 @@ const LazyAPNSearch = React.lazy(() => import("./modules/apn/APNSearch.jsx").the
 import { APNTabErrorBoundary } from "./modules/apn/APNTabErrorBoundary.jsx";
 import PageErrorBoundary, { SafePageRenderer } from "./ui/PageErrorBoundary.jsx";
 import { CURRENT_BUILD_ID } from "./appUpdateGuard.js";
-import { pageErrorPayload, sanitizeCrashText } from "./utils/errorTelemetry.js";
+import { pageErrorPayload, sanitizeCrashText, shouldSendCrashReport } from "./utils/errorTelemetry.js";
 const LazyAPNSupportTickets = React.lazy(() => import("./modules/apn/SupportTickets.jsx").then((m) => ({ default: m.APNSupportTickets })));
 import { localISODate, todayISO, round2, money, dateValue, pad2, formatDateValue, fmtDate, fmtTime, sameMonth } from "./utils/dateFormat.js";
 import { apnPadId, apnLeadId, apnNumberOf, apnIdFor, normalizeManualApnId, nextAvailableApnNumber, resolveApnId, apnPercent } from "./modules/apn/ids.js";
@@ -3249,12 +3250,11 @@ class ErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { err: null }; }
   static getDerivedStateFromError(err) { return { err }; }
   componentDidCatch(err, info) {
-    console.error("[ALLBEE] app render error", err, info);
+    console.error("[ALLBEE] app render error", sanitizeCrashText(err?.message || err), sanitizeCrashText(info?.componentStack, 400));
     try {
       const buildId = CURRENT_BUILD_ID;
-      supabase.rpc("app_record_error", pageErrorPayload(
-        err, info, window.location.pathname + window.location.hash, buildId, "AppErrorBoundary"
-      )).catch(() => {});
+      const payload = pageErrorPayload(err, info, window.location.pathname + window.location.hash, buildId, "AppErrorBoundary");
+      if (shouldSendCrashReport(payload)) Promise.resolve(supabase.rpc("app_record_error", payload)).catch(() => {});
     } catch {}
   }
   render() {
@@ -5047,8 +5047,11 @@ export function APNPortal({ db, profile, people = [], session, signOut, isDark, 
 
   useEffect(() => {
     let active = true;
-    supabase.rpc("public_owner_profiles").then(({ data, error }) => {
+    Promise.resolve().then(() => supabase.rpc("public_owner_profiles")).then(({ data, error } = {}) => {
       if (active && !error) setPublicOwners(Array.isArray(data) ? data : []);
+    }).catch(() => {
+      // The profile directory is optional; a network rejection must never
+      // turn into an unhandled rejection or block the partner portal.
     });
     return () => { active = false; };
   }, []);
@@ -5087,13 +5090,14 @@ export function APNPortal({ db, profile, people = [], session, signOut, isDark, 
   // blocks the portal: on failure legacy figures remain.
   useEffect(() => {
     if (!["home", "wallet", "withdrawals", "profile", "district"].includes(tab)) return undefined;
-    let cancelled = false;
-    const loadSnapshot = () => fetchPartnerFinancialSnapshot().then((s) => { if (!cancelled) setFinSnap(s); }).catch(() => {});
-    loadSnapshot();
-    // Eligibility is date-derived (e.g. the 5th of the month), so a portal left
-    // open across midnight must refresh even when no database row changes.
-    const timer = window.setInterval(loadSnapshot, 5 * 60 * 1000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    // Eligibility is date-derived, so refresh on mount, tab return and each
+    // visible five-minute interval. Do not overlap reads or commit stale data
+    // after this tab unmounts.
+    return startVisiblePolling({
+      fetchValue: fetchPartnerFinancialSnapshot,
+      onValue: setFinSnap,
+      everyMs: 5 * 60 * 1000,
+    });
   }, [pid, tab, snapTick]);
 
   useEffect(() => {

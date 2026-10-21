@@ -4,7 +4,7 @@ import App from "./AllbeeApp.jsx";
 import { supabase } from "./supabaseClient";
 import { installChunkRecovery } from "./chunkRecovery.js";
 import { installAppUpdateGuard, CURRENT_BUILD_ID } from "./appUpdateGuard.js";
-import { pageErrorPayload, sanitizeCrashText } from "./utils/errorTelemetry.js";
+import { pageErrorPayload, sanitizeCrashText, shouldSendCrashReport } from "./utils/errorTelemetry.js";
 
 installChunkRecovery();
 installAppUpdateGuard();
@@ -17,14 +17,13 @@ class RootErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error, info) {
-    console.error("[ALLBEE] unrecoverable app render error", error, info);
+    console.error("[ALLBEE] unrecoverable app render error", sanitizeCrashText(error?.message || error), sanitizeCrashText(info?.componentStack, 400));
     // Best-effort production telemetry. Never let monitoring itself prevent the
     // recovery UI from rendering if auth/network/database is unavailable.
     try {
       const buildId = CURRENT_BUILD_ID;
-      supabase.rpc("app_record_error", pageErrorPayload(
-        error, info, window.location.pathname + window.location.hash, buildId, "RootErrorBoundary"
-      )).catch(() => {});
+      const payload = pageErrorPayload(error, info, window.location.pathname + window.location.hash, buildId, "RootErrorBoundary");
+      if (shouldSendCrashReport(payload)) Promise.resolve(supabase.rpc("app_record_error", payload)).catch(() => {});
     } catch { /* monitoring must never mask the original error */ }
   }
   render() {

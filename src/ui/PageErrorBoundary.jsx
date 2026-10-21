@@ -2,7 +2,8 @@ import React from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { supabase } from "../supabaseClient.js";
 import { isChunkLoadError, recoverFromChunkError } from "../chunkRecovery.js";
-import { pageErrorPayload } from "../utils/errorTelemetry.js";
+import { pageErrorPayload, sanitizeCrashText, shouldSendCrashReport } from "../utils/errorTelemetry.js";
+import { CURRENT_BUILD_ID } from "../appUpdateGuard.js";
 
 // Render inside the boundary: evaluating renderPage() in the parent JSX would
 // throw before an error boundary has a chance to intercept it.
@@ -21,14 +22,15 @@ export default class PageErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[ALLBEE] Isolated page error", error, info?.componentStack?.slice(0, 400));
+    console.error("[ALLBEE] Isolated page error", sanitizeCrashText(error?.message || error), sanitizeCrashText(info?.componentStack, 400));
     if (isChunkLoadError(error)) recoverFromChunkError(error);
     // Best-effort, bounded telemetry matching the root error boundary.
     // Never prevent the recovery UI if logging or the network is unavailable.
     try {
-      const buildId = typeof __ALLBEE_BUILD_ID__ !== "undefined" ? __ALLBEE_BUILD_ID__ : "dev";
+      const buildId = CURRENT_BUILD_ID;
       const path = window.location.pathname + window.location.hash;
-      Promise.resolve(supabase.rpc("app_record_error", pageErrorPayload(error, info, path, buildId))).catch(() => {});
+      const payload = pageErrorPayload(error, info, path, buildId);
+      if (shouldSendCrashReport(payload)) Promise.resolve(supabase.rpc("app_record_error", payload)).catch(() => {});
     } catch { /* telemetry is nonblocking */ }
     this.props.onError?.(error, info);
   }

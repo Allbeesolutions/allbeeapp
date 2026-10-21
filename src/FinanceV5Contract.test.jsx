@@ -92,7 +92,10 @@ describe("Finance v5 contracts", () => {
     expect(walletTimeSql).toContain("perform public.apn_consolidated_wallet_refresh(v_pid)");
     expect(walletTimeSql).toContain("perform public.apn_withdrawal_refresh_wallet(v_pid)");
     expect(walletTimeSql).toContain("language plpgsql volatile security definer");
-    expect(app).toContain("window.setInterval(loadSnapshot, 5 * 60 * 1000)");
+    expect(app).toContain("startVisiblePolling({");
+    expect(app).toContain("fetchValue: fetchPartnerFinancialSnapshot");
+    expect(app).toContain("everyMs: 5 * 60 * 1000");
+    expect(read("src/data/visiblePolling.js")).toContain('documentRef.visibilityState !== "hidden"');
     expect(apnAiEdge).toContain('supabase.rpc("apn_partner_financial_snapshot")');
     expect(apnAiEdge).toContain("Financial data is refreshing. Please try again shortly.");
   });

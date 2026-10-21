@@ -14,6 +14,7 @@
     "test:ui": "node scripts/ui/verify.mjs --full && node scripts/ui/verify.mjs --interactions",
     "test:crash-smoke": "node scripts/ui/crash-audit-verify.mjs --smoke",
     "test:navigation-smoke": "node scripts/ui/navigation-stress-verify.mjs --smoke",
+    "test:spa-soak-smoke": "node scripts/ui/spa-soak-verify.mjs --smoke",
     "test:bundle": "node scripts/release/check-bundle-budget.mjs",
     "certify": "npm test -- --run && npm run test:edge-auth && npm run build && npm run test:bundle",
     "test:edge-auth": "node scripts/security/check-edge-auth.mjs",
