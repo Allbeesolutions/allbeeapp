@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AllbeeAIFloatingAssistant } from "./ui/AllbeeMascot.jsx";
-import ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx";
+const LazyProfilePhotoCropper = React.lazy(() => import("./ui/ProfilePhotoCropper.jsx"));
 import PageErrorBoundary from "./ui/PageErrorBoundary.jsx";
 import { Sparkles, User, Upload, Check, ShieldCheck, FileText, Banknote, FileCheck2, FolderKanban, ArrowRight, RefreshCw } from "./icons.jsx";
 const LazyAllbeeAI = React.lazy(() => import("./AllbeeAI.jsx"));
@@ -10,12 +10,16 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   const { companyOf, supabase, emitToast, ToastHost, GlobalPullToRefresh, FounderTap, PortalRefreshButton, Avatar, LogOut, Home, Headset, Link2, Download, ExternalLink, Mail, MessageCircle, LazyPortalHelpdesk, aiConfigOf, aiConfigured, assigneeText, callAI, ROLE_LABEL, AI_QUICK_PROMPTS, renderAIText, fmtDate, fmtDateTime, money, LOGO_ICON, uploadAttachment } = runtime;
   const myId = profile?.id;
   const co = companyOf(config);
-  const posts = (Array.isArray(db?.portal_posts) ? db.portal_posts : []).filter((p) => p.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  // A missing client ID must never match records that also lack an owner ID.
+  // Frontend scoping complements (and never replaces) server RLS.
+  const owned = (rows, ownerKey = "clientId") =>
+    myId && Array.isArray(rows) ? rows.filter((row) => row && typeof row === "object" && row[ownerKey] === myId) : [];
+  const posts = owned(db?.portal_posts).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const updates = posts.filter((p) => (p.kind || "update") !== "deliverable");
   const deliverables = posts.filter((p) => (p.kind || "update") === "deliverable");
-  const files = (Array.isArray(db?.documents) ? db.documents : []).filter((d) => d.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const quotes = (Array.isArray(db?.quotations) ? db.quotations : []).filter((q) => q.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const invoices = (Array.isArray(db?.invoices) ? db.invoices : []).filter((iv) => iv.clientId === myId).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const files = owned(db?.documents).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const quotes = owned(db?.quotations).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const invoices = owned(db?.invoices).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   // Never hand the client assistant the wider workspace snapshot. Its AI context
   // is built only from rows already scoped to this signed-in client.
   const clientAIDb = {
@@ -78,9 +82,23 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
   };
   const uploadClientPhoto = (e) => { const file=e.target.files?.[0]; if(!file) return; if(!["image/jpeg","image/png","image/webp"].includes(file.type)){emitToast("Choose a JPG, PNG, or WEBP image.","error");e.target.value="";return;} setCropFile(file); e.target.value=""; };
   const applyClientCroppedPhoto = async (file) => { setProfileBusy(true); try { const up=await uploadAttachment(file,{publicMedia:true}); await saveMyProfile?.({photo_url:up.url}); setCropFile(null); emitToast("Profile photo updated.","success"); await reload(); } catch(er) { emitToast(er.message || "Could not upload photo.","error"); } finally { setProfileBusy(false); } };
+  const removeClientPhoto = async () => {
+    if (profileBusy || !profile?.photo_url) return;
+    setProfileBusy(true);
+    try {
+      if (typeof saveMyProfile !== "function") throw new Error("Profile editing is unavailable.");
+      await saveMyProfile({ photo_url: null });
+      await reload();
+      emitToast("Profile photo removed.", "success");
+    } catch (error) {
+      emitToast(error?.message || "Could not remove profile photo.", "error");
+    } finally {
+      setProfileBusy(false);
+    }
+  };
   const [helpFormOpen, setHelpFormOpen] = useState(false);
   const [helpBusy, setHelpBusy] = useState(false);
-  const myTickets = (Array.isArray(db?.support_tickets) ? db.support_tickets : []).filter((t) => t.client_id === myId).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const myTickets = owned(db?.support_tickets, "client_id").sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
   const openTickets = myTickets.filter((t) => !["resolved", "closed"].includes(t.status)).length;
   const createSupportTicket = async (f) => {
     setHelpBusy(true);
@@ -95,12 +113,21 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
     finally { setHelpBusy(false); }
   };
   const sendSupportMessage = async (ticketId, body) => {
-    if (!(body || "").trim()) return false;
-    const { error } = await supabase.rpc("apn_helpdesk_client_message", { p_ticket_id: ticketId, p_message: body.trim() });
-    if (error) { emitToast(error.message || "Could not send your message.", "error"); return false; }
-    emitToast("Message sent.", "success");
-    await reload();
-    return true;
+    if (!myId || typeof body !== "string" || !body.trim()) return false;
+    if (!myTickets.some((ticket) => ticket.id === ticketId)) {
+      emitToast("That support ticket is not available to this account.", "error");
+      return false;
+    }
+    try {
+      const { error } = await supabase.rpc("apn_helpdesk_client_message", { p_ticket_id: ticketId, p_message: body.trim() });
+      if (error) throw error;
+      emitToast("Message sent.", "success");
+      await reload();
+      return true;
+    } catch (error) {
+      emitToast(error?.message || "Could not send your message.", "error");
+      return false;
+    }
   };
   return (
     <div className="allbee" data-theme={isDark ? "dark" : "light"} style={{ minHeight: "100vh" }}>
@@ -150,7 +177,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
             : <div style={{ overflowX: "auto", marginTop: 10 }}><table className="tbl">
               <thead><tr><th>Quotation</th><th>Status</th><th className="num-cell">Total</th></tr></thead>
               <tbody>{quotes.map((q) => (
-                <tr key={q.id}><td><div style={{ fontWeight: 600 }}>{q.title || "Quotation"}</div><div className="hint-line" style={{ fontSize: 11 }}>{(q.items || []).length} item{(q.items || []).length === 1 ? "" : "s"}{q.pdfUrl && <> · <a href={q.pdfUrl} target="_blank" rel="noreferrer">PDF</a></>}</div></td>
+                <tr key={q.id}><td><div style={{ fontWeight: 600 }}>{q.title || "Quotation"}</div><div className="hint-line" style={{ fontSize: 11 }}>{(Array.isArray(q.items) ? q.items : []).length} item{(Array.isArray(q.items) ? q.items : []).length === 1 ? "" : "s"}{q.pdfUrl && <> · <a href={q.pdfUrl} target="_blank" rel="noreferrer">PDF</a></>}</div></td>
                   <td><span className={"badge " + (q.status === "Accepted" ? "pos" : q.status === "Rejected" ? "neg" : "pri")}>{q.status}</span></td>
                   <td className="num-cell mono">{money(q.total)}</td></tr>
               ))}</tbody>
@@ -189,7 +216,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
           {files.length === 0 ? <p className="hint-line" style={{ margin: "8px 0 0" }}>No files shared yet.</p>
             : <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>{files.map((d) => (
               <div key={d.id} className="item-row" style={{ padding: "10px 0" }}>
-                <div className="item-main"><div className="item-title" style={{ fontSize: 14 }}>{d.title}</div><div className="item-meta"><span className="tag">{d.category}</span><span>{fmtDate(new Date(d.createdAt).toISOString().slice(0, 10))}</span></div></div>
+                <div className="item-main"><div className="item-title" style={{ fontSize: 14 }}>{d.title}</div><div className="item-meta"><span className="tag">{d.category}</span><span>{d.createdAt && Number.isFinite(new Date(d.createdAt).getTime()) ? fmtDate(new Date(d.createdAt).toISOString().slice(0, 10)) : "—"}</span></div></div>
                 <a className="btn sm" href={d.url} target="_blank" rel="noreferrer"><ExternalLink size={13} />Open</a>
               </div>
             ))}</div>}
@@ -206,7 +233,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
 
         {portalView === "profile" && <div className="client-profile-grid">
           <section className="card client-profile-card"><div className="client-profile-cover"></div><div className="client-profile-avatar"><Avatar name={profile?.name || "C"} url={profile?.photo_url} size={86}/><button className="btn sm" onClick={() => photoRef.current?.click()} disabled={profileBusy}><Upload size={14}/>Change photo</button><input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden onChange={uploadClientPhoto}/></div><h2>{profile?.name}</h2><p>{profile?.email}</p><span className="badge pos"><ShieldCheck size={12}/> Verified client account</span></section>
-          <section className="card client-profile-form"><div className="client-section-head"><div><span className="client-eyebrow">PERSONAL DETAILS</span><h3>My profile</h3></div></div><div className="grid2"><label>Full name<input className="input" value={profileDraft.name} onChange={e=>setProfileDraft(x=>({...x,name:e.target.value}))}/></label><label>Mobile<input className="input" type="tel" value={profileDraft.mobile} onChange={e=>setProfileDraft(x=>({...x,mobile:e.target.value}))}/></label><label>Date of birth<input className="input" type="date" value={profileDraft.dob || ""} onChange={e=>setProfileDraft(x=>({...x,dob:e.target.value}))}/></label><label>Username<input className="input" value={profileDraft.username} onChange={e=>setProfileDraft(x=>({...x,username:e.target.value}))}/></label></div><label>Sign-in email<input className="input" value={profile?.email || ""} disabled/></label><div className="client-profile-actions"><button className="btn primary" onClick={saveClientProfile} disabled={profileBusy}>{profileBusy?<RefreshCw size={15} className="spin"/>:<Check size={15}/>}Save changes</button><button className="btn" onClick={()=>saveMyProfile?.({photo_url:null}).then(reload)} disabled={!profile?.photo_url}>Remove photo</button><button className="btn" onClick={signOut}><LogOut size={15}/>Sign out</button></div><div className="client-security-note"><ShieldCheck size={18}/><div><b>Account security</b><span>Your email and client access are protected by ALLBEE authentication. Contact support if you need your sign-in email changed.</span></div></div><div className="client-password-card"><div className="client-section-head"><div><span className="client-eyebrow">SECURITY</span><h3>Change password</h3></div></div><div className="grid2"><label>Current password<input className="input" type="password" autoComplete="current-password" value={passwordDraft.current} onChange={e=>setPasswordDraft(x=>({...x,current:e.target.value}))}/></label><span></span><label>New password<input className="input" type="password" autoComplete="new-password" value={passwordDraft.next} onChange={e=>setPasswordDraft(x=>({...x,next:e.target.value}))}/></label><label>Confirm new password<input className="input" type="password" autoComplete="new-password" value={passwordDraft.confirm} onChange={e=>setPasswordDraft(x=>({...x,confirm:e.target.value}))}/></label></div><button className="btn" onClick={changeClientPassword} disabled={passwordBusy}>{passwordBusy?<RefreshCw size={15} className="spin"/>:<ShieldCheck size={15}/>}Change password</button></div></section>
+          <section className="card client-profile-form"><div className="client-section-head"><div><span className="client-eyebrow">PERSONAL DETAILS</span><h3>My profile</h3></div></div><div className="grid2"><label>Full name<input className="input" value={profileDraft.name} onChange={e=>setProfileDraft(x=>({...x,name:e.target.value}))}/></label><label>Mobile<input className="input" type="tel" value={profileDraft.mobile} onChange={e=>setProfileDraft(x=>({...x,mobile:e.target.value}))}/></label><label>Date of birth<input className="input" type="date" value={profileDraft.dob || ""} onChange={e=>setProfileDraft(x=>({...x,dob:e.target.value}))}/></label><label>Username<input className="input" value={profileDraft.username} onChange={e=>setProfileDraft(x=>({...x,username:e.target.value}))}/></label></div><label>Sign-in email<input className="input" value={profile?.email || ""} disabled/></label><div className="client-profile-actions"><button className="btn primary" onClick={saveClientProfile} disabled={profileBusy}>{profileBusy?<RefreshCw size={15} className="spin"/>:<Check size={15}/>}Save changes</button><button className="btn" onClick={removeClientPhoto} disabled={!profile?.photo_url || profileBusy}>Remove photo</button><button className="btn" onClick={signOut}><LogOut size={15}/>Sign out</button></div><div className="client-security-note"><ShieldCheck size={18}/><div><b>Account security</b><span>Your email and client access are protected by ALLBEE authentication. Contact support if you need your sign-in email changed.</span></div></div><div className="client-password-card"><div className="client-section-head"><div><span className="client-eyebrow">SECURITY</span><h3>Change password</h3></div></div><div className="grid2"><label>Current password<input className="input" type="password" autoComplete="current-password" value={passwordDraft.current} onChange={e=>setPasswordDraft(x=>({...x,current:e.target.value}))}/></label><span></span><label>New password<input className="input" type="password" autoComplete="new-password" value={passwordDraft.next} onChange={e=>setPasswordDraft(x=>({...x,next:e.target.value}))}/></label><label>Confirm new password<input className="input" type="password" autoComplete="new-password" value={passwordDraft.confirm} onChange={e=>setPasswordDraft(x=>({...x,confirm:e.target.value}))}/></label></div><button className="btn" onClick={changeClientPassword} disabled={passwordBusy}>{passwordBusy?<RefreshCw size={15} className="spin"/>:<ShieldCheck size={15}/>}Change password</button></div></section>
         </div>}
 
         {portalView === "chat" && <React.Suspense fallback={<div className="card" aria-busy="true">Loading chat…</div>}><LazyClientSupportChat profile={profile} runtime={runtime}/></React.Suspense>}
@@ -217,7 +244,7 @@ export default function ClientPortal({ db, profile, signOut, isDark, config, rel
         </PageErrorBoundary>
       </div>
       <AllbeeAIFloatingAssistant onOpen={() => navigateClient("ai")} displayName={profile?.name} context={portalView} surface="client" collisionRootSelector=".client-portal-content" hidden={helpFormOpen || !clientAIEnabled || portalView === "chat"} />
-      {cropFile&&<ProfilePhotoCropper file={cropFile} title="Crop client profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyClientCroppedPhoto}/>}
+      {cropFile && <React.Suspense fallback={<div role="status" aria-busy="true">Loading photo editor…</div>}><LazyProfilePhotoCropper file={cropFile} title="Crop client profile photo" onCancel={()=>setCropFile(null)} onConfirm={applyClientCroppedPhoto}/></React.Suspense>}
     </div>
   );
 }

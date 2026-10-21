@@ -34,7 +34,8 @@ describe("profile photo crop contract",()=>{
     const apn=read("APNProfile.jsx");
     expect(app).toContain('LazyProfilePhotoCropper = React.lazy(() => import("./ui/ProfilePhotoCropper.jsx"))');
     expect(app.match(/<LazyProfilePhotoCropper/g)?.length).toBeGreaterThanOrEqual(2); // onboarding + internal profile
-    expect(client).toContain('ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx"');
+    expect(client).toContain('LazyProfilePhotoCropper = React.lazy(() => import("./ui/ProfilePhotoCropper.jsx"))');
+    expect(client).toContain("<LazyProfilePhotoCropper");
     expect(client).toContain("applyClientCroppedPhoto");
     expect(apn).toContain('ProfilePhotoCropper from "./ui/ProfilePhotoCropper.jsx"');
     expect(apn).toContain("applyCroppedPhoto");

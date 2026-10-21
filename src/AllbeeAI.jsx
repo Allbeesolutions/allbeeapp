@@ -58,15 +58,22 @@ export default function AllbeeAI({ db, config, me, role, isAdmin, go, runtime })
   useEffect(() => {
     if (!configured || isClient) return;
     let alive = true;
-    Promise.all([
+    Promise.allSettled([
       supabase.rpc("knowledge_get_pricing", { p_service: "website" }),
       supabase.rpc("knowledge_get_pricing", { p_service: "marketing" }),
       supabase.rpc("knowledge_get_pricing", { p_service: "course" }),
       supabase.rpc("knowledge_search", { p_query: "", p_limit: 12 }),
     ]).then((responses) => {
       if (!alive) return;
-      const [website, marketing, course, search] = responses.map((r) => r.data).map((value) => value || {});
-      setKnowledgeContext(JSON.stringify({ pricing: { website, marketing, course }, knowledge: Array.isArray(search) ? search : [] }));
+      // Each read is optional; one failed pricing RPC must not discard all
+      // other pricing/knowledge context or prevent a useful AI answer.
+      const getData = (item) => item.status === "fulfilled" && !item.value?.error
+        ? item.value?.data ?? null : null;
+      const [website, marketing, course, search] = responses.map(getData);
+      setKnowledgeContext(JSON.stringify({
+        pricing: { website: website || {}, marketing: marketing || {}, course: course || {} },
+        knowledge: Array.isArray(search) ? search.filter((row) => row && typeof row === "object") : [],
+      }));
     }).catch(() => { if (alive) setKnowledgeContext(""); });
     return () => { alive = false; };
   }, [configured, isClient]);

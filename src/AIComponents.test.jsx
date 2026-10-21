@@ -35,6 +35,32 @@ describe("ALLBEE AI surfaces", () => {
   });
 });
 
+describe("AI optional catalog resilience", () => {
+  it("keeps successful catalog reads when one pricing request fails", async () => {
+    const rpc=vi.fn(async (name, params)=>{
+      if(name==="knowledge_get_pricing" && params.p_service==="marketing") throw new Error("catalog temporarily offline");
+      if(name==="knowledge_get_pricing" && params.p_service==="website") return {data:{name:"Website package"},error:null};
+      if(name==="knowledge_get_pricing") return {data:null,error:{message:"unavailable"}};
+      return {data:[{title:"Reliable reference"}],error:null};
+    });
+    const invoke=vi.fn(async ()=>({data:{rows:[]},error:null}));
+    const callAI=vi.fn().mockResolvedValue("Resilient answer");
+    const runtime={...baseRuntime,callAI,supabase:{rpc,functions:{invoke}}};
+    render(<AllbeeAI db={{}} config={{}} me={{name:"Alex"}} role="admin" isAdmin go={vi.fn()} runtime={runtime}/>);
+    await waitFor(()=>expect(rpc).toHaveBeenCalledTimes(4));
+    await waitFor(()=>expect(screen.getByLabelText("Message ALLBEE AI")).toBeTruthy());
+    await new Promise(resolve=>setTimeout(resolve,20));
+    fireEvent.change(screen.getByLabelText("Message ALLBEE AI"),{target:{value:"Help with pricing"}});
+    fireEvent.click(screen.getByRole("button",{name:"Send message"}));
+    await waitFor(()=>expect(callAI).toHaveBeenCalled());
+    const system=callAI.mock.calls.at(-1)[1];
+    expect(system).toContain("Website package");
+    expect(system).toContain("Reliable reference");
+    expect(system).not.toContain("catalog temporarily offline");
+    expect(screen.getByText("Resilient answer")).toBeTruthy();
+  });
+});
+
 describe("AI Intelligence Center", () => {
   it("loads the dashboard and exercises search, settings, and refresh actions", async () => {
     const rpc = intelligenceRuntime.supabase.rpc;

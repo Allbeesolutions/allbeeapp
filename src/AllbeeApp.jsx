@@ -43,6 +43,7 @@ import { snapshotQueryMetrics } from "./data/queryMetrics.js";
 import { coalesceRequest } from "./data/requestCoalescer.js";
 import { fetchTeamRows, fetchConfigRows, saveConfigRows, fetchFinancialLocks, lockFinancialPeriod, unlockFinancialPeriod } from "./data/system.js";
 import { fetchDashboardSnapshot, fetchFinanceAccountBalances } from "./data/dashboard.js";
+import { startUnreadNotificationPolling } from "./data/notificationPolling.js";
 import { TABLES, REFERRAL_READS, APN_ACTION_BADGE_MAP, APN_ACTION_BADGE_READS, WITHDRAWAL_READS, CRM_READS, AI_READS, CLIENT_READS, HELPDESK_READS, AGREEMENT_READS, createDataReaders } from "./data/readers.js";
 import { APNGate, APNMetric } from "./modules/apn/Shared.jsx";
 import { APN_COMMISSION_RULES, APN_WITHDRAWAL_TYPES, APN_TICKET_STATUSES, APN_TICKET_TONE, APN_AI_CHIPS, APN_APPROVERS, AGREEMENT_CATEGORIES } from "./modules/apn/constants.js";
@@ -6101,15 +6102,14 @@ export default function App() {
   }, [db?.transactions, db?.withdrawals, db?.apn_consolidated_wallets, canFinance, refreshFinanceBalances]);
 
   useEffect(() => {
-    let alive = true;
-    if (!session?.user?.id) { setServerUnreadNotifs(null); return () => { alive = false; }; }
-    const refreshUnread = async () => {
-      const { data, error } = await supabase.rpc("notification_unread_count");
-      if (alive && !error && typeof data === "number") setServerUnreadNotifs(data);
-    };
-    refreshUnread();
-    const timer = window.setInterval(refreshUnread, 30000);
-    return () => { alive = false; window.clearInterval(timer); };
+    if (!session?.user?.id) {
+      setServerUnreadNotifs(null);
+      return undefined;
+    }
+    return startUnreadNotificationPolling({
+      fetchCount: () => supabase.rpc("notification_unread_count"),
+      onCount: setServerUnreadNotifs,
+    });
   }, [session?.user?.id]);
 
   // Canonical server-side dashboard snapshots. These RPCs already exist in the
