@@ -24,6 +24,7 @@ jobs:
             export PATH="$(pg_config --bindir):$PATH"
           fi
           npm run test:customer-usage-sql
+          bash scripts/test-neon-foundation.sh
       - run: npx playwright install --with-deps chromium
       - run: npm run test:crash-smoke
       - run: npm run test:navigation-smoke
