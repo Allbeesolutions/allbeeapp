@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import {fillCustomerDays} from './customerAnalyticsFormatting';
+import {fillCustomerDays,verifiedCustomerUsageReport} from './customerAnalyticsFormatting';
 
 /** All responses are server-aggregated and guarded by public.is_admin(). */
 export default function CustomerUsageAnalytics() {
@@ -12,8 +12,7 @@ export default function CustomerUsageAnalytics() {
     try {
       const { data: report, error: failure } = await supabase.rpc('app_customer_usage_report');
       if (failure) throw failure;
-      if (!report || typeof report !== 'object') throw new Error('Verified usage analytics report unavailable');
-      setData(report);
+      setData(verifiedCustomerUsageReport(report));
     } catch (err) { setData(null); setError(err?.message || 'Admin analytics unavailable'); }
     finally { setBusy(false); }
   }, []);

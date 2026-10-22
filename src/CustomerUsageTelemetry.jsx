@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { safeUsageScreen, customerUsagePayload } from './usageAnalyticsRules';
+import { safeUsageScreen, customerUsagePayload, privacySignalEnabled } from './usageAnalyticsRules';
 import {usageStorageKeys} from './usageAnalyticsKeys';
 
-const DNT = typeof navigator !== 'undefined' && (navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true);
+const DNT = typeof navigator !== 'undefined' && privacySignalEnabled(navigator);
 function loadChoice(uid) {
   const keys=usageStorageKeys(uid);
   if(!keys)return null;

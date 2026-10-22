@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS public.app_customer_usage_events (
  screen text NOT NULL CHECK (screen IN (
   'dashboard','tasks','projects','marketing','courses','attendance',
   'team','clients','leads','apn','notifications','progress','knowledge',
-  'learning','updates','testing','performance'
+  'learning','updates','testing','performance',
+  'client_home','apn_home','apn_leads','apn_network','apn_targets',
+  'apn_learn','apn_achievements','apn_leaderboard'
  )),
  target text CHECK (target IS NULL OR target IN ('nav','button')),
  active_seconds integer CHECK (active_seconds IS NULL OR active_seconds BETWEEN 0 AND 180),
@@ -43,7 +45,9 @@ BEGIN
  OR p_kind NOT IN ('visit','view','tap','active_time')
  OR p_screen NOT IN ('dashboard','tasks','projects','marketing','courses',
   'attendance','team','clients','leads','apn','notifications','progress',
-  'knowledge','learning','updates','testing','performance')
+  'knowledge','learning','updates','testing','performance',
+  'client_home','apn_home','apn_leads','apn_network','apn_targets',
+  'apn_learn','apn_achievements','apn_leaderboard')
  OR (p_target IS NOT NULL AND p_target NOT IN ('nav','button'))
  OR (p_seconds IS NOT NULL AND (p_seconds<0 OR p_seconds>180))
  OR (p_kind<>'tap' AND p_target IS NOT NULL)
@@ -85,12 +89,12 @@ BEGIN
   ) repeat_sessions),
   'activeMinutes7d',(SELECT ceil(coalesce(sum(active_seconds),0)/60.0) FROM public.app_customer_usage_events WHERE kind='active_time' AND created_at>now()-INTERVAL '7 days'),
   'daily',(SELECT coalesce(jsonb_agg(to_jsonb(d) ORDER BY d.day),'[]'::jsonb) FROM (
-   SELECT to_char(date_trunc('day',created_at),'YYYY-MM-DD') AS day,
+   SELECT to_char(date_trunc('day',created_at AT TIME ZONE 'UTC'),'YYYY-MM-DD') AS day,
     count(*) FILTER (WHERE kind='visit') visits,
     count(*) FILTER (WHERE kind='view') views,
     count(DISTINCT actor_id) users
    FROM public.app_customer_usage_events WHERE created_at>now()-INTERVAL '30 days'
-   GROUP BY date_trunc('day',created_at)
+   GROUP BY date_trunc('day',created_at AT TIME ZONE 'UTC')
   ) d),
   'screens',(SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.views DESC),'[]'::jsonb) FROM (
    SELECT screen,count(*) views FROM public.app_customer_usage_events
@@ -100,7 +104,7 @@ BEGIN
   'users',(SELECT coalesce(jsonb_agg(to_jsonb(u) ORDER BY u.visits DESC),'[]'::jsonb) FROM (
    SELECT substring(actor_id::text,1,8) actor,
     count(*) FILTER(WHERE kind='visit') visits,
-    count(DISTINCT date_trunc('day',created_at)) days_active
+    count(DISTINCT date_trunc('day',created_at AT TIME ZONE 'UTC')) days_active
    FROM public.app_customer_usage_events WHERE created_at>now()-INTERVAL '7 days'
    GROUP BY actor_id ORDER BY visits DESC LIMIT 50
   ) u)
