@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./AllbeeApp.jsx";
+import { customerAnalyticsEnabled } from "./analyticsReleaseGate.js";
 const LazyCustomerUsageTelemetry = React.lazy(() => import("./CustomerUsageTelemetry.jsx"));
 import { supabase } from "./supabaseClient";
 import { installChunkRecovery } from "./chunkRecovery.js";
@@ -49,6 +50,6 @@ createRoot(document.getElementById("root")).render(
     <RootErrorBoundary>
       <App />
     </RootErrorBoundary>
-    <React.Suspense fallback={null}><LazyCustomerUsageTelemetry /></React.Suspense>
+    {customerAnalyticsEnabled() && <React.Suspense fallback={null}><LazyCustomerUsageTelemetry /></React.Suspense>}
   </React.StrictMode>
 );

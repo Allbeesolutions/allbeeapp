@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach } from "vitest";
 import PlatformV6Operations from "./PlatformV6Operations.jsx";
 import { verifiedCustomerUsageReport } from "./customerAnalyticsFormatting.js";
 
@@ -14,9 +15,18 @@ const valid = {
   screens:[{screen:"dashboard",views:3}],
   users:[{actor:"11111111",visits:1,days_active:1}],
 };
-afterEach(()=>{cleanup();mocks.rpc.mockReset()});
+beforeEach(()=> vi.stubEnv("VITE_CUSTOMER_ANALYTICS_ENABLED","true"));
+afterEach(()=>{cleanup();mocks.rpc.mockReset();vi.unstubAllEnvs()});
 
 describe("privileged customer usage dashboard",()=>{
+  it("hides analytics entry before backend release is approved",async()=>{
+    vi.stubEnv("VITE_CUSTOMER_ANALYTICS_ENABLED","false");
+    mocks.rpc.mockResolvedValue({data:{automation:{}},error:null});
+    render(<PlatformV6Operations money={String}/>);
+    await screen.findByText("Rules");
+    expect(screen.queryByRole("button",{name:/Customer activity/})).toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalledWith("app_customer_usage_report");
+  });
   it("remains reachable after unrelated Platform V6 operations RPC failure",async()=>{
     mocks.rpc.mockImplementation(async name=>{
       if(name==="platform_v6_ops_snapshot") return {data:null,error:{message:"General operations service unavailable"}};
