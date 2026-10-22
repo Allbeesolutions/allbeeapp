@@ -177,7 +177,7 @@ describe("APN Head Cockpits", () => {
     render(<APNPortal db={baseDb} profile={{ id: "dh", role: "district_head", active: true, approved: true, status: "active" }} session={{ user: { id: "dh" } }} signOut={vi.fn()} isDark={false} mutate={vi.fn()} reload={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("District Command")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /Partners \(1\)/i }));
-    expect(screen.getByText("Assigned Partner")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Assigned Partner")).toBeTruthy());
     expect(screen.queryByText("Foreign Partner")).toBeNull();
   });
 

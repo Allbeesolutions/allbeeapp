@@ -2,17 +2,20 @@ import { chromium } from "playwright";
 import { createServer } from "vite";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { heapRetentionResult } from "./heapTrend.mjs";
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const smoke = process.argv.includes("--smoke");
-const widths = smoke ? [390] : [390, 1440];
-const rounds = smoke ? 2 : 8;
+const memoryMode = process.argv.includes("--memory");
+const widths = smoke || memoryMode ? [390] : [390, 1440];
+const rounds = smoke ? 2 : memoryMode ? 20 : 8;
 const routesByRole = {
   superadmin: ["dashboard", "concepts", "ai-center", "dashboard"],
   partner: ["apn/home", "apn/chat", "apn/ai", "apn/home"],
   client: ["client/home", "client/chat", "client/ai", "client/home"],
 };
 const results = [];
+const memoryResults = [];
 const server = await createServer({
   root,
   server: { host: "127.0.0.1", port: 0 },
@@ -64,6 +67,7 @@ try {
         );
         const startMetrics = await cdp.send("Performance.getMetrics");
         const heapOf = obj => obj.metrics.find(x => x.name === "JSHeapUsedSize")?.value ?? 0;
+        const checkpoints = [];
         for (let i = 0; i < rounds * routes.length; i++) {
           const route = routes[i % routes.length];
           const oldErrorCount = errors.length;
@@ -83,12 +87,27 @@ try {
           const pass = !error && !snapshot.overflow && !snapshot.fatal && errors.length === oldErrorCount;
           results.push({ role, route, width, pass, durationMs: Date.now() - started, error: error || errors.slice(oldErrorCount).join(" | ") });
           if (!pass) break;
+          // Compare only post-warmup, explicitly garbage-collected snapshots.
+          // Initial and final uncollected heaps are not a leak measurement.
+          if (memoryMode && [4, 12, 20].includes((i + 1) / routes.length)) {
+            await cdp.send("HeapProfiler.collectGarbage");
+            await page.waitForTimeout(80);
+            const metric = await cdp.send("Performance.getMetrics");
+            checkpoints.push(heapOf(metric));
+          }
         }
         const endingMetrics = await cdp.send("Performance.getMetrics");
+        if (memoryMode) {
+          const trend = checkpoints.length >= 3
+            ? heapRetentionResult(checkpoints)
+            : { pass: false, error: "Navigation failed before three GC checkpoints" };
+          memoryResults.push({ role, width, ...trend });
+        }
         console.log(JSON.stringify({
           role, width, checks: results.filter(x => x.role === role && x.width === width).length,
           heapStartMiB: +(heapOf(startMetrics) / 1048576).toFixed(2),
           heapEndMiB: +(heapOf(endingMetrics) / 1048576).toFixed(2),
+          memory: memoryMode ? memoryResults.at(-1) : undefined,
         }));
       } finally {
         await cdp.detach();
@@ -99,9 +118,9 @@ try {
 } finally {
   const evidence = resolve(root, ".ai", "spa-soak-evidence");
   mkdirSync(evidence, { recursive: true });
-  writeFileSync(resolve(evidence, smoke ? "smoke.json" : "full.json"), JSON.stringify({ mocked: true, results }, null, 2));
+  writeFileSync(resolve(evidence, smoke ? "smoke.json" : memoryMode ? "memory.json" : "full.json"), JSON.stringify({ mocked: true, memoryMode, results, memoryResults }, null, 2));
   await browser.close();
   await server.close();
 }
-console.log(JSON.stringify({ checked: results.length, failed: results.filter(x => !x.pass).length }));
-if (results.some(x => !x.pass)) process.exitCode = 1;
+console.log(JSON.stringify({ checked: results.length, failed: results.filter(x => !x.pass).length, memoryFailures: memoryResults.filter(x => !x.pass).length }));
+if (results.some(x => !x.pass) || memoryResults.some(x => !x.pass)) process.exitCode = 1;

@@ -7,7 +7,7 @@ const downloadQuotePdf = async (...args) => (await import("./APNLeadForm.jsx")).
 import { APNPageIntro, APNSkeleton, useAPNDrawer } from "./modules/apn/Experience.jsx";
 import React, { useState, useEffect, useMemo, useCallback, useRef, useId } from "react";
 import { apnHealthScore, apnRecommendations, apnRiskIndicators } from "./modules/apn/health.js";
-import { APNInactive } from "./modules/apn/Inactive.jsx";
+const APNInactive = React.lazy(() => import("./modules/apn/Inactive.jsx").then(m => ({default:m.APNInactive})));
 import { apnStatusLabel, apnStatusClass, apnAdminLevel, apnHealthBand } from "./modules/apn/helpers.js";
 import * as Icons from "./icons.jsx";
 import "./allbee.css";
@@ -64,16 +64,16 @@ import { apnAiCategoryFor } from "./modules/apn/ai.js";
 import { apnApproverFor, apnNotificationSender, apnApprovalNotification, apnNotify } from "./modules/apn/admin-notifications.js";
 import { apnSafeHtml } from "./modules/apn/content.js";
 import { apnNormalizeFinanceCollections, apnNormalizeLinkedCollections } from "./modules/apn/finance.js";
-import { APNCheckIn } from "./modules/apn/AttendanceCheckIn.jsx";
+const APNCheckIn = React.lazy(() => import("./modules/apn/AttendanceCheckIn.jsx").then(m => ({default:m.APNCheckIn})));
 import ExpandableChatButton from "./ui/ExpandableChatButton.jsx";
 import { resolvePersonAvatar } from "./identity/avatarResolver.js";
 const LazyAPNDocuments = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNDocuments })));
 const LazyAPNNotifications = React.lazy(() => import("./modules/apn/PortalContent.jsx").then((m) => ({ default: m.APNNotifications })));
-import { APNBankDetails } from "./modules/apn/BankDetails.jsx";
+const APNBankDetails = React.lazy(() => import("./modules/apn/BankDetails.jsx").then(m => ({default:m.APNBankDetails})));
 const LazyAPNAchievements = React.lazy(() => import("./modules/apn/RankViews.jsx").then((m) => ({ default: m.APNAchievements })));
 const LazyAPNLeaderboard = React.lazy(() => import("./modules/apn/RankViews.jsx").then((m) => ({ default: m.APNLeaderboard })));
 const LazyAPNTargets = React.lazy(() => import("./modules/apn/TargetViews.jsx").then((m) => ({ default: m.APNTargets })));
-import { APNHeadPartnerCard } from "./modules/apn/HeadPartnerCard.jsx";
+const APNHeadPartnerCard = React.lazy(() => import("./modules/apn/HeadPartnerCard.jsx").then(m => ({default:m.APNHeadPartnerCard})));
 const LazyAPNDistrict = React.lazy(() => import("./modules/apn/DistrictHead.jsx").then((m) => ({ default: m.APNDistrict })));
 const LazyAPNStateHead = React.lazy(() => import("./modules/apn/StateHead.jsx").then((m) => ({ default: m.APNStateHead })));
 const LazyAPNSearch = React.lazy(() => import("./modules/apn/APNSearch.jsx").then((m) => ({ default: m.APNSearch })));
@@ -5142,7 +5142,7 @@ export function APNPortal({ db, profile, people = [], session, signOut, isDark, 
   if (eff === "pending") return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} icon={<Hourglass size={26} />} title="Waiting for Approval" body={`Thanks ${meRow.name}. Your APN partner application (${apnIdFor(meRow)}) was successfully submitted and is awaiting admin approval. You'll get full access as soon as it's approved.`} onSignOut={signOut} onRefresh={refreshPortal} />;
   if (eff === "rejected") return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} tone="neg" icon={<XCircle size={26} />} title="Application not approved" body={meRow.rejectReason ? `Reason: ${meRow.rejectReason}` : "Your APN partner application was not approved. Contact ALLBEE for details."} onSignOut={signOut} />;
   if (eff === "suspended") return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} tone="neg" icon={<ShieldAlert size={26} />} title="Account suspended" body={`Your APN account is suspended${meRow.suspensionReason ? ` because of ${meRow.suspensionReason.toLowerCase()}` : ""}. Contact an administrator if you believe this is incorrect.`} onSignOut={signOut} onRefresh={refreshPortal} />;
-  if (eff === "inactive") return <APNInactive Field={Field} meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} />;
+  if (eff === "inactive") return <React.Suspense fallback={<APNSkeleton />}><APNInactive Field={Field} meRow={meRow} db={db} mutate={mutate} onSignOut={signOut} isDark={isDark} pid={pid} /></React.Suspense>;
   // AGREEMENT GATE: legal status is fail-closed. Never treat an RPC failure as
   // an empty required list and accidentally grant portal access.
   if (agrLoading || agrError) return <APNGate ToastHost={ToastHost} emitToast={emitToast} isDark={isDark} icon={agrError ? <ShieldAlert size={26} /> : <Hourglass size={26} />} tone={agrError ? "neg" : undefined} title={agrError ? "Agreement verification unavailable" : "Verifying agreements…"} body={agrError ? `We couldn't verify your APN agreement status. ${agrError}` : "Checking the current legal agreement status before opening your portal."} onSignOut={signOut} onRefresh={refreshAgreements} />;

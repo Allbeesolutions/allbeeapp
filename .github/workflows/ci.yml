@@ -28,6 +28,8 @@ jobs:
       - run: npm run test:crash-smoke
       - run: npm run test:navigation-smoke
       - run: npm run test:spa-soak-smoke
+      - name: Check garbage-collected SPA heap retention (mock roles)
+        run: npm run test:spa-memory
       - run: npm run build
       - run: npm run test:bundle
       - run: npm audit --omit=dev --audit-level=high
