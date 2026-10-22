@@ -1,0 +1,48 @@
+# AllBee — Neon replacement-backend staging pilot
+
+This is a **separate, non-production Vite application**. It does not replace the existing `src/AllbeeApp.jsx` or the live Supabase configuration.
+
+## Security and readiness
+
+The pilot uses the official, version-pinned `@neondatabase/neon-js` SDK with the Supabase-style auth adapter against the **Allbee-owned Neon staging branch** `br-long-cloud-azs3rmmb`, not the company's Neon `main` branch and not the production legacy Supabase project.
+
+Features implemented here: staging email/password auth form, own-profile create/update, private two-party chat invitations, recipient acceptance before messaging, authenticated messages, polling (five seconds while selected), and owner-only soft deletion within one hour. The database enforces ownership and permission checks via migrations `002` and `003`; no client-side self-assigned roles are honored. No admin or APN role features have been ported.
+
+**Integration not yet production certified:** Auth signup from `http://127.0.0.1:5181` was rejected as `Invalid origin`. Avoid treating successful static UI tests as sign-in certification. Authorized staging origins must be configured and browser sign-in verified before sharing a link or accepting actual user traffic. The managed Neon Realtime service on PostgreSQL 17 is unavailable; chat uses recipient-scoped polling instead.
+
+## Run locally
+
+```sh
+cd neon-pilot
+npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+cp .env.example .env.local
+# Add the publicly safe staging-only Auth and Data API URLs from Neon Console.
+npm test
+npm run build
+npm run dev
+```
+
+Required variables:
+
+- `VITE_NEON_STAGING_ONLY=true` — mandatory fail-closed gate.
+- `VITE_NEON_AUTH_URL` — public Neon Auth endpoint ending in `/auth`.
+- `VITE_NEON_DATA_API_URL` — public Neon Data API endpoint ending in `/rest/v1`.
+
+**Never set these to a production database, Supabase URLs, private SQL URLs, service-role keys or admin secrets.** The pilot rejects non-Neon HTTPS URL hosts and refuses launch unless its staging flag is enabled. `.env.local` is ignored by Git.
+
+The local test app doesn't grant any user an admin role. Roles must be assigned via a separate, authenticated, audited company management flow. No production users, credentials or customer records are migrated.
+
+The pilot is intentionally independent of AllBee production's main npm lockfile and Vercel root build. Its isolated npm lockfile and CI job use `--legacy-peer-deps` to isolate the beta SDK's current UI-peer graph. There were **0 high or critical audit findings** for the isolated production dependency tree as of 23 October 2026.
+
+## Verification
+
+- `npm ci --legacy-peer-deps` reproducible install: PASS.
+- `npm test` 17/17: PASS.
+- `npm run build`: PASS.
+- `npm audit --omit=dev --audit-level=high`: PASS.
+- Chromium at width 390px, unauthenticated staging page: HTTP 200, zero JS errors, no horizontal overflow.
+- Actual Neon browser signup: **NOT PASSED**, origin allowlist response `Invalid origin`. Controlled remediation and authenticated testing remain required.
+- Server-side migration 003 staging: PASS, includes recipient consent, no custom message timestamp/ID privilege.
+- Main AllBee app remains fully separate from staging pilot.
+
+Do not deploy this pilot to a public production domain or imply all modules have migrated. Continue the API/backend role-parity migration and authenticated smoke tests first.

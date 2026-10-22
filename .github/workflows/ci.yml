@@ -34,4 +34,11 @@ jobs:
         run: npm run test:spa-memory
       - run: npm run build
       - run: npm run test:bundle
+      - name: Verify isolated Neon replacement-backend pilot
+        run: |
+          cd neon-pilot
+          npm ci --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+          npm test
+          npm run build
+          npm audit --omit=dev --audit-level=high
       - run: npm audit --omit=dev --audit-level=high
