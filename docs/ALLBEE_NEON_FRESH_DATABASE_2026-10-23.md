@@ -32,3 +32,11 @@ Only the branch `allbee-migration-lab-20261023` (`br-long-cloud-azs3rmmb`) was u
 **Still pending for AllBee production:** auth UI sessions and signups, Data API adapter for old JSON/RPC business data, admin/API/RLS parity across all roles, storage upload/download signed ACLs, realtime/polling chat, all 11 Edge Function replacements, finance consistency, staged browser flow testing, full deployment and owner acceptance. Do not point live `VITE_SUPABASE_URL` to Neon or deploy a half-compatible backend.
 
 **No old Supabase data was copied**, and the old production database has not been deleted or modified. New accounts would not inherit prior sessions or records.
+
+## Staging chat hardening (23 October 2026, continuation)
+
+Migration `003_chat_acceptance.sql` has been applied **only** to isolated Neon staging `br-long-cloud-azs3rmmb`. Read-back confirmed migration count **3**, invitation-acceptance RLS policy installed, and `authenticated` has neither `INSERT` permission on message `id` nor `created_at` columns. The user's consent is required before messages can be sent; only the invited party (not inviter) can approve. Legacy production stays untouched.
+
+The disposable PostgreSQL integration test now verifies replay safety, recipient approval, timestamp/identifier-forgery denial, third-party access denial, sender spoof denial, role escalation denial and owner-only edits. CI executes this test alongside the foundation check. AllBee's existing UI full verification completed **504/504**; role-based SPA memory soak completed **240/240**, all passing. Existing frontend is still tied to Supabase—these browser checks are mock-role regressions, not a certified live Neon release.
+
+**SDK dependency gate:** initial attempt to fetch `@neondatabase/neon-js` from the Mac npm registry timed out twice; the repository dependency manifest remains unchanged. Do not invent a custom unverified authentication protocol or expose privileged Neon SQL URLs in client bundles. Resume with official SDK once package registry network is functioning, then build a separately gated Neon client pilot.

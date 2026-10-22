@@ -25,6 +25,8 @@ SQL
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/001_allbee_fresh_foundation.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/002_neon_auth_core.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/002_neon_auth_core.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/003_chat_acceptance.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/003_chat_acceptance.sql" >/dev/null
 
 query_as() {
   local who="$1" sql="$2"
@@ -57,6 +59,20 @@ conversation_id="$(query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO pu
 [[ -n "$conversation_id" ]] || { echo 'FAIL conversation not created' >&2; exit 1; }
 expect "stranger C cannot see private thread" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.direct_conversations;")"
 expect "participant B sees thread" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.direct_conversations;")"
+# An invitation is not permission to send messages until recipient accepts.
+if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.direct_messages(conversation_id,sender_user_id,body) VALUES ('$conversation_id','00000000-0000-4000-8000-000000000001','Premature');" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL unaccepted chat permitted' >&2; exit 1
+fi
+# Invitation sender cannot self-approve (the recipient must accept).
+expect "inviter cannot self-approve" "0" "$(query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.direct_conversations SET accepted_at=now() WHERE id='$conversation_id' RETURNING 1;" | grep -c '^1$' || true)"
+expect "recipient can accept" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.direct_conversations SET accepted_at=now() WHERE id='$conversation_id' RETURNING 1;" | grep -c '^1$' || true)"
+# Column GRANTs must reject attempts to forge message IDs and timestamps.
+if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.direct_messages(conversation_id,sender_user_id,body,created_at) VALUES ('$conversation_id','00000000-0000-4000-8000-000000000001','Forged clock', now() - interval '30 days');" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL forged message creation timestamp' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.direct_messages(id,conversation_id,sender_user_id,body) VALUES (gen_random_uuid(),'$conversation_id','00000000-0000-4000-8000-000000000001','Forged ID');" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL user-controlled message ID' >&2; exit 1
+fi
 query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.direct_messages(conversation_id,sender_user_id,body) VALUES ('$conversation_id','00000000-0000-4000-8000-000000000001','Hello Bob');" >/dev/null
 expect "participant B reads chat" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.direct_messages;")"
 expect "stranger C cannot read chat" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.direct_messages;")"
@@ -73,5 +89,5 @@ if query_as 00000000-0000-4000-8000-000000000001 "DELETE FROM public.direct_mess
   echo 'FAIL hard deletion without policy/grant' >&2; exit 1
 fi
 expect "one message survives" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.direct_messages;")"
-expect "two schema migrations" "2" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
-echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, safe replay'
+expect "three schema migrations" "3" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
+echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps and safe replay'
