@@ -28,6 +28,8 @@ Source: latest verified `origin/main` **`613ae1a`**. Integration worktree: `/Use
 - **Main JS:** ~503.2 KiB of 525 KiB budget; total JS ~2527.5 KiB of 2560 KiB budget. No claim of net total bundle reduction; analytics is additional functionality.
 - Security/fixture logs are local under `/tmp/allbee-oct22-analytics-release/` and `/tmp/allbee-oct22-usage-concurrent.log`, not committed.
 
+**Automated CI hardening:** The GitHub runner is pinned to Ubuntu 24.04 and now executes `npm run test:customer-usage-sql` against a fresh disposable PostgreSQL cluster. This is strictly a local-to-CI scratch migration/RLS/rate-limit/concurrency check, never a production Supabase migration.
+
 ## Pending owner-only release gates
 
 - **Production SQL**: Requires review/approval, then apply only to the verified AllBee Supabase project. Local test DB validation is not production RLS verification.
