@@ -8,7 +8,7 @@ The pilot uses the official, version-pinned `@neondatabase/neon-js` SDK with the
 
 Features implemented here: staging email/password auth form, own-profile create/update, private two-party chat invitations, recipient acceptance before messaging, authenticated messages, polling (five seconds while selected), and owner-only soft deletion within one hour. The database enforces ownership and permission checks via migrations `002` and `003`; no client-side self-assigned roles are honored. No admin or APN role features have been ported.
 
-**Integration not yet production certified:** Auth signup from `http://127.0.0.1:5181` was rejected as `Invalid origin`. Avoid treating successful static UI tests as sign-in certification. Authorized staging origins must be configured and browser sign-in verified before sharing a link or accepting actual user traffic. The managed Neon Realtime service on PostgreSQL 17 is unavailable; chat uses recipient-scoped polling instead.
+**Integration not yet production certified:** The first local Auth signup from `http://127.0.0.1:5181` was rejected as `Invalid origin`. The exact loopback origin and the SSO-protected staging URL were subsequently added to the **staging-only** Neon Auth allowlist. Both now return HTTP 204 CORS preflight with the correct allowed origin and POST method. Real signed-in browser sessions, two-account chat behavior and full AllBee role parity remain unverified. Do not treat CORS or mocked tests as authentication acceptance. Neon Realtime on PostgreSQL 17 is unavailable; chat uses recipient-scoped polling instead.
 
 ## Run locally
 
@@ -41,8 +41,17 @@ The pilot is intentionally independent of AllBee production's main npm lockfile 
 - `npm run build`: PASS.
 - `npm audit --omit=dev --audit-level=high`: PASS.
 - Chromium at width 390px, unauthenticated staging page: HTTP 200, zero JS errors, no horizontal overflow.
-- Actual Neon browser signup: **NOT PASSED**, origin allowlist response `Invalid origin`. Controlled remediation and authenticated testing remain required.
+- Actual Neon browser signup: **NOT YET VERIFIED**. The earlier `Invalid origin` was followed by exact staging-domain allowlisting and successful HTTP 204 preflight; complete actual signed-in account/session tests before user acceptance.
 - Server-side migration 003 staging: PASS, includes recipient consent, no custom message timestamp/ID privilege.
 - Main AllBee app remains fully separate from staging pilot.
 
 Do not deploy this pilot to a public production domain or imply all modules have migrated. Continue the API/backend role-parity migration and authenticated smoke tests first.
+
+## Protected test deployment
+
+- Vercel project: `allbee-neon-pilot` (separate from production AllBee).
+- URL: `https://allbee-neon-pilot.vercel.app`.
+- Vercel Authentication / SSO protection: **enabled for all targets**. Unauthenticated browsers redirect to Vercel login. No custom domain or production AllBee routing changed.
+- Neon branch: isolated staging `br-long-cloud-azs3rmmb`, with only `https://allbee-neon-pilot.vercel.app` and the local QA loopback explicitly added to its Auth origin allowlist.
+- Vercel staging build reported **READY**. No real-user login or all-role feature acceptance has been certified.
+- Staging deployment uses separate Vercel environment variables with only public Neon API endpoints; local `.env.local`, `.vercel` metadata, service credentials and test account passwords are excluded from source and deployment uploads.
