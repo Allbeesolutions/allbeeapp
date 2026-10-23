@@ -183,6 +183,61 @@ export async function setTaskState(client, taskId, state) {
     .select('id,state,updated_at').single());
 }
 
+const NOTIFICATION_KINDS = new Set(['general','task','announcement']);
+const NOTIFICATION_ADMINS = new Set(['superadmin','admin']);
+
+export async function listMyNotifications(client) {
+  const [user, access] = await Promise.all([currentUser(client), getMyMemberAccess(client)]);
+  if (access.status !== 'active') throw new Error('Account must be active to read notifications.');
+  return unwrap(await client.from('member_notifications')
+    .select('id,recipient_user_id,sender_user_id,kind,title,body,created_at,read_at')
+    .eq('recipient_user_id',user.id)
+    .order('created_at',{ascending:false}).limit(100)) || [];
+}
+
+export async function acknowledgeNotification(client, notificationId) {
+  const [user, access] = await Promise.all([currentUser(client), getMyMemberAccess(client)]);
+  if (access.status !== 'active') throw new Error('Account must be active to acknowledge notifications.');
+  return unwrap(await client.from('member_notifications')
+    .update({read_at:new Date().toISOString()})
+    .eq('recipient_user_id',user.id).eq('id',requireUuid(notificationId))
+    .select('id,read_at').single());
+}
+
+export async function sendMemberNotification(client,{recipientId,title,body,kind='general'}) {
+  const [user, access] = await Promise.all([currentUser(client), getMyMemberAccess(client)]);
+  if(access.status !== 'active' || !NOTIFICATION_ADMINS.has(access.role)) {
+    throw new Error('Only an active AllBee administrator can send notifications.');
+  }
+  const recipient_user_id=requireUuid(recipientId);
+  const cleanTitle=String(title||'').trim();
+  const cleanBody=String(body||'').trim();
+  if(!cleanTitle || cleanTitle.length>120) throw new Error('Notification title must be 1–120 characters.');
+  if(!cleanBody || cleanBody.length>2500) throw new Error('Notification body must be 1–2,500 characters.');
+  if(!NOTIFICATION_KINDS.has(kind)) throw new Error('Invalid notification category.');
+  const result=await client.from('member_notifications').insert({
+    recipient_user_id,sender_user_id:user.id,title:cleanTitle,body:cleanBody,kind,
+  });
+  unwrap(result,'Could not send notification.');
+  // The sender cannot SELECT recipient-owned alerts; a successful 201/204 is
+  // the entire permitted acknowledgement. Never add .select() here.
+  return true;
+}
+
+export async function manageMemberRole(client,{targetId,role,status='active'}) {
+  const [user, access]=await Promise.all([currentUser(client),getMyMemberAccess(client)]);
+  if(access.role !== 'superadmin' || access.status !== 'active') {
+    throw new Error('Only the active company superadmin can change member roles.');
+  }
+  const target=requireUuid(targetId);
+  if(target===user.id) throw new Error('Cannot alter your own superadmin access.');
+  if(!ALLBEE_ROLES.has(role)) throw new Error('Unknown member role.');
+  if(!['active','suspended','terminated'].includes(status)) throw new Error('Unknown member status.');
+  return unwrap(await client.rpc('manage_member_role',{
+    p_target_user_id:target,p_role:role,p_status:status,
+  }),'Role management failed.');
+}
+
 export async function softDeleteMessage(client, messageId) {
   await currentUser(client);
   return unwrap(await client.from("direct_messages")

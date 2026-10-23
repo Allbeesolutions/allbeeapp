@@ -5,7 +5,8 @@ vi.mock("@neondatabase/neon-js", () => ({
 }));
 import {
   requireUuid, createPilotClient, unwrap, currentUser, getMyMemberAccess,
-  conversationParticipants, reconcileSelectedConversation, inviteUser, sendMessage, softDeleteMessage, listTasks, createTask, setTaskState
+  conversationParticipants, reconcileSelectedConversation, inviteUser, sendMessage, softDeleteMessage, listTasks, createTask, setTaskState,
+  listMyNotifications, acknowledgeNotification, sendMemberNotification, manageMemberRole
 } from "../src/client.js";
 
 const idA = "00000000-0000-4000-8000-000000000001";
@@ -141,6 +142,77 @@ describe("pilot data operations", () => {
     expect(reconcileSelectedConversation(pending, [active])).toEqual(active);
     expect(reconcileSelectedConversation(null,[active])).toBeNull();
     expect(reconcileSelectedConversation(pending,[])).toBeNull();
+  });
+  it('limits inbox reads to authenticated active recipient only',async()=>{
+    const {client,calls}=mockNeon([]);
+    client.rpc=()=>Promise.resolve({data:{role:'client',status:'active'}});
+    expect(await listMyNotifications(client)).toEqual([]);
+    expect(calls).toContainEqual(['from','member_notifications']);
+    expect(calls).toContainEqual(['eq','recipient_user_id',idA]);
+    client.rpc=()=>Promise.resolve({data:{role:'client',status:'terminated'}});
+    await expect(listMyNotifications(client)).rejects.toThrow(/active/);
+  });
+  it('acknowledges only the signed-in recipient with no forged timestamp',async()=>{
+    const {client,calls}=mockNeon({id:idB,read_at:'now'});
+    client.rpc=()=>Promise.resolve({data:{role:'partner',status:'active'}});
+    const result=await acknowledgeNotification(client,idB);
+    expect(result.id).toBe(idB);
+    expect(calls).toContainEqual(['eq','recipient_user_id',idA]);
+    expect(calls).toContainEqual(['eq','id',idB]);
+    expect(Object.keys(calls.find(x=>x[0]==='update')[1])).toEqual(['read_at']);
+  });
+  it('admin sends a notification without a forbidden recipient-row SELECT',async()=>{
+    const {client,calls}=mockNeon();
+    client.rpc=()=>Promise.resolve({data:{role:'admin',status:'active'}});
+    expect(await sendMemberNotification(client,{recipientId:idB,title:' Alert ',body:' New task '})).toBe(true);
+    const row=calls.find(x=>x[0]==='insert')[1];
+    expect(row).toEqual({recipient_user_id:idB,sender_user_id:idA,title:'Alert',body:'New task',kind:'general'});
+    expect(calls).toContainEqual(['from','member_notifications']);
+    expect(calls.some(x=>x[0]==='select')).toBe(false);
+    expect(row).not.toHaveProperty('id');
+    expect(row).not.toHaveProperty('created_at');
+  });
+  it('blocks non-admin and suspended notification sends before database calls',async()=>{
+    const {client,calls}=mockNeon();
+    client.rpc=()=>Promise.resolve({data:{role:'staff',status:'active'}});
+    await expect(sendMemberNotification(client,{recipientId:idB,title:'X',body:'X'})).rejects.toThrow(/administrator/);
+    client.rpc=()=>Promise.resolve({data:{role:'admin',status:'suspended'}});
+    await expect(sendMemberNotification(client,{recipientId:idB,title:'X',body:'X'})).rejects.toThrow(/administrator/);
+    expect(calls.some(x=>x[0]==='from'&&x[1]==='member_notifications')).toBe(false);
+  });
+  it('rejects invalid notification fields and propagates backend denial',async()=>{
+    const {client}=mockNeon();
+    client.rpc=()=>Promise.resolve({data:{role:'admin',status:'active'}});
+    await expect(sendMemberNotification(client,{recipientId:'invalid',title:'X',body:'X'})).rejects.toThrow(/valid user/);
+    await expect(sendMemberNotification(client,{recipientId:idB,title:'',body:'X'})).rejects.toThrow(/title/);
+    await expect(sendMemberNotification(client,{recipientId:idB,title:'X',body:'X',kind:'system'})).rejects.toThrow(/category/);
+    client.from=()=>({insert:()=>Promise.resolve({error:{message:'RLS denied',status:403}})});
+    await expect(sendMemberNotification(client,{recipientId:idB,title:'X',body:'X'})).rejects.toThrow('RLS denied');
+  });
+  it('only active superadmin can manage another registered member',async()=>{
+    const {client}=mockNeon();const calls=[];
+    client.rpc=(name,args)=>{
+      calls.push([name,args]);
+      return Promise.resolve({data:name==='my_member_access'?{role:'superadmin',status:'active'}:{role:'intern',status:'active'}});
+    };
+    const result=await manageMemberRole(client,{targetId:idB,role:'intern'});
+    expect(result).toEqual({role:'intern',status:'active'});
+    expect(calls[1]).toEqual(['manage_member_role', {p_target_user_id:idB,p_role:'intern',p_status:'active'}]);
+  });
+  it('disallows self-demotion and invalid roles before server mutation',async()=>{
+    const {client}=mockNeon(); const calls=[];
+    client.rpc=(name,args)=>{calls.push([name,args]);return Promise.resolve({data:{role:'superadmin',status:'active'}})};
+    await expect(manageMemberRole(client,{targetId:idA,role:'client'})).rejects.toThrow(/own superadmin/);
+    await expect(manageMemberRole(client,{targetId:idB,role:'root'})).rejects.toThrow(/Unknown member role/);
+    await expect(manageMemberRole(client,{targetId:idB,role:'staff',status:'forever'})).rejects.toThrow(/Unknown member status/);
+    expect(calls.filter(c=>c[0]==='manage_member_role')).toEqual([]);
+  });
+  it('fails closed for an ordinary admin or suspended superadmin',async()=>{
+    const {client}=mockNeon();const rpc=vi.fn(async()=>({data:{role:'admin',status:'active'}}));client.rpc=rpc;
+    await expect(manageMemberRole(client,{targetId:idB,role:'staff'})).rejects.toThrow(/superadmin/);
+    rpc.mockImplementation(async()=>({data:{role:'superadmin',status:'suspended'}}));
+    await expect(manageMemberRole(client,{targetId:idB,role:'staff'})).rejects.toThrow(/superadmin/);
+    expect(rpc.mock.calls.every(c=>c[0]==='my_member_access')).toBe(true);
   });
   it("creates an invitation without self-approval or role assignment", async () => {
     const { client, calls } = mockNeon({id:"123"});

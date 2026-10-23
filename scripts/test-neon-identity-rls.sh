@@ -33,6 +33,14 @@ psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.s
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/006_task_workspace.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/006_task_workspace.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/007_member_notifications.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/007_member_notifications.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/008_role_management.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/008_role_management.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/009_deleted_identity_guard.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/009_deleted_identity_guard.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/010_role_audit_service_maintenance.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/010_role_audit_service_maintenance.sql" >/dev/null
 
 query_as() {
   local who="$1" sql="$2"
@@ -157,5 +165,100 @@ if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.tasks(id,ow
  echo 'FAIL forged owner task insertion' >&2; exit 1
 fi
 expect "task owner can still see" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.tasks WHERE id='task_1';")"
-expect "six schema migrations" "6" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
-echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps, deletion scrub, private self-role, suspension and audit safety'
+# Separate, recipient-scoped notification inbox. Only active internal admins
+# can send; sender is always the authenticated actor, not editable metadata.
+if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,title,body) VALUES('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','Staff spoof','No');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL ordinary staff can send admin notifications' >&2; exit 1
+fi
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='admin' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
+if query_as 00000000-0000-4000-8000-000000000002 "INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,title,body) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000003','Forged sender','No');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL notification sender impersonation' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000002 "INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,title,body,created_at) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','Forged time','No',now() - interval '6 months');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL notification timestamp spoof' >&2; exit 1
+fi
+# The admin sender deliberately has no SELECT policy on recipients' inboxes.
+# Never return a recipient's notification row to the sending account.
+query_as 00000000-0000-4000-8000-000000000002 "INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,kind,title,body) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','general','Staging alert','Your task has an update');" >/dev/null
+notification_id="$(query_as 00000000-0000-4000-8000-000000000001 "SELECT id FROM public.member_notifications WHERE title='Staging alert';" | grep -E '^[a-f0-9-]{36}$' | head -1)"
+[[ -n "$notification_id" ]] || { echo 'FAIL notification did not create' >&2; exit 1; }
+expect "notification recipient sees own" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.member_notifications;")"
+expect "notification other client sees none" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.member_notifications;")"
+expect "notification admin cannot read recipient inbox" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.member_notifications;")"
+expect "other client cannot acknowledge recipient alert" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "UPDATE public.member_notifications SET read_at=now() WHERE id='$notification_id' RETURNING 1;" | grep -c '^1$' || true)"
+expect "recipient acknowledges notification" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.member_notifications SET read_at=now() + interval '3 years' WHERE id='$notification_id' RETURNING 1;" | grep -c '^1$' || true)"
+expect "notification read time is server stamped" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT (read_at BETWEEN now() - interval '1 minute' AND now())::int FROM public.member_notifications WHERE id='$notification_id';")"
+if query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.member_notifications SET read_at=null WHERE id='$notification_id';" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL cannot unread acknowledged notification' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.member_notifications SET body='changed' WHERE id='$notification_id';" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL recipient rewrote notification body' >&2; exit 1
+fi
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET status='suspended' WHERE user_id='00000000-0000-4000-8000-000000000001';" >/dev/null
+expect "suspended recipient denied notifications" "0" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.member_notifications;")"
+# Nine-role matrix: only internal roles may read assigned tasks; only admins
+# may send alerts. This tests these NEW tables, not complete AllBee UI parity.
+for current_role in superadmin admin accountant staff intern client partner district_head state_head; do
+  psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='$current_role',status='active' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
+  case "$current_role" in
+    superadmin|admin|accountant|staff|intern) task_view='1' ;;
+    *) task_view='0' ;;
+  esac
+  expect "task role matrix $current_role" "$task_view" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.tasks WHERE id='task_1';")"
+  notice_sql="INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,kind,title,body) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','general','Role matrix check','Only admin roles may send');"
+  if [[ "$current_role" == superadmin || "$current_role" == admin ]]; then
+    query_as 00000000-0000-4000-8000-000000000002 "$notice_sql" > /dev/null || { echo "FAIL $current_role admin notification send" >&2;exit 1; }
+  else
+    if query_as 00000000-0000-4000-8000-000000000002 "$notice_sql" >/dev/null 2>"$tmp/deny.log"; then
+      echo "FAIL $current_role improperly sent an admin notification" >&2; exit 1
+    fi
+  fi
+done
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='admin' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
+
+# Privileged management gate: admin, clients, suspended accounts cannot change roles.
+if query_as 00000000-0000-4000-8000-000000000002 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','admin','active');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL ordinary admin promoted a client' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000003 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000002','superadmin','active');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL unassigned client promoted a member' >&2; exit 1
+fi
+if psql -X -v ON_ERROR_STOP=1 -c "SET ROLE anonymous; SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','staff','active');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL anonymous superadmin RPC available' >&2; exit 1
+fi
+# A company's first superadmin must be explicitly bootstrapped by its trusted
+# database owner. In this disposable test ONLY, emulate that trusted action.
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='superadmin',status='active' WHERE user_id='00000000-0000-4000-8000-000000000001';" >/dev/null
+if query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000001','client','suspended');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL superadmin self-demotion' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','nonsense','active');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL invalid privilege level' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','staff','unrestricted');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL invalid status' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000099','staff','active');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL unknown target user' >&2; exit 1
+fi
+expect "superadmin grants scoped member role" "intern" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','intern','active')->>'role';")"
+expect "new role appears to target" "intern" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT public.my_member_access()->>'role';")"
+expect "role audit identifies verified acting superadmin" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM allbee_private.member_role_audit WHERE actor_user_id='00000000-0000-4000-8000-000000000001' AND user_id='00000000-0000-4000-8000-000000000003' AND new_role='intern';")"
+expect "superadmin suspends other user" "suspended" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','intern','suspended')->>'status';")"
+expect "suspended employee cannot read tasks" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.tasks;")"
+expect "superadmin restores other account" "active" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','intern','active')->>'status';")"
+if query_as 00000000-0000-4000-8000-000000000003 "SELECT * FROM allbee_private.member_role_audit;" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL newly provisioned employee read audit history' >&2; exit 1
+fi
+# A plausible JWT user ID with no Neon Auth record cannot access data.
+# This emulates a stale session without removing any test fixture.
+if query_as 00000000-0000-4000-8000-000000000099 "SELECT public.my_member_access();" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL absent identity still resolves role' >&2; exit 1
+fi
+expect "absent Auth identity is not active" "f" "$(query_as 00000000-0000-4000-8000-000000000099 "SELECT allbee_private.is_active_member();")"
+expect "absent Auth identity has zero tasks" "0" "$(query_as 00000000-0000-4000-8000-000000000099 "SELECT count(*) FROM public.tasks;")"
+expect "absent Auth identity has zero notifications" "0" "$(query_as 00000000-0000-4000-8000-000000000099 "SELECT count(*) FROM public.member_notifications;")"
+expect "restricted trigger uses definer for service lifecycle" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT p.prosecdef::int FROM pg_proc p WHERE p.oid='allbee_private.log_role_change()'::regprocedure;")"
+expect "unprivileged user cannot invoke private audit trigger" "f" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT has_function_privilege('authenticated','allbee_private.log_role_change()','EXECUTE');")"
+expect "ten schema migrations" "10" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
+echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps, deletion scrub, private self-role, suspension, task and notification authorization safety'

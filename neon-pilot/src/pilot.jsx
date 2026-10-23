@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createPilotClient, currentUser, getMyMemberAccess, getOwnProfile, saveOwnProfile, inviteUser,
   listConversations, reconcileSelectedConversation, acceptConversation, listMessages, sendMessage, softDeleteMessage,
-  listTasks, createTask, setTaskState, unwrap
+  listTasks, createTask, setTaskState, listMyNotifications, acknowledgeNotification,
+  sendMemberNotification, manageMemberRole, unwrap
 } from "./client.js";
 
 const env = import.meta.env;
@@ -62,6 +63,105 @@ function TaskWorkspace({client, user}) {
   </section>;
 }
 
+const NOTIFICATION_ADMINS = new Set(['superadmin', 'admin']);
+
+function NotificationInbox({client, access}) {
+  const [items,setItems] = useState([]);
+  const [recipient,setRecipient] = useState('');
+  const [title,setTitle] = useState('');
+  const [body,setBody] = useState('');
+  const [kind,setKind] = useState('general');
+  const [error,setError] = useState('');
+  const [feedback,setFeedback] = useState('');
+  const [busy,setBusy] = useState(false);
+  const canSend = NOTIFICATION_ADMINS.has(access.role);
+  const refresh = useCallback(async () => {
+    try { setItems(await listMyNotifications(client)); setError(''); }
+    catch(e) { setError(e?.message || 'Inbox unavailable'); }
+  },[client]);
+  useEffect(()=>{
+    refresh();
+    const poll=setInterval(()=>refresh(),15000);
+    return ()=>clearInterval(poll);
+  },[refresh]);
+  const unread = items.filter(item=>!item.read_at).length;
+  async function markRead(item) {
+    if(busy || item.read_at) return;
+    setBusy(true); setFeedback('');
+    try { await acknowledgeNotification(client,item.id); await refresh(); }
+    catch(e){setError(e?.message || 'Could not acknowledge notification');}
+    finally{setBusy(false);}
+  }
+  async function send(e) {
+    e.preventDefault(); if(busy || !canSend) return;
+    setBusy(true); setFeedback('');
+    try {
+      await sendMemberNotification(client,{recipientId:recipient,title,body,kind});
+      setTitle(''); setBody(''); setRecipient('');setKind('general');
+      setFeedback('Notification sent. Only the recipient can open it.');
+    }catch(e){setError(e?.message || 'Send failed');}
+    finally{setBusy(false);}
+  }
+  return <section className="panel" style={{marginTop:24}}>
+    <div className="line-title"><h2>Private notifications · {unread} unread</h2><button type="button" className="text-button" onClick={refresh}>Refresh</button></div>
+    <p className="help">Server-scoped inbox. You can only view and acknowledge notifications addressed to your account.</p>
+    {error && <p className="notice" role="alert">{error}</p>}
+    {feedback && <p className="help" role="status">{feedback}</p>}
+    <div aria-label="Private notifications" style={{display:'grid',gap:8}}>
+      {!items.length && <p className="help">No notifications for this account.</p>}
+      {items.map(n=><div key={n.id} className="notification-row">
+        <div><strong>{n.title}</strong><span className="eyebrow" style={{marginLeft:10}}>{n.kind}</span>
+          <p style={{margin:'8px 0',whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{n.body}</p>
+          <small className="help">{dateText(n.created_at)} · {n.read_at ? 'Read' : 'Unread'}</small>
+        </div>
+        {!n.read_at && <button type="button" disabled={busy} className="secondary" onClick={()=>markRead(n)}>Mark read</button>}
+      </div>)}
+    </div>
+    {canSend && <form onSubmit={send} className="notif-send-form">
+      <h3>Send a test notification</h3>
+      <p className="help">Admin-only: target an existing staging account UUID. Sending does not grant access to that user's private inbox.</p>
+      <label>Recipient UUID<input required value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Recipient user ID"/></label>
+      <label>Category<select value={kind} onChange={e=>setKind(e.target.value)}><option value="general">General</option><option value="task">Task</option><option value="announcement">Announcement</option></select></label>
+      <label>Title<input required maxLength={120} value={title} onChange={e=>setTitle(e.target.value)}/></label>
+      <label>Message<textarea required maxLength={2500} rows={3} value={body} onChange={e=>setBody(e.target.value)}/></label>
+      <button className="primary" disabled={busy} type="submit">Send notification</button>
+    </form>}
+  </section>;
+}
+
+const MANAGED_ROLES = ['client','staff','intern','accountant','partner','district_head','state_head','admin','superadmin'];
+
+function RoleManagement({client,user}) {
+  const [targetId,setTargetId]=useState('');
+  const [role,setRole]=useState('client');
+  const [status,setStatus]=useState('active');
+  const [result,setResult]=useState('');
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  async function changeRole(e) {
+    e.preventDefault();if(busy)return;
+    setBusy(true);setError('');setResult('');
+    try {
+      const next=await manageMemberRole(client,{targetId,role,status});
+      setResult('Permissions updated for '+shortId(next.user_id)+'. Changes are recorded in the private security audit.');
+      setTargetId('');
+    }catch(e){setError(e?.message||'Permission change rejected');}
+    finally{setBusy(false);}
+  }
+  return <section className="panel" style={{marginTop:24}}>
+    <h2>Superadmin · Role administration</h2>
+    <p className="help">Restricted to an active verified company superadmin. You cannot alter your own role or any unknown account. Every change is recorded by the database.</p>
+    {error && <p className="notice" role="alert">{error}</p>}
+    {result && <p className="help" role="status">{result}</p>}
+    <form className="role-manage-form" onSubmit={changeRole}>
+      <label>Existing staging member UUID<input required placeholder="Existing member UUID" value={targetId} onChange={e=>setTargetId(e.target.value)} /></label>
+      <label>Role<select value={role} onChange={e=>setRole(e.target.value)}>{MANAGED_ROLES.map(r=><option value={r} key={r}>{r.replace('_',' ')}</option>)}</select></label>
+      <label>Account status<select value={status} onChange={e=>setStatus(e.target.value)}><option value="active">Active</option><option value="suspended">Suspended</option><option value="terminated">Terminated</option></select></label>
+      <button type="submit" disabled={busy || targetId.trim().toLowerCase()===user.id} className="primary">Apply role change</button>
+    </form>
+  </section>;
+}
+
 export function NeonPilot() {
   const client = clientOrError.client;
   const [user, setUser] = useState(null);
@@ -109,6 +209,7 @@ export function NeonPilot() {
       setBio(profile?.bio || "");
       await refreshConversations();
       setNotice("");
+      return next;
     } catch (error) {
       if (/Sign in is required/.test(error?.message || "")) setUser(null);
       else report(error);
@@ -158,9 +259,10 @@ export function NeonPilot() {
         : await client.auth.signInWithPassword({ email: cleanEmail, password });
       unwrap(res, signup ? "Registration failed" : "Login failed");
       setPassword("");
-      try { await loadSignedIn(); }
-      catch { /* Email verification may be required by the managed provider. */ }
-      if (signup) setNotice("Registration submitted. Verify your email if requested, then sign in.");
+      const verifiedUser = await loadSignedIn();
+      if (signup) setNotice(verifiedUser
+        ? "Test account created and signed in."
+        : "Registration submitted. Verify your email if requested, then sign in.");
     } catch (error) { report(error); }
     finally { setBusy(false); }
   }
@@ -330,6 +432,8 @@ export function NeonPilot() {
                 </div>
               </section>
             </div>}
+            {access?.status === 'active' && access.role === 'superadmin' && <RoleManagement client={client} user={user} />}
+            {access?.status === 'active' && <NotificationInbox client={client} access={access} />}
             {access?.status === 'active' && INTERNAL_TEST_ROLES.has(access?.role) && <TaskWorkspace client={client} user={user} />}
           </>}
     </div>

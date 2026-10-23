@@ -67,3 +67,17 @@ The pilot displays a task panel only to active server-verified internal roles (`
 ### Real two-account staging E2E
 
 Using temporary synthetic staging accounts through the local Vite pilot, verified real Neon Auth sign-up and sign-in, client-only role resolution, a consented two-party invitation, server-backed message sending/polling, and redacted soft-deletion visible to the recipient. No browser exceptions or Data API errors occurred on the successful delivery/deletion pass. An initial sender-side stale-invitation state was repaired: `refreshConversations` now reconciles the selected chat against its latest server row and polls while logged in. A regression test covers a pending invitation becoming accepted. **24/24 isolated pilot tests pass.** No production AllBee users or records were involved. This is not nine-role or complete business parity.
+
+### Private notification pilot (migration 007)
+
+The isolated pilot includes an authenticated recipient-scoped inbox, one-way read acknowledgement, and administrator-only sender form. PostgreSQL RLS requires the authenticated recipient to read a notification and an active internal admin to send it. A sender receives a success acknowledgement but **no recipient row data** (no `.select()` after sending); timestamps, sender identity, read status and record IDs cannot be forged by clients. This is staging-only. The original AllBee notifications and push/worker flows remain untouched and not yet ported.
+
+### Staging owner, notifications and role lifecycle
+
+The staging pilot now has a recipient-only notification inbox and mark-read control, an active-admin-only sender form, and an active-superadmin-only member role/status form. Account role/status is always read from the server-owned RPC; no client metadata can self-assign privileges. Sender form uses PostgREST `INSERT` **without `.select()`**, because a sender is not authorized to read a recipient-owned notification. The role-management form never accepts changes to the current superadmin's own access. Changing a user's status takes effect at the database access layer.
+
+Nine-role local SQL authorization tests and real two-account browser E2E passed. The initial synthetic superadmin existed **only** in the isolated QA branch; real company-owner access still requires verified owner identity and explicit bootstrap. Both QA users were cleaned.
+
+**Schema-refresh runbook:** When a staging SQL migration adds a public table, column, function or policy, run `scripts/refresh-neon-staging-schema.sh` with `NEON_CLI_BIN` and `NEON_CONFIG_DIR` set to the authorized Allbee-owned Neon profile. The script rejects any other branch. This resolves PostgREST `PGRST205` errors caused by a stale Data API schema cache. No secret is committed.
+
+The hosted `allbee-neon-pilot.vercel.app` is still SSO-protected and serves an earlier build because Vercel Free exceeded its daily deployment quota; test these newer features only in the local pilot until Vercel deployment succeeds. The live production AllBee site has not been migrated.

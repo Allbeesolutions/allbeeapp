@@ -5,7 +5,7 @@ Verified: 23 October 2026 · Objective: full backend replacement without changin
 
 - **219** original Supabase SQL migration files under \`supabase/migrations/\`.
 - **11** Edge Function directories in \`supabase/functions/\`.
-- **6** newly authored Neon staging migrations (\`database/neon/001\`–\`006\`). **These are not 6 out of 219 converted legacy migrations.** They establish a fresh, separate skeleton of Auth, roles, consented direct chat, membership suspension, auditing, and a scoped task workspace.
+- **10** Neon-only staging migrations (`database/neon/001`–`010`). These are **not** 10 of the 219 legacy migrations converted: they establish fresh, separate Auth, private direct chat, role lifecycle/audit, task and notification foundations.
 - Classified filename groups (approximate, non-exclusive by business purpose): APN 78, AI 25, finance 12, chat 12, security 13, auth 5, client 3, CRM 3, storage 2, analytics 1, other 65.
 
 ## File-level dependency markers
@@ -41,11 +41,11 @@ Counts refer to **files containing a matched marker**, not numbers of unique fun
 
 ## Verified staging proof
 
-- 6 Neon migrations applied to \`allbee-migration-lab-20261023\`, never company Neon \`main\`.
-- 442/442 root tests, 24/24 Neon adapter tests; RLS tests cover role isolation, chat consent, deletion, suspension and tasks.
+- 10 Neon migrations applied to `allbee-migration-lab-20261023`, never company Neon `main`.
+- 442/442 root tests and 32/32 pilot adapter tests; local RLS includes all nine roles for scoped tasks/admin alerts, plus Auth, chat consent, suspension and lifecycle controls.
 - Two synthetic users completed real Auth signup/login, invitation/acceptance, message delivery and recipient-side deletion confirmation. The original message body was independently verified scrubbed in SQL.
-- Synthetic QA users and message/thread records were subsequently removed; the 6 schema migrations remain. Temporary QA credential files were removed from the Mac.
-- GitHub CI for \`8af1da0\` passed. Hosted pilot redeployment is blocked by Vercel Free daily deployment cap; the earlier SSO-protected pilot remains the only hosted build. Local pilot at \`http://127.0.0.1:5181/\` serves the newer code.
+- Synthetic QA users and test records are removed. Real browser: superadmin assigned staff, sent recipient-only alert, staff read it, suspension locked workspace, restoration reopened it. Staging retains 10 migrations and 6 private audit events.
+- Last observed GitHub CI for `f11df7e` passed; this new migration batch will be checked after push. Vercel Free deployment cap blocks the updated SSO-protected pilot release; local pilot runs at `http://127.0.0.1:5181/`.
 - No production cutover; do not use the older hosted pilot as proof that this newer work is deployed.
 
 ## Finite completion
