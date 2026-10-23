@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createPilotClient, currentUser, getMyMemberAccess, getOwnProfile, saveOwnProfile, inviteUser,
-  listConversations, acceptConversation, listMessages, sendMessage, softDeleteMessage,
+  listConversations, reconcileSelectedConversation, acceptConversation, listMessages, sendMessage, softDeleteMessage,
   listTasks, createTask, setTaskState, unwrap
 } from "./client.js";
 
@@ -87,6 +87,7 @@ export function NeonPilot() {
     if (!client) return;
     const rows = await listConversations(client);
     setConversations(rows);
+    setSelected((prev) => reconcileSelectedConversation(prev, rows));
     return rows;
   }, [client]);
 
@@ -117,6 +118,14 @@ export function NeonPilot() {
   }, [client, refreshConversations]);
 
   useEffect(() => { loadSignedIn(); }, [loadSignedIn]);
+
+  // A recipient's acceptance must update an already-selected invitation, not
+  // leave the sender's conversation permanently showing the pending screen.
+  useEffect(() => {
+    if (!client || !user || access?.status !== 'active') return;
+    const interval = setInterval(() => refreshConversations().catch(report), 5000);
+    return () => clearInterval(interval);
+  }, [client, user?.id, access?.status, refreshConversations]);
 
   const refreshMessages = useCallback(async () => {
     if (client && selected?.id && selected.accepted_at) {

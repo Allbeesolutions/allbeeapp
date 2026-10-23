@@ -63,3 +63,7 @@ The protected pilot now calls the no-argument, server-owned `my_member_access()`
 ### Internal task workspace (isolated test accounts only)
 
 The pilot displays a task panel only to active server-verified internal roles (`superadmin`, `admin`, `accountant`, `staff`, `intern`). New task records use UUID owner/assignee foreign keys with immutable membership, rather than trusting name fields in JSON. Create/list/status update are supported and independently checked by Neon PostgreSQL RLS; unsigned-in, client and suspended sessions are denied. The original production task module is not yet switched over.
+
+### Real two-account staging E2E
+
+Using temporary synthetic staging accounts through the local Vite pilot, verified real Neon Auth sign-up and sign-in, client-only role resolution, a consented two-party invitation, server-backed message sending/polling, and redacted soft-deletion visible to the recipient. No browser exceptions or Data API errors occurred on the successful delivery/deletion pass. An initial sender-side stale-invitation state was repaired: `refreshConversations` now reconciles the selected chat against its latest server row and polls while logged in. A regression test covers a pending invitation becoming accepted. **24/24 isolated pilot tests pass.** No production AllBee users or records were involved. This is not nine-role or complete business parity.

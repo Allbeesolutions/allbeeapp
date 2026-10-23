@@ -5,7 +5,7 @@ vi.mock("@neondatabase/neon-js", () => ({
 }));
 import {
   requireUuid, createPilotClient, unwrap, currentUser, getMyMemberAccess,
-  conversationParticipants, inviteUser, sendMessage, softDeleteMessage, listTasks, createTask, setTaskState
+  conversationParticipants, reconcileSelectedConversation, inviteUser, sendMessage, softDeleteMessage, listTasks, createTask, setTaskState
 } from "../src/client.js";
 
 const idA = "00000000-0000-4000-8000-000000000001";
@@ -134,6 +134,13 @@ describe("pilot data operations", () => {
     const update=calls.find(x=>x[0]==='update')[1];
     expect(update).toEqual({state:'done'});
     expect(update).not.toHaveProperty('owner_user_id');
+  });
+  it("updates an already-open invitation when the recipient accepts", () => {
+    const pending = {id:'chat-1', accepted_at:null};
+    const active = {id:'chat-1', accepted_at:'2026-10-23T00:00:00Z'};
+    expect(reconcileSelectedConversation(pending, [active])).toEqual(active);
+    expect(reconcileSelectedConversation(null,[active])).toBeNull();
+    expect(reconcileSelectedConversation(pending,[])).toBeNull();
   });
   it("creates an invitation without self-approval or role assignment", async () => {
     const { client, calls } = mockNeon({id:"123"});

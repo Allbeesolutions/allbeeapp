@@ -94,6 +94,12 @@ export async function saveOwnProfile(client, displayName, bio = "") {
   return data;
 }
 
+export function reconcileSelectedConversation(previous, rows) {
+  if (!previous) return null;
+  if (!Array.isArray(rows)) return previous;
+  return rows.find((chat) => chat.id === previous.id) || null;
+}
+
 export async function listConversations(client) {
   await currentUser(client);
   return unwrap(await client.from("direct_conversations")
