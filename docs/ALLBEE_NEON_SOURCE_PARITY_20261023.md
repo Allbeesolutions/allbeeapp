@@ -21,6 +21,31 @@ disposable PostgreSQL RLS test replays **every** executable Neon migration
 twice instead of stopping at `010`. Legacy ports must be written and verified
 against the actual Neon schema/identity model before staging application.
 
+## 24 October verified APN dependency slice
+
+`database/neon/011_apn_partner_read_boundary.sql` is a **new, deliberately
+limited** replacement for the first APN partner-directory dependency. The
+`public.apn_users` row is linked to a live Neon Auth UUID, keeps the legacy
+`id`/`data` read shape, and permits SELECT only to active admin/superadmin
+members or a partner/district-head/state-head reading their own row. Browser
+INSERT/UPDATE/DELETE is not granted; client-authored JSON is not an access
+claim. No old customer records were copied and no account was created.
+
+Disposable PostgreSQL replay passed twice and the nine-role matrix, forged
+identity, anonymous, suspended, deleted-identity, cross-partner and browser
+write-denial checks passed. The isolated Neon staging branch now has **11**
+recorded migrations; readback confirmed one APN RLS policy, zero APN rows,
+authenticated SELECT only, no anonymous SELECT or browser writes. The Data
+API schema cache was refreshed. The separate Neon `main` branch remains at
+**one** migration with no APN table. This is **not** APN registration,
+approval, commissions, finance, UI or Edge Function parity; no production
+cutover is implied.
+
+The protected `allbee-neon-pilot` Vercel project was redeployed after its
+quota reset and confirmed READY. An anonymous request still redirects to
+Vercel SSO; an authenticated request returned the pilot HTML and current JS
+asset. The legacy production AllBee frontend was not redeployed.
+
 ## Counted scope
 
 - **219** original Supabase SQL migration files under \`supabase/migrations/\`.

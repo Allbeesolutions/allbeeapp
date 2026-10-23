@@ -186,8 +186,19 @@ if query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.member_notificat
 fi
 psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET status='suspended' WHERE user_id='00000000-0000-4000-8000-000000000001';" >/dev/null
 expect "suspended recipient denied notifications" "0" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.member_notifications;")"
+# Owner-only fixture inserts: APN JSON is not a browser authorization source.
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.apn_users(id,user_id,data) VALUES
+ ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002',jsonb_build_object('id','00000000-0000-4000-8000-000000000002','role','superadmin')),
+ ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000003',jsonb_build_object('id','00000000-0000-4000-8000-000000000003','role','admin'));" >/dev/null
+if psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.apn_users(id,user_id) VALUES('forged','00000000-0000-4000-8000-000000000001');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL APN row accepted a forged identity' >&2; exit 1
+fi
+if psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.apn_users(id,user_id,data) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','{\"id\":\"forged\"}');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL APN JSON accepted a forged identity' >&2; exit 1
+fi
 # Nine-role matrix: only internal roles may read assigned tasks; only admins
-# may send alerts. This tests these NEW tables, not complete AllBee UI parity.
+# may send alerts; APN partner rows are self-only for partner/head roles and
+# management-visible for admin/superadmin. This is not full app parity.
 for current_role in superadmin admin accountant staff intern client partner district_head state_head; do
   psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='$current_role',status='active' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
   case "$current_role" in
@@ -195,6 +206,12 @@ for current_role in superadmin admin accountant staff intern client partner dist
     *) task_view='0' ;;
   esac
   expect "task role matrix $current_role" "$task_view" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.tasks WHERE id='task_1';")"
+  case "$current_role" in
+    superadmin|admin) apn_view='2' ;;
+    partner|district_head|state_head) apn_view='1' ;;
+    *) apn_view='0' ;;
+  esac
+  expect "APN role matrix $current_role" "$apn_view" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.apn_users;")"
   notice_sql="INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,kind,title,body) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','general','Role matrix check','Only admin roles may send');"
   if [[ "$current_role" == superadmin || "$current_role" == admin ]]; then
     query_as 00000000-0000-4000-8000-000000000002 "$notice_sql" > /dev/null || { echo "FAIL $current_role admin notification send" >&2;exit 1; }
@@ -204,6 +221,25 @@ for current_role in superadmin admin accountant staff intern client partner dist
     fi
   fi
 done
+if query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.apn_users SET data='{}' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL APN browser update granted' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000002 "DELETE FROM public.apn_users WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL APN browser delete granted' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000002 "INSERT INTO public.apn_users(id,user_id) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL APN browser insert granted' >&2; exit 1
+fi
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO allbee_private.member_roles(user_id,role,status) VALUES('00000000-0000-4000-8000-000000000003','partner','active');" >/dev/null
+expect "partner sees own APN row only" "1" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.apn_users;")"
+expect "partner cannot see another APN row" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.apn_users WHERE user_id='00000000-0000-4000-8000-000000000002';")"
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET status='suspended' WHERE user_id='00000000-0000-4000-8000-000000000003';" >/dev/null
+expect "suspended partner sees no APN rows" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.apn_users;")"
+psql -X -v ON_ERROR_STOP=1 -c "DELETE FROM allbee_private.member_roles WHERE user_id='00000000-0000-4000-8000-000000000003';" >/dev/null
+expect "deleted Auth identity sees no APN rows" "0" "$(query_as 00000000-0000-4000-8000-000000000099 "SELECT count(*) FROM public.apn_users;")"
+if psql -X -v ON_ERROR_STOP=1 -c "SET ROLE anonymous; SELECT count(*) FROM public.apn_users;" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL anonymous APN directory access' >&2; exit 1
+fi
 psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='admin' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
 
 # Privileged management gate: admin, clients, suspended accounts cannot change roles.
@@ -251,4 +287,4 @@ expect "absent Auth identity has zero notifications" "0" "$(query_as 00000000-00
 expect "restricted trigger uses definer for service lifecycle" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT p.prosecdef::int FROM pg_proc p WHERE p.oid='allbee_private.log_role_change()'::regprocedure;")"
 expect "unprivileged user cannot invoke private audit trigger" "f" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT has_function_privilege('authenticated','allbee_private.log_role_change()','EXECUTE');")"
 expect "every schema migration recorded" "${#migrations[@]}" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
-echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps, deletion scrub, private self-role, suspension, task and notification authorization safety'
+echo 'PASS Neon Auth core: profiles, roles, chat, tasks, notifications and APN partner read isolation across nine roles; browser APN writes denied'
