@@ -65,6 +65,16 @@ audit rows, authenticated-only RPC execution, and a refreshed Data API cache.
 No real users/data were inserted, and Neon `main`/legacy production were not
 changed. Live signed-in application acceptance remains unverified.
 
+`database/neon/013_apn_identity_detach_archive.sql` corrects an identity
+lifecycle mismatch before any APN records exist: the legacy permanent-delete
+path retains business history after Auth deletion. Neon now detaches the
+Auth foreign key instead of blocking deletion, stamps the retained row as
+deleted/archived, and limits deleted-row reads to active superadmins. Local
+replay, Auth-deletion retention and negative role tests passed. Staging
+readback confirmed **13** migrations, zero APN rows, the `ON DELETE SET NULL`
+foreign key, one archive trigger and one APN RLS policy; Neon `main` remains
+at one migration without an APN table. No real identity was deleted.
+
 ## Counted scope
 
 - **219** original Supabase SQL migration files under \`supabase/migrations/\`.

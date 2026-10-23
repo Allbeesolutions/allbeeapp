@@ -322,5 +322,17 @@ expect "absent Auth identity has zero tasks" "0" "$(query_as 00000000-0000-4000-
 expect "absent Auth identity has zero notifications" "0" "$(query_as 00000000-0000-4000-8000-000000000099 "SELECT count(*) FROM public.member_notifications;")"
 expect "restricted trigger uses definer for service lifecycle" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT p.prosecdef::int FROM pg_proc p WHERE p.oid='allbee_private.log_role_change()'::regprocedure;")"
 expect "unprivileged user cannot invoke private audit trigger" "f" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT has_function_privilege('authenticated','allbee_private.log_role_change()','EXECUTE');")"
+# Removing the Auth identity must retain APN business history, detach its
+# login binding, and hide the archived row from every role except superadmin.
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO neon_auth.\"user\"(id,email) VALUES('00000000-0000-4000-8000-000000000004','d@example.test');" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.apn_users(id,user_id,data) VALUES('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000004',jsonb_build_object('id','00000000-0000-4000-8000-000000000004','status','active','name','Archived Partner'));" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -c "DELETE FROM neon_auth.\"user\" WHERE id='00000000-0000-4000-8000-000000000004';" >/dev/null
+expect "Auth deletion preserves archived APN row" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.apn_users WHERE id='00000000-0000-4000-8000-000000000004' AND user_id IS NULL AND data @> '{\"status\":\"deleted\",\"archived\":true}'::jsonb AND (data->>'deletedAt')::bigint > 0;")"
+expect "ordinary admin cannot see deleted APN row" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.apn_users WHERE id='00000000-0000-4000-8000-000000000004';")"
+expect "active superadmin can see archived APN row" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.apn_users WHERE id='00000000-0000-4000-8000-000000000004';")"
+expect "deleted Auth identity cannot see APN history" "0" "$(query_as 00000000-0000-4000-8000-000000000004 "SELECT count(*) FROM public.apn_users;")"
+if psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO public.apn_users(id,user_id,data) VALUES('detached-invalid',NULL,'{\"status\":\"active\"}');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL active-looking detached APN record accepted' >&2; exit 1
+fi
 expect "every schema migration recorded" "${#migrations[@]}" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
-echo 'PASS Neon Auth core: profiles, roles, chat, tasks, notifications, nine-role APN read isolation and audited pending self-application; browser APN writes denied'
+echo 'PASS Neon Auth core: roles, chat, tasks, notifications, nine-role APN isolation, pending self-application and archived Auth deletion; browser APN writes denied'

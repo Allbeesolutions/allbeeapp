@@ -6,7 +6,7 @@ This is a **separate, non-production Vite application**. It does not replace the
 
 The pilot uses the official, version-pinned `@neondatabase/neon-js` SDK with the Supabase-style auth adapter against the **Allbee-owned Neon staging branch** `br-long-cloud-azs3rmmb`, not the company's Neon `main` branch and not the production legacy Supabase project.
 
-Features implemented here: staging email/password auth, own-profile editing, private consented two-party chat with scoped polling and soft deletion, an internal task panel, recipient-only notifications, and superadmin-only role/status management. The database enforces these narrow permissions through migrations `002`–`010`; no client-side self-assigned roles are honored. Migrations `011`–`012` add a limited APN directory read boundary and pending self-application RPC, but the pilot has **no APN registration, approval, finance or workflow UI**.
+Features implemented here: staging email/password auth, own-profile editing, private consented two-party chat with scoped polling and soft deletion, an internal task panel, recipient-only notifications, and superadmin-only role/status management. The database enforces these narrow permissions through migrations `002`–`010`; no client-side self-assigned roles are honored. Migrations `011`–`013` add limited APN directory reads, pending self-application and Auth-deletion archival, but the pilot has **no APN registration, approval, finance or workflow UI**.
 
 **Integration not yet production certified:** Real local two-account Neon Auth sign-in, consented chat, role assignment, notification and suspension/restoration flows passed with temporary staging identities that were then removed. The protected hosted pilot was verified at the HTML/SSO level, not with all nine signed-in roles or APN workflows. Neon Realtime on PostgreSQL 17 is unavailable; chat uses recipient-scoped polling instead.
 
@@ -42,7 +42,7 @@ The pilot is independent of AllBee production's main npm lockfile and Vercel roo
 - `npm audit --omit=dev --audit-level=high`: PASS.
 - Chromium at width 390px, unauthenticated staging page: HTTP 200, zero JS errors, no horizontal overflow.
 - Actual local Neon browser signup, role-management/notification and two-account chat acceptance: PASS with temporary isolated users; all nine roles and APN workflows are **not** live-accepted.
-- Server-side migrations `001`–`012` staging: PASS for their limited stated scope; no legacy APN/finance parity.
+- Server-side migrations `001`–`013` staging: PASS for their limited stated scope; no legacy APN/finance parity.
 - Main AllBee app remains fully separate from staging pilot.
 
 Do not deploy this pilot to a public production domain or imply all modules have migrated. Continue the API/backend role-parity migration and authenticated smoke tests first.
