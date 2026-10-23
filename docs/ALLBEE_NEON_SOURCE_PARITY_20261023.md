@@ -53,6 +53,18 @@ was redeployed as `dpl_9zA47QdiFZHUtYQUNff4L4jvZeQe`, confirmed READY,
 SSO-protected and serving its new JS asset. This is dependency hardening,
 not new migrated business functionality.
 
+`database/neon/012_apn_partner_application.sql` adds only an authenticated,
+validated, idempotent **pending** APN self-application RPC and a private
+creation audit. It does not issue an APN number, assign a member role, approve
+an account or accept finance input. Disposable PostgreSQL replay and nine-role
+tests passed: only client/partner roles can invoke it; malformed, anonymous,
+suspended, deleted-identity and administrative-account calls are denied;
+replays cannot rewrite an application or duplicate its audit. Isolated Neon
+staging now has **12** migration records, zero APN rows and zero APN application
+audit rows, authenticated-only RPC execution, and a refreshed Data API cache.
+No real users/data were inserted, and Neon `main`/legacy production were not
+changed. Live signed-in application acceptance remains unverified.
+
 ## Counted scope
 
 - **219** original Supabase SQL migration files under \`supabase/migrations/\`.

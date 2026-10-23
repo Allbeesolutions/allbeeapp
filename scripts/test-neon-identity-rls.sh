@@ -212,6 +212,12 @@ for current_role in superadmin admin accountant staff intern client partner dist
     *) apn_view='0' ;;
   esac
   expect "APN role matrix $current_role" "$apn_view" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.apn_users;")"
+  application_sql="SELECT public.apn_partner_apply('Sample Partner','+91 98765 43210','Chennai')->>'status';"
+  if [[ "$current_role" == client || "$current_role" == partner ]]; then
+    expect "APN application role $current_role" "pending" "$(query_as 00000000-0000-4000-8000-000000000002 "$application_sql")"
+  elif query_as 00000000-0000-4000-8000-000000000002 "$application_sql" >/dev/null 2>"$tmp/deny.log"; then
+    echo "FAIL $current_role improperly submitted an APN application" >&2; exit 1
+  fi
   notice_sql="INSERT INTO public.member_notifications(recipient_user_id,sender_user_id,kind,title,body) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','general','Role matrix check','Only admin roles may send');"
   if [[ "$current_role" == superadmin || "$current_role" == admin ]]; then
     query_as 00000000-0000-4000-8000-000000000002 "$notice_sql" > /dev/null || { echo "FAIL $current_role admin notification send" >&2;exit 1; }
@@ -241,6 +247,36 @@ if psql -X -v ON_ERROR_STOP=1 -c "SET ROLE anonymous; SELECT count(*) FROM publi
  echo 'FAIL anonymous APN directory access' >&2; exit 1
 fi
 psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET role='admin' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
+
+# Pending self-application creates one Auth-linked row and one private audit.
+# It cannot assign a role, approve itself, or overwrite an existing APN row.
+psql -X -v ON_ERROR_STOP=1 -c "DELETE FROM public.apn_users WHERE user_id='00000000-0000-4000-8000-000000000003';" >/dev/null
+if query_as 00000000-0000-4000-8000-000000000003 "SELECT public.apn_partner_apply('X','bad-number','C');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL malformed APN application accepted' >&2; exit 1
+fi
+expect "pending application created" "pending" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT public.apn_partner_apply('Robin Example','+91 99999 88888','Chennai')->>'status';")"
+expect "application belongs to verified Auth identity" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.apn_users WHERE id='00000000-0000-4000-8000-000000000003' AND user_id='00000000-0000-4000-8000-000000000003' AND data->>'name'='Robin Example' AND data->>'mobile'='919999988888' AND data->>'status'='pending';")"
+expect "application does not self-grant partner role" "client" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT public.my_member_access()->>'role';")"
+expect "application audit once" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM allbee_private.apn_application_audit WHERE applicant_user_id='00000000-0000-4000-8000-000000000003';")"
+expect "application replay stays pending" "pending" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT public.apn_partner_apply('Changed Name','+91 99999 88888','Chennai')->>'status';")"
+expect "application replay cannot edit initial data" "Robin Example" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT data->>'name' FROM public.apn_users WHERE user_id='00000000-0000-4000-8000-000000000003';")"
+expect "application replay creates no extra audit" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM allbee_private.apn_application_audit WHERE applicant_user_id='00000000-0000-4000-8000-000000000003';")"
+expect "pending client cannot read raw APN directory" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.apn_users;")"
+if query_as 00000000-0000-4000-8000-000000000002 "SELECT public.apn_partner_apply('Admin','9999988888','Chennai');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL admin used partner self-application path' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "SELECT public.apn_partner_apply('Suspended','9999988888','Chennai');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL suspended account submitted APN application' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000099 "SELECT public.apn_partner_apply('Deleted','9999988888','Chennai');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL deleted Auth identity submitted APN application' >&2; exit 1
+fi
+if psql -X -v ON_ERROR_STOP=1 -c "SET ROLE anonymous; SELECT public.apn_partner_apply('Anon','9999988888','Chennai');" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL anonymous APN application access' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000003 "SELECT * FROM allbee_private.apn_application_audit;" >/dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL applicant read private APN application audit' >&2; exit 1
+fi
 
 # Privileged management gate: admin, clients, suspended accounts cannot change roles.
 if query_as 00000000-0000-4000-8000-000000000002 "SELECT public.manage_member_role('00000000-0000-4000-8000-000000000003','admin','active');" >/dev/null 2>"$tmp/deny.log"; then
@@ -287,4 +323,4 @@ expect "absent Auth identity has zero notifications" "0" "$(query_as 00000000-00
 expect "restricted trigger uses definer for service lifecycle" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT p.prosecdef::int FROM pg_proc p WHERE p.oid='allbee_private.log_role_change()'::regprocedure;")"
 expect "unprivileged user cannot invoke private audit trigger" "f" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT has_function_privilege('authenticated','allbee_private.log_role_change()','EXECUTE');")"
 expect "every schema migration recorded" "${#migrations[@]}" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
-echo 'PASS Neon Auth core: profiles, roles, chat, tasks, notifications and APN partner read isolation across nine roles; browser APN writes denied'
+echo 'PASS Neon Auth core: profiles, roles, chat, tasks, notifications, nine-role APN read isolation and audited pending self-application; browser APN writes denied'
