@@ -1,6 +1,26 @@
 # AllBee → Neon: legacy source parity inventory
 Verified: 23 October 2026 · Objective: full backend replacement without changing legacy production data.
 
+## 24 October correction: unverified SQL is not parity
+
+Commits on `haor/allbee-neon-backend-20261023` had added `database/neon/011`–`021`
+and described them as ports. A fresh read-only query of the **isolated staging**
+branch `br-long-cloud-azs3rmmb` confirmed **10** migration records through
+`010_role_audit_service_maintenance`, five public app tables, zero Auth users,
+zero roles/notifications and six private role-audit rows. None of `011`–`021`
+was applied. The files contained missing dependencies and Supabase-only APIs;
+`019` also contained malformed SQL. They have been moved to
+`docs/neon-unverified-drafts/` with a non-executable `.draft` suffix. The
+uncommitted founder-lockdown server experiment is quarantined there too. The
+root Vercel link accidentally pointing at a newly created, unrelated project
+was removed; `neon-pilot/.vercel` still points at the intended SSO-protected
+staging project. This correction does **not** establish any APN/finance parity.
+
+CI now checks numbered migration order and Supabase-only references, and the
+disposable PostgreSQL RLS test replays **every** executable Neon migration
+twice instead of stopping at `010`. Legacy ports must be written and verified
+against the actual Neon schema/identity model before staging application.
+
 ## Counted scope
 
 - **219** original Supabase SQL migration files under \`supabase/migrations/\`.

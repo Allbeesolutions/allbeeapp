@@ -18,6 +18,7 @@ jobs:
       - run: npm test -- --run
       - run: npm run test:edge-auth
       - run: npm run test:rpc-surface
+      - run: node scripts/check-neon-migration-portability.mjs
       - name: Verify customer analytics SQL in disposable PostgreSQL
         run: |
           if command -v pg_config >/dev/null 2>&1; then

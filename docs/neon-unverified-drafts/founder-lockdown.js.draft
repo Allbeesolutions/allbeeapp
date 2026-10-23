@@ -1,0 +1,116 @@
+import express from 'express';
+import pg from 'pg';
+import dotenv from 'dotenv';
+import crypto from 'crypto';
+
+dotenv.config();
+
+const app = express();
+app.use(express.json());
+
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+const SECRET = process.env.FOUNDER_LOCKDOWN_CODE || "";
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_MAX = 5;
+
+const timingSafeEqual = (a, b) => {
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+};
+
+const sha256Hex = (value) => {
+  return crypto.createHash('sha256').update(value).digest('hex');
+};
+
+const reserveAttempt = async (clientIp) => {
+  const now = new Date().toISOString();
+  await pool.query(
+    'INSERT INTO emergency_lockdown_attempts (client_key, window_start, attempts, updated_at) VALUES ($1, $2, 1, $2) ON CONFLICT (client_key) DO NOTHING',
+    [clientIp, now]
+  );
+  const res = await pool.query(
+    'SELECT window_start, attempts FROM emergency_lockdown_attempts WHERE client_key = $1',
+    [clientIp]
+  );
+  const data = res.rows[0];
+  if (!data) return 1000;
+  const started = new Date(data.window_start).getTime();
+  if (Date.now() - started > RATE_WINDOW_MS) {
+    await pool.query(
+      'UPDATE emergency_lockdown_attempts SET window_start = $1, attempts = 1, updated_at = $1 WHERE client_key = $2',
+      [now, clientIp]
+    );
+    return 1;
+  }
+  if (data.attempts >= RATE_MAX) return data.attempts + 1;
+  await pool.query(
+    'UPDATE emergency_lockdown_attempts SET attempts = attempts + 1, updated_at = $1 WHERE client_key = $2',
+    [now, clientIp]
+  );
+  return data.attempts + 1;
+};
+
+const clearAttempts = async (clientIp) => {
+  await pool.query(
+    'INSERT INTO emergency_lockdown_attempts (client_key, window_start, attempts, updated_at) VALUES ($1, $2, 0, $2) ON CONFLICT (client_key) DO UPDATE SET window_start = EXCLUDED.window_start, attempts = 0, updated_at = EXCLUDED.updated_at',
+    [clientIp, new Date().toISOString()]
+  );
+};
+
+app.post('/founder-lockdown', async (req, res) => {
+  try {
+    const { action = 'status', code } = req.body;
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+
+    if (action === 'status') {
+      const result = await pool.query('SELECT locked FROM emergency_lockdown WHERE id = \'founder\'');
+      const locked = result.rows[0]?.locked ?? false;
+      return res.json({ locked });
+    }
+
+    if (action === 'verify' || action === 'recover') {
+      const attemptNo = await reserveAttempt(clientIp);
+      if (attemptNo > RATE_MAX) return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+
+      const candidate = String(code || "");
+      let isValid = false;
+      if (SECRET) {
+        isValid = timingSafeEqual(candidate, SECRET);
+      } else {
+        const result = await pool.query('SELECT code_hash FROM emergency_lockdown WHERE id = \'founder\'');
+        const stored = result.rows[0]?.code_hash || "";
+        isValid = timingSafeEqual(sha256Hex(candidate).toLowerCase(), stored.toLowerCase());
+      }
+
+      if (!isValid) return res.status(401).json({ ok: false });
+
+      await clearAttempts(clientIp);
+      const stateResult = await pool.query('SELECT locked FROM emergency_lockdown WHERE id = \'founder\'');
+      const isLocked = stateResult.rows[0]?.locked ?? false;
+
+      if (action === 'recover') {
+        if (!isLocked) return res.json({ ok: true, already: true });
+        await pool.query('UPDATE emergency_lockdown SET locked = false, locked_at = null, locked_by = \'founder-recovery\', updated_at = now() WHERE id = \'founder\'');
+        await pool.query('INSERT INTO emergency_lockdown_audit (action, actor) VALUES (\'recover\', \'founder-recovery\')');
+        return res.json({ ok: true, recovered: true });
+      }
+
+      if (isLocked) return res.json({ ok: true, already: true });
+      await pool.query('UPDATE emergency_lockdown SET locked = true, locked_at = now(), locked_by = \'founder-authorization\', updated_at = now() WHERE id = \'founder\'');
+      await pool.query('INSERT INTO emergency_lockdown_audit (action, actor) VALUES (\'activate\', \'founder-authorization\')');
+      return res.json({ ok: true });
+    }
+
+    res.status(400).json({ error: 'Unknown action.' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Unavailable.' });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Founder lockdown server running on port ${PORT}`));

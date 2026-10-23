@@ -22,25 +22,15 @@ $$;
 INSERT INTO neon_auth."user" VALUES
  ('00000000-0000-4000-8000-000000000001','a@example.test'), ('00000000-0000-4000-8000-000000000002','b@example.test'), ('00000000-0000-4000-8000-000000000003','c@example.test');
 SQL
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/001_allbee_fresh_foundation.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/002_neon_auth_core.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/002_neon_auth_core.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/003_chat_acceptance.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/003_chat_acceptance.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/004_chat_mutation_role_guard.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/004_chat_mutation_role_guard.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/006_task_workspace.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/006_task_workspace.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/007_member_notifications.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/007_member_notifications.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/008_role_management.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/008_role_management.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/009_deleted_identity_guard.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/009_deleted_identity_guard.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/010_role_audit_service_maintenance.sql" >/dev/null
-psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/010_role_audit_service_maintenance.sql" >/dev/null
+# Keep the chain open-ended: a newly added numbered migration must run in CI.
+# Replaying each file also catches non-idempotent ports before staging apply.
+shopt -s nullglob
+migrations=("$repo"/database/neon/[0-9][0-9][0-9]_*.sql)
+[[ ${#migrations[@]} -gt 0 ]] || { echo 'FAIL no Neon migrations found' >&2; exit 1; }
+for migration in "${migrations[@]}"; do
+  psql -X -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
+  psql -X -v ON_ERROR_STOP=1 -f "$migration" >/dev/null
+done
 
 query_as() {
   local who="$1" sql="$2"
@@ -260,5 +250,5 @@ expect "absent Auth identity has zero tasks" "0" "$(query_as 00000000-0000-4000-
 expect "absent Auth identity has zero notifications" "0" "$(query_as 00000000-0000-4000-8000-000000000099 "SELECT count(*) FROM public.member_notifications;")"
 expect "restricted trigger uses definer for service lifecycle" "1" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT p.prosecdef::int FROM pg_proc p WHERE p.oid='allbee_private.log_role_change()'::regprocedure;")"
 expect "unprivileged user cannot invoke private audit trigger" "f" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c "SELECT has_function_privilege('authenticated','allbee_private.log_role_change()','EXECUTE');")"
-expect "ten schema migrations" "10" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
+expect "every schema migration recorded" "${#migrations[@]}" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
 echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps, deletion scrub, private self-role, suspension, task and notification authorization safety'
