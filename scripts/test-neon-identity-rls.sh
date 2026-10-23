@@ -31,6 +31,8 @@ psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/004_chat_mutation_role_guard.
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/004_chat_mutation_role_guard.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/006_task_workspace.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/006_task_workspace.sql" >/dev/null
 
 query_as() {
   local who="$1" sql="$2"
@@ -136,5 +138,24 @@ if query_as 00000000-0000-4000-8000-000000000002 "SELECT * FROM allbee_private.m
   echo 'FAIL client reads private role audit' >&2; exit 1
 fi
 expect "role changes audited" "2" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_private.member_role_audit;')"
-expect "five schema migrations" "5" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
+# Work tasks use trusted auth UUIDs; JSON person names cannot escalate scope.
+if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.tasks(id,data,owner_user_id,assignee_user_id) VALUES('task_1','{}','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002');" > /dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL client created employee task' >&2; exit 1
+fi
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO allbee_private.member_roles(user_id,role,status) VALUES('00000000-0000-4000-8000-000000000001','staff','active');" >/dev/null
+query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.tasks(id,data,owner_user_id,assignee_user_id) VALUES('task_1','{\"title\":\"QA\"}','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002');" >/dev/null
+expect "task owner can read" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.tasks WHERE id='task_1';")"
+expect "suspended assignee denied" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.tasks;")"
+expect "unrelated user sees no tasks" "0" "$(query_as 00000000-0000-4000-8000-000000000003 "SELECT count(*) FROM public.tasks;")"
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET status='active' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
+expect "active assignee can read" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.tasks WHERE id='task_1';")"
+expect "assignee can edit task status" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.tasks SET state='in_progress' WHERE id='task_1' RETURNING 1;" | grep -c '^1$' || true)"
+if query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.tasks SET owner_user_id='00000000-0000-4000-8000-000000000002' WHERE id='task_1';" > /dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL unauthorized owner reassignment allowed' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.tasks(id,owner_user_id,assignee_user_id,data) VALUES('task_fake','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','{}');" > /dev/null 2>"$tmp/deny.log"; then
+ echo 'FAIL forged owner task insertion' >&2; exit 1
+fi
+expect "task owner can still see" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.tasks WHERE id='task_1';")"
+expect "six schema migrations" "6" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
 echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps, deletion scrub, private self-role, suspension and audit safety'

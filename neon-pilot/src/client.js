@@ -135,6 +135,48 @@ export async function sendMessage(client, conversationId, body) {
     .select("id,body,created_at").single());
 }
 
+const TASK_STATES = new Set(['open','in_progress','blocked','done','cancelled']);
+const INTERNAL_ROLES = new Set(['superadmin','admin','accountant','staff','intern']);
+
+async function assertCanUseTasks(client) {
+  const [user, access] = await Promise.all([currentUser(client), getMyMemberAccess(client)]);
+  if (access.status !== 'active' || !INTERNAL_ROLES.has(access.role)) {
+    throw new Error('Task access requires an active internal AllBee account.');
+  }
+  return user;
+}
+
+export async function listTasks(client) {
+  await assertCanUseTasks(client);
+  return unwrap(await client.from('tasks')
+    .select('id,data,owner_user_id,assignee_user_id,state,created_at,updated_at')
+    .order('updated_at', {ascending:false}).limit(150)) || [];
+}
+
+export async function createTask(client, { title, assigneeUserId }) {
+  const user = await assertCanUseTasks(client);
+  const taskTitle = String(title || '').trim();
+  if (!taskTitle || taskTitle.length > 180) throw new Error('Task title must be 1–180 characters.');
+  const assigneeId = requireUuid(assigneeUserId);
+  const taskId = 't_' + crypto.randomUUID();
+  return unwrap(await client.from('tasks').insert({
+    id: taskId,
+    data: {title: taskTitle},
+    owner_user_id: user.id,
+    assignee_user_id: assigneeId,
+    state: 'open',
+  }).select('id,data,owner_user_id,assignee_user_id,state,updated_at').single());
+}
+
+export async function setTaskState(client, taskId, state) {
+  await assertCanUseTasks(client);
+  if (typeof taskId !== 'string' || !/^t_[a-f0-9-]{36}$/i.test(taskId)) throw new Error('Invalid task identifier.');
+  if (!TASK_STATES.has(state)) throw new Error('Invalid task state.');
+  return unwrap(await client.from('tasks')
+    .update({state}).eq('id',taskId)
+    .select('id,state,updated_at').single());
+}
+
 export async function softDeleteMessage(client, messageId) {
   await currentUser(client);
   return unwrap(await client.from("direct_messages")

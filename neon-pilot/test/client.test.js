@@ -5,7 +5,7 @@ vi.mock("@neondatabase/neon-js", () => ({
 }));
 import {
   requireUuid, createPilotClient, unwrap, currentUser, getMyMemberAccess,
-  conversationParticipants, inviteUser, sendMessage, softDeleteMessage
+  conversationParticipants, inviteUser, sendMessage, softDeleteMessage, listTasks, createTask, setTaskState
 } from "../src/client.js";
 
 const idA = "00000000-0000-4000-8000-000000000001";
@@ -64,6 +64,8 @@ function mockNeon(responseData = {}) {
     update(...x) { calls.push(["update", ...x]); return q; },
     eq(...x) { calls.push(["eq", ...x]); return q; },
     single() { calls.push(["single"]); return Promise.resolve({ data: responseData, error: null }); },
+    order(...x) { calls.push(["order",...x]); return q; },
+    limit(...x) { calls.push(["limit",...x]); return Promise.resolve({data: Array.isArray(responseData) ? responseData : [], error: null}); },
   };
   const client = {
     auth: { getSession: () => Promise.resolve({ data: { session: { user: {id: idA, email:"a@example.test"} } }, error: null }) },
@@ -101,6 +103,37 @@ describe("pilot data operations", () => {
     const rpc=vi.fn();
     await expect(getMyMemberAccess({auth:{getSession:async()=>({data:{session:null}})},rpc})).rejects.toThrow(/Sign in/);
     expect(rpc).not.toHaveBeenCalled();
+  });
+  it("blocks clients and suspended members from task queries", async () => {
+    const {client,calls}=mockNeon();
+    client.rpc = () => Promise.resolve({data:{role:'client',status:'active'}});
+    await expect(listTasks(client)).rejects.toThrow(/active internal/);
+    expect(calls.some(x=>x[0]==='from'&&x[1]==='tasks')).toBe(false);
+    client.rpc = () => Promise.resolve({data:{role:'staff',status:'suspended'}});
+    await expect(listTasks(client)).rejects.toThrow(/active internal/);
+  });
+  it("creates task with JWT identity, UUID assignee and no self-set timestamps", async () => {
+    const {client,calls}=mockNeon({id:'task-ok'});
+    client.rpc = () => Promise.resolve({data:{role:'staff',status:'active'}});
+    await createTask(client,{title:'Review client brief',assigneeUserId:idB});
+    expect(calls).toContainEqual(['from','tasks']);
+    const row=calls.find(x=>x[0]==='insert')[1];
+    expect(row.owner_user_id).toBe(idA);
+    expect(row.assignee_user_id).toBe(idB);
+    expect(row.data).toEqual({title:'Review client brief'});
+    expect(row).not.toHaveProperty('updated_at');
+    expect(row).not.toHaveProperty('created_at');
+    expect(row.id).toMatch(/^t_[a-f0-9-]{36}$/);
+  });
+  it("validates task state and updates only state, never owner", async () => {
+    const {client,calls}=mockNeon({id:'task-ok'});
+    client.rpc = () => Promise.resolve({data:{role:'admin',status:'active'}});
+    const taskId='t_'+idB;
+    await expect(setTaskState(client,taskId,'self_assigned')).rejects.toThrow(/Invalid task state/);
+    await setTaskState(client,taskId,'done');
+    const update=calls.find(x=>x[0]==='update')[1];
+    expect(update).toEqual({state:'done'});
+    expect(update).not.toHaveProperty('owner_user_id');
   });
   it("creates an invitation without self-approval or role assignment", async () => {
     const { client, calls } = mockNeon({id:"123"});

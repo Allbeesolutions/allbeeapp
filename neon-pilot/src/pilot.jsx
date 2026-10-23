@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createPilotClient, currentUser, getMyMemberAccess, getOwnProfile, saveOwnProfile, inviteUser,
-  listConversations, acceptConversation, listMessages, sendMessage, softDeleteMessage, unwrap
+  listConversations, acceptConversation, listMessages, sendMessage, softDeleteMessage,
+  listTasks, createTask, setTaskState, unwrap
 } from "./client.js";
 
 const env = import.meta.env;
@@ -12,6 +13,54 @@ const clientOrError = (() => {
 
 const shortId = (id) => id ? id.slice(0, 8) + "…" + id.slice(-4) : "—";
 const dateText = (timestamp) => timestamp ? new Date(timestamp).toLocaleString() : "";
+
+const INTERNAL_TEST_ROLES = new Set(['superadmin','admin','accountant','staff','intern']);
+const TASK_STATE_OPTIONS = ['open','in_progress','blocked','done','cancelled'];
+
+function TaskWorkspace({client, user}) {
+  const [tasks, setTasks] = useState([]);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [assignee, setAssignee] = useState(user.id);
+  const [taskBusy, setTaskBusy] = useState(false);
+  const [taskError, setTaskError] = useState('');
+  const refresh = useCallback(async () => {
+    try { setTasks(await listTasks(client)); setTaskError(''); }
+    catch (error) { setTaskError(error?.message || 'Tasks unavailable'); }
+  }, [client]);
+  useEffect(() => { refresh(); }, [refresh]);
+  async function addTask(e) {
+    e.preventDefault(); if (taskBusy) return;
+    setTaskBusy(true);
+    try { await createTask(client, {title:taskTitle,assigneeUserId:assignee}); setTaskTitle(''); await refresh(); }
+    catch (error) { setTaskError(error?.message || 'Task creation failed'); }
+    finally { setTaskBusy(false); }
+  }
+  async function changeStatus(taskId, next) {
+    setTaskBusy(true);
+    try { await setTaskState(client,taskId,next); await refresh(); }
+    catch (error) { setTaskError(error?.message || 'Task update failed'); }
+    finally { setTaskBusy(false); }
+  }
+  return <section className="panel" style={{marginTop:24}}>
+    <div className="line-title"><h2>Internal task workspace</h2><button className="text-button" type="button" onClick={refresh}>Refresh</button></div>
+    <p className="help">Only active internal accounts can view tasks. Assignment and ownership are enforced by Neon user IDs—not editable names.</p>
+    {taskError && <p className="notice" role="alert">{taskError}</p>}
+    <form className="task-create-form" onSubmit={addTask} style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:12,alignItems:'end'}}>
+      <label>Task title<input value={taskTitle} required maxLength={180} onChange={e=>setTaskTitle(e.target.value)}/></label>
+      <label>Assigned user ID<input value={assignee} required onChange={e=>setAssignee(e.target.value)} /></label>
+      <button className="primary" disabled={taskBusy}>Add task</button>
+    </form>
+    <div aria-label="Assigned tasks" style={{display:'grid',gap:12,marginTop:22}}>
+      {!tasks.length && <p className="help">No tasks assigned to you yet.</p>}
+      {tasks.map((task) => <div key={task.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'12px 0',borderTop:'1px solid #253a4b'}}>
+        <div style={{minWidth:0,overflowWrap:'anywhere'}}><strong>{task.data?.title || task.id}</strong><small style={{display:'block',marginTop:4,color:'#9cb0bf'}}>Assigned to {shortId(task.assignee_user_id)} · {dateText(task.updated_at)}</small></div>
+        <select aria-label={'Status for '+(task.data?.title || task.id)} disabled={taskBusy} value={task.state} onChange={e=>changeStatus(task.id,e.target.value)} style={{background:'#132636',color:'#eaf2f0',border:'1px solid #34546b',borderRadius:8,padding:9}}>
+          {TASK_STATE_OPTIONS.map(state=><option value={state} key={state}>{state.replace('_',' ')}</option>)}
+        </select>
+      </div>)}
+    </div>
+  </section>;
+}
 
 export function NeonPilot() {
   const client = clientOrError.client;
@@ -272,6 +321,7 @@ export function NeonPilot() {
                 </div>
               </section>
             </div>}
+            {access?.status === 'active' && INTERNAL_TEST_ROLES.has(access?.role) && <TaskWorkspace client={client} user={user} />}
           </>}
     </div>
     <footer>ALLBEE SYSTEMS · PRIVATE STAGING PILOT · NOT PRODUCTION</footer>
