@@ -46,6 +46,13 @@ quota reset and confirmed READY. An anonymous request still redirects to
 Vercel SSO; an authenticated request returned the pilot HTML and current JS
 asset. The legacy production AllBee frontend was not redeployed.
 
+The isolated pilot's beta Neon SDK pinned vulnerable Zod copies. A pilot-only
+override to patched Zod 4.6.7 passed clean install, 32/32 adapter tests,
+build and a zero-finding high-severity production audit. The protected pilot
+was redeployed as `dpl_9zA47QdiFZHUtYQUNff4L4jvZeQe`, confirmed READY,
+SSO-protected and serving its new JS asset. This is dependency hardening,
+not new migrated business functionality.
+
 ## Counted scope
 
 - **219** original Supabase SQL migration files under \`supabase/migrations/\`.
