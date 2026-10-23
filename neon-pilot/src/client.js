@@ -59,6 +59,18 @@ export function conversationParticipants(a, b) {
   return [first, second].sort();
 }
 
+const ALLBEE_ROLES = new Set(['superadmin','admin','accountant','staff','intern','client','partner','district_head','state_head']);
+
+export async function getMyMemberAccess(client) {
+  await currentUser(client);
+  const access = unwrap(await client.rpc('my_member_access'), 'Cannot verify account permissions.');
+  if (!access || !ALLBEE_ROLES.has(access.role) ||
+      !['active','suspended','terminated'].includes(access.status)) {
+    throw new Error('Invalid access response: account is locked until its role is verified.');
+  }
+  return Object.freeze({ role: access.role, status: access.status });
+}
+
 export async function getOwnProfile(client) {
   const user = await currentUser(client);
   return unwrap(await client.from("member_profiles")

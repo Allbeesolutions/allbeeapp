@@ -27,6 +27,10 @@ psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/002_neon_auth_core.sql" >/dev
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/002_neon_auth_core.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/003_chat_acceptance.sql" >/dev/null
 psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/003_chat_acceptance.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/004_chat_mutation_role_guard.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/004_chat_mutation_role_guard.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
+psql -X -v ON_ERROR_STOP=1 -f "$repo/database/neon/005_member_suspension_audit.sql" >/dev/null
 
 query_as() {
   local who="$1" sql="$2"
@@ -66,6 +70,15 @@ fi
 # Invitation sender cannot self-approve (the recipient must accept).
 expect "inviter cannot self-approve" "0" "$(query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.direct_conversations SET accepted_at=now() WHERE id='$conversation_id' RETURNING 1;" | grep -c '^1$' || true)"
 expect "recipient can accept" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.direct_conversations SET accepted_at=now() WHERE id='$conversation_id' RETURNING 1;" | grep -c '^1$' || true)"
+# The supplied future date MUST be overwritten with the database's present time.
+expect "acceptance server time" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT (accepted_at <= statement_timestamp() AND accepted_at >= statement_timestamp() - interval '1 minute')::int FROM public.direct_conversations WHERE id='$conversation_id';")"
+if query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.direct_conversations SET accepted_at=null WHERE id='$conversation_id';" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL invitation acceptance reversed' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.direct_conversations SET accepted_at=now() + interval '20 years' WHERE id='$conversation_id';" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL accepted invitation timestamp changed again' >&2; exit 1
+fi
+
 # Column GRANTs must reject attempts to forge message IDs and timestamps.
 if query_as 00000000-0000-4000-8000-000000000001 "INSERT INTO public.direct_messages(conversation_id,sender_user_id,body,created_at) VALUES ('$conversation_id','00000000-0000-4000-8000-000000000001','Forged clock', now() - interval '30 days');" >/dev/null 2>"$tmp/deny.log"; then
   echo 'FAIL forged message creation timestamp' >&2; exit 1
@@ -85,9 +98,43 @@ fi
 query_as 00000000-0000-4000-8000-000000000002 "UPDATE public.direct_messages SET body='spoofed' WHERE sender_user_id='00000000-0000-4000-8000-000000000001';" >/dev/null
 expect "participant B cannot edit A message" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.direct_messages WHERE body='spoofed';")"
 expect "participant A can edit own message" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.direct_messages SET body='Hello again' WHERE sender_user_id='00000000-0000-4000-8000-000000000001' RETURNING 1;" | grep -c '^1$' || true)"
+expect "body edit stamped by server" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT (edited_at IS NOT NULL AND edited_at BETWEEN now()-interval '1 minute' AND now())::int FROM public.direct_messages WHERE sender_user_id='00000000-0000-4000-8000-000000000001';")"
+if query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.direct_messages SET edited_at=now()+interval '20 years' WHERE sender_user_id='00000000-0000-4000-8000-000000000001';" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL message edit timestamp forgery allowed' >&2; exit 1
+fi
+
 if query_as 00000000-0000-4000-8000-000000000001 "DELETE FROM public.direct_messages WHERE sender_user_id='00000000-0000-4000-8000-000000000001';" >/dev/null 2>"$tmp/deny.log"; then
   echo 'FAIL hard deletion without policy/grant' >&2; exit 1
 fi
 expect "one message survives" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT count(*) FROM public.direct_messages;")"
-expect "three schema migrations" "3" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
-echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps and safe replay'
+# Deleted content must be scrubbed at rest and deletion must be terminal.
+query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.direct_messages SET deleted_at=now()+interval '20 years' WHERE sender_user_id='00000000-0000-4000-8000-000000000001';" >/dev/null
+expect "message deletion scrubbed" "1" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT (body='[Deleted message]' AND deleted_at <= now() AND edited_at IS NULL)::int FROM public.direct_messages WHERE conversation_id='$conversation_id';")"
+# An UPDATE affecting zero RLS-visible rows is a *successful query*; check
+# mutation count, not merely whether SQL returned an error.
+expect "deleted message cannot be updated" "0" "$(query_as 00000000-0000-4000-8000-000000000001 "UPDATE public.direct_messages SET deleted_at=null, body='undelete' WHERE sender_user_id='00000000-0000-4000-8000-000000000001' RETURNING 1;" | grep -c '^1$' || true)"
+expect "message text remains scrubbed" "1" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT (body='[Deleted message]' AND deleted_at IS NOT NULL)::int FROM public.direct_messages WHERE sender_user_id='00000000-0000-4000-8000-000000000001';")"
+# No self-role promotion; public RPC can read only its authenticated caller.
+expect "unassigned user is client" "client" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT public.my_member_access()->>'role';")"
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO allbee_private.member_roles(user_id,role,status) VALUES('00000000-0000-4000-8000-000000000002','accountant','active');" >/dev/null
+expect "role A remains client" "client" "$(query_as 00000000-0000-4000-8000-000000000001 "SELECT public.my_member_access()->>'role';")"
+expect "role B resolves accountant" "accountant" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT public.my_member_access()->>'role';")"
+if psql -X -v ON_ERROR_STOP=1 -c "SET ROLE anonymous; SELECT public.my_member_access();" >/dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL anonymous role read granted' >&2; exit 1
+fi
+
+# A suspended member's otherwise-valid session cannot view or mutate app data.
+psql -X -v ON_ERROR_STOP=1 -c "UPDATE allbee_private.member_roles SET status='suspended' WHERE user_id='00000000-0000-4000-8000-000000000002';" >/dev/null
+expect "suspended role reported safely" "suspended" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT public.my_member_access()->>'status';")"
+expect "suspended profile hidden" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.member_profiles;")"
+expect "suspended messages hidden" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.direct_messages;")"
+expect "suspended conversations hidden" "0" "$(query_as 00000000-0000-4000-8000-000000000002 "SELECT count(*) FROM public.direct_conversations;")"
+if query_as 00000000-0000-4000-8000-000000000002 "INSERT INTO public.member_profiles(user_id,display_name) VALUES('00000000-0000-4000-8000-000000000002','Bad');" > /dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL suspended user allowed to write' >&2; exit 1
+fi
+if query_as 00000000-0000-4000-8000-000000000002 "SELECT * FROM allbee_private.member_role_audit;" > /dev/null 2>"$tmp/deny.log"; then
+  echo 'FAIL client reads private role audit' >&2; exit 1
+fi
+expect "role changes audited" "2" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_private.member_role_audit;')"
+expect "five schema migrations" "5" "$(psql -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM allbee_platform.schema_migrations;')"
+echo 'PASS Neon Auth core: self profiles, immutable role ownership, two-party conversation RLS, no sender spoofing, no foreign edits or hard deletes, recipient approval, tamperproof timestamps, deletion scrub, private self-role, suspension and audit safety'

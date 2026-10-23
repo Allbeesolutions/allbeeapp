@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  createPilotClient, currentUser, getOwnProfile, saveOwnProfile, inviteUser,
+  createPilotClient, currentUser, getMyMemberAccess, getOwnProfile, saveOwnProfile, inviteUser,
   listConversations, acceptConversation, listMessages, sendMessage, softDeleteMessage, unwrap
 } from "./client.js";
 
@@ -16,6 +16,7 @@ const dateText = (timestamp) => timestamp ? new Date(timestamp).toLocaleString()
 export function NeonPilot() {
   const client = clientOrError.client;
   const [user, setUser] = useState(null);
+  const [access, setAccess] = useState(null);
   const [loading, setLoading] = useState(!!client);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -45,6 +46,14 @@ export function NeonPilot() {
     try {
       const next = await currentUser(client);
       setUser(next);
+      setAccess(null);
+      const verifiedAccess = await getMyMemberAccess(client);
+      setAccess(verifiedAccess);
+      if (verifiedAccess.status !== 'active') {
+        setConversations([]); setSelected(null); setMessages([]);
+        setNotice('This account is not active. Contact an AllBee administrator.');
+        return;
+      }
       const profile = await getOwnProfile(client);
       setName(profile?.display_name || next.name || "");
       setBio(profile?.bio || "");
@@ -103,7 +112,7 @@ export function NeonPilot() {
     setBusy(true);
     try {
       unwrap(await client.auth.signOut(), "Could not sign out.");
-      setUser(null); setMessages([]); setSelected(null); setConversations([]); setNotice("");
+      setUser(null); setAccess(null); setMessages([]); setSelected(null); setConversations([]); setNotice("");
     } catch (error) { report(error); }
     finally { setBusy(false); }
   }
@@ -201,10 +210,12 @@ export function NeonPilot() {
         : <>
             <div className="detail-strip">
               <div><span className="eyebrow">SIGNED IN USER</span><strong>{user.email || name || "Member"}</strong><span className="mono">ID {shortId(accountId)}</span></div>
-              <div><span className="eyebrow">PERMISSION</span><strong>Client-only pilot</strong><span>No admin role self-assignment</span></div>
+              <div><span className="eyebrow">PERMISSION</span><strong>{access?.role || "Unverified"}</strong><span>{access?.status || "Locked until verified"} · No role self-assignment</span></div>
               <div><span className="eyebrow">DATA</span><strong>Neon staging</strong><span>RLS enforced server-side</span></div>
             </div>
-            <div className="work-grid">
+            {access?.status !== 'active'
+              ? <section className="panel"><h2>Account access restricted</h2><p className="help">Permissions could not be verified or this account was suspended. Profile and chat operations are unavailable.</p></section>
+              : <div className="work-grid">
               <section className="panel">
                 <div className="line-title"><h2>Profile</h2><button className="text-button" onClick={() => setEditing(!editing)}>{editing ? "Close" : "Edit"}</button></div>
                 <p className="help">Only your own profile is accessible. Company roles are private server-side data.</p>
@@ -260,7 +271,7 @@ export function NeonPilot() {
                   </>}
                 </div>
               </section>
-            </div>
+            </div>}
           </>}
     </div>
     <footer>ALLBEE SYSTEMS · PRIVATE STAGING PILOT · NOT PRODUCTION</footer>

@@ -55,3 +55,7 @@ Do not deploy this pilot to a public production domain or imply all modules have
 - Neon branch: isolated staging `br-long-cloud-azs3rmmb`, with only `https://allbee-neon-pilot.vercel.app` and the local QA loopback explicitly added to its Auth origin allowlist.
 - Vercel staging build reported **READY**. No real-user login or all-role feature acceptance has been certified.
 - Staging deployment uses separate Vercel environment variables with only public Neon API endpoints; local `.env.local`, `.vercel` metadata, service credentials and test account passwords are excluded from source and deployment uploads.
+
+### Backend role status verification
+
+The protected pilot now calls the no-argument, server-owned `my_member_access()` RPC after verifying the login session. The RPC reads only that account's role and lifecycle status; it does **not** accept a caller-supplied role, member ID, or user metadata for authorization. A failed role check or suspended/terminated status locks the pilot workspace. See Neon migrations `004` and `005` and the RLS/adapter tests. This is still a staging pilot, not a production admin or APN migration.

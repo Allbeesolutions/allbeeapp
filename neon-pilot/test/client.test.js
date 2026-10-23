@@ -4,7 +4,7 @@ vi.mock("@neondatabase/neon-js", () => ({
   SupabaseAuthAdapter: () => ({ type: "auth-adapter" }),
 }));
 import {
-  requireUuid, createPilotClient, unwrap, currentUser,
+  requireUuid, createPilotClient, unwrap, currentUser, getMyMemberAccess,
   conversationParticipants, inviteUser, sendMessage, softDeleteMessage
 } from "../src/client.js";
 
@@ -80,6 +80,27 @@ describe("pilot data operations", () => {
   it("does not allow unauthenticated profile operations", async () => {
     const c = {auth:{getSession:async()=>({data:{session:null}})}};
     await expect(currentUser(c)).rejects.toThrow(/Sign in/);
+  });
+  it("reads only backend-enforced own role via parameterless RPC", async () => {
+    const { client } = mockNeon();
+    const calls=[];
+    client.rpc = (name, args) => { calls.push({name,args}); return Promise.resolve({data:{role:'accountant',status:'active'},error:null}); };
+    await expect(getMyMemberAccess(client)).resolves.toEqual({role:'accountant',status:'active'});
+    expect(calls).toEqual([{name:'my_member_access',args:undefined}]);
+  });
+  it("fails closed if role is unknown, suspended, or RPC fails", async () => {
+    const { client } = mockNeon();
+    client.rpc = () => Promise.resolve({data:{role:'root',status:'active'}});
+    await expect(getMyMemberAccess(client)).rejects.toThrow(/Invalid access/);
+    client.rpc = () => Promise.resolve({data:{role:'client',status:'suspended'}});
+    await expect(getMyMemberAccess(client)).resolves.toEqual({role:'client',status:'suspended'});
+    client.rpc = () => Promise.resolve({error:{message:'Denied',status:403}});
+    await expect(getMyMemberAccess(client)).rejects.toThrow(/Denied/);
+  });
+  it("does not ask role RPC with an unauthenticated session", async () => {
+    const rpc=vi.fn();
+    await expect(getMyMemberAccess({auth:{getSession:async()=>({data:{session:null}})},rpc})).rejects.toThrow(/Sign in/);
+    expect(rpc).not.toHaveBeenCalled();
   });
   it("creates an invitation without self-approval or role assignment", async () => {
     const { client, calls } = mockNeon({id:"123"});
