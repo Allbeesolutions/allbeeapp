@@ -1,0 +1,2130 @@
+{
+  "version": 1,
+  "original_sql_migrations": 219,
+  "supabase_edge_functions": 11,
+  "edge_function_names": [
+    "admin-users",
+    "ai-chat",
+    "ai-chat-v2",
+    "ai-crm-action",
+    "ai-crm-webhook",
+    "ai-crm-worker",
+    "ai-memory-runtime",
+    "apn-ai",
+    "founder-lockdown",
+    "notification-push-worker",
+    "username-login"
+  ],
+  "file_categories": {
+    "apn": 78,
+    "other": 65,
+    "security": 13,
+    "auth": 5,
+    "ai": 25,
+    "crm": 3,
+    "finance": 12,
+    "chat": 12,
+    "storage": 2,
+    "client": 3,
+    "analytics": 1
+  },
+  "source_pattern_file_counts": {
+    "supabase_auth": 108,
+    "security_definer": 157,
+    "functions": 149,
+    "finance": 104,
+    "apn": 60,
+    "chat": 73,
+    "rls": 42,
+    "realtime": 6,
+    "storage": 4,
+    "external": 3
+  },
+  "example_source_files": {
+    "supabase_auth": [
+      "20260810120000_pr_finance_apn_edit_convert.sql",
+      "20260810130000_pr_finance_apn_edit_convert_verify.sql",
+      "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "20260813146000_pr_apn_rule_engine_ledger_cap_fix.sql",
+      "20260813147000_pr_apn_rule_engine_reversal_marker_fix.sql"
+    ],
+    "storage": [
+      "20260904093000_apn_chat_v4_collaboration.sql",
+      "20260928070000_storage_public_media_split_foundation.sql",
+      "20260928072000_storage_private_business_files.sql",
+      "20260929042500_fix_client_avatar_storage_and_chat_participant_read.sql"
+    ],
+    "realtime": [
+      "20260822000000_pr_apn_team_chat.sql",
+      "20260822093000_pr_apn_team_chat_presence_realtime.sql",
+      "20260904060000_apn_chat_v2_openhive_patterns.sql",
+      "20260904093000_apn_chat_v4_collaboration.sql",
+      "20260904095000_notification_center_v3.sql"
+    ],
+    "security_definer": [
+      "20260810120000_pr_finance_apn_edit_convert.sql",
+      "20260810130000_pr_finance_apn_edit_convert_verify.sql",
+      "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "20260813146000_pr_apn_rule_engine_ledger_cap_fix.sql",
+      "20260813147000_pr_apn_rule_engine_reversal_marker_fix.sql"
+    ],
+    "rls": [
+      "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "20260813147000_pr_apn_rule_engine_reversal_marker_fix.sql",
+      "20260817120000_pr_emergency_lockdown.sql",
+      "20260817140000_pr_emergency_lockdown_ratelimit.sql",
+      "20260819120000_pr_apn_partner_agreements.sql"
+    ],
+    "functions": [
+      "20260810120000_pr_finance_apn_edit_convert.sql",
+      "20260810130000_pr_finance_apn_edit_convert_verify.sql",
+      "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "20260813146000_pr_apn_rule_engine_ledger_cap_fix.sql",
+      "20260813147000_pr_apn_rule_engine_reversal_marker_fix.sql"
+    ],
+    "finance": [
+      "20260810120000_pr_finance_apn_edit_convert.sql",
+      "20260810130000_pr_finance_apn_edit_convert_verify.sql",
+      "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "20260813145000_pr_apn_rule_engine_foundation_grants_fix.sql",
+      "20260813146000_pr_apn_rule_engine_ledger_cap_fix.sql"
+    ],
+    "apn": [
+      "20260810120000_pr_finance_apn_edit_convert.sql",
+      "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "20260813146000_pr_apn_rule_engine_ledger_cap_fix.sql",
+      "20260813147000_pr_apn_rule_engine_reversal_marker_fix.sql",
+      "20260813150000_pr_apn_rule_engine_foundation_verify.sql"
+    ],
+    "chat": [
+      "20260810130000_pr_finance_apn_edit_convert_verify.sql",
+      "20260822000000_pr_apn_team_chat.sql",
+      "20260822010000_pr_apn_team_chat_notification_fix.sql",
+      "20260822020000_pr_apn_team_chat_verify_deployment.sql",
+      "20260822030000_pr_apn_team_chat_rpc_fix.sql"
+    ],
+    "external": [
+      "20260904124000_ai_crm_v4_cron.sql",
+      "20260904130000_ai_memory_v5_runtime.sql",
+      "20260904153100_notifications_v5_worker_cron.sql"
+    ]
+  },
+  "edge_env_variable_names": [
+    "FOUNDER_LOCKDOWN_CODE",
+    "GROQ_API_KEY",
+    "OPENAI_API_KEY",
+    "RESEND_API_KEY",
+    "RESEND_FROM_EMAIL",
+    "RESEND_WEBHOOK_SIGNING_SECRET",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_DB_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_URL",
+    "VAPID_PRIVATE_KEY",
+    "VAPID_PUBLIC_KEY",
+    "VAPID_SUBJECT",
+    "WHATSAPP_ACCESS_TOKEN",
+    "WHATSAPP_APP_SECRET",
+    "WHATSAPP_PHONE_NUMBER_ID",
+    "WHATSAPP_VERIFY_TOKEN"
+  ],
+  "migrations": [
+    {
+      "file": "20260810120000_pr_finance_apn_edit_convert.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 26672
+    },
+    {
+      "file": "20260810130000_pr_finance_apn_edit_convert_verify.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 30466
+    },
+    {
+      "file": "20260813140000_pr_apn_rule_engine_foundation.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 42833
+    },
+    {
+      "file": "20260813145000_pr_apn_rule_engine_foundation_grants_fix.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 2463
+    },
+    {
+      "file": "20260813146000_pr_apn_rule_engine_ledger_cap_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4586
+    },
+    {
+      "file": "20260813147000_pr_apn_rule_engine_reversal_marker_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 5865
+    },
+    {
+      "file": "20260813150000_pr_apn_rule_engine_foundation_verify.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 25723
+    },
+    {
+      "file": "20260817120000_pr_emergency_lockdown.sql",
+      "tags": [
+        "rls",
+        "finance"
+      ],
+      "bytes": 3391
+    },
+    {
+      "file": "20260817130000_pr_emergency_lockdown_codehash.sql",
+      "tags": [],
+      "bytes": 1198
+    },
+    {
+      "file": "20260817140000_pr_emergency_lockdown_ratelimit.sql",
+      "tags": [
+        "rls"
+      ],
+      "bytes": 1338
+    },
+    {
+      "file": "20260817150000_pr_emergency_lockdown_recovery.sql",
+      "tags": [],
+      "bytes": 1158
+    },
+    {
+      "file": "20260819120000_pr_apn_partner_agreements.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 20242
+    },
+    {
+      "file": "20260820000000_pr_apn_partner_agreements_final.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 69512
+    },
+    {
+      "file": "20260820010000_pr_apn_partner_agreements_verify.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 44663
+    },
+    {
+      "file": "20260822000000_pr_apn_team_chat.sql",
+      "tags": [
+        "supabase_auth",
+        "realtime",
+        "security_definer",
+        "rls",
+        "functions",
+        "apn",
+        "chat"
+      ],
+      "bytes": 31107
+    },
+    {
+      "file": "20260822010000_pr_apn_team_chat_notification_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 6430
+    },
+    {
+      "file": "20260822020000_pr_apn_team_chat_verify_deployment.sql",
+      "tags": [
+        "security_definer",
+        "finance",
+        "chat"
+      ],
+      "bytes": 4177
+    },
+    {
+      "file": "20260822030000_pr_apn_team_chat_rpc_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 12778
+    },
+    {
+      "file": "20260822040000_pr_apn_team_chat_notif_col.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 5699
+    },
+    {
+      "file": "20260822050000_pr_apn_team_chat_status_ambiguity.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 4127
+    },
+    {
+      "file": "20260822060000_pr_apn_team_chat_contacts.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 3793
+    },
+    {
+      "file": "20260822070000_fix_apn_chat_conversations_alias.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1614
+    },
+    {
+      "file": "20260822071000_fix_apn_chat_contacts_order.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2627
+    },
+    {
+      "file": "20260822080000_pr_profile_identity_sync.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1694
+    },
+    {
+      "file": "20260822090000_pr_apn_team_chat_schema_cache_reload.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2634
+    },
+    {
+      "file": "20260822091000_pr_apn_team_chat_delivery_presence_delete.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 6968
+    },
+    {
+      "file": "20260822092000_pr_apn_team_chat_message_status.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1063
+    },
+    {
+      "file": "20260822093000_pr_apn_team_chat_presence_realtime.sql",
+      "tags": [
+        "realtime",
+        "chat"
+      ],
+      "bytes": 168
+    },
+    {
+      "file": "20260822100000_fix_apn_team_chat_contacts_union_order.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2335
+    },
+    {
+      "file": "20260822103000_fix_apn_person_chat_schema_overload.sql",
+      "tags": [
+        "chat"
+      ],
+      "bytes": 578
+    },
+    {
+      "file": "20260822103100_fix_apn_person_conversation_overload.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2199
+    },
+    {
+      "file": "20260824120000_fix_apn_signup_pending_approval.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 6661
+    },
+    {
+      "file": "20260830230000_pr_finance_apn_delete_revoke.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 5693
+    },
+    {
+      "file": "20260830231000_pr_finance_apn_delete_revoke_finalize.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 1640
+    },
+    {
+      "file": "20260831001000_pr_apn_wallet_net_reversals.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 7329
+    },
+    {
+      "file": "20260831001100_pr_repair_stale_apn_test_project.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 1031
+    },
+    {
+      "file": "20260831001200_pr_finalize_stale_apn_test_project.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 1078
+    },
+    {
+      "file": "20260831050000_pr_apn_state_head_management.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 10749
+    },
+    {
+      "file": "20260831052000_pr_apn_state_head_scope_identity_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "apn"
+      ],
+      "bytes": 1185
+    },
+    {
+      "file": "20260831053000_pr_apn_state_head_operational_read_scope.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4564
+    },
+    {
+      "file": "20260831054000_pr_apn_state_head_lifecycle_guard.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "apn"
+      ],
+      "bytes": 3705
+    },
+    {
+      "file": "20260831055000_pr_apn_state_head_operational_actions.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "apn"
+      ],
+      "bytes": 2035
+    },
+    {
+      "file": "20260831056000_pr_apn_state_head_audit_notifications.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "apn"
+      ],
+      "bytes": 8616
+    },
+    {
+      "file": "20260831057000_pr_apn_cancelled_commission_delete_cleanup.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 3729
+    },
+    {
+      "file": "20260831100000_pr_apn_commission_distribution_finance_details.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 8359
+    },
+    {
+      "file": "20260831101000_pr_apn_commission_distribution_backfill.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 3775
+    },
+    {
+      "file": "20260831210000_pr_complete_pricing_catalog.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 20294
+    },
+    {
+      "file": "20260831213000_pr_expand_web_service_pricing.sql",
+      "tags": [],
+      "bytes": 10730
+    },
+    {
+      "file": "20260831214500_cleanup_pricing_duplicates.sql",
+      "tags": [],
+      "bytes": 706
+    },
+    {
+      "file": "20260831220000_pr_hosting_pricing_admin_source.sql",
+      "tags": [],
+      "bytes": 2885
+    },
+    {
+      "file": "20260901033000_apn_admin_team_chat_notifications.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 9857
+    },
+    {
+      "file": "20260901034000_apn_chat_admin_notification_audience.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2380
+    },
+    {
+      "file": "20260901090000_pr_apn_notification_read_state.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance"
+      ],
+      "bytes": 2415
+    },
+    {
+      "file": "20260901100000_pr_apn_team_chat_hardening.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 5042
+    },
+    {
+      "file": "20260901110000_fix_apn_team_chat_contacts_runtime.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 3480
+    },
+    {
+      "file": "20260901120000_fix_apn_team_chat_conversation_alias.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2215
+    },
+    {
+      "file": "20260901130000_pr_phase1_transactional_backup_restore.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 4088
+    },
+    {
+      "file": "20260901192540_phase2_normalized_backup_restore.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 5773
+    },
+    {
+      "file": "20260902160000_fix_backup_restore_function.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 5833
+    },
+    {
+      "file": "20260902210000_harden_apn_financial_integrity.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 11586
+    },
+    {
+      "file": "20260902220000_optimize_apn_chat_rpcs.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1876
+    },
+    {
+      "file": "20260902223000_security_hardening_2.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 542
+    },
+    {
+      "file": "20260902230000_security_hardening_3.sql",
+      "tags": [
+        "security_definer",
+        "finance",
+        "apn",
+        "chat"
+      ],
+      "bytes": 2311
+    },
+    {
+      "file": "20260902232000_authorization_break_tests.sql",
+      "tags": [
+        "security_definer",
+        "finance",
+        "chat"
+      ],
+      "bytes": 3717
+    },
+    {
+      "file": "20260902234000_financial_abuse_path_tests.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "finance"
+      ],
+      "bytes": 6909
+    },
+    {
+      "file": "20260902240000_harden_withdrawal_lifecycle.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 8319
+    },
+    {
+      "file": "20260902243000_harden_referral_abuse_paths.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4322
+    },
+    {
+      "file": "20260902250000_commission_abuse_path_tests.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 4527
+    },
+    {
+      "file": "20260902251500_harden_cancelled_commission_cleanup.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 5161
+    },
+    {
+      "file": "20260902253000_commission_reconciliation.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 2301
+    },
+    {
+      "file": "20260902260000_financial_lifecycle_verification.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 2151
+    },
+    {
+      "file": "20260902261000_authorization_matrix_verification.sql",
+      "tags": [
+        "security_definer",
+        "finance"
+      ],
+      "bytes": 2113
+    },
+    {
+      "file": "20260902262000_db_performance_final_verification.sql",
+      "tags": [],
+      "bytes": 717
+    },
+    {
+      "file": "20260902263500_remove_duplicate_indexes.sql",
+      "tags": [],
+      "bytes": 375
+    },
+    {
+      "file": "20260902265000_harden_sensitive_ai_views.sql",
+      "tags": [
+        "security_definer",
+        "rls",
+        "finance"
+      ],
+      "bytes": 1531
+    },
+    {
+      "file": "20260902270000_convert_security_definer_views.sql",
+      "tags": [
+        "security_definer",
+        "finance"
+      ],
+      "bytes": 1212
+    },
+    {
+      "file": "20260902271000_fix_function_volatility_and_search_path.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 1048
+    },
+    {
+      "file": "20260903050000_apn_commission_wallet_finance_sync.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 19381
+    },
+    {
+      "file": "20260903060000_apn_distribution_backfill_reconcile.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 3270
+    },
+    {
+      "file": "20260903122000_fix_apn_head_distribution_scope.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 5430
+    },
+    {
+      "file": "20260903123000_fix_apn_distribution_owner_path.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4334
+    },
+    {
+      "file": "20260903124000_fix_apn_finance_owner_bridge.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 2667
+    },
+    {
+      "file": "20260903125000_fix_apn_finance_sync_trigger.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 2548
+    },
+    {
+      "file": "20260903126000_fix_apn_referral_finance_linkage.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 3529
+    },
+    {
+      "file": "20260903130000_apn_wallet_ledger_source_identity.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 6132
+    },
+    {
+      "file": "20260903131000_apn_wallet_ledger_project_identity.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 6770
+    },
+    {
+      "file": "20260904050000_harden_trigger_rpc_surface.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 431
+    },
+    {
+      "file": "20260904051000_app_error_monitoring.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1885
+    },
+    {
+      "file": "20260904052000_apn_withdrawal_fifth_rule.sql",
+      "tags": [
+        "functions",
+        "finance"
+      ],
+      "bytes": 718
+    },
+    {
+      "file": "20260904060000_apn_chat_v2_openhive_patterns.sql",
+      "tags": [
+        "supabase_auth",
+        "realtime",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 8397
+    },
+    {
+      "file": "20260904070000_ai_semantic_memory_v1.sql",
+      "tags": [
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 6619
+    },
+    {
+      "file": "20260904080000_ai_memory_v2_hybrid.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 3099
+    },
+    {
+      "file": "20260904090000_ai_crm_actions_v2.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "apn"
+      ],
+      "bytes": 11063
+    },
+    {
+      "file": "20260904091000_harden_ai_crm_action_completion.sql",
+      "tags": [],
+      "bytes": 340
+    },
+    {
+      "file": "20260904092000_ai_intelligence_v3.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 9135
+    },
+    {
+      "file": "20260904093000_apn_chat_v4_collaboration.sql",
+      "tags": [
+        "supabase_auth",
+        "storage",
+        "realtime",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 6718
+    },
+    {
+      "file": "20260904094000_business_automation_v2.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 10192
+    },
+    {
+      "file": "20260904095000_notification_center_v3.sql",
+      "tags": [
+        "supabase_auth",
+        "realtime",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 2660
+    },
+    {
+      "file": "20260904100000_security_v3_adversarial_assertions.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 3521
+    },
+    {
+      "file": "20260904101000_observability_v3.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 3033
+    },
+    {
+      "file": "20260904102000_performance_v3_indexes.sql",
+      "tags": [],
+      "bytes": 1381
+    },
+    {
+      "file": "20260904110000_platform_v5_wave.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 14423
+    },
+    {
+      "file": "20260904111000_platform_v5_runtime.sql",
+      "tags": [
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 6004
+    },
+    {
+      "file": "20260904120000_platform_v6_core.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 7724
+    },
+    {
+      "file": "20260904121000_platform_v6_ai.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 6101
+    },
+    {
+      "file": "20260904122000_ai_crm_v4_reliability.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 7947
+    },
+    {
+      "file": "20260904123000_ai_crm_v4_worker_batch.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1217
+    },
+    {
+      "file": "20260904124000_ai_crm_v4_cron.sql",
+      "tags": [
+        "external"
+      ],
+      "bytes": 1039
+    },
+    {
+      "file": "20260904125000_ai_crm_v4_verification.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1333
+    },
+    {
+      "file": "20260904130000_ai_memory_v5_runtime.sql",
+      "tags": [
+        "security_definer",
+        "rls",
+        "functions",
+        "finance",
+        "external"
+      ],
+      "bytes": 8276
+    },
+    {
+      "file": "20260904131000_ai_crm_v4_verification_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1367
+    },
+    {
+      "file": "20260904132000_ai_intelligence_v5.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 3993
+    },
+    {
+      "file": "20260904133000_platform_v6_operations.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 2871
+    },
+    {
+      "file": "20260904134000_automation_v4.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 7246
+    },
+    {
+      "file": "20260904135000_automation_v4_event_bus.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 1114
+    },
+    {
+      "file": "20260904135100_platform_v6_operations_fix.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 2158
+    },
+    {
+      "file": "20260904140000_notifications_v5.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 3534
+    },
+    {
+      "file": "20260904141000_apn_team_chat_v6.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1422
+    },
+    {
+      "file": "20260904142000_ai_crm_v4_completion.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 3892
+    },
+    {
+      "file": "20260904142100_ai_crm_verification_guard_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1401
+    },
+    {
+      "file": "20260904142200_ai_crm_idempotency_race_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1183
+    },
+    {
+      "file": "20260904142300_ai_crm_dlq_state_fix.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1226
+    },
+    {
+      "file": "20260904150000_ai_memory_v5_reliability.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 6384
+    },
+    {
+      "file": "20260904151000_ai_intelligence_v5_certification.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 6233
+    },
+    {
+      "file": "20260904152000_automation_v4_certification.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 5390
+    },
+    {
+      "file": "20260904152100_automation_v4_event_dispatch_fix.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 1786
+    },
+    {
+      "file": "20260904152200_automation_event_dedupe_fix.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 881
+    },
+    {
+      "file": "20260904152300_automation_retry_bound_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 3307
+    },
+    {
+      "file": "20260904153000_notifications_v5_delivery.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 4364
+    },
+    {
+      "file": "20260904153100_notifications_v5_worker_cron.sql",
+      "tags": [
+        "external"
+      ],
+      "bytes": 992
+    },
+    {
+      "file": "20260904153200_notifications_v5_worker_recovery.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1096
+    },
+    {
+      "file": "20260904154000_apn_chat_v6_attachment_search_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2896
+    },
+    {
+      "file": "20260904160000_global_search_v5_certification.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 2744
+    },
+    {
+      "file": "20260904161000_crm_v5_certification.sql",
+      "tags": [
+        "security_definer",
+        "rls",
+        "functions",
+        "apn",
+        "chat"
+      ],
+      "bytes": 10837
+    },
+    {
+      "file": "20260904162000_finance_v5_certification.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 5221
+    },
+    {
+      "file": "20260904163000_security_v5_certification.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 3645
+    },
+    {
+      "file": "20260905040000_fix_apn_signup_guard.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4465
+    },
+    {
+      "file": "20260905041000_harden_apn_signup_auth_identity.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4553
+    },
+    {
+      "file": "20260905042000_finalize_apn_signup_guard.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4585
+    },
+    {
+      "file": "20260905050000_admin_page_runtime_fixes.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 7818
+    },
+    {
+      "file": "20260905100000_fix_partner_signup_bootstrap_guard.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4458
+    },
+    {
+      "file": "20260905110000_proposal_public_security_hardening.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 9141
+    },
+    {
+      "file": "20260905111000_audit_integrity.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 1782
+    },
+    {
+      "file": "20260905112000_notification_chat_rls_state.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 6430
+    },
+    {
+      "file": "20260905113000_security_runtime_hardening.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn",
+        "chat"
+      ],
+      "bytes": 7925
+    },
+    {
+      "file": "20260905114000_platform_v6_operations_schema_fix.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 2729
+    },
+    {
+      "file": "20260905115000_global_search_server_side.sql",
+      "tags": [
+        "supabase_auth",
+        "functions",
+        "finance",
+        "apn",
+        "chat"
+      ],
+      "bytes": 6925
+    },
+    {
+      "file": "20260905116000_team_chat_notification_badges.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 3423
+    },
+    {
+      "file": "20260905117000_security_v5_assertion_fix.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 4481
+    },
+    {
+      "file": "20260905117100_notification_state_rpc_only.sql",
+      "tags": [],
+      "bytes": 392
+    },
+    {
+      "file": "20260905118000_apn_server_age_validation.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "apn"
+      ],
+      "bytes": 2802
+    },
+    {
+      "file": "20260905119000_sensitive_action_audit_coverage.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 2711
+    },
+    {
+      "file": "20260905120000_global_search_rpc_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "functions",
+        "finance",
+        "apn",
+        "chat"
+      ],
+      "bytes": 6656
+    },
+    {
+      "file": "20260905121000_notification_unread_count_definer.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 890
+    },
+    {
+      "file": "20260906010000_combine_apn_commission_finance_entries.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 19132
+    },
+    {
+      "file": "20260906011000_finance_reconciliation_apn_scope.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 2843
+    },
+    {
+      "file": "20260906020000_finance_dashboard_reconciliation_and_forecast_ui.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 2999
+    },
+    {
+      "file": "20260906030000_finance_reconciliation_final_scope.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 2724
+    },
+    {
+      "file": "20260906031000_record_maqdoom_confirmed_withdrawal.sql",
+      "tags": [
+        "finance",
+        "apn"
+      ],
+      "bytes": 2233
+    },
+    {
+      "file": "20260922183241_harden_app_error_trigger_search_path.sql",
+      "tags": [],
+      "bytes": 161
+    },
+    {
+      "file": "20260922183355_invalidate_committed_admin_signup_code.sql",
+      "tags": [],
+      "bytes": 285
+    },
+    {
+      "file": "20260922184057_harden_ai_forecast_v3_security_invoker.sql",
+      "tags": [],
+      "bytes": 121
+    },
+    {
+      "file": "20260922184135_remove_duplicate_crm_indexes.sql",
+      "tags": [],
+      "bytes": 214
+    },
+    {
+      "file": "20260922193118_set_founder_emergency_code_20260923.sql",
+      "tags": [],
+      "bytes": 331
+    },
+    {
+      "file": "20260923120000_automation_workflow_builder.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 3068
+    },
+    {
+      "file": "20260924123000_harden_public_proposal_rpc_grants.sql",
+      "tags": [],
+      "bytes": 531
+    },
+    {
+      "file": "20260926100000_finance_save_entry_v1.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "finance"
+      ],
+      "bytes": 6517
+    },
+    {
+      "file": "20260927155000_finance_account_balances_authority.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4128
+    },
+    {
+      "file": "20260927161500_finance_wallet_time_consistency.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 17934
+    },
+    {
+      "file": "20260927163000_paid_withdrawal_finance_reconciliation.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 5388
+    },
+    {
+      "file": "20260927164000_apn_payout_double_count_guard.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 977
+    },
+    {
+      "file": "20260927165000_finance_liability_status_integrity.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance",
+        "apn"
+      ],
+      "bytes": 4432
+    },
+    {
+      "file": "20260927213000_fix_dashboard_data_truth.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 3288
+    },
+    {
+      "file": "20260927214500_preserve_finance_v5_reconciliation_contract.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 3629
+    },
+    {
+      "file": "20260928013000_apn_wallet_chat_friendship_consistency.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn",
+        "chat"
+      ],
+      "bytes": 4367
+    },
+    {
+      "file": "20260928020500_apn_live_wallet_chat_root_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "apn",
+        "chat"
+      ],
+      "bytes": 6822
+    },
+    {
+      "file": "20260928024500_apn_chat_runtime_root_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 4136
+    },
+    {
+      "file": "20260928031500_apn_admin_chat_account_isolation.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 7795
+    },
+    {
+      "file": "20260928032500_apn_admin_chat_subject_repair.sql",
+      "tags": [
+        "chat"
+      ],
+      "bytes": 562
+    },
+    {
+      "file": "20260928033000_fix_apn_signup_trigger_permissions.sql",
+      "tags": [],
+      "bytes": 469
+    },
+    {
+      "file": "20260928034500_public_owner_profile_avatars.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 591
+    },
+    {
+      "file": "20260928050000_security_p0_internal_function_execute_hardening.sql",
+      "tags": [],
+      "bytes": 832
+    },
+    {
+      "file": "20260928051000_security_p0_internal_helper_execute_hardening.sql",
+      "tags": [
+        "security_definer"
+      ],
+      "bytes": 1417
+    },
+    {
+      "file": "20260928052000_security_p0_auth_preflight_rate_limit.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 2249
+    },
+    {
+      "file": "20260928053000_security_p0_apn_chat_attachment_scope_fix.sql",
+      "tags": [
+        "supabase_auth",
+        "rls",
+        "chat"
+      ],
+      "bytes": 944
+    },
+    {
+      "file": "20260928054000_performance_p1_cover_foreign_keys.sql",
+      "tags": [],
+      "bytes": 711
+    },
+    {
+      "file": "20260928055000_performance_p1_rls_auth_initplan.sql",
+      "tags": [
+        "supabase_auth"
+      ],
+      "bytes": 1016
+    },
+    {
+      "file": "20260928060000_security_p0_persistent_edge_user_rate_limit.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 2199
+    },
+    {
+      "file": "20260928062000_p0_system_mutation_rpcs.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance"
+      ],
+      "bytes": 2057
+    },
+    {
+      "file": "20260928063000_security_p0_pin_remaining_trigger_search_paths.sql",
+      "tags": [],
+      "bytes": 268
+    },
+    {
+      "file": "20260928064000_security_p0_internal_memory_sync_privileges.sql",
+      "tags": [],
+      "bytes": 353
+    },
+    {
+      "file": "20260928065000_security_p0_move_pg_trgm_extension.sql",
+      "tags": [],
+      "bytes": 47
+    },
+    {
+      "file": "20260928070000_storage_public_media_split_foundation.sql",
+      "tags": [
+        "supabase_auth",
+        "storage",
+        "rls"
+      ],
+      "bytes": 1032
+    },
+    {
+      "file": "20260928071000_security_p0_chat_legacy_policy_bypass_cleanup.sql",
+      "tags": [
+        "supabase_auth",
+        "chat"
+      ],
+      "bytes": 416
+    },
+    {
+      "file": "20260928072000_storage_private_business_files.sql",
+      "tags": [
+        "supabase_auth",
+        "storage",
+        "rls"
+      ],
+      "bytes": 1313
+    },
+    {
+      "file": "20260928181500_revoke_chat_direct_update_after_insert_fix.sql",
+      "tags": [
+        "chat"
+      ],
+      "bytes": 351
+    },
+    {
+      "file": "20260928182000_harden_team_chat_direct_rls.sql",
+      "tags": [
+        "supabase_auth",
+        "rls",
+        "chat"
+      ],
+      "bytes": 830
+    },
+    {
+      "file": "20260928201012_force_recovered_finance_rows_resync.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 419
+    },
+    {
+      "file": "20260928202149_restore_transactions_authenticated_table_grants.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 391
+    },
+    {
+      "file": "20260928203036_recover_missing_proven_finance_entries_and_split.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 1572
+    },
+    {
+      "file": "20260928214500_fix_signup_metadata_type_and_public_email_check.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 1303
+    },
+    {
+      "file": "20260928214530_fix_client_signup_role_intent.sql",
+      "tags": [
+        "security_definer",
+        "functions"
+      ],
+      "bytes": 3361
+    },
+    {
+      "file": "20260928215500_repair_misclassified_client_profile.sql",
+      "tags": [],
+      "bytes": 545
+    },
+    {
+      "file": "20260928221000_enable_client_support_chat_identity.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2322
+    },
+    {
+      "file": "20260928224000_internal_client_support_conversations.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1390
+    },
+    {
+      "file": "20260928230000_chat_reactions_one_hour_tombstones.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 5142
+    },
+    {
+      "file": "20260928233000_client_ai_entitlements.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions"
+      ],
+      "bytes": 1933
+    },
+    {
+      "file": "20260929042500_fix_client_avatar_storage_and_chat_participant_read.sql",
+      "tags": [
+        "supabase_auth",
+        "storage",
+        "rls",
+        "chat"
+      ],
+      "bytes": 547
+    },
+    {
+      "file": "20260929100500_harden_withdrawal_internal_rpc_grants.sql",
+      "tags": [
+        "security_definer",
+        "finance"
+      ],
+      "bytes": 913
+    },
+    {
+      "file": "20260929103000_harden_apn_internal_helper_rpc_grants.sql",
+      "tags": [
+        "security_definer",
+        "finance"
+      ],
+      "bytes": 940
+    },
+    {
+      "file": "20260929105500_harden_crm_knowledge_internal_loggers.sql",
+      "tags": [
+        "security_definer"
+      ],
+      "bytes": 421
+    },
+    {
+      "file": "20260929113000_optimize_team_chat_rls_auth_initplan.sql",
+      "tags": [
+        "supabase_auth",
+        "rls",
+        "chat"
+      ],
+      "bytes": 552
+    },
+    {
+      "file": "20260929123000_prevent_partial_backup_mass_delete.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "finance",
+        "chat"
+      ],
+      "bytes": 5920
+    },
+    {
+      "file": "20260929131500_recover_authoritative_historical_finance_summary.sql",
+      "tags": [
+        "finance"
+      ],
+      "bytes": 1301
+    },
+    {
+      "file": "20260930154500_hao_ai_chat_security_realtime.sql",
+      "tags": [
+        "supabase_auth",
+        "realtime",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 4624
+    },
+    {
+      "file": "20261001214500_profile_bio_and_chat_profile_cards.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 2534
+    },
+    {
+      "file": "20261001220500_reconcile_client_support_directory.sql",
+      "tags": [
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 916
+    },
+    {
+      "file": "20261001225500_admin_client_chat_profile_bio.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "functions",
+        "chat"
+      ],
+      "bytes": 1482
+    },
+    {
+      "file": "20261021221500_customer_usage_analytics.sql",
+      "tags": [
+        "supabase_auth",
+        "security_definer",
+        "rls",
+        "functions",
+        "chat"
+      ],
+      "bytes": 8040
+    }
+  ]
+}
